@@ -126,14 +126,15 @@ class Sketch:
             if rn < tol:
                 converged = True
                 break
-            # damped normal equations
-            JT = J.T
-            A = JT @ J + lam * np.diag(np.diag(JT @ J) + 1e-12)
-            b = -JT @ r
-            try:
-                step = np.linalg.solve(A, b)
-            except np.linalg.LinAlgError:
-                step = np.linalg.lstsq(J, b, rcond=None)[0]
+            # Marquardt damping in the SVD basis: step = -V diag(s/(s^2+λs̃^2)) Uᵀ r.
+            # Near-null singular values (e.g. a symmetry direction whose
+            # numerical Jacobian is pure roundoff, or any DOF left free by an
+            # underdetermined sketch) contribute ~0 instead of the huge noise
+            # amplification the coordinate-basis normal equations produce.
+            U, S, Vt = np.linalg.svd(J, full_matrices=False)
+            s2 = S * S
+            lam_eff = lam * (s2.max() if s2.size else 1.0) + 1e-300
+            step = -(Vt.T @ ((S / (s2 + lam_eff)) * (U.T @ r)))
             x_new = x + step
             r_new = res(x_new)
             if np.linalg.norm(r_new) < rn:

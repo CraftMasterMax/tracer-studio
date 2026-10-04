@@ -131,6 +131,13 @@ class Arc(Entity):
         return f"Arc(c={c[0]:.4g},{c[1]:.4g} r={r:.4g})"
 
 
+def curve_radius(entity) -> float:
+    """Radius of a Circle or of an Arc's circumcircle."""
+    if isinstance(entity, Circle):
+        return entity.r
+    return entity.circle()[1]
+
+
 def _circumcenter(p1, p2, p3):
     ax, ay = p1; bx, by = p2; cx, cy = p3
     d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))

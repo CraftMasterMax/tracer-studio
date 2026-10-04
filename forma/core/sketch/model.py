@@ -10,7 +10,7 @@ from typing import Iterable
 
 import numpy as np
 
-from .entities import Point, Line, Circle
+from .entities import Point, Line, Circle, Arc, curve_radius
 from .constraints import (Coincident, Distance, Equal, Fixed, Horizontal,
                           Perpendicular, Radius, PointOnLine, Parallel,
                           Vertical)
@@ -145,7 +145,7 @@ class SketchModel:
             p = ents[0]
             self.constrain(Fixed(p, x=p.x, y=p.y))
         elif ctype is Radius:
-            self.constrain(Radius(ents[0], ents[0].r))
+            self.constrain(Radius(ents[0], curve_radius(ents[0])))
         elif ctype is Distance:
             a, b = (ents[0].a, ents[0].b) if isinstance(ents[0], Line) else ents[:2]
             self.constrain(Distance(a, b, math_dist(a, b)))
@@ -247,7 +247,13 @@ def model_to_dict(m: SketchModel) -> dict:
             cons.append({"t": "D", "p": _add_pt(pts, idx, c.p),
                          "q": _add_pt(pts, idx, c.q), "v": c.value})
         elif isinstance(c, Radius):
-            cons.append({"t": "R", "c": m.sketch.circles.index(c.circle), "v": c.value})
+            ent = c.curve
+            if isinstance(ent, Arc):
+                cons.append({"t": "R", "a": m.sketch.arcs.index(ent),
+                             "v": c.value})
+            else:
+                cons.append({"t": "R", "c": m.sketch.circles.index(ent),
+                             "v": c.value})
         elif isinstance(c, Coincident):
             cons.append({"t": "==",
                          "p": _add_pt(pts, idx, c.p), "q": _add_pt(pts, idx, c.q)})
@@ -312,7 +318,9 @@ def model_from_dict(d: dict) -> SketchModel:
         elif t == "D":
             m.constrain(Distance(pts[c["p"]], pts[c["q"]], c["v"]))
         elif t == "R":
-            m.constrain(Radius(m.sketch.circles[c["c"]], c["v"]))
+            ent = (m.sketch.arcs[c["a"]] if "a" in c
+                   else m.sketch.circles[c["c"]])
+            m.constrain(Radius(ent, c["v"]))
         elif t == "==":
             m.constrain(Coincident(pts[c["p"]], pts[c["q"]]))
         elif t == "on":

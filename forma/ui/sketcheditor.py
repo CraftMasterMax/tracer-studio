@@ -18,7 +18,7 @@ from PySide6.QtWidgets import QInputDialog, QWidget
 
 from ..core.sketch.constraints import (Distance, Equal, Fixed, Horizontal,
                                        Perpendicular, Radius, Vertical)
-from ..core.sketch.entities import Arc, Circle, Line, Point
+from ..core.sketch.entities import Arc, Circle, Line, Point, curve_radius
 from ..core.sketch.model import (SketchModel, math_dist, model_from_dict,
                                  model_to_dict)
 from ..core.sketch.profile import regions
@@ -455,9 +455,10 @@ class SketchCanvas(QWidget):
                 self.model.remove_last(Distance, (e.a, e.b))
                 self.model.constrain(Distance(e.a, e.b, val))
                 self._solve(); self.update()
-        elif isinstance(e, Circle):
+        elif isinstance(e, (Circle, Arc)):
+            cur = curve_radius(e)
             val, ok = QInputDialog.getDouble(self, "Dimension", "Radius (mm):",
-                                             round(e.r, 3), 0.001, 1e6, 3)
+                                             round(cur, 3), 0.001, 1e6, 3)
             if ok:
                 self._push_hist()
                 self.model.remove_last(Radius, (e,))
@@ -514,6 +515,8 @@ class SketchCanvas(QWidget):
         elif len(sel) == 1 and isinstance(sel[0], Circle):
             menu.addAction("Radius…", self.act_dim)
         elif len(sel) == 1 and isinstance(sel[0], Arc):
+            menu.addAction("Radius…", self.act_dim)
+            menu.addSeparator()
             menu.addAction("Hide construction"
                            if sel[0].construction else
                            "Construction geometry", self.act_construction)
@@ -645,8 +648,7 @@ class SketchCanvas(QWidget):
                 pos = QPointF(mid.x() + nx * 16, mid.y() - ny * 16)
                 text = f"{c.value:.2f}"
             elif isinstance(c, Radius):
-                cen = self.w2s(c.circle.c.x, c.circle.c.y)
-                pos = QPointF(cen.x(), cen.y() - c.circle.r * self._scale - 12)
+                pos = self._radius_pos(c.curve)
                 text = f"R {c.value:.2f}"
             if text is None:
                 continue
@@ -781,11 +783,22 @@ class SketchCanvas(QWidget):
             elif isinstance(c, Distance) and isinstance(c.p, Point):
                 m = self.w2s((c.p.x + c.q.x) / 2, (c.p.y + c.q.y) / 2)
                 self._badge(p, m, f"{c.value:g}", wide=True)
-            elif isinstance(c, Radius):
-                edge = self.w2s(c.circle.c.x + c.circle.r * 0.7071,
-                                c.circle.c.y + c.circle.r * 0.7071)
-                self._badge(p, edge, f"R{c.value:g}", wide=True)
+            # Radius: no glyph — the editable "R 8.00" dimension label from
+            # _draw_dimensions is the single indicator (as in Fusion).
         p.setFont(font)
+
+    def _radius_pos(self, e, dist: float = 16.0) -> QPointF:
+        """Editable dimension anchor: top of a full circle, or the bulge
+        point of an arc — the spot the maker actually drew, wherever the
+        arc sits on its circumcircle."""
+        if isinstance(e, Arc):
+            c0, _r = e.circle()
+            dx, dy = e.m.x - c0[0], e.m.y - c0[1]
+            ln = math.hypot(dx, dy) or 1.0
+            s = self.w2s(e.m.x, e.m.y)
+            return QPointF(s.x() + dx / ln * dist, s.y() - dy / ln * dist)
+        cen = self.w2s(e.c.x, e.c.y)
+        return QPointF(cen.x(), cen.y() - e.r * self._scale - dist + 4)
 
     def _badge(self, p: QPainter, at: QPointF, text: str, wide=False):
         w = 20 if wide else 13

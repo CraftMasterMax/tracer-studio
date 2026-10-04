@@ -88,12 +88,19 @@ class Distance(Constraint):
 
 @dataclass
 class Radius(Constraint):
-    circle: Circle
+    """Dimensioned radius on a Circle or a three-point Arc. For arcs the
+    radius is the circumradius of the shared points, so the constraint
+    adds no solver DOF — the numerical Jacobian differentiates through
+    the points. Field name ``curve`` covers both entity types."""
+    curve: "Circle"          # Circle | Arc
     value: float
 
-    def entities(self): return [self.circle]
+    def entities(self): return [self.curve]
 
-    def residual(self, pos): return (self.circle.r - self.value) / _LEN_SCALE
+    def residual(self, pos):
+        e = self.curve
+        r = e.r if hasattr(e, "r") else e.circle()[1]   # arc: circumradius
+        return (r - self.value) / _LEN_SCALE
 
 
 @dataclass
