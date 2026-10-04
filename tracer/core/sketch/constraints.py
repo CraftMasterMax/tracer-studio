@@ -146,16 +146,38 @@ class Perpendicular(Constraint):
 
 @dataclass
 class Equal(Constraint):
-    """Same length for two lines."""
-    l1: Line
-    l2: Line
+    """Same length for two lines, or same radius for two circles/arcs
+    (mixed pairs are meaningless — length vs radius — and refused in the
+    UI). Arcs differentiate through their three shared points."""
+    l1: object          # Line | Circle | Arc
+    l2: object          # Line | Circle | Arc
 
     def entities(self): return [self.l1, self.l2]
 
     def residual(self, pos):
-        d1 = np.linalg.norm([self.l1.b.x - self.l1.a.x, self.l1.b.y - self.l1.a.y])
-        d2 = np.linalg.norm([self.l2.b.x - self.l2.a.x, self.l2.b.y - self.l2.a.y])
-        return (d1 - d2) / _LEN_SCALE
+        a, b = self.l1, self.l2
+        if isinstance(a, Line) or isinstance(b, Line):
+            d1 = np.linalg.norm([a.b.x - a.a.x, a.b.y - a.a.y])
+            d2 = np.linalg.norm([b.b.x - b.a.x, b.b.y - b.a.y])
+            return (d1 - d2) / _LEN_SCALE
+        return (curve_radius(a) - curve_radius(b)) / _LEN_SCALE
+
+
+@dataclass
+class Concentric(Constraint):
+    """Two circles/arcs share their centre. Curve centres are not Point
+    entities (an arc's centre is derived), so this is its own constraint;
+    expand() splits it into x and y rows, exactly like Coincident."""
+    c1: object               # Circle | Arc
+    c2: object
+    axis: int = 0
+
+    def entities(self): return [self.c1, self.c2]
+
+    def residual(self, pos):
+        x1, y1 = curve_center(self.c1)
+        x2, y2 = curve_center(self.c2)
+        return ((x1 - x2) if self.axis == 0 else (y1 - y2)) / _LEN_SCALE
 
 
 def _split_line_curve(e1, e2):
@@ -315,6 +337,9 @@ def expand(constraints: list[Constraint]) -> list[Constraint]:
         if isinstance(c, Coincident):
             out.append(Coincident(c.p, c.q, axis=0))
             out.append(Coincident(c.p, c.q, axis=1))
+        elif isinstance(c, Concentric):
+            out.append(Concentric(c.c1, c.c2, axis=0))
+            out.append(Concentric(c.c1, c.c2, axis=1))
         elif isinstance(c, Fixed):
             if c.x is not None:
                 out.append(Fixed(c.p, x=c.x, y=c.y, axis=0))

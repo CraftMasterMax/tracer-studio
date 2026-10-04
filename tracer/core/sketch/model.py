@@ -13,9 +13,9 @@ import numpy as np
 
 from .entities import Point, Line, Circle, Arc, curve_radius, curve_center
 from .constraints import (Angle, AngleBetween, ArcMiddle, Coincident,
-                          Distance, Equal, Fixed, Horizontal, Perpendicular,
-                          Radius, PointOnLine, Parallel, Tangent, Vertical,
-                          make_tangent)
+                          Concentric, Distance, Equal, Fixed, Horizontal,
+                          Perpendicular, Radius, PointOnLine, Parallel,
+                          Tangent, Vertical, make_tangent)
 from .solver import Sketch, SolveResult
 
 # Sketch planes: (u_axis, v_axis) in world coords; extrude normal = u x v.
@@ -183,6 +183,8 @@ class SketchModel:
             self.constrain(ctype(ents[0], ents[1]))
         elif ctype is Tangent:
             self.constrain(make_tangent(ents[0], ents[1]))
+        elif ctype is Concentric:
+            self.constrain(Concentric(ents[0], ents[1]))
         else:
             raise ValueError(f"toggle cannot construct {ctype.__name__}")
         return True
@@ -299,8 +301,12 @@ def model_to_dict(m: SketchModel) -> dict:
             cons.append({"t": "perp", "l1": m.sketch.lines.index(c.l1),
                          "l2": m.sketch.lines.index(c.l2)})
         elif isinstance(c, Equal):
-            cons.append({"t": "eq", "l1": m.sketch.lines.index(c.l1),
-                         "l2": m.sketch.lines.index(c.l2)})
+            if isinstance(c.l1, Line) and isinstance(c.l2, Line):
+                cons.append({"t": "eq", "l1": m.sketch.lines.index(c.l1),
+                             "l2": m.sketch.lines.index(c.l2)})
+            else:
+                cons.append({"t": "eq", "a": _ent_ref(m, c.l1),
+                             "b": _ent_ref(m, c.l2)})
         elif isinstance(c, Tangent):
             cons.append({"t": "tan", "a": _ent_ref(m, c.e1),
                          "b": _ent_ref(m, c.e2), "side": c.side,
@@ -313,6 +319,9 @@ def model_to_dict(m: SketchModel) -> dict:
                          "l2": m.sketch.lines.index(c.l2), "v": c.value})
         elif isinstance(c, ArcMiddle):
             cons.append({"t": "am", "arc": m.sketch.arcs.index(c.arc)})
+        elif isinstance(c, Concentric):
+            cons.append({"t": "cc", "a": _ent_ref(m, c.c1),
+                         "b": _ent_ref(m, c.c2)})
     d = {"name": m.name, "plane": m.plane,
          "points": [[p.x, p.y] for p in pts],
          "lines": [[idx[l.a.id], idx[l.b.id], int(l.construction)]
@@ -393,7 +402,11 @@ def model_from_dict(d: dict) -> SketchModel:
             m.constrain(Perpendicular(m.sketch.lines[c["l1"]],
                                       m.sketch.lines[c["l2"]]))
         elif t == "eq":
-            m.constrain(Equal(m.sketch.lines[c["l1"]], m.sketch.lines[c["l2"]]))
+            if "l1" in c:                              # legacy line-line form
+                m.constrain(Equal(m.sketch.lines[c["l1"]],
+                                  m.sketch.lines[c["l2"]]))
+            else:
+                m.constrain(Equal(_ent_at(m, c["a"]), _ent_at(m, c["b"])))
         elif t == "tan":
             m.constrain(Tangent(_ent_at(m, c["a"]), _ent_at(m, c["b"]),
                                 side=c.get("side", 1.0),
@@ -405,4 +418,6 @@ def model_from_dict(d: dict) -> SketchModel:
                                      m.sketch.lines[c["l2"]], c["v"]))
         elif t == "am":
             m.constrain(ArcMiddle(m.sketch.arcs[c["arc"]]))
+        elif t == "cc":
+            m.constrain(Concentric(_ent_at(m, c["a"]), _ent_at(m, c["b"])))
     return m

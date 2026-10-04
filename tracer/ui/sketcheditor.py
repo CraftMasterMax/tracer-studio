@@ -16,11 +16,12 @@ from PySide6.QtGui import (QColor, QFont, QKeyEvent, QMouseEvent, QPainter,
                            QPen, QWheelEvent)
 from PySide6.QtWidgets import QInputDialog, QWidget
 
-from ..core.sketch.constraints import (Angle, AngleBetween, Distance, Equal,
-                                       Fixed, Horizontal, Perpendicular,
-                                       Radius, Tangent, Vertical,
-                                       make_angle, make_angle_between,
-                                       make_tangent, snapped)
+from ..core.sketch.constraints import (Angle, AngleBetween, Concentric,
+                                       Distance, Equal, Fixed,
+                                       Horizontal, Perpendicular, Radius,
+                                       Tangent, Vertical, make_angle,
+                                       make_angle_between, make_tangent,
+                                       snapped)
 from ..core.sketch.entities import (Arc, Circle, Line, Point, curve_center,
                                      curve_radius)
 from ..core.sketch.model import (SketchModel, math_dist, model_from_dict,
@@ -516,9 +517,24 @@ class SketchCanvas(QWidget):
             self._solve(); self.update()
 
     def act_equal(self):
-        if len(self._sel) == 2 and all(isinstance(e, Line) for e in self._sel):
+        """Equal length (two lines) or equal radius (two circles/arcs) —
+        the Q key and menu handle both, mixed pairs are refused."""
+        if len(self._sel) != 2:
+            return
+        pairs = (all(isinstance(e, Line) for e in self._sel)
+                 or all(isinstance(e, (Circle, Arc)) for e in self._sel))
+        if not pairs:
+            return
+        self._push_hist()
+        self.model.toggle(Equal, tuple(self._sel))
+        self._solve(); self.update()
+
+    def act_concentric(self):
+        """Two circles/arcs share a centre (Fusion's '2')."""
+        if len(self._sel) == 2 and all(isinstance(e, (Circle, Arc))
+                                       for e in self._sel):
             self._push_hist()
-            self.model.toggle(Equal, tuple(self._sel))
+            self.model.toggle(Concentric, tuple(self._sel))
             self._solve(); self.update()
 
     @staticmethod
@@ -622,6 +638,12 @@ class SketchCanvas(QWidget):
         self._solve(); self.update()
 
     def _context_menu(self, ev: QMouseEvent):
+        self._build_menu().exec(ev.globalPosition().toPoint())
+        self.update()
+
+    def _build_menu(self):
+        """The selection menu, split out so the action table is testable
+        without popping a real (uninterceptable) popup."""
         from PySide6.QtWidgets import QMenu
         menu = QMenu(self)
         sel = self._sel
@@ -642,6 +664,9 @@ class SketchCanvas(QWidget):
                 menu.addAction("Fillet corner…", self.act_fillet)
         elif self.tangent_ok(sel):
             menu.addAction("Tangent", self.act_tangent)
+            if all(isinstance(e, (Circle, Arc)) for e in sel):
+                menu.addAction("Equal radius", self.act_equal)
+                menu.addAction("Concentric", self.act_concentric)
         elif len(sel) == 2 and all(isinstance(e, Point) for e in sel):
             menu.addAction("Dimension…", self.act_dim)
         elif len(sel) == 1 and isinstance(sel[0], Circle):
@@ -658,12 +683,11 @@ class SketchCanvas(QWidget):
             menu.addSeparator()
             menu.addAction("Delete", self.act_delete)
         else:
-            menu.addAction("Rectangle tool", lambda: self.set_tool("rect"))
-            menu.addAction("Line tool", lambda: self.set_tool("line"))
-            menu.addAction("Circle tool", lambda: self.set_tool("circle"))
-            menu.addAction("Arc tool", lambda: self.set_tool("arc"))
-        menu.exec(ev.globalPosition().toPoint())
-        self.update()
+            for label, t in (("Rectangle tool", "rect"), ("Line tool", "line"),
+                             ("Circle tool", "circle"), ("Slot tool", "slot"),
+                             ("Arc tool", "arc")):
+                menu.addAction(label, lambda t=t: self.set_tool(t))
+        return menu
 
     def keyPressEvent(self, ev: QKeyEvent):
         k = ev.key()
@@ -725,6 +749,9 @@ class SketchCanvas(QWidget):
             self.act_tangent()
         elif k == Qt.Key_I:
             self.act_angle()
+        elif k == Qt.Key_2 and len(sel) == 2 and \
+                all(isinstance(e, (Circle, Arc)) for e in sel):
+            self.act_concentric()
         elif k == Qt.Key_K:
             self.act_construction()
         else:
@@ -1121,7 +1148,7 @@ class SketchCanvas(QWidget):
         if self._cursor is not None:
             cx, cy = self._cursor
             lines.append((f"X {cx:.2f}   Y {cy:.2f} mm", DIM))
-        tool = {"select": "Select (S/L/R/C/A) · H/V/F/D constraints · X extrude",
+        tool = {"select": "Select (S/L/R/C/O/A) · H/V/F/D/Q/T/I constraints · X extrude",
                 "line": "Line — click points, Enter/Esc stops",
                 "rect": "Rectangle — drag corners or click · move · click",
                 "circle": "Circle — drag from center or click · move · click",
