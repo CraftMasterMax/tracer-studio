@@ -7,6 +7,7 @@ drag with the grabbed point pinned — like it should.
 """
 from __future__ import annotations
 
+import json
 import math
 
 import numpy as np
@@ -18,7 +19,8 @@ from PySide6.QtWidgets import QInputDialog, QWidget
 from ..core.sketch.constraints import (Distance, Equal, Fixed, Horizontal,
                                        Perpendicular, Radius, Vertical)
 from ..core.sketch.entities import Circle, Line, Point
-from ..core.sketch.model import SketchModel, math_dist
+from ..core.sketch.model import (SketchModel, math_dist, model_from_dict,
+                                 model_to_dict)
 from ..core.sketch.profile import regions
 
 ACCENT = QColor("#4ea1ff")
@@ -51,6 +53,7 @@ class SketchCanvas(QWidget):
         self._drag_pt: Point | None = None
         self._pan_from: QPointF | None = None
         self._line_start: Point | None = None
+        self._rect_corner: np.ndarray | None = None
         self._preview: tuple | None = None  # tool drag preview
         self._snap_hint: Point | None = None
         self._last_result = None
@@ -66,16 +69,54 @@ class SketchCanvas(QWidget):
         self.model = model
         self._sel = []
         self._line_start = None
+        self._rect_corner = None
         self._preview = None
         self._last_result = None
+        self._hist = []
+        self._fut = []
+        self._drag_pushed = False
         self.set_tool("select")
         self.fit_view()
+        self.update()
+
+    # ---- sketch-level undo/redo (entity ops; document ops use main undo) ----
+    def _push_hist(self):
+        self._hist.append(json.dumps(model_to_dict(self.model)))
+        if len(self._hist) > 50:
+            self._hist.pop(0)
+        self._fut.clear()
+
+    def undo_op(self) -> bool:
+        if not self._hist:
+            return False
+        self._fut.append(json.dumps(model_to_dict(self.model)))
+        self._restore(json.loads(self._hist.pop()))
+        return True
+
+    def redo_op(self) -> bool:
+        if not self._fut:
+            return False
+        self._hist.append(json.dumps(model_to_dict(self.model)))
+        self._restore(json.loads(self._fut.pop()))
+        return True
+
+    def _restore(self, d: dict):
+        tmp = model_from_dict(d)
+        # keep THIS model's identity: sid links features to their sketch
+        self.model.sketch = tmp.sketch
+        self._sel = []
+        self._drag_pt = None
+        self._line_start = None
+        self._rect_corner = None
+        self._preview = None
+        self._solve()
         self.update()
 
     def set_tool(self, tool: str):
         self._tool = tool
         if tool != "line":
             self._line_start = None
+        self._rect_corner = None
         self._preview = None
         self.update()
 
@@ -175,6 +216,7 @@ class SketchCanvas(QWidget):
                 self._sel = [hit[1]]
                 if hit[0] == "point":
                     self._drag_pt = hit[1]
+                    self._drag_pushed = False
             self.update()
             return
         wp = self._world(q)
@@ -187,15 +229,41 @@ class SketchCanvas(QWidget):
                 if p is self._line_start:
                     self._line_start = None          # close chain
                 else:
+                    self._push_hist()
                     ln = self.model.add_line(self._line_start, p)
                     self._auto_constraints(ln, q)
                     self._solve()
                     self._line_start = p
             self.update()
         elif self._tool == "rect":
-            self._preview = ("rect", wp, wp)
+            # Fusion parity: supports BOTH corner-drag and click-move-click.
+            if self._rect_corner is None:
+                self._rect_corner = wp
+                self._preview = ("rect", wp, wp)     # rubber-band from here
+            else:
+                a = self._rect_corner
+                self._rect_corner = None
+                self._preview = None
+                if np.linalg.norm(wp - a) * self._scale > 6:
+                    self._push_hist()
+                    self.model.add_rect(self.model.point(*a),
+                                        self.model.point(*wp))
+                    self._solve()
+            self.update()
         elif self._tool == "circle":
-            self._preview = ("circle", wp, wp)
+            if self._rect_corner is None:
+                self._rect_corner = wp
+                self._preview = ("circle", wp, wp)
+            else:
+                a = self._rect_corner
+                self._rect_corner = None
+                self._preview = None
+                r = float(np.linalg.norm(wp - a))
+                if r * self._scale > 4:
+                    self._push_hist()
+                    self.model.add_circle(self.model.point(*a), r)
+                    self._solve()
+            self.update()
 
     def _auto_constraints(self, ln: Line, end_q: QPointF):
         """Fusion's drawing feel: release near-horizontal -> it IS
@@ -223,6 +291,9 @@ class SketchCanvas(QWidget):
             return
         if self._tool == "select":
             if self._drag_pt is not None:
+                if not self._drag_pushed:
+                    self._push_hist()
+                    self._drag_pushed = True
                 wp = self._world(q)
                 self._drag_pt.x, self._drag_pt.y = float(wp[0]), float(wp[1])
                 self._solve(pins=[self._drag_pt])
@@ -247,16 +318,27 @@ class SketchCanvas(QWidget):
             return
         kind, a, b = self._preview
         self._preview = None
+        committed = False
         if kind == "rect" and np.linalg.norm(b - a) * self._scale > 6:
+            self._rect_corner = None            # drag wins; disarm click-mode
+            self._push_hist()
             p0 = self.model.point(*a)
             p1 = self.model.point(*b)
             self.model.add_rect(p0, p1)
             self._solve()
+            committed = True
         elif kind == "circle":
             r = float(np.linalg.norm(b - a))
             if r * self._scale > 4:
+                self._rect_corner = None
+                self._push_hist()
                 c = self.model.add_circle(self.model.point(*a), r)
                 self._solve()
+                committed = True
+        # click-move-click: a plain click leaves the first corner armed;
+        # re-show the rubber band so moving the mouse previews the shape.
+        if not committed and self._rect_corner is not None:
+            self._preview = (kind, self._rect_corner, self._rect_corner)
         self.update()
 
     def wheelEvent(self, ev: QWheelEvent):
@@ -276,16 +358,19 @@ class SketchCanvas(QWidget):
     # ---- constraint actions (keys + context menu share these) --------------
     def act_H(self):
         if len(self._sel) == 1 and isinstance(self._sel[0], Line):
+            self._push_hist()
             self.model.toggle(Horizontal, (self._sel[0],))
             self._solve(); self.update()
 
     def act_V(self):
         if len(self._sel) == 1 and isinstance(self._sel[0], Line):
+            self._push_hist()
             self.model.toggle(Vertical, (self._sel[0],))
             self._solve(); self.update()
 
     def act_fix(self):
         if len(self._sel) == 1 and isinstance(self._sel[0], Point):
+            self._push_hist()
             self.model.toggle(Fixed, (self._sel[0],))
             self._solve(); self.update()
 
@@ -298,6 +383,7 @@ class SketchCanvas(QWidget):
                                              "Distance (mm):",
                                              round(cur, 3), 0.001, 1e6, 3)
             if ok:
+                self._push_hist()
                 self.model.remove_last(Distance, (p, q))
                 self.model.constrain(Distance(p, q, val))
                 self._solve(); self.update()
@@ -310,6 +396,7 @@ class SketchCanvas(QWidget):
             val, ok = QInputDialog.getDouble(self, "Dimension", "Length (mm):",
                                              round(cur, 3), 0.001, 1e6, 3)
             if ok:
+                self._push_hist()
                 self.model.remove_last(Distance, (e.a, e.b))
                 self.model.constrain(Distance(e.a, e.b, val))
                 self._solve(); self.update()
@@ -317,30 +404,36 @@ class SketchCanvas(QWidget):
             val, ok = QInputDialog.getDouble(self, "Dimension", "Radius (mm):",
                                              round(e.r, 3), 0.001, 1e6, 3)
             if ok:
+                self._push_hist()
                 self.model.remove_last(Radius, (e,))
                 self.model.constrain(Radius(e, val))
                 self._solve(); self.update()
 
     def act_perp(self):
         if len(self._sel) == 2 and all(isinstance(e, Line) for e in self._sel):
+            self._push_hist()
             self.model.toggle(Perpendicular, tuple(self._sel))
             self._solve(); self.update()
 
     def act_equal(self):
         if len(self._sel) == 2 and all(isinstance(e, Line) for e in self._sel):
+            self._push_hist()
             self.model.toggle(Equal, tuple(self._sel))
             self._solve(); self.update()
 
     def act_construction(self):
-        touched = False
+        if not any(isinstance(e, Line) for e in self._sel):
+            return
+        self._push_hist()
         for e in self._sel:
             if isinstance(e, Line):
                 e.construction = not e.construction
-                touched = True
-        if touched:
-            self._solve(); self.update()
+        self._solve(); self.update()
 
     def act_delete(self):
+        if not self._sel:
+            return
+        self._push_hist()
         for e in list(self._sel):
             self.model.delete_entity(e)
         self._sel = []
@@ -385,6 +478,15 @@ class SketchCanvas(QWidget):
         if k == Qt.Key_Escape:
             self._line_start = None
             self.set_tool("select")
+            return
+        if k == Qt.Key_Z and ev.modifiers() & Qt.ControlModifier:
+            if ev.modifiers() & Qt.ShiftModifier:
+                self.redo_op()
+            else:
+                self.undo_op()
+            return
+        if k == Qt.Key_Y and ev.modifiers() & Qt.ControlModifier:
+            self.redo_op()
             return
         if k == Qt.Key_S:
             self.set_tool("select")
@@ -509,6 +611,7 @@ class SketchCanvas(QWidget):
                                          0.001, 1e6, 3)
         if not ok:
             return
+        self._push_hist()
         c.value = float(val)
         self._solve()
         self.update()

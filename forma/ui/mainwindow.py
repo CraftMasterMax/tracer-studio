@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog,
                                QMainWindow, QMenu, QMessageBox, QPushButton,
@@ -17,6 +17,7 @@ from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
                                  model_to_dict)
 from .renderer import SceneRenderer
 from .panels import LeftRail
+from .shortcuts import TourDialog
 from .sketcheditor import SketchCanvas
 from .timeline import TimelineHost
 from .viewport import Viewport
@@ -119,23 +120,68 @@ class MainWindow(QMainWindow):
                                triggered=lambda checked=False: self.action_circular_pattern()))
 
         m_edit = self.menuBar().addMenu("&Edit")
-        m_edit.addAction(QAction("&Undo", self, shortcut=QKeySequence.Undo,
-                                 triggered=self.undo))
-        m_edit.addAction(QAction("&Redo", self, shortcut="Ctrl+Shift+Z",
-                                 triggered=self.redo))
+        self.act_undo = QAction("&Undo", self, shortcut=QKeySequence.Undo,
+                                triggered=self.undo)
+        self.act_redo = QAction("&Redo", self, shortcut="Ctrl+Shift+Z",
+                                triggered=self.redo)
+        m_edit.addAction(self.act_undo)
+        m_edit.addAction(self.act_redo)
 
         m_view = self.menuBar().addMenu("&View")
+        view_acts = []
         for label, key, view in (("Front", "1", "front"), ("Top", "2", "top"),
                                  ("Right", "3", "right"), ("Isometric", "0", "iso"),
                                  ("Fit view", "F", "fit")):
-            m_view.addAction(QAction(
-                label, self, shortcut=key,
-                triggered=lambda checked=False, v=view: self.action_view(v)))
+            a = QAction(label, self, shortcut=key,
+                        triggered=lambda checked=False, v=view: self.action_view(v))
+            m_view.addAction(a)
+            view_acts.append(a)
         m_view.addSeparator()
-        m_view.addAction(QAction("Toggle grid", self, shortcut="G",
-                                 triggered=self.action_toggle_grid))
-        m_view.addAction(QAction("Toggle edges", self, shortcut="E",
-                                 triggered=self.action_toggle_edges))
+        self.act_grid = QAction("Toggle grid", self, shortcut="G",
+                                triggered=self.action_toggle_grid)
+        self.act_edges = QAction("Toggle edges", self, shortcut="E",
+                                 triggered=self.action_toggle_edges)
+        m_view.addAction(self.act_grid)
+        m_view.addAction(self.act_edges)
+
+        m_help = self.menuBar().addMenu("&Help")
+        self.act_tour = QAction("&Welcome tour", self,
+                                triggered=lambda checked=False: self.show_tour())
+        self.act_keys = QAction("&Keyboard shortcuts", self, shortcut="?",
+                                triggered=lambda checked=False: self.show_shortcuts())
+        m_help.addActions([self.act_tour, self.act_keys])
+
+        # While sketching, single-key view shortcuts (F fit, G grid, E edges)
+        # would eat the sketcher's constraint keys — a real-desktop bug that
+        # offscreen tests never see. Disabled actions don't match shortcuts.
+        self._sketch_conflicts = [self.act_undo, self.act_redo,
+                                  self.act_grid, self.act_edges, *view_acts]
+
+    def _show_page(self, page):
+        self.stack.setCurrentWidget(page)
+        for a in getattr(self, "_sketch_conflicts", []):
+            a.setEnabled(page is not self._sketch_page)
+
+    # ---- help: tour + shortcut sheet ---------------------------------------
+    def show_shortcuts(self):
+        """Reveal the dedicated Shortcuts tab in the left rail."""
+        self.rail.show_shortcuts()
+        self.status.showMessage("Keyboard shortcuts — Help ▸ Welcome tour to replay")
+
+    def show_tour(self):
+        """First-run (or on-demand) guided tour of the key shortcuts."""
+        dlg = TourDialog(self)
+        dlg.btn_sheet.clicked.connect(dlg.accept)
+        dlg.btn_sheet.clicked.connect(self.show_shortcuts)
+        dlg.exec()
+
+    def maybe_show_tour(self):
+        """Show the tour once per install (remembered via QSettings)."""
+        if QSettings().value("ui/tour_shown", False, type=bool):
+            return False
+        QSettings().setValue("ui/tour_shown", True)
+        self.show_tour()
+        return True
 
     # ---- sketching: new, finish (associative extrude), re-edit ---------------
     def _tree_activated(self, item, col):
@@ -208,13 +254,13 @@ class MainWindow(QMainWindow):
         self.status.showMessage(f"Deleted {feature.name} (Ctrl+Z restores)", 4000)
 
     def edit_sketch(self, feature):
-        if self.doc is None:
+        if self.doc is None or not self._discard_guard():
             return
         model = model_from_dict(feature.sketch)
         model.sid = feature.sid or id(model)
         self._editing_sid = model.sid
         self.sketch.set_model(model)
-        self.stack.setCurrentWidget(self._sketch_page)
+        self._show_page(self._sketch_page)
         self._pick_tool("select")
         self.status.showMessage(f"Editing {feature.sketch.get('name', 'Sketch')} — "
                                 "X to update solid")
@@ -225,11 +271,11 @@ class MainWindow(QMainWindow):
         return f"Sketch{n}"
 
     def _discard_guard(self) -> bool:
-        if self.stack.currentWidget() is self._sketch_page and self.sketch.model \
-                and (self.sketch.model.sketch.lines or self.sketch.model.sketch.circles):
+        if self.sketch.model and (self.sketch.model.sketch.lines
+                                  or self.sketch.model.sketch.circles):
             ans = QMessageBox.question(
                 self, "Discard current sketch?",
-                "You are sketching. Start a new sketch and discard?",
+                "The sketch in the editor is not in the model yet. Discard it?",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if ans != QMessageBox.Yes:
                 return False
@@ -238,7 +284,7 @@ class MainWindow(QMainWindow):
     def _begin_sketch(self, model: SketchModel):
         self._editing_sid = None
         self.sketch.set_model(model)
-        self.stack.setCurrentWidget(self._sketch_page)
+        self._show_page(self._sketch_page)
         self._pick_tool("rect")     # most sketches start with a rectangle
 
     def action_new_sketch(self, plane: str = "XY"):
@@ -270,7 +316,8 @@ class MainWindow(QMainWindow):
         sid = self._editing_sid
         if sid is not None:
             self._update_sketch_features(sid, profiles, payload)
-            self.stack.setCurrentWidget(self.viewport)
+            self.sketch.set_model(SketchModel())     # committed: clear editor
+            self._show_page(self.viewport)
             self.recompute()
             self.status.showMessage(f"Updated {name} — solid recomputed", 5000)
             return
@@ -290,7 +337,8 @@ class MainWindow(QMainWindow):
                 placement=tuple(m.origin) if face else (0.0, 0.0, 0.0),
                 sketch=dict(payload, regions=len(profiles), region=i),
                 sid=m.sid, region=i))
-        self.stack.setCurrentWidget(self.viewport)
+        self.sketch.set_model(SketchModel())         # committed: clear editor
+        self._show_page(self.viewport)
         self.recompute()
         self.viewport.refresh(fit=True)
         self.status.showMessage(
@@ -341,6 +389,11 @@ class MainWindow(QMainWindow):
             bl.addWidget(b)
             self._tool_btns[tool] = b
         bl.addStretch(1)
+        back = QPushButton("← Back")
+        back.setProperty("tb", True)
+        back.setToolTip("Return to the 3D model without extruding")
+        back.clicked.connect(lambda: self._show_page(self.viewport))
+        bl.insertWidget(bl.count() - 1, back)
         done = QPushButton("Extrude… (X)")
         done.setProperty("tb", True)
         done.clicked.connect(lambda: self.sketch.finish())

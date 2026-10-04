@@ -16,6 +16,7 @@ def main() -> int:
     app.setStyleSheet(theme.stylesheet(theme.DARK))
     win = MainWindow()
     win.show()
+    win.maybe_show_tour()
     return app.exec()
 
 

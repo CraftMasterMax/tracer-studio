@@ -7,7 +7,7 @@ import numpy as np
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QTreeWidget, QTreeWidgetItem, QLabel, QVBoxLayout,
-                               QWidget, QFrame)
+                               QTabWidget, QWidget, QFrame)
 
 from ..core.document import Document, ExtrudeFeature, PrimitiveFeature
 
@@ -115,10 +115,14 @@ class PropertiesPanel(QWidget):
         self._body.setText("<br>".join(lines))
 
 
-class LeftRail(QWidget):
+class LeftRail(QTabWidget):
+    """Fusion-style left dock: tabbed Browser / Shortcuts panels."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        lay = QVBoxLayout(self)
+        from .shortcuts import ShortcutsPage
+        model = QWidget()
+        lay = QVBoxLayout(model)
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(8)
         self.tree = FeatureTree()
@@ -129,3 +133,13 @@ class LeftRail(QWidget):
         lay.addWidget(self.tree, 3)
         lay.addWidget(line)
         lay.addWidget(self.props, 1)
+        self.addTab(model, "Browser")
+        self._keys = ShortcutsPage()
+        self.addTab(self._keys, "Shortcuts")
+        self.setObjectName("leftRail")
+
+    def show_shortcuts(self):
+        self.setCurrentIndex(1)
+
+    def show_browser(self):
+        self.setCurrentIndex(0)
