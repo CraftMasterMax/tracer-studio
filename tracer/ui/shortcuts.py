@@ -63,6 +63,7 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("F", "Fix a point · fillet a corner with two lines selected", True),
         ("G", "Chamfer corner (two lines sharing a corner)", True),
         ("/", "Trim / extend two loose lines into a shared corner", True),
+        (".", "On-curve constraint (point + line/circle/arc)", True),
         ("D", "Distance dimension (1 line, 2 points, or pick)", True),
         ("K", "Toggle construction geometry", True),
         ("Delete", "Delete selected entities", True),

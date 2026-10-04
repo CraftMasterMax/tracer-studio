@@ -211,6 +211,8 @@ class SketchModel:
             self.constrain(Concentric(ents[0], ents[1]))
         elif ctype is Symmetry:
             self.constrain(Symmetry(ents[0], ents[1], ents[2]))
+        elif ctype is PointOnLine:
+            self.constrain(PointOnLine(ents[0], ents[1]))
         elif ctype is PointOnCircle:
             self.constrain(PointOnCircle(ents[0], ents[1]))
         else:

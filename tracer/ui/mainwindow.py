@@ -629,7 +629,8 @@ class MainWindow(QMainWindow):
         self.status.showMessage(f"Sketching on {plane} — R rect · L line · C circle · "
                                 "O slot · Y polygon · A arc · "
                                 "H/V/F/G/D/P/Q/T/I/M/2 constraints · "
-                                "/ trim · K construction · X extrude · Esc select")
+                                "/ trim · . on-curve · K construction · "
+                                "X extrude · Esc select")
 
     def _start_sketch_on_face(self, point, normal):
         if self.doc is None or not self._discard_guard():

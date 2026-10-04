@@ -18,7 +18,8 @@ from PySide6.QtWidgets import QInputDialog, QWidget
 
 from ..core.sketch.constraints import (Angle, AngleBetween, Concentric,
                                        Distance, Equal, Fixed,
-                                       Horizontal, Perpendicular, Radius,
+                                       Horizontal, Perpendicular,
+                                       PointOnCircle, PointOnLine, Radius,
                                        Symmetry, Tangent, Vertical,
                                        make_angle, make_angle_between,
                                        make_tangent, snapped)
@@ -562,6 +563,40 @@ class SketchCanvas(QWidget):
             self._solve(); self.update()
 
     @staticmethod
+    def on_ok(sel) -> bool:
+        """point + curve — see _on_roles for the accepted pairings."""
+        if len(sel) != 2:
+            return False
+        p, c = SketchCanvas._on_roles(sel)
+        return p is not None and c is not None
+
+    @staticmethod
+    def _on_roles(sel):
+        """Resolve (point, curve) out of a two-entity pick: Line/Arc can
+        only be the curve, a bare Point only the point; a lone Circle
+        plays either role (its centre), never both at once."""
+        curves = [e for e in sel if isinstance(e, (Line, Arc))]
+        pts = [e for e in sel if isinstance(e, Point)]
+        circles = [e for e in sel if isinstance(e, Circle)]
+        if curves and pts:
+            return pts[0], curves[0]
+        if len(circles) == 1 and (pts or curves):
+            return (pts[0], circles[0]) if pts else (circles[0].c, curves[0])
+        return None, None
+
+    def act_on(self):
+        """Pin a point onto a line/circle/arc — Fusion's On-Curve. A
+        circle picked as the point contributes its centre; a circle
+        picked as the curve hosts the point on its ring."""
+        if not self.on_ok(self._sel):
+            return
+        p, curve = self._on_roles(self._sel)
+        ctype = PointOnLine if isinstance(curve, Line) else PointOnCircle
+        self._push_hist()
+        self.model.toggle(ctype, (p, curve))
+        self._solve(); self.update()
+
+    @staticmethod
     def sym_ok(sel) -> bool:
         """point · point · line (a circle stands in for its centre)."""
         if len(sel) != 3:
@@ -745,6 +780,8 @@ class SketchCanvas(QWidget):
                 menu.addAction("Concentric", self.act_concentric)
         elif len(sel) == 2 and all(isinstance(e, Point) for e in sel):
             menu.addAction("Dimension…", self.act_dim)
+        elif self.on_ok(sel):
+            menu.addAction("On curve", self.act_on)
         elif self.sym_ok(sel):
             menu.addAction("Symmetric about line", self.act_symmetry)
         elif len(sel) == 1 and isinstance(sel[0], Circle):
@@ -829,6 +866,8 @@ class SketchCanvas(QWidget):
         elif k == Qt.Key_Slash and len(sel) == 2 and \
                 all(isinstance(e, Line) for e in sel):
             self.act_trim()                       # / closes a sloppy corner
+        elif k == Qt.Key_Period and self.on_ok(sel):
+            self.act_on()                         # . pins a point on a curve
         elif k == Qt.Key_D:
             self.act_dim()
         elif k == Qt.Key_P:
@@ -1262,7 +1301,7 @@ class SketchCanvas(QWidget):
             cx, cy = self._cursor
             lines.append((f"X {cx:.2f}   Y {cy:.2f} mm", DIM))
         tool = {"select": ("Select (S/L/R/C/O/Y/A) · H/V/F/D/Q/T/I constraints · "
-                           "/ trim · X extrude"),
+                           "/ trim · . on-curve · X extrude"),
                 "line": "Line — click points, Enter/Esc stops",
                 "rect": "Rectangle — drag corners or click · move · click",
                 "circle": "Circle — drag from center or click · move · click",
