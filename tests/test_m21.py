@@ -245,3 +245,52 @@ def test_short_drag_is_a_click_not_a_pull(win, qapp):
     qapp.processEvents()
     assert not any(f.name.startswith("PressPull") for f in win.doc.features)
     assert vp._sel, "plain click should have selected the face"
+
+
+def _press_drag(vp, qapp, world_from, world_to):
+    """Full press + one live move; returns (n_tri_base, n_tri_live)."""
+    p0 = _px_of(vp, world_from)
+    p1 = _px_of(vp, world_to)
+    base_n = vp._r._solid_ntri
+    _send(vp, QEvent.Type.MouseButtonPress, p0, Qt.MouseButton.LeftButton,
+          Qt.MouseButtons.LeftButton)
+    _send(vp, QEvent.Type.MouseMove, p1, Qt.MouseButton.NoButton,
+          Qt.MouseButtons.LeftButton)
+    qapp.processEvents()
+    return base_n, vp._r._solid_ntri
+
+
+def test_press_pull_shows_live_preview(win, qapp):
+    win.doc = box_doc()
+    win.recompute()
+    vp = win.viewport
+    vp.set_document(win.doc)
+    vp.refresh(fit=True)
+    qapp.processEvents()
+    base_n, live_n = _press_drag(vp, qapp, (20, 10, 8), (20, 10, 14))
+    assert live_n != base_n, "no live preview mesh during the drag"
+    assert not any(f.name.startswith("PressPull") for f in win.doc.features), \
+        "live move must not commit anything yet"
+    _send(vp, QEvent.Type.MouseButtonRelease, _px_of(vp, (20, 10, 14)),
+          Qt.MouseButton.LeftButton, Qt.MouseButtons.NoButton)
+    qapp.processEvents()
+    assert win.doc.features[-1].name.startswith("PressPull")
+
+
+def test_press_pull_cancel_restores_preview(win, qapp):
+    from PySide6.QtGui import QKeyEvent
+    win.doc = box_doc()
+    win.recompute()
+    vp = win.viewport
+    vp.set_document(win.doc)
+    vp.refresh(fit=True)
+    qapp.processEvents()
+    base_n, live_n = _press_drag(vp, qapp, (20, 10, 8), (20, 10, 13))
+    assert live_n != base_n
+    ev = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Escape,
+                   Qt.KeyboardModifier.NoModifier)
+    QApplication.sendEvent(vp, ev)
+    qapp.processEvents()
+    assert vp._r._solid_ntri == base_n, "Esc must restore the committed mesh"
+    assert not any(f.name.startswith("PressPull") for f in win.doc.features)
+    assert "cancel" in win.status.currentMessage().lower()

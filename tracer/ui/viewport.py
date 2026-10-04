@@ -76,6 +76,20 @@ class Viewport(QWidget):
     def solid(self) -> Solid | None:
         return self._doc.result if self._doc else None
 
+    def attach(self, doc: Document):
+        """Track a swapped-in document without refitting the camera."""
+        self._doc = doc
+
+    def preview_mesh(self, solid: Solid | None):
+        """Swap the GPU mesh without touching the document (Press-Pull
+        live preview); pass None to restore the committed model."""
+        if solid is None:
+            self.refresh()
+            return
+        v, n, f = solid.to_render_arrays()
+        self._r.set_mesh(v, n, f)
+        self.update()
+
     # ---- paint -------------------------------------------------------------
     def paintEvent(self, ev):
         dpr = self.devicePixelRatioF()
@@ -118,7 +132,7 @@ class Viewport(QWidget):
                 t0 = float((hit[0] - o0) @ d0)       # grab depth along ray
                 self._pp = dict(faces=g, point=np.asarray(hit[0], float),
                                 normal=n, px0=ev.position().toPoint(),
-                                t0=t0, offset=0.0)
+                                t0=t0, offset=0.0, ppid=object())
         if self._hover:
             self._hover = None                       # no wash while dragging
             self._apply_hi()

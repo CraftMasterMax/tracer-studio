@@ -106,18 +106,66 @@ class MainWindow(QMainWindow):
     # ---- Press-Pull (drag a face to add/remove material) -------------------
     def _press_pull(self, d: dict):
         if "cancel" in d:
+            self._pp_cache = None
+            self.viewport.preview_mesh(None)
             self.status.showMessage("Press-Pull cancelled", 3000)
             return
         if d.get("live"):
             self.status.showMessage(
                 f"Press-Pull: {d['offset']:+.2f} mm   "
                 "(release to apply, Esc to cancel)")
+            self._press_pull_preview(d)
             return
+        self._pp_cache = None
         self._apply_press_pull(d)
+
+    def _press_pull_preview(self, d: dict):
+        """Deform the viewport mesh while dragging, the way Fusion does.
+        The face region is computed once per drag; every move re-runs the
+        prism boolean (single-digit ms on maker parts), throttled to ~20fps.
+        Purely cosmetic — the committed feature is rebuilt on release."""
+        import time
+        if self.doc is None or self.doc.result is None:
+            return
+        cached = getattr(self, "_pp_cache", None)
+        if cached is None or cached[0] is not d.get("ppid"):
+            from ..core.presspull import face_region
+            v, _n, f = self.doc.result.to_render_arrays()
+            mesh = trimesh.Trimesh(vertices=v, faces=f, process=False)
+            try:
+                reg = face_region(mesh, d["faces"])
+            except Exception:
+                reg = None
+            cached = self._pp_cache = (d.get("ppid"), reg,
+                                       self.doc.result, 0.0)
+        pid, reg, base, t_last = cached
+        if reg is None:
+            return
+        now = time.monotonic()
+        if now - t_last < 0.045:
+            return
+        self._pp_cache = (pid, reg, base, now)
+        off = float(d["offset"])
+        pull = off >= 0
+        u, vn = reg["u"], reg["v"]
+        axes = ([u.tolist(), vn.tolist()] if pull
+                else [[-float(x) for x in u], vn.tolist()])
+        feat = ExtrudeFeature(name="_preview", outer=reg["outer"],
+                              holes=reg["holes"], height=max(abs(off), 0.005),
+                              plane="FACE", axes=axes,
+                              placement=tuple(reg["point"]),
+                              op="union" if pull else "subtract")
+        try:
+            prism = feat.build()
+            solid = base.union(prism) if pull else base.subtract(prism)
+        except Exception:
+            return
+        self.viewport.preview_mesh(solid)
 
     def _apply_press_pull(self, d: dict):
         off = float(d["offset"])
         if abs(off) < 0.05:
+            self.viewport.preview_mesh(None)
             self.status.clearMessage()
             return
         if self.doc is None or self.doc.result is None:
@@ -125,8 +173,14 @@ class MainWindow(QMainWindow):
         from ..core.presspull import face_region
         solid = self.doc.result
         v, _n, f = solid.to_render_arrays()          # viewport's index space
+        faces = np.asarray(d["faces"], int)
+        if faces.size == 0 or int(faces.max()) >= len(f):
+            self.viewport.preview_mesh(None)         # doc changed mid-drag
+            self.status.showMessage("Press-Pull: stale selection — "
+                                    "grab the face again", 4000)
+            return
         mesh = trimesh.Trimesh(vertices=v, faces=f, process=False)
-        reg = face_region(mesh, d["faces"])
+        reg = face_region(mesh, faces)
         if reg is None:
             self.status.showMessage(
                 "Press-Pull works on flat faces — select a plane and drag",
@@ -829,6 +883,15 @@ class MainWindow(QMainWindow):
         except Exception as e:  # kernel error must not kill the app
             QMessageBox.warning(self, "Recompute failed", str(e))
             return
+        # Keep every view following self.doc, even if a host code swapped
+        # the document in directly (scripts, embedding). The viewport gets
+        # attach() — refresh without re-fitting the camera.
+        if self.viewport._doc is not self.doc:
+            self.viewport.attach(self.doc)
+        if self.rail.tree._doc is not self.doc:
+            self.rail.tree.set_document(self.doc)
+        if self.timeline.bar.doc is not self.doc:
+            self.timeline.set_document(self.doc)
         self.viewport.refresh()
         self.rail.tree.reload()
         self.timeline.bar.update()
