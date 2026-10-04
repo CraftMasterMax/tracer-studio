@@ -10,7 +10,7 @@ from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import QScrollArea, QWidget
 
-from ..core.document import Document
+from ..core.document import BodyFilletFeature, Document
 
 OP_COLOR = {"union": "#4ea1ff", "subtract": "#e06c75", "intersect": "#9aa1ac"}
 
@@ -48,6 +48,8 @@ class TimelineBar(QWidget):
     def _label(self, f) -> str:
         if getattr(f, "suppressed", False):
             return f"\u25cb {f.name}"
+        if isinstance(f, BodyFilletFeature):          # body op: ⌒ not +
+            return f"\u2312 {f.name}"
         glyph = {"union": "+", "subtract": "\u2212", "intersect": "\u2229"}[f.op]
         return f"{glyph} {f.name}"
 

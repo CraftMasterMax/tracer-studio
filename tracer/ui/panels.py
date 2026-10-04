@@ -9,8 +9,8 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QTreeWidget, QTreeWidgetItem, QLabel, QVBoxLayout,
                                QTabWidget, QWidget, QFrame)
 
-from ..core.document import (CircularPatternFeature, Document,
-                             ExtrudeFeature, ImportedFeature,
+from ..core.document import (BodyFilletFeature, CircularPatternFeature,
+                             Document, ExtrudeFeature, ImportedFeature,
                              LinearPatternFeature, MirrorFeature,
                              PrimitiveFeature, RevolveFeature)
 
@@ -60,14 +60,20 @@ class FeatureTree(QTreeWidget):
             origin.addChild(it)
         origin.setExpanded(False)
         for i, f in enumerate(self._doc.features):
-            glyph = "\u25cb" if f.suppressed else _OP_GLYPH.get(f.op, f.op)
+            fillet = isinstance(f, BodyFilletFeature)
+            glyph = ("\u25cb" if f.suppressed else            # suppressed wins
+                     "\u25d0" if fillet else                  # body op, no boolean
+                     _OP_GLYPH.get(f.op, f.op))
             kind = ("\u21bb" if isinstance(f, RevolveFeature)
                     else "\u25c8" if isinstance(f, ImportedFeature)
                     else "\u25e7" if isinstance(f, MirrorFeature)
+                    else "\u2312" if fillet                    # arc = fillet/chamfer
                     else "\u29c9" if isinstance(f, (LinearPatternFeature,
                                                     CircularPatternFeature))
                     else "\u25a1")
-            item = QTreeWidgetItem([f"{glyph} {kind} {f.name}"])
+            label = (f"{glyph} {f.name}" if fillet
+                     else f"{glyph} {kind} {f.name}")
+            item = QTreeWidgetItem([label])
             item.setData(0, Qt.UserRole, ("feature", i))
             if f.suppressed:
                 item.setForeground(0, QColor("#5f6672"))
@@ -111,7 +117,11 @@ class PropertiesPanel(QWidget):
         if feature is None:
             self._body.setText("Select a feature to inspect it.")
             return
-        lines = [f"<b>{feature.name}</b>", f"operation: {feature.op}"]
+        if isinstance(feature, BodyFilletFeature):
+            lines = [f"<b>{feature.name}</b>",
+                     "operation: fillet body edges (OpenCascade)"]
+        else:
+            lines = [f"<b>{feature.name}</b>", f"operation: {feature.op}"]
         if isinstance(feature, ExtrudeFeature):
             lines.append(f"height: {feature.height:g} mm")
             if feature.fillet > 0:
@@ -133,6 +143,12 @@ class PropertiesPanel(QWidget):
         elif isinstance(feature, MirrorFeature):
             lines.append(f"mirror across {feature.plane}"
                          f" @ {feature.offset:g} mm")
+        elif isinstance(feature, BodyFilletFeature):
+            kind = "chamfer" if feature.chamfer else "fillet"
+            lines.append(f"{kind}: {feature.radius:g} mm on all sharp edges")
+            baked = len(feature.res_faces)
+            lines.append(f"baked triangles: {baked}" if baked
+                         else "not yet computed")
         elif isinstance(feature, LinearPatternFeature):
             lines.append(f"pattern: {feature.count}x at "
                          f"({feature.vector[0]:g}, {feature.vector[1]:g}, "

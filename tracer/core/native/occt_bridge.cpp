@@ -22,6 +22,7 @@
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepTools.hxx>
 #include <GCPnts_AbscissaPoint.hxx>
+#include <GeomAPI_ProjectPointOnSurf.hxx>
 #include <IFSelect_ReturnStatus.hxx>
 #include <Interface_Static.hxx>
 #include <Poly_Triangulation.hxx>
@@ -106,6 +107,19 @@ static bool mesh_to_solids(const double *verts, int nverts, const int *tris,
   }
   sewing.Perform();
   TopoDS_Shape sewn = sewing.SewedShape();
+  // Merge coplanar neighbours first: Forma's box faces arrive as 12
+  // triangles; OCCT fillets (and clean STEP output) want 6 planar faces
+  // whose shared edges match exactly. The angular tolerance stays well
+  // under the 1.4 deg facet step of tessellated cylinders, so those do
+  // NOT get spliced into one BSpline.
+  try {
+    ShapeUpgrade_UnifySameDomain usd(sewn, 1e-4, 5e-3);
+    usd.Build();
+    TopoDS_Shape u = usd.Shape();
+    if (!u.IsNull())
+      sewn = u;
+  } catch (...) {
+  }
   BRep_Builder builder;
   TopoDS_Compound comp;
   builder.MakeCompound(comp);
@@ -178,7 +192,61 @@ static long shape_to_obj(const TopoDS_Shape &shape, const char *obj_out,
   return ntri ? ntri : -1;
 }
 
-// Fillet (or chamfer) every edge of one solid. If the all-edges build
+// Is this edge worth attempting? Needs two distinct adjacent faces meeting
+// at a real crease (>= ~5 deg) and enough length to host the fillet. This
+// filters out the thousands of hairline facet edges along tessellated
+// cylinders/bores, which can never take a fillet and would stall the
+// per-edge fallback.
+static bool edge_ok(const TopoDS_Edge &e,
+                    const TopTools_IndexedDataMapOfShapeListOfShape &ef,
+                    double radius) {
+  try {
+    if (!ef.Contains(e))
+      return false;
+    const TopTools_ListOfShape &fs = ef.FindFromKey(e);
+    if (fs.Extent() != 2 || fs.First().IsSame(fs.Last()))
+      return false;  // free edge or seam: nothing to round
+    BRepAdaptor_Curve ac(e);
+    double len = GCPnts_AbscissaPoint::Length(ac, ac.FirstParameter(),
+                                              ac.LastParameter());
+    if (!(len >= 1.5 * radius))
+      return false;
+    gp_Pnt mid = ac.Value(0.5 * (ac.FirstParameter() + ac.LastParameter()));
+    auto normal = [&](const TopoDS_Shape &s, gp_Dir &out) -> bool {
+      const TopoDS_Face f = TopoDS::Face(s);
+      TopLoc_Location loc;
+      Handle(Geom_Surface) surf = BRep_Tool::Surface(f, loc);
+      if (surf.IsNull())
+        return false;
+      gp_Pnt pl = mid;
+      if (!loc.IsIdentity())
+        pl = mid.Transformed(loc.Transformation().Inverted());
+      GeomAPI_ProjectPointOnSurf proj(pl, surf);
+      if (!proj.NbPoints())
+        return false;
+      Standard_Real u = 0, v = 0;
+      proj.LowerDistanceParameters(u, v);
+      BRepAdaptor_Surface as(f);
+      gp_Pnt pp;
+      gp_Vec du, dv;
+      as.D1(u, v, pp, du, dv);
+      gp_Vec nn = du.Crossed(dv);
+      if (nn.Magnitude() < 1e-12)
+        return false;
+      out = gp_Dir(nn);
+      return true;
+    };
+    gp_Dir n1, n2;
+    if (!normal(fs.First(), n1) || !normal(fs.Last(), n2))
+      return false;
+    double d = std::fabs(n1.Dot(n2));
+    return std::acos(d > 1.0 ? 1.0 : d) > 0.0873;  // 5 deg
+  } catch (...) {
+    return false;
+  }
+}
+
+// Fillet (or chamfer) every sharp edge of one solid. If the all-edges build
 // fails (tangent edges, oversized radius), edges that individually fail
 // are dropped and the survivors are rebuilt once.
 static TopoDS_Shape fillet_solid(const TopoDS_Solid &sol, double radius,
@@ -221,9 +289,17 @@ static TopoDS_Shape fillet_solid(const TopoDS_Solid &sol, double radius,
       return false;
     }
   };
+  TopTools_IndexedDataMapOfShapeListOfShape edge_faces;
+  TopExp::MapShapesAndAncestors(sol, TopAbs_EDGE, TopAbs_FACE, edge_faces);
   std::vector<int> all;
   for (int i = 1; i <= edges.Extent(); ++i)
-    all.push_back(i);
+    if (edge_ok(TopoDS::Edge(edges(i)), edge_faces, radius))
+      all.push_back(i);
+  if (all.empty()) {
+    err = chamfer ? "no sharp edge is long enough to chamfer at this size"
+                  : "no sharp edge is long enough to fillet at this radius";
+    return TopoDS_Shape();
+  }
   TopoDS_Shape shaped;
   if (attempt(all, shaped))
     return shaped;

@@ -12,8 +12,8 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog,
 
 from ..core import io as fio
 from ..core import step
-from ..core.document import (CircularPatternFeature, Document,
-                             ExtrudeFeature, ImportedFeature,
+from ..core.document import (BodyFilletFeature, CircularPatternFeature,
+                             Document, ExtrudeFeature, ImportedFeature,
                              LinearPatternFeature, MirrorFeature,
                              PrimitiveFeature, RevolveFeature)
 from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
@@ -131,6 +131,12 @@ class MainWindow(QMainWindow):
         m_cr.addAction(QAction("&Mirror…", self,
                                triggered=lambda checked=False: self.action_mirror()))
 
+        m_mo = self.menuBar().addMenu("Mo&dify")
+        m_mo.addAction(QAction("&Fillet body edges…", self,
+                               triggered=lambda checked=False: self._body_fillet(False)))
+        m_mo.addAction(QAction("C&hamfer body edges…", self,
+                               triggered=lambda checked=False: self._body_fillet(True)))
+
         m_edit = self.menuBar().addMenu("&Edit")
         self.act_undo = QAction("&Undo", self, shortcut=QKeySequence.Undo,
                                 triggered=self.undo)
@@ -210,6 +216,8 @@ class MainWindow(QMainWindow):
         if (isinstance(feature, (ExtrudeFeature, RevolveFeature))
                 and feature.sketch):
             self.edit_sketch(feature)
+        elif isinstance(feature, BodyFilletFeature):
+            self._set_fillet_size(feature)      # reopen the size dialog
         else:
             self.status.showMessage("Feature has no editable sketch (yet)", 3000)
 
@@ -230,6 +238,10 @@ class MainWindow(QMainWindow):
         if isinstance(feature, RevolveFeature):
             menu.addAction("Set revolve angle…",
                            lambda: self._set_angle(feature))
+        if isinstance(feature, BodyFilletFeature):
+            menu.addAction("Set chamfer distance…" if feature.chamfer
+                           else "Set fillet radius…",
+                           lambda: self._set_fillet_size(feature))
         base = self._is_base_feature(feature)
         if isinstance(feature, (ExtrudeFeature, RevolveFeature,
                                 PrimitiveFeature)):
@@ -243,12 +255,14 @@ class MainWindow(QMainWindow):
                 act.setEnabled(not base or op == "union")
                 act.triggered.connect(
                     lambda checked=False, o=op: self._set_operation(feature, o))
-        mir_menu = menu.addMenu("Mirror copy")
-        for pl, hint in (("YZ", "X\u2192\u2212X"), ("XZ", "Y\u2192\u2212Y"),
-                         ("XY", "Z\u2192\u2212Z")):
-            mir_menu.addAction(f"across {pl} ({hint})",
-                               lambda checked=False, p=pl:
-                               self._mirror_feature(feature, p))
+        if not isinstance(feature, BodyFilletFeature):
+            # a body-replacing op has no solid of its own to twin
+            mir_menu = menu.addMenu("Mirror copy")
+            for pl, hint in (("YZ", "X\u2192\u2212X"), ("XZ", "Y\u2192\u2212Y"),
+                             ("XY", "Z\u2192\u2212Z")):
+                mir_menu.addAction(f"across {pl} ({hint})",
+                                   lambda checked=False, p=pl:
+                                   self._mirror_feature(feature, p))
         menu.addAction("Rename…", lambda: self._rename_feature(feature))
         menu.addSeparator()
         menu.addAction("Unsuppress" if feature.suppressed else "Suppress",
@@ -723,7 +737,8 @@ class MainWindow(QMainWindow):
     def _pattern_candidates(self):
         return [f for f in self.doc.features
                 if not isinstance(f, (LinearPatternFeature,
-                                      CircularPatternFeature))
+                                      CircularPatternFeature,
+                                      BodyFilletFeature))
                 and not f.suppressed]
 
     def action_circular_pattern(self):
@@ -846,6 +861,81 @@ class MainWindow(QMainWindow):
         if not ok:
             return
         self._mirror_feature(cands[names.index(name)])
+
+    # ---- solid fillet / chamfer (OpenCascade bridge) -------------------------
+    def _body_fillet(self, chamfer: bool):
+        """Round (or bevel) every sharp edge of the whole body. True 3D
+        fillets are the one thing the mesh kernel cannot do natively, so
+        this runs the OCCT bridge and lands a BodyFilletFeature in the
+        timeline; the size stays parametric (edit → re-run) and the baked
+        mesh keeps the file openable without OCCT."""
+        kind = "Chamfer" if chamfer else "Fillet"
+        if self.doc is None or self.doc.result is None:
+            QMessageBox.information(self, f"No body to {kind.lower()}",
+                                    "Create a feature first.")
+            return
+        if not step.available():
+            QMessageBox.information(
+                self, f"{kind} body edges",
+                f"{kind}s use the system OpenCascade + g++, which was not "
+                "found on this machine.\nPer-extrude 2D corner "
+                f"{kind.lower()}s still work (feature context menu).")
+            return
+        size, ok = QInputDialog.getDouble(
+            self, f"{kind} body edges",
+            f"{'Distance' if chamfer else 'Radius'} (mm):",
+            2.0, 0.05, 1e4, 2)
+        if not ok:
+            return
+        self._capture()
+        n = sum(isinstance(f, BodyFilletFeature)
+                for f in self.doc.features) + 1
+        f = BodyFilletFeature(name=f"{kind}{n}", radius=size,
+                              chamfer=chamfer)
+        self.doc.features.append(f)
+        self.doc.dirty = True
+        try:
+            self.doc.recompute()           # bakes the result on success
+        except Exception as e:
+            self.doc.features.remove(f)
+            self.doc.dirty = True
+            self.recompute()
+            QMessageBox.warning(
+                self, f"{kind} failed",
+                f"{e}\n\nTry a smaller size — each fillet must fit between "
+                f"the faces around its edge.")
+            return
+        self.viewport.refresh(fit=True)
+        self.rail.tree.reload()
+        self.timeline.bar.update()
+        self.status.showMessage(
+            f"{kind}ed all sharp body edges at {size:g} mm · volume "
+            f"{self.doc.result.volume:,.1f} mm³", 6000)
+
+    def _set_fillet_size(self, feature):
+        kind = "Chamfer" if feature.chamfer else "Fillet"
+        old = feature.radius
+        val, ok = QInputDialog.getDouble(self, kind, "Size (mm):",
+                                         old, 0.05, 1e4, 2)
+        if not ok or val == old:
+            return
+        self._capture()
+        feature.radius = val
+        self.doc.dirty = True
+        try:
+            self.doc.recompute()
+        except Exception as e:
+            feature.radius = old          # cache still holds the good bake
+            self.doc.dirty = True
+            QMessageBox.warning(
+                self, f"{kind} failed",
+                f"{e}\n\nKept {kind.lower()} at {old:g} mm. Try a smaller "
+                f"size.")
+            self.recompute()
+            return
+        self.recompute()
+        self.status.showMessage(f"{feature.name}: {kind.lower()} now "
+                                f"{val:g} mm", 4000)
 
     # ---- unsaved-changes guard ---------------------------------------------------
     def closeEvent(self, ev):

@@ -79,6 +79,47 @@ class MirrorFeature(Feature):
 
 
 @dataclass
+class BodyFilletFeature(Feature):
+    """Round (or bevel) every sharp edge of the body built so far — the
+    first true 3D fillet, run through the OpenCascade bridge. It REPLACES
+    the accumulated body instead of booleaning with it, so its `op` is
+    unused. The processed mesh is cached (and saved) so recomputes with an
+    unchanged source never re-run OCCT, and documents stay readable on
+    machines without OpenCascade."""
+    radius: float = 2.0
+    chamfer: bool = False
+    src_key: list = field(default_factory=list)     # see apply()
+    res_verts: list = field(default_factory=list)
+    res_faces: list = field(default_factory=list)
+
+    def _key(self, src: Solid) -> list:
+        return [round(src.volume, 3), len(src.to_trimesh().faces),
+                float(self.radius), bool(self.chamfer)]
+
+    def apply(self, src: Solid) -> Solid:
+        key = self._key(src)
+        if self.res_faces and self.src_key == key:
+            return Solid.from_mesh(np.asarray(self.res_verts, float),
+                                   np.asarray(self.res_faces, np.int32))
+        from . import step          # lazy: only fillet features touch OCCT
+        try:
+            out = step.fillet_mesh(src, self.radius, chamfer=self.chamfer)
+        except Exception:
+            if self.res_faces and not step.available():
+                # OCCT vanished (e.g. file moved to a bare machine):
+                # keep the baked result. A *geometry* rejection with
+                # OCCT present must surface, not silently show stale.
+                return Solid.from_mesh(np.asarray(self.res_verts, float),
+                                       np.asarray(self.res_faces, np.int32))
+            raise
+        tm = out.to_trimesh()
+        self.src_key = key
+        self.res_verts = np.asarray(tm.vertices).tolist()
+        self.res_faces = np.asarray(tm.faces).tolist()
+        return out
+
+
+@dataclass
 class ExtrudeFeature(Feature):
     """Profile (outer contour + holes) on a sketch plane extruded along
     the plane normal. `sketch` is the serialized SketchModel payload that
@@ -260,6 +301,12 @@ class Document:
                 shift = tuple(v * f.offset for v in n)
                 solid = src.translated((-shift[0], -shift[1], -shift[2])) \
                             .mirror(n).translated(shift)
+            elif isinstance(f, BodyFilletFeature):
+                if acc is None:
+                    raise ValueError(f"{f.name!r} has no body to fillet yet")
+                acc = f.apply(acc)
+                by_uid[f.uid] = acc
+                continue          # replaces the body; not a boolean operand
             else:
                 solid = f.build()
             by_uid[f.uid] = solid
@@ -322,6 +369,10 @@ class Document:
             elif isinstance(f, MirrorFeature):
                 d.update(source_uid=f.source_uid, plane=f.plane,
                          offset=float(f.offset))
+            elif isinstance(f, BodyFilletFeature):
+                d.update(radius=float(f.radius), chamfer=bool(f.chamfer),
+                         src_key=f.src_key,
+                         res_verts=f.res_verts, res_faces=f.res_faces)
             return d
         return {"format": "tracer/document", "version": 2,
                 "title": self.title, "units": self.units,
@@ -380,6 +431,13 @@ class Document:
                 doc.features.append(MirrorFeature(
                     name=fd["name"], source_uid=fd["source_uid"],
                     plane=fd["plane"], offset=float(fd["offset"]), **base))
+            elif t == "BodyFilletFeature":
+                doc.features.append(BodyFilletFeature(
+                    name=fd["name"], radius=float(fd["radius"]),
+                    chamfer=bool(fd.get("chamfer", False)),
+                    src_key=fd.get("src_key", []),
+                    res_verts=fd.get("res_verts", []),
+                    res_faces=fd.get("res_faces", []), **base))
             else:
                 raise ValueError(f"unknown feature type {t!r}")
         doc.dirty = True

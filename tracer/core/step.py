@@ -27,7 +27,11 @@ from .geometry import Solid
 
 _CPP = Path(__file__).parent / "native" / "occt_bridge.cpp"
 _LIBS = ["TKDESTEP", "TKSTEP", "TKXSBase", "TKFillet", "TKMesh",
-         "TKGeomBase", "TKBRep", "TKernel"]
+         "TKTopAlgo", "TKGeomAlgo", "TKGeomBase", "TKBRep", "TKernel",
+         # fillet/chamfer pulls in boolean & feature ops; only linked if
+         # present, and only reachable through the fillet entry point, so
+         # a STEP-only OCCT install still loads.
+         "TKBO", "TKBool", "TKFeat", "TKOffset", "TKMath"]
 
 _cache: dict[str, object] = {}
 
