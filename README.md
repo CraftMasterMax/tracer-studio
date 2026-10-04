@@ -14,11 +14,14 @@ independent project with no Autodesk assets or affiliation.)
   & circle)** constraints, editable dimension badges, snap to origin/axes,
   construction geometry, Levenberg-Marquardt solver (SVD-damped)
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
-  revolve, linear & circular patterns, **mirror**, sketch-on-face, and
-  **body fillet/chamfer** — circular hole/boss rims rounded by revolved
-  tools in the mesh kernel (works everywhere, **no OCCT needed**), straight
-  edges rounded in true 3D through OCCT when present (parametric size,
-  baked result, Modify menu, ⌒ timeline chip)
+  revolve, linear & circular patterns, **mirror**, sketch-on-face,
+  **Press-Pull** — grab any flat face and drag it along its normal to add
+  or remove material (Fusion-style live preview; the edit commits as a
+  regular parametric extrude feature: suppressible, undoable, editable
+  distance), and **body fillet/chamfer** — circular hole/boss rims rounded
+  by revolved tools in the mesh kernel (works everywhere, **no OCCT
+  needed**), straight edges rounded in true 3D through OCCT when present
+  (parametric size, baked result, Modify menu, ⌒ timeline chip)
 - I/O: STL/3MF/OBJ/PLY mesh import+export, **STEP import/export** via an
   on-demand OpenCascade bridge (compiled with your system g++, cached;
   degrades gracefully where OCCT is absent — e.g. stock Windows, which
@@ -28,7 +31,7 @@ independent project with no Autodesk assets or affiliation.)
   of icon chips, and a blue-grey horizon viewport — plus first-launch
   shortcut tour and a persistent Shortcuts tab driven by one canonical
   key table
-- 228 headless tests (EGL rendering + Qt pixel assertions)
+- 243 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -40,8 +43,10 @@ python3 -m venv .venv
 
 ## Using it
 
-3D: **F** fit · **G** grid · **E** edges · **0/1/2/3** iso/front/top/right ·
-**LMB** orbit · **RMB/MMB/Shift+LMB** pan · **wheel** zoom.
+3D: **click a face** to select · **drag a face** to Press-Pull (+Esc to
+cancel, release to commit) · **double-click a face** to sketch on it ·
+**MMB/RMB** orbit · **Shift+MMB** pan · **wheel** zoom · **F** fit ·
+**G** grid · **E** edges · **0/1/2/3** iso/front/top/right.
 Sketch: **N** new sketch · **S/L/R/C/A** line/rect/circle/arc · **D**
 dimension · **H/V/F** constraints · **X** extrude · **Ctrl+Z** undo.
 Full list: **?** / the Shortcuts tab.
@@ -49,7 +54,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 199 tests, fully headless
+./.venv/bin/python -m pytest -q          # 243 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
