@@ -862,24 +862,18 @@ class MainWindow(QMainWindow):
             return
         self._mirror_feature(cands[names.index(name)])
 
-    # ---- solid fillet / chamfer (OpenCascade bridge) -------------------------
+    # ---- solid fillet / chamfer (kernel rims + OpenCascade edges) ------------
     def _body_fillet(self, chamfer: bool):
-        """Round (or bevel) every sharp edge of the whole body. True 3D
-        fillets are the one thing the mesh kernel cannot do natively, so
-        this runs the OCCT bridge and lands a BodyFilletFeature in the
-        timeline; the size stays parametric (edit → re-run) and the baked
-        mesh keeps the file openable without OCCT."""
+        """Round (or bevel) every sharp edge of the whole body: circular
+        rims are revolved tools in the mesh kernel (works everywhere);
+        straight edges run through the OCCT bridge when present.  Lands a
+        BodyFilletFeature in the timeline; the size stays parametric
+        (edit → re-run) and the baked mesh keeps the file openable
+        without OCCT."""
         kind = "Chamfer" if chamfer else "Fillet"
         if self.doc is None or self.doc.result is None:
             QMessageBox.information(self, f"No body to {kind.lower()}",
                                     "Create a feature first.")
-            return
-        if not step.available():
-            QMessageBox.information(
-                self, f"{kind} body edges",
-                f"{kind}s use the system OpenCascade + g++, which was not "
-                "found on this machine.\nPer-extrude 2D corner "
-                f"{kind.lower()}s still work (feature context menu).")
             return
         size, ok = QInputDialog.getDouble(
             self, f"{kind} body edges",
@@ -908,8 +902,14 @@ class MainWindow(QMainWindow):
         self.viewport.refresh(fit=True)
         self.rail.tree.reload()
         self.timeline.bar.update()
+        if f.n_rims and step.available():
+            how = f"{f.n_rims} circular rim(s) + solid edges"
+        elif f.n_rims:
+            how = f"{f.n_rims} circular rim(s); solid edges need OpenCascade"
+        else:
+            how = "solid edges"
         self.status.showMessage(
-            f"{kind}ed all sharp body edges at {size:g} mm · volume "
+            f"{kind}ed body edges at {size:g} mm · {how} · volume "
             f"{self.doc.result.volume:,.1f} mm³", 6000)
 
     def _set_fillet_size(self, feature):

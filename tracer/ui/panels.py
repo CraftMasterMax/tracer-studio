@@ -146,6 +146,8 @@ class PropertiesPanel(QWidget):
         elif isinstance(feature, BodyFilletFeature):
             kind = "chamfer" if feature.chamfer else "fillet"
             lines.append(f"{kind}: {feature.radius:g} mm on all sharp edges")
+            if feature.n_rims:
+                lines.append(f"circular rims rounded: {feature.n_rims}")
             baked = len(feature.res_faces)
             lines.append(f"baked triangles: {baked}" if baked
                          else "not yet computed")

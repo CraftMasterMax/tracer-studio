@@ -14,6 +14,7 @@ from typing import Literal
 import numpy as np
 
 from .geometry import Solid, circle_contour, round_corners
+from .rimfillet import rim_fillet
 from .sketch.model import plane_matrix, revolve_matrix
 
 CombineOp = Literal["union", "subtract", "intersect"]
@@ -80,38 +81,56 @@ class MirrorFeature(Feature):
 
 @dataclass
 class BodyFilletFeature(Feature):
-    """Round (or bevel) every sharp edge of the body built so far — the
-    first true 3D fillet, run through the OpenCascade bridge. It REPLACES
-    the accumulated body instead of booleaning with it, so its `op` is
-    unused. The processed mesh is cached (and saved) so recomputes with an
-    unchanged source never re-run OCCT, and documents stay readable on
-    machines without OpenCascade."""
+    """Round (or bevel) every sharp edge of the body built so far.  Two
+    engines: circular rims (hole openings, boss tops/bases) are revolved
+    quarter-round tools computed purely in the mesh kernel, so they work
+    everywhere including stock Windows; straight edges go through the
+    OpenCascade bridge when it is available.  It REPLACES the accumulated
+    body instead of booleaning with it, so its `op` is unused.  The
+    processed mesh is cached (and saved) so recomputes with an unchanged
+    source never re-run OCCT, and documents stay readable on machines
+    without OpenCascade."""
     radius: float = 2.0
     chamfer: bool = False
+    n_rims: int = 0                                   # rims done last run
     src_key: list = field(default_factory=list)     # see apply()
     res_verts: list = field(default_factory=list)
     res_faces: list = field(default_factory=list)
 
     def _key(self, src: Solid) -> list:
+        # trailing 2: M19 added the rim pass; old caches recompute once
         return [round(src.volume, 3), len(src.to_trimesh().faces),
-                float(self.radius), bool(self.chamfer)]
+                float(self.radius), bool(self.chamfer), 2]
+
+    def _baked(self) -> Solid:
+        return Solid.from_mesh(np.asarray(self.res_verts, float),
+                               np.asarray(self.res_faces, np.int32))
 
     def apply(self, src: Solid) -> Solid:
         key = self._key(src)
         if self.res_faces and self.src_key == key:
-            return Solid.from_mesh(np.asarray(self.res_verts, float),
-                                   np.asarray(self.res_faces, np.int32))
+            return self._baked()
         from . import step          # lazy: only fillet features touch OCCT
-        try:
-            out = step.fillet_mesh(src, self.radius, chamfer=self.chamfer)
-        except Exception:
+        base, ran_occt, occt_err = src, False, None
+        if step.available():
+            try:
+                base = step.fillet_mesh(src, self.radius,
+                                        chamfer=self.chamfer)
+                ran_occt = True
+            except Exception as exc:
+                occt_err = exc      # geometry rejection: rims may still work
+        out, n_rims = rim_fillet(base, self.radius, chamfer=self.chamfer)
+        self.n_rims = n_rims
+        if not ran_occt and n_rims == 0:
             if self.res_faces and not step.available():
                 # OCCT vanished (e.g. file moved to a bare machine):
                 # keep the baked result. A *geometry* rejection with
                 # OCCT present must surface, not silently show stale.
-                return Solid.from_mesh(np.asarray(self.res_verts, float),
-                                       np.asarray(self.res_faces, np.int32))
-            raise
+                return self._baked()
+            if occt_err is not None:
+                raise occt_err
+            raise RuntimeError("nothing to round: no circular rims, and "
+                               "solid-edge fillets need OpenCascade")
         tm = out.to_trimesh()
         self.src_key = key
         self.res_verts = np.asarray(tm.vertices).tolist()
@@ -371,7 +390,7 @@ class Document:
                          offset=float(f.offset))
             elif isinstance(f, BodyFilletFeature):
                 d.update(radius=float(f.radius), chamfer=bool(f.chamfer),
-                         src_key=f.src_key,
+                         n_rims=int(f.n_rims), src_key=f.src_key,
                          res_verts=f.res_verts, res_faces=f.res_faces)
             return d
         return {"format": "tracer/document", "version": 2,
@@ -435,6 +454,7 @@ class Document:
                 doc.features.append(BodyFilletFeature(
                     name=fd["name"], radius=float(fd["radius"]),
                     chamfer=bool(fd.get("chamfer", False)),
+                    n_rims=int(fd.get("n_rims", 0)),
                     src_key=fd.get("src_key", []),
                     res_verts=fd.get("res_verts", []),
                     res_faces=fd.get("res_faces", []), **base))

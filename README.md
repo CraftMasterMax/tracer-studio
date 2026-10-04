@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M18**
+**Status: M19**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -15,16 +15,18 @@ independent project with no Autodesk assets or affiliation.)
   construction geometry, Levenberg-Marquardt solver (SVD-damped)
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, linear & circular patterns, **mirror**, sketch-on-face, and
-  **body fillet/chamfer** — every sharp straight edge rounded in true 3D
-  through OCCT (parametric radius, baked result, Modify menu ⌒ timeline
-  chip)
+  **body fillet/chamfer** — circular hole/boss rims rounded by revolved
+  tools in the mesh kernel (works everywhere, **no OCCT needed**), straight
+  edges rounded in true 3D through OCCT when present (parametric size,
+  baked result, Modify menu, ⌒ timeline chip)
 - I/O: STL/3MF/OBJ/PLY mesh import+export, **STEP import/export** via an
   on-demand OpenCascade bridge (compiled with your system g++, cached;
-  degrades gracefully where OCCT is absent — e.g. stock Windows)
+  degrades gracefully where OCCT is absent — e.g. stock Windows, which
+  still gets rim fillets)
 - UX: Fusion-style mouse, ViewCube, first-launch shortcut tour, and a
   persistent Shortcuts tab — one canonical key table drives tour, tab,
   menus and tooltip bindings
-- 199 headless tests (EGL rendering + Qt pixel assertions)
+- 215 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
