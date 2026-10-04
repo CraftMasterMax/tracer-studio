@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog,
 
 from ..core import io as fio
 from ..core.document import (CircularPatternFeature, Document,
-                             ExtrudeFeature, LinearPatternFeature)
+                             ExtrudeFeature, LinearPatternFeature,
+                             PrimitiveFeature)
 from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
                                  model_to_dict)
 from .renderer import SceneRenderer
@@ -208,12 +209,50 @@ class MainWindow(QMainWindow):
         if isinstance(feature, ExtrudeFeature):
             menu.addAction("Set extrude distance…",
                            lambda: self._set_distance(feature))
+        base = self._is_base_feature(feature)
+        if isinstance(feature, (ExtrudeFeature, PrimitiveFeature)):
+            op_menu = menu.addMenu("Boolean operation")
+            for label, op in (("Join (union)", "union"),
+                              ("Cut (subtract)", "subtract"),
+                              ("Intersect", "intersect")):
+                act = op_menu.addAction(label)
+                act.setCheckable(True)
+                act.setChecked(feature.op == op)
+                act.setEnabled(not base or op == "union")
+                act.triggered.connect(
+                    lambda checked=False, o=op: self._set_operation(feature, o))
         menu.addAction("Rename…", lambda: self._rename_feature(feature))
         menu.addSeparator()
         menu.addAction("Unsuppress" if feature.suppressed else "Suppress",
                        lambda: self._toggle_suppress(feature))
         menu.addAction("Delete feature", lambda: self._delete_feature(feature))
         menu.exec(pos)
+
+    def _is_base_feature(self, feature) -> bool:
+        """True if nothing before it adds material — the base cannot Cut."""
+        for f in self.doc.features:
+            if f is feature:
+                return True
+            if not f.suppressed:
+                return False
+        return True
+
+    def _set_operation(self, feature, op: str):
+        if feature.op == op:
+            return
+        if op != "union" and self._is_base_feature(feature):
+            self.status.showMessage(
+                "The first feature must add material — later features can "
+                "Cut or Intersect it", 5000)
+            return
+        self._capture()
+        feature.op = op
+        self.doc.dirty = True
+        self.recompute()
+        self.viewport.refresh()
+        label = {"union": "Join", "subtract": "Cut",
+                 "intersect": "Intersect"}[op]
+        self.status.showMessage(f"{feature.name}: {label}", 4000)
 
     def _toggle_suppress(self, feature):
         self._capture()
