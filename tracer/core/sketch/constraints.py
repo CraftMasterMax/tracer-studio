@@ -289,6 +289,25 @@ def make_angle_between(l1, l2, deg: float) -> AngleBetween:
     return c
 
 
+@dataclass
+class ArcMiddle(Constraint):
+    """Pin the arc's bulge point to the middle of its own span (equal
+    half-chords). After a corner fillet the circle is fully determined by
+    the two tangencies + radius, but the 3rd defining point could still
+    slide along it and stretch the drawn arc — this nails it to the
+    corner-facing midpoint. (The mirrored far-side solution exists but is
+    never reached from a correctly seeded start.)"""
+    arc: object                     # Arc
+
+    def entities(self): return [self.arc]
+
+    def residual(self, pos):
+        a, m, b = self.arc.a, self.arc.m, self.arc.b
+        d1 = math.hypot(m.x - a.x, m.y - a.y)
+        d2 = math.hypot(b.x - m.x, b.y - m.y)
+        return (d1 - d2) / _LEN_SCALE
+
+
 def expand(constraints: list[Constraint]) -> list[Constraint]:
     """Coincident carries two DOFs; split into per-axis rows."""
     out = []

@@ -55,7 +55,7 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("Q", "Equal-length constraint (lines or circles)", True),
         ("T", "Tangent constraint (line↔circle/arc, or two curves)", True),
         ("I", "Angular dimension (one line: from +X · two lines: between)", True),
-        ("F", "Fix / unfix selected geometry", True),
+        ("F", "Fix a point · fillet a corner with two lines selected", True),
         ("D", "Distance dimension (1 line, 2 points, or pick)", True),
         ("K", "Toggle construction geometry", True),
         ("Delete", "Delete selected entities", True),

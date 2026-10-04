@@ -11,9 +11,9 @@ from typing import Iterable
 import numpy as np
 
 from .entities import Point, Line, Circle, Arc, curve_radius, curve_center
-from .constraints import (Angle, AngleBetween, Coincident, Distance, Equal,
-                          Fixed, Horizontal, Perpendicular, Radius,
-                          PointOnLine, Parallel, Tangent, Vertical,
+from .constraints import (Angle, AngleBetween, ArcMiddle, Coincident,
+                          Distance, Equal, Fixed, Horizontal, Perpendicular,
+                          Radius, PointOnLine, Parallel, Tangent, Vertical,
                           make_tangent)
 from .solver import Sketch, SolveResult
 
@@ -282,6 +282,8 @@ def model_to_dict(m: SketchModel) -> dict:
         elif isinstance(c, AngleBetween):
             cons.append({"t": "angb", "l1": m.sketch.lines.index(c.l1),
                          "l2": m.sketch.lines.index(c.l2), "v": c.value})
+        elif isinstance(c, ArcMiddle):
+            cons.append({"t": "am", "arc": m.sketch.arcs.index(c.arc)})
     d = {"name": m.name, "plane": m.plane,
          "points": [[p.x, p.y] for p in pts],
          "lines": [[idx[l.a.id], idx[l.b.id], int(l.construction)]
@@ -372,4 +374,6 @@ def model_from_dict(d: dict) -> SketchModel:
         elif t == "angb":
             m.constrain(AngleBetween(m.sketch.lines[c["l1"]],
                                      m.sketch.lines[c["l2"]], c["v"]))
+        elif t == "am":
+            m.constrain(ArcMiddle(m.sketch.arcs[c["arc"]]))
     return m

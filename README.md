@@ -13,8 +13,9 @@ independent project with no Autodesk assets or affiliation.)
   coincident/H/V/parallel/perp/equal/point-on-line/distance/**radius (arc
   & circle)**/**tangent (line↔curve, curve↔curve)**/**angular dimensions
   (line or between two, arc + editable badge)** constraints, editable
-  dimension badges, snap to origin/axes, construction geometry,
-  Levenberg-Marquardt solver (SVD-damped)
+  dimension badges, snap to origin/axes, construction geometry, **corner
+  fillet (F on two lines): trims the corner to a tangent arc that stays
+  tangent when you drag**, Levenberg-Marquardt solver (SVD-damped)
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, linear & circular patterns, **mirror**, sketch-on-face,
   **Press-Pull** — grab any flat face and drag it along its normal to add
@@ -33,7 +34,7 @@ independent project with no Autodesk assets or affiliation.)
   of icon chips, and a blue-grey horizon viewport — plus first-launch
   shortcut tour and a persistent Shortcuts tab driven by one canonical
   key table
-- 272 headless tests (EGL rendering + Qt pixel assertions)
+- 283 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -56,7 +57,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 272 tests, fully headless
+./.venv/bin/python -m pytest -q          # 283 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

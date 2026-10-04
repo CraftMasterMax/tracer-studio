@@ -515,6 +515,39 @@ class SketchCanvas(QWidget):
         self.model.toggle(Tangent, (line, curves[0]) if line else curves)
         self._solve(); self.update()
 
+    def act_fillet(self):
+        """Trim the selected corner to a tangent arc (Fusion's sketch F):
+        radius dialog, then corner_fillet builds the arc + tangents.
+        Refusals bounce back as canvas warnings with the real reason."""
+        from PySide6.QtWidgets import QInputDialog
+        from ..core.sketch.fillet import corner_fillet
+        if len(self._sel) != 2 or not all(isinstance(e, Line)
+                                          for e in self._sel):
+            return
+        l1, l2 = self._sel
+        shared = next((p for p in (l1.a, l1.b) if p in (l2.a, l2.b)), None)
+        if shared is None:
+            self._warn("These two lines don't share a corner")
+            return
+        others = [p for p in (l1.a, l1.b) if p is not shared] + \
+                 [p for p in (l2.a, l2.b) if p is not shared]
+        leg = min(math.dist((shared.x, shared.y), (p.x, p.y)) for p in others)
+        default = max(0.5, round(min(5.0, leg / 4.0), 1))
+        r, ok = QInputDialog.getDouble(self, "Fillet corner",
+                                       "Radius (mm):", default, 0.01,
+                                       max(0.02, leg / 2.0 - 0.01), 2)
+        if not ok:
+            return
+        self._push_hist()
+        try:
+            corner_fillet(self.model, l1, l2, r)
+        except ValueError as e:
+            self._hist.pop()                      # nothing was mutated yet
+            self._warn(str(e))
+            return
+        self._sel = []
+        self._solve(); self.update()
+
     def act_angle(self):
         """Angular dimension: one line → angle from +X; two lines → angle
         between (Fusion pivots the arc at the shared/intersection point)."""
@@ -581,6 +614,8 @@ class SketchCanvas(QWidget):
             menu.addAction("Perpendicular", self.act_perp)
             menu.addAction("Equal length", self.act_equal)
             menu.addAction("Angle between…", self.act_angle)
+            if any(p in (sel[1].a, sel[1].b) for p in (sel[0].a, sel[0].b)):
+                menu.addAction("Fillet corner…", self.act_fillet)
         elif self.tangent_ok(sel):
             menu.addAction("Tangent", self.act_tangent)
         elif len(sel) == 2 and all(isinstance(e, Point) for e in sel):
@@ -650,7 +685,10 @@ class SketchCanvas(QWidget):
         elif k == Qt.Key_V:
             self.act_V()
         elif k == Qt.Key_F:
-            self.act_fix()
+            if len(sel) == 2 and all(isinstance(e, Line) for e in sel):
+                self.act_fillet()                 # Fusion: F fillets a corner
+            else:
+                self.act_fix()
         elif k == Qt.Key_D:
             self.act_dim()
         elif k == Qt.Key_P:
