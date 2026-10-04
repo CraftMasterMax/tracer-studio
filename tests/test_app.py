@@ -8,8 +8,8 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtGui import QImage  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
-from forma.ui.mainwindow import MainWindow, demo_document  # noqa: E402
-from forma.ui.renderer import SceneRenderer  # noqa: E402
+from tracer.ui.mainwindow import MainWindow, demo_document  # noqa: E402
+from tracer.ui.renderer import SceneRenderer  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -66,7 +66,7 @@ def test_properties_panel_updates(win):
 
 def test_save_open_roundtrip(win, qapp, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog
-    save_to = tmp_path / "bracket.forma"
+    save_to = tmp_path / "bracket.tracer"
     monkeypatch.setattr(QFileDialog, "getSaveFileName",
                         staticmethod(lambda *a, **k: (str(save_to), "")))
     win.action_save()

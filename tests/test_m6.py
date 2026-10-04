@@ -10,7 +10,7 @@ from PySide6.QtTest import QSignalSpy, QTest          # noqa: E402
 from PySide6.QtWidgets import (QApplication,          # noqa: E402
                                QInputDialog)
 
-from forma.core.document import (CircularPatternFeature, Document)  # noqa: E402
+from tracer.core.document import (CircularPatternFeature, Document)  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -20,8 +20,8 @@ def qapp():
 
 @pytest.fixture
 def win(qapp):
-    from forma.ui.mainwindow import MainWindow
-    from forma.ui.renderer import SceneRenderer
+    from tracer.ui.mainwindow import MainWindow
+    from tracer.ui.renderer import SceneRenderer
     try:
         r = SceneRenderer()
     except Exception as e:

@@ -141,17 +141,17 @@ class TourDialog(QDialog):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("tourDialog")
-        self.setWindowTitle("Welcome to Forma")
+        self.setWindowTitle("Welcome to Tracer Studio")
         self.setModal(False)
         col = QVBoxLayout(self)
         col.setContentsMargins(20, 16, 20, 16)
-        head = QLabel("<b>Welcome to Forma</b> — parametric CAD for makers.")
+        head = QLabel("<b>Welcome to Tracer Studio</b> — parametric CAD for makers.")
         hf = QFont()
         hf.setPointSize(12)
         hf.setBold(True)
         head.setFont(hf)
         col.addWidget(head)
-        col.addWidget(QLabel("Forma is keyboard-first. These are the keys you "
+        col.addWidget(QLabel("Tracer Studio is keyboard-first. These are the keys you "
                              "will use every session:"))
         mono = QFont("monospace")
         mono.setStyleHint(QFont.Monospace)

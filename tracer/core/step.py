@@ -1,13 +1,13 @@
 """STEP import/export through a small on-demand OpenCascade bridge.
 
-Forma's own kernel is a mesh CSG (manifold3d), so STL/OBJ/3MF are native.
+Tracer Studio's own kernel is a mesh CSG (manifold3d), so STL/OBJ/3MF are native.
 STEP is a boundary-rep format, so a ~200-line C++ bridge
 (``core/native/occt_bridge.cpp``) talks to the *system* OpenCascade and is
 compiled with the *system* g++ the first time STEP is used, then cached.
 
 Nothing here is a hard dependency: machines without OCCT (or Windows,
 where a different compiler dance is needed) get ``available() == False``
-and the UI simply hides/dims the STEP actions.  That keeps Forma free to
+and the UI simply hides/dims the STEP actions.  That keeps Tracer Studio free to
 build and run everywhere while still exchanging real CAD files on any
 Linux box that has OpenCascade installed.
 """
@@ -26,7 +26,7 @@ from pathlib import Path
 from .geometry import Solid
 
 _CPP = Path(__file__).parent / "native" / "occt_bridge.cpp"
-_LIBS = ["TKDESTEP", "TKSTEP", "TKXSBase", "TKMesh", "TKShHealing",
+_LIBS = ["TKDESTEP", "TKSTEP", "TKXSBase", "TKFillet", "TKMesh",
          "TKGeomBase", "TKBRep", "TKernel"]
 
 _cache: dict[str, object] = {}
@@ -106,7 +106,7 @@ def _bridge() -> ctypes.CDLL:
     src = _CPP.read_bytes()
     key = hashlib.sha1(src + inc.encode() + libdir.encode()).hexdigest()[:12]
     out_dir = Path(os.environ.get("XDG_CACHE_HOME",
-                                  Path.home() / ".cache")) / "forma"
+                                  Path.home() / ".cache")) / "tracer"
     out_dir.mkdir(parents=True, exist_ok=True)
     so = out_dir / f"occt_bridge_{key}.so"
     if not so.exists():
@@ -126,6 +126,10 @@ def _bridge() -> ctypes.CDLL:
     lib.step_export.restype = ctypes.c_int
     lib.step_import.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
     lib.step_import.restype = ctypes.c_int
+    lib.fillet_chamfer.argtypes = [ctypes.c_char_p, dp, ctypes.c_int,
+                                   ip, ctypes.c_int, ctypes.c_double,
+                                   ctypes.c_int]
+    lib.fillet_chamfer.restype = ctypes.c_int
     lib.occt_last_error.restype = ctypes.c_char_p
     _cache["lib"] = lib
     return lib
@@ -136,17 +140,30 @@ def _err(lib: ctypes.CDLL) -> str:
     return msg.decode(errors="replace") if msg else "unknown STEP error"
 
 
+def _tri_arrays(solid: Solid):
+    tm = solid.to_trimesh()
+    v = tm.vertices.astype("float64", order="C")
+    f = tm.faces.astype("int32", order="C")
+    dp = ctypes.POINTER(ctypes.c_double)
+    ip = ctypes.POINTER(ctypes.c_int)
+    return (v.ctypes.data_as(dp), len(v), f.ctypes.data_as(ip), len(f))
+
+
+def _solid_from_obj(obj_path: Path) -> Solid:
+    import trimesh
+    m = trimesh.load(str(obj_path), process=True, force="mesh")
+    if not m.is_watertight:
+        m.fill_holes()
+    return Solid.from_mesh(m.vertices, m.faces)
+
+
 def export_step(solid: Solid, path: str | Path) -> Path:
     """Write a boundary-rep STEP file for ``solid`` (mm units)."""
     lib = _bridge()
-    trimesh = solid.to_trimesh()
-    v = trimesh.vertices.astype("float64", order="C")
-    f = trimesh.faces.astype("int32", order="C")
+    vp, vn, fp, fn = _tri_arrays(solid)
     path = Path(path)
     with _silenced():
-        ok = lib.step_export(os.fsencode(path), v.ctypes.data_as(
-            ctypes.POINTER(ctypes.c_double)), len(v), f.ctypes.data_as(
-            ctypes.POINTER(ctypes.c_int)), len(f))
+        ok = lib.step_export(os.fsencode(path), vp, vn, fp, fn)
     if not ok:
         raise RuntimeError(_err(lib))
     return path
@@ -155,17 +172,28 @@ def export_step(solid: Solid, path: str | Path) -> Path:
 def import_step(path: str | Path) -> Solid:
     """Read the first solids of a STEP file into a kernel Solid (mesh)."""
     lib = _bridge()
-    with tempfile.TemporaryDirectory(prefix="forma-step-") as td:
+    with tempfile.TemporaryDirectory(prefix="tracer-step-") as td:
         obj = Path(td) / "imported.obj"
         with _silenced():
             ok = lib.step_import(os.fsencode(path), os.fsencode(obj))
         if not ok:
             raise RuntimeError(_err(lib))
-        import trimesh
-        m = trimesh.load(str(obj), process=True, force="mesh")
-        if not m.is_watertight:
-            m.fill_holes()
-        return Solid.from_mesh(m.vertices, m.faces)
+        return _solid_from_obj(obj)
+
+
+def fillet_mesh(solid: Solid, radius: float, chamfer: bool = False) -> Solid:
+    """Round (or bevel) every sharp edge of ``solid`` at true 3D radius
+    using OCCT's fillet algorithm; tangent/failed edges are skipped."""
+    lib = _bridge()
+    with tempfile.TemporaryDirectory(prefix="tracer-fillet-") as td:
+        obj = Path(td) / "filleted.obj"
+        vp, vn, fp, fn = _tri_arrays(solid)
+        with _silenced():
+            ok = lib.fillet_chamfer(os.fsencode(obj), vp, vn, fp, fn,
+                                    float(radius), 1 if chamfer else 0)
+        if not ok:
+            raise RuntimeError(_err(lib))
+        return _solid_from_obj(obj)
 
 
 def backend_info() -> str:

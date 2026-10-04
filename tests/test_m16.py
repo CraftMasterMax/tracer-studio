@@ -5,11 +5,11 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtWidgets import QApplication, QInputDialog                      # noqa: E402
 
-from forma.core import io as fio                                              # noqa: E402
-from forma.core.document import (CircularPatternFeature,                    # noqa: E402
+from tracer.core import io as fio                                              # noqa: E402
+from tracer.core.document import (CircularPatternFeature,                    # noqa: E402
                                  Document, LinearPatternFeature,
                                  MirrorFeature, PrimitiveFeature)
-from forma.core.geometry import Solid                                        # noqa: E402
+from tracer.core.geometry import Solid                                        # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -19,8 +19,8 @@ def qapp():
 
 @pytest.fixture
 def win(qapp, monkeypatch):
-    from forma.ui.mainwindow import MainWindow
-    from forma.ui.renderer import SceneRenderer
+    from tracer.ui.mainwindow import MainWindow
+    from tracer.ui.renderer import SceneRenderer
     try:
         r = SceneRenderer()
     except Exception as e:
@@ -97,7 +97,7 @@ def test_mirror_serialization(tmp_path):
                                   dims={"dx": 10, "dy": 10, "dz": 10}))
     d.add_mirror("twin", base, "YZ", 3.5)
     v = d.recompute().volume
-    p = tmp_path / "mir.forma"
+    p = tmp_path / "mir.tracer"
     fio.save_document(d, p)
     d2 = fio.load_document(p)
     m = [f for f in d2.features if isinstance(f, MirrorFeature)]
@@ -163,7 +163,7 @@ def test_mirror_menus_present(win):
 def test_properties_panel_pattern_crash_regression(win):
     """show_feature used to read .placement on everything — patterns have
     none. Guarded now; assert the panel renders for each feature type."""
-    from forma.core.document import ExtrudeFeature            # noqa: F401
+    from tracer.core.document import ExtrudeFeature            # noqa: F401
     win.new_document()
     base = win.doc.add(PrimitiveFeature(name="plate", kind="box",
                                         dims={"dx": 9, "dy": 9, "dz": 9}))

@@ -9,9 +9,9 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 
-from forma.core.sketch.constraints import Distance, Fixed
-from forma.ui.mainwindow import MainWindow
-from forma.ui.renderer import SceneRenderer
+from tracer.core.sketch.constraints import Distance, Fixed
+from tracer.ui.mainwindow import MainWindow
+from tracer.ui.renderer import SceneRenderer
 
 
 def build_demo(canvas):

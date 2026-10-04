@@ -4,7 +4,7 @@ import math
 import numpy as np
 import pytest
 
-from forma.core.geometry import Solid, circle_contour
+from tracer.core.geometry import Solid, circle_contour
 
 
 def approx_ratio(actual, truth, rel=2e-3):

@@ -11,15 +11,15 @@ from PySide6.QtCore import QPointF, QPoint, Qt  # noqa: E402
 from PySide6.QtTest import QSignalSpy, QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox  # noqa: E402
 
-from forma.core.document import ExtrudeFeature  # noqa: E402
-from forma.core.geometry import Solid  # noqa: E402
-from forma.core.sketch.constraints import Distance, Horizontal  # noqa: E402
-from forma.core.sketch.model import (SketchModel, model_from_dict,  # noqa: E402
+from tracer.core.document import ExtrudeFeature  # noqa: E402
+from tracer.core.geometry import Solid  # noqa: E402
+from tracer.core.sketch.constraints import Distance, Horizontal  # noqa: E402
+from tracer.core.sketch.model import (SketchModel, model_from_dict,  # noqa: E402
                                      model_to_dict, plane_matrix)
-from forma.ui.camera import Camera  # noqa: E402
-from forma.ui.mainwindow import MainWindow  # noqa: E402
-from forma.ui.renderer import SceneRenderer  # noqa: E402
-from forma.ui.viewcube import ViewCube  # noqa: E402
+from tracer.ui.camera import Camera  # noqa: E402
+from tracer.ui.mainwindow import MainWindow  # noqa: E402
+from tracer.ui.renderer import SceneRenderer  # noqa: E402
+from tracer.ui.viewcube import ViewCube  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -185,8 +185,8 @@ def test_sketch_reedit_removes_and_adds_region_features(win, qapp, monkeypatch):
 
 # ---- feature management (context menus) --------------------------------------
 def test_delete_feature_and_undo(qapp):
-    from forma.ui.mainwindow import MainWindow
-    from forma.ui.renderer import SceneRenderer
+    from tracer.ui.mainwindow import MainWindow
+    from tracer.ui.renderer import SceneRenderer
     try:
         r = SceneRenderer()
     except Exception as e:
@@ -208,8 +208,8 @@ def test_delete_feature_and_undo(qapp):
 
 
 def test_set_distance_and_rename(qapp, monkeypatch):
-    from forma.ui.mainwindow import MainWindow
-    from forma.ui.renderer import SceneRenderer
+    from tracer.ui.mainwindow import MainWindow
+    from tracer.ui.renderer import SceneRenderer
     try:
         r = SceneRenderer()
     except Exception as e:
@@ -235,8 +235,8 @@ def test_set_distance_and_rename(qapp, monkeypatch):
 
 
 def test_timeline_right_click_emits_menu(qapp):
-    from forma.core.document import Document
-    from forma.ui.timeline import TimelineBar
+    from tracer.core.document import Document
+    from tracer.ui.timeline import TimelineBar
     doc = Document("t")
     outer = np.array([[0, 0], [10, 0], [10, 10], [0, 10]], float)
     doc.add(ExtrudeFeature(name="sq", outer=outer, height=2))
@@ -296,7 +296,7 @@ def test_viewcube_projects_and_hits():
     cube = ViewCube()
     cube.place(800, 600)
     cam = Camera()
-    from forma.ui.viewport import Viewport  # noqa: F401
+    from tracer.ui.viewport import Viewport  # noqa: F401
     from PySide6.QtGui import QImage, QPainter
     img = QImage(800, 600, QImage.Format_RGBA8888)
     img.fill(Qt.transparent)

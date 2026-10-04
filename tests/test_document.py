@@ -3,8 +3,8 @@ import math
 import numpy as np
 import pytest
 
-from forma.core.document import Document, ExtrudeFeature, PrimitiveFeature
-from forma.ui.mainwindow import demo_document
+from tracer.core.document import Document, ExtrudeFeature, PrimitiveFeature
+from tracer.ui.mainwindow import demo_document
 
 
 def test_demo_doc_volume():
@@ -42,3 +42,13 @@ def test_serialize_roundtrip(tmp_path):
     assert [f.name for f in doc2.features] == [f.name for f in doc.features]
     v1, v2 = doc.recompute().volume, doc2.recompute().volume
     assert v1 == pytest.approx(v2)
+
+
+def test_legacy_forma_magic_still_loads():
+    """Pre-rename saves tagged 'forma/document'; from_dict must accept them."""
+    doc = demo_document()
+    data = doc.to_dict()
+    data["format"] = "forma/document"           # what old .forma files contain
+    doc2 = Document.from_dict(data)
+    assert doc2.recompute().volume == pytest.approx(doc.recompute().volume)
+    assert doc2.to_dict()["format"] == "tracer/document"   # resaves as new

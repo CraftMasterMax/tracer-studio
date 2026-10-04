@@ -4,9 +4,9 @@ They assert real pixels, not just 'no exception'.
 import numpy as np
 import pytest
 
-from forma.ui.camera import Camera, look_at, perspective
-from forma.ui.renderer import SceneRenderer
-from forma.ui.mainwindow import demo_document
+from tracer.ui.camera import Camera, look_at, perspective
+from tracer.ui.renderer import SceneRenderer
+from tracer.ui.mainwindow import demo_document
 
 
 # ---- camera math (pure numpy) -------------------------------------------

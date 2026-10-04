@@ -12,11 +12,11 @@ pytest.importorskip("PySide6")
 from PySide6.QtWidgets import (QApplication, QFileDialog,           # noqa: E402
                                QMessageBox)
 
-from forma.core import io as fio                                    # noqa: E402
-from forma.core import step                                         # noqa: E402
-from forma.core.document import (Document, ImportedFeature,         # noqa: E402
+from tracer.core import io as fio                                    # noqa: E402
+from tracer.core import step                                         # noqa: E402
+from tracer.core.document import (Document, ImportedFeature,         # noqa: E402
                                  PrimitiveFeature)
-from forma.core.geometry import Solid                               # noqa: E402
+from tracer.core.geometry import Solid                               # noqa: E402
 
 need_occt = pytest.mark.skipif(not step.available(),
                                reason="no system OCCT + g++")
@@ -29,8 +29,8 @@ def qapp():
 
 @pytest.fixture
 def win(qapp, monkeypatch):
-    from forma.ui.mainwindow import MainWindow
-    from forma.ui.renderer import SceneRenderer
+    from tracer.ui.mainwindow import MainWindow
+    from tracer.ui.renderer import SceneRenderer
     try:
         r = SceneRenderer()
     except Exception as e:
@@ -124,7 +124,7 @@ def test_imported_feature_placement_and_serialization(tmp_path):
     d = Document()
     d.add(ImportedFeature(name="shifted", verts=v, faces=f,
                           placement=(100, 0, 0)))
-    p = tmp_path / "imp.forma"
+    p = tmp_path / "imp.tracer"
     fio.save_document(d, p)
     d2 = fio.load_document(p)
     feat = d2.features[0]
@@ -151,7 +151,7 @@ def test_import_step_becomes_feature(win, monkeypatch, tmp_path):
     win.rail.props.show_feature(feat)
     assert "12 triangles" in win.rail.props._body.text()
     # and it survives a save/open cycle
-    p = tmp_path / "with_imp.forma"
+    p = tmp_path / "with_imp.tracer"
     win.file_path = None
     monkeypatch.setattr(QFileDialog, "getSaveFileName",
                         staticmethod(lambda *a, **k: (str(p), "")))
@@ -192,8 +192,8 @@ def test_export_step_without_occt(monkeypatch, qapp):
         QMessageBox, "information",
         staticmethod(lambda parent, title, text, *a, **k:
                      shown.update(title=title, text=text)))
-    from forma.ui.mainwindow import MainWindow
-    from forma.ui.renderer import SceneRenderer
+    from tracer.ui.mainwindow import MainWindow
+    from tracer.ui.renderer import SceneRenderer
     try:
         r = SceneRenderer()
     except Exception as e:

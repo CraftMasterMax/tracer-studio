@@ -1,4 +1,4 @@
-"""Forma entry point: python -m forma (or the `forma` console script)."""
+"""Tracer Studio entry point: python -m tracer (or the `tracer` console script)."""
 from __future__ import annotations
 
 import sys
@@ -11,8 +11,8 @@ from .ui.mainwindow import MainWindow
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("Forma")
-    app.setOrganizationName("forma-cad")
+    app.setApplicationName("Tracer Studio")
+    app.setOrganizationName("tracer-cad")
     app.setStyleSheet(theme.stylesheet(theme.DARK))
     win = MainWindow()
     win.show()

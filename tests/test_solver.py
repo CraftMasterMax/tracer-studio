@@ -3,8 +3,8 @@ detect DOF correctly, and never crash on degenerate input."""
 import numpy as np
 import pytest
 
-from forma.core.sketch.solver import Sketch
-from forma.core.sketch.constraints import (Coincident, Distance, Fixed,
+from tracer.core.sketch.solver import Sketch
+from tracer.core.sketch.constraints import (Coincident, Distance, Fixed,
                                            Horizontal, Vertical, Radius,
                                            PointOnLine, Parallel)
 

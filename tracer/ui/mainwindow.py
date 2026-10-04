@@ -41,7 +41,7 @@ def demo_document() -> Document:
 class MainWindow(QMainWindow):
     def __init__(self, renderer: SceneRenderer | None = None):
         super().__init__()
-        self.setWindowTitle("Forma")
+        self.setWindowTitle("Tracer Studio")
         self.resize(1280, 800)
         self.doc: Document | None = None
         self.file_path: Path | None = None
@@ -604,15 +604,15 @@ class MainWindow(QMainWindow):
     def _update_title(self):
         name = self.file_path.name if self.file_path else (
             (self.doc.title if self.doc else "Untitled") + ("" if not self.doc or not self.doc.dirty else " •"))
-        self.setWindowTitle(f"{name} — Forma")
+        self.setWindowTitle(f"{name} — Tracer Studio")
 
     def action_save(self, as_new: bool = False):
         if self.doc is None:
             return
         if self.file_path is None or as_new:
-            start = str(self.file_path or (Path.home() / f"{self.doc.title}.forma"))
+            start = str(self.file_path or (Path.home() / f"{self.doc.title}.tracer"))
             path, _ = QFileDialog.getSaveFileName(
-                self, "Save document", start, "Forma document (*.forma)")
+                self, "Save document", start, "Tracer Studio document (*.tracer)")
             if not path:
                 return
             self.file_path = Path(path)
@@ -630,7 +630,8 @@ class MainWindow(QMainWindow):
     def action_open(self):
         start = str(self.file_path.parent if self.file_path else Path.home())
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open document", start, "Forma document (*.forma)")
+            self, "Open document", start,
+            "Tracer Studio document (*.tracer);;Legacy Forma document (*.forma)")
         if not path:
             return
         try:
@@ -868,7 +869,7 @@ class MainWindow(QMainWindow):
         """Import a body (STEP / STL / OBJ / …) as a real history feature.
 
         Imported solids join the feature tree: they can be Cut/Joined with
-        sketched geometry, suppressed, and they save inside the .forma
+        sketched geometry, suppressed, and they save inside the .tracer
         document."""
         path, _ = QFileDialog.getOpenFileName(
             self, "Import body", str(Path.home()),

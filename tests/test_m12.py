@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt                                # noqa: E402
 from PySide6.QtTest import QTest                             # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog     # noqa: E402
 
-from forma.core.document import (Document, ExtrudeFeature,      # noqa: E402
+from tracer.core.document import (Document, ExtrudeFeature,      # noqa: E402
                                  RevolveFeature)
 
 
@@ -21,8 +21,8 @@ def qapp():
 
 @pytest.fixture
 def win(qapp, monkeypatch):
-    from forma.ui.mainwindow import MainWindow
-    from forma.ui.renderer import SceneRenderer
+    from tracer.ui.mainwindow import MainWindow
+    from tracer.ui.renderer import SceneRenderer
     try:
         r = SceneRenderer()
     except Exception as e:
@@ -114,11 +114,11 @@ def test_revolve_with_hole_and_cut_op():
 
 
 def test_revolve_save_roundtrip(tmp_path):
-    from forma.core import io
+    from tracer.core import io
     d = Document()
     d.features.append(RevolveFeature(name="r", outer=_tube_profile(),
                                      plane="XZ", angle=200))
-    p = tmp_path / "rev.forma"
+    p = tmp_path / "rev.tracer"
     io.save_document(d, p)
     d2 = io.load_document(p)
     f = d2.features[0]

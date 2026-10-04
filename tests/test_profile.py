@@ -4,9 +4,9 @@ import math
 import numpy as np
 import pytest
 
-from forma.core.geometry import Solid
-from forma.core.sketch.model import SketchModel
-from forma.core.sketch.profile import regions
+from tracer.core.geometry import Solid
+from tracer.core.sketch.model import SketchModel
+from tracer.core.sketch.profile import regions
 
 
 def _rect(model, x0, y0, x1, y1):

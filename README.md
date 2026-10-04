@@ -1,58 +1,71 @@
-# Forma
+# Tracer Studio
 
-> Working title. A keyboard-first parametric CAD for makers — Linux & Windows,
-> free forever (GPL-3). Think "the 15% of Fusion 360 everyone actually uses,
-> with an interface that doesn't fight you."
+A keyboard-first parametric CAD for makers — Linux & Windows, free forever
+(GPL-3). Think "the 15% of Fusion 360 everyone actually uses, with an
+interface that doesn't fight you." (Workflow inspiration only — this is an
+independent project with no Autodesk assets or affiliation.)
 
-**Status: M2** — geometry kernel, document model + undo/redo, shaded 3D
-viewport, **2D constraint sketcher** (line/rect/circle, live solving,
-H/V/fix/distance/radius constraints, snap, profile→extrude),
-STL/3MF/OBJ/PLY export+import, JSON `.forma` save/open (Ctrl+S/Ctrl+O).
-Next: associative sketches (edit features), STEP + fillets via an
-OpenCascade bridge, packaging (Flatpak/PyInstaller), Windows CI.
+**Status: M17**
+
+- Parametric document: sketch → feature timeline, suppress/isolate,
+  full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
+- 2D constraint sketcher: line/rect/circle/**arc**, click-drag geometry,
+  coincident/H/V/parallel/perp/equal/point-on-line/distance/**radius (arc
+  & circle)** constraints, editable dimension badges, snap to origin/axes,
+  construction geometry, Levenberg-Marquardt solver (SVD-damped)
+- Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
+  revolve, linear & circular patterns, **mirror**, sketch-on-face
+- I/O: STL/3MF/OBJ/PLY mesh import+export, **STEP import/export** via an
+  on-demand OpenCascade bridge (compiled with your system g++, cached;
+  degrades gracefully where OCCT is absent — e.g. stock Windows)
+- UX: Fusion-style mouse, ViewCube, first-launch shortcut tour, and a
+  persistent Shortcuts tab — one canonical key table drives tour, tab,
+  menus and tooltip bindings
+- 187 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
 ```bash
 python3 -m venv .venv
 ./.venv/bin/pip install -e .[dev]        # Windows: .venv\Scripts\pip install -e .[dev]
-./.venv/bin/python -m forma
+./.venv/bin/python -m tracer             # or: ./.venv/bin/tracer
 ```
 
 ## Using it
 
 3D: **F** fit · **G** grid · **E** edges · **0/1/2/3** iso/front/top/right ·
 **LMB** orbit · **RMB/MMB/Shift+LMB** pan · **wheel** zoom.
-Sketch: **N** new sketch · **S/L/R/C** tools · drag to edit · **H/V/F/D**
-constraints on selection · **Del** delete · **X** extrude profile.
-Edit: **Ctrl+Z / Ctrl+Shift+Z** undo/redo · File: **Ctrl+S** save,
-**Ctrl+O** open, **Ctrl+I**-style menu for mesh import/export.
+Sketch: **N** new sketch · **S/L/R/C/A** line/rect/circle/arc · **D**
+dimension · **H/V/F** constraints · **X** extrude · **Ctrl+Z** undo.
+Full list: **?** / the Shortcuts tab.
 
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 53 tests, fully headless (EGL)
+./.venv/bin/python -m pytest -q          # 187 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
 
 ## Layout
 
-- `forma/core/` — kernel (`geometry.py`, manifold3d), `document.py` (features
-  + JSON), `io.py`, `sketch/` (entities, constraints, solver, `model.py`
-  interaction logic, `profile.py` loop/face finder)
-- `forma/ui/` — `camera.py` (numpy), `renderer.py` (moderngl/EGL),
+- `tracer/core/` — kernel (`geometry.py`, manifold3d), `document.py`
+  (features + JSON), `io.py`, `step.py` (ctypes OpenCascade bridge),
+  `native/occt_bridge.cpp` (STEP + fillets, compiled lazily),
+  `sketch/` (entities, constraints, solver, `model.py` interaction logic,
+  `profile.py` loop/face finder)
+- `tracer/ui/` — `camera.py` (numpy), `renderer.py` (moderngl/EGL),
   `viewport.py` (Qt blit), `sketcheditor.py` (QPainter canvas), `panels.py`,
-  `mainwindow.py`, `theme.py`
+  `shortcuts.py` (canonical key table + tour), `mainwindow.py`, `theme.py`
 - `tests/` — geometry vs analytic truth, I/O round-trips, solver, profile
-  loops, pixel assertions, GUI smoke (QTest mouse/keys)
+  loops, pixel assertions, GUI smoke (QTest mouse/keys), per-milestone suites
 
 ## Design decisions
 
+- **Kernel behind an interface**: mesh CSG (manifold3d) for the parametric
+  core; OCCT reached through a tiny C ABI only for STEP and (soon) solid
+  fillets — never a build-time dependency.
 - **One render path**: moderngl (EGL) → RGBA → QPainter blit. Identical
-  pixels on screen, in tests, and in CI — no display server needed.
-- **Kernel behind an interface**: mesh CSG (manifold3d) today; OpenCascade
-  B-rep bridge next (fillets/chamfers/STEP need real topology).
+  pixels on screen, in tests, and in CI.
 - **Z-up, millimetres** everywhere inside the app.
-- Sketches are **baked** into profile features for now (not yet associative
-  — editing a sketch after extruding is M3).
+- **No paid anything**: GPL-3 stack, no telemetry, no accounts, no cloud.

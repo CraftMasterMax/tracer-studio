@@ -10,8 +10,8 @@ from PySide6.QtCore import Qt                                # noqa: E402
 from PySide6.QtTest import QTest                             # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog     # noqa: E402
 
-from forma.core.document import Document, ExtrudeFeature     # noqa: E402
-from forma.core.geometry import round_corners, circle_contour  # noqa: E402
+from tracer.core.document import Document, ExtrudeFeature     # noqa: E402
+from tracer.core.geometry import round_corners, circle_contour  # noqa: E402
 
 BOX = [(0, 0), (40, 0), (40, 25), (0, 25)]
 
@@ -79,10 +79,10 @@ def test_fillet_respects_holes():
 
 
 def test_fillet_serializes(tmp_path):
-    from forma.core import io
+    from tracer.core import io
     d = Document()
     d.features.append(_box_feature(fillet=3.5))
-    p = tmp_path / "f.forma"
+    p = tmp_path / "f.tracer"
     io.save_document(d, p)
     d2 = io.load_document(p)
     assert d2.features[0].fillet == 3.5
@@ -97,8 +97,8 @@ def qapp():
 
 @pytest.fixture
 def win(qapp, monkeypatch):
-    from forma.ui.mainwindow import MainWindow
-    from forma.ui.renderer import SceneRenderer
+    from tracer.ui.mainwindow import MainWindow
+    from tracer.ui.renderer import SceneRenderer
     try:
         r = SceneRenderer()
     except Exception as e:
@@ -162,7 +162,7 @@ def test_fillet_zero_restores_sharp(win):
     v_sharp = win.doc.result.volume
     win._set_corner(f, "fillet")
     win.undo()
-    from forma.ui.mainwindow import MainWindow  # noqa: F401
+    from tracer.ui.mainwindow import MainWindow  # noqa: F401
     # apply zero directly (dialog returns 0 when user clears)
     f.fillet = 0.0
     win.doc.dirty = True

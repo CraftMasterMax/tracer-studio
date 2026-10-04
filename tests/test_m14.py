@@ -11,11 +11,11 @@ from PySide6.QtCore import Qt                                # noqa: E402
 from PySide6.QtTest import QTest                             # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog     # noqa: E402
 
-from forma.core.sketch.entities import Arc, Point            # noqa: E402
-from forma.core.sketch.model import (SketchModel,            # noqa: E402
+from tracer.core.sketch.entities import Arc, Point            # noqa: E402
+from tracer.core.sketch.model import (SketchModel,            # noqa: E402
                                      model_to_dict,
                                      model_from_dict)
-from forma.core.sketch.profile import regions                # noqa: E402
+from tracer.core.sketch.profile import regions                # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -25,8 +25,8 @@ def qapp():
 
 @pytest.fixture
 def win(qapp, monkeypatch):
-    from forma.ui.mainwindow import MainWindow
-    from forma.ui.renderer import SceneRenderer
+    from tracer.ui.mainwindow import MainWindow
+    from tracer.ui.renderer import SceneRenderer
     try:
         r = SceneRenderer()
     except Exception as e:

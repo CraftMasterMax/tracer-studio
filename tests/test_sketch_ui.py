@@ -11,12 +11,12 @@ from PySide6.QtCore import QPoint, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog  # noqa: E402
 
-from forma.core.sketch.constraints import (Distance, Fixed,
+from tracer.core.sketch.constraints import (Distance, Fixed,
                                            Horizontal)  # noqa: E402
-from forma.core.sketch.entities import Line, Point  # noqa: E402
-from forma.core.sketch.model import SketchModel  # noqa: E402
-from forma.ui.mainwindow import MainWindow  # noqa: E402
-from forma.ui.renderer import SceneRenderer  # noqa: E402
+from tracer.core.sketch.entities import Line, Point  # noqa: E402
+from tracer.core.sketch.model import SketchModel  # noqa: E402
+from tracer.ui.mainwindow import MainWindow  # noqa: E402
+from tracer.ui.renderer import SceneRenderer  # noqa: E402
 
 
 @pytest.fixture(scope="module")

@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from forma.core import io as fio
-from forma.core.document import Document
-from forma.core.geometry import Solid
+from tracer.core import io as fio
+from tracer.core.document import Document
+from tracer.core.geometry import Solid
 
 
 @pytest.fixture
@@ -27,9 +27,9 @@ def test_export_rejects_unknown_ext(tmp_path, solid):
 
 
 def test_document_save_load(tmp_path):
-    from forma.ui.mainwindow import demo_document
+    from tracer.ui.mainwindow import demo_document
     doc = demo_document()
-    p = tmp_path / "model.forma"
+    p = tmp_path / "model.tracer"
     fio.save_document(doc, p)
     doc2 = fio.load_document(p)
     assert doc2.title == doc.title

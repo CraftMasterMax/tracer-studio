@@ -9,7 +9,7 @@ from PySide6.QtTest import QTest                             # noqa: E402
 from PySide6.QtWidgets import (QApplication, QScrollArea,    # noqa: E402
                                QTabWidget, QTextEdit, QWidget)
 
-from forma.ui.shortcuts import SHORTCUTS, shortcut_tokens    # noqa: E402
+from tracer.ui.shortcuts import SHORTCUTS, shortcut_tokens    # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -19,8 +19,8 @@ def qapp():
 
 @pytest.fixture
 def win(qapp):
-    from forma.ui.mainwindow import MainWindow
-    from forma.ui.renderer import SceneRenderer
+    from tracer.ui.mainwindow import MainWindow
+    from tracer.ui.renderer import SceneRenderer
     try:
         r = SceneRenderer()
     except Exception as e:
@@ -135,7 +135,7 @@ def test_tour_dialog_exec_when_shown(win, monkeypatch):
     # Replace the real (blocking) dialog with a recording stub that mirrors
     # the TourDialog surface show_tour() uses: ctor, btn_sheet.clicked, exec().
     from PySide6.QtCore import QObject
-    from forma.ui import mainwindow
+    from tracer.ui import mainwindow
     seen = {"ctor": 0, "connected": 0, "exec": 0}
 
     class Sig:

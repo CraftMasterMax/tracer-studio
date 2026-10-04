@@ -323,14 +323,15 @@ class Document:
                 d.update(source_uid=f.source_uid, plane=f.plane,
                          offset=float(f.offset))
             return d
-        return {"format": "forma/document", "version": 2,
+        return {"format": "tracer/document", "version": 2,
                 "title": self.title, "units": self.units,
                 "features": [_feat(f) for f in self.features]}
 
     @classmethod
     def from_dict(cls, data: dict) -> "Document":
-        if data.get("format") != "forma/document" or data.get("version", 0) > 2:
-            raise ValueError("not a readable Forma document")
+        if data.get("format") not in ("tracer/document",
+                                      "forma/document") or data.get("version", 0) > 2:
+            raise ValueError("not a readable Tracer Studio document")
         doc = cls(title=data.get("title", "Untitled"))
         doc.units = data.get("units", "mm")
         for fd in data.get("features", []):

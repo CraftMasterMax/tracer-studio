@@ -9,8 +9,8 @@ from PySide6.QtCore import Qt                                # noqa: E402
 from PySide6.QtTest import QTest                             # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog     # noqa: E402
 
-from forma.core.document import ExtrudeFeature, PrimitiveFeature  # noqa: E402
-from forma.core.document import Document                     # noqa: E402
+from tracer.core.document import ExtrudeFeature, PrimitiveFeature  # noqa: E402
+from tracer.core.document import Document                     # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -20,8 +20,8 @@ def qapp():
 
 @pytest.fixture
 def win(qapp, monkeypatch):
-    from forma.ui.mainwindow import MainWindow
-    from forma.ui.renderer import SceneRenderer
+    from tracer.ui.mainwindow import MainWindow
+    from tracer.ui.renderer import SceneRenderer
     try:
         r = SceneRenderer()
     except Exception as e:
@@ -86,14 +86,14 @@ def test_intersect_keeps_overlap_only():
 
 
 def test_cut_survives_save_roundtrip(tmp_path):
-    from forma.core import io as fio
+    from tracer.core import io as fio
     doc = Document()
     doc.features.append(PrimitiveFeature(name="base", kind="box",
                                          dims={"dx": 10, "dy": 10, "dz": 10}))
     doc.features.append(ExtrudeFeature(name="hole",
                                        outer=[(4, 4), (6, 4), (6, 6), (4, 6)],
                                        height=20, op="subtract"))
-    p = tmp_path / "cut.forma"
+    p = tmp_path / "cut.tracer"
     fio.save_document(doc, p)
     d2 = fio.load_document(p)
     assert d2.features[1].op == "subtract"

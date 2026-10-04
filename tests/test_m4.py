@@ -8,7 +8,7 @@ from PySide6.QtGui import QCloseEvent, QImage          # noqa: E402
 from PySide6.QtWidgets import (QApplication, QFileDialog,  # noqa: E402
                                QInputDialog, QMessageBox)
 
-from forma.core.document import (Document, LinearPatternFeature)  # noqa: E402
+from tracer.core.document import (Document, LinearPatternFeature)  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -18,8 +18,8 @@ def qapp():
 
 @pytest.fixture
 def win(qapp):
-    from forma.ui.mainwindow import MainWindow
-    from forma.ui.renderer import SceneRenderer
+    from tracer.ui.mainwindow import MainWindow
+    from tracer.ui.renderer import SceneRenderer
     try:
         r = SceneRenderer()
     except Exception as e:
@@ -135,7 +135,7 @@ def test_close_guard_cancel_and_discard(win, monkeypatch):
 
 
 def test_close_guard_saves_then_closes(win, tmp_path, monkeypatch):
-    target = tmp_path / "guard.forma"
+    target = tmp_path / "guard.tracer"
     monkeypatch.setattr(QFileDialog, "getSaveFileName",
                         staticmethod(lambda *a, **k: (str(target), "")))
     win._capture()

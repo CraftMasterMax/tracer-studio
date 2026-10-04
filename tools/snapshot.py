@@ -6,13 +6,13 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from forma.ui.camera import Camera
-from forma.ui.mainwindow import demo_document
-from forma.ui.renderer import SceneRenderer
+from tracer.ui.camera import Camera
+from tracer.ui.mainwindow import demo_document
+from tracer.ui.renderer import SceneRenderer
 
 
 def main():
-    outdir = Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp/opencode/forma-shots")
+    outdir = Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp/opencode/tracer-shots")
     outdir.mkdir(parents=True, exist_ok=True)
     r = SceneRenderer()
     doc = demo_document()

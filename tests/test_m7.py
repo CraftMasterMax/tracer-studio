@@ -10,9 +10,9 @@ from PySide6.QtCore import Qt                         # noqa: E402
 from PySide6.QtTest import QSignalSpy, QTest          # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog  # noqa: E402
 
-from forma.core.sketch.constraints import (Distance, Equal, Fixed,  # noqa: E402
+from tracer.core.sketch.constraints import (Distance, Equal, Fixed,  # noqa: E402
                                            Perpendicular)
-from forma.core.sketch.model import (SketchModel,      # noqa: E402
+from tracer.core.sketch.model import (SketchModel,      # noqa: E402
                                      model_from_dict, model_to_dict)
 
 
@@ -65,7 +65,7 @@ def test_toggle_actually_adds_two_line_constraints():
 # ---- canvas wiring ------------------------------------------------------------
 @pytest.fixture
 def canvas(qapp):
-    from forma.ui.sketcheditor import SketchCanvas
+    from tracer.ui.sketcheditor import SketchCanvas
     cv = SketchCanvas()
     cv.resize(800, 600)
     cv.show()
