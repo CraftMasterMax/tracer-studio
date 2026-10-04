@@ -94,6 +94,8 @@ class SketchCanvas(QWidget):
         self._rect_corner = None
         self._arc_pts = []
         self._slot: list = []                  # slot tool: c1, c2, width
+        self._poly: list = []                  # polygon tool: centre, vertex
+        self._poly_n = 6                       # sides, 3..9 (sticky setting)
         self._preview = None
         self._last_result = None
         self._hist = []
@@ -134,6 +136,7 @@ class SketchCanvas(QWidget):
         self._rect_corner = None
         self._arc_pts = []
         self._slot: list = []                  # slot tool: c1, c2, width
+        self._poly: list = []                  # polygon tool: centre, vertex
         self._preview = None
         self._solve()
         self.update()
@@ -145,6 +148,7 @@ class SketchCanvas(QWidget):
         self._rect_corner = None
         self._arc_pts = []
         self._slot: list = []                  # slot tool: c1, c2, width
+        self._poly: list = []                  # polygon tool: centre, vertex
         self._preview = None
         self.update()
 
@@ -363,6 +367,26 @@ class SketchCanvas(QWidget):
                         self._push_hist()
                         self.model.add_slot(Point(x1, y1), Point(x2, y2), r)
                         self._solve()
+            self.update()
+        elif self._tool == "poly":
+            # 2 clicks: centre · vertex. The circumradius is the click
+            # distance, the rotation the click angle — and the number
+            # keys (3..9) set the side count live while drawing.
+            snap = self._snap_point(q)
+            xy = (snap.x, snap.y) if snap is not None else (wp[0], wp[1])
+            self._poly.append(xy)
+            self.update()
+            if len(self._poly) == 2:
+                (cx, cy), (vx, vy) = self._poly
+                self._poly = []
+                self._preview = None
+                r = math.hypot(vx - cx, vy - cy)
+                if r * self._scale > 3:
+                    self._push_hist()
+                    self.model.add_polygon(cx, cy, r,
+                                           math.atan2(vy - cy, vx - cx),
+                                           self._poly_n)
+                    self._solve()
             self.update()
 
     def _auto_constraints(self, ln: Line, end_q: QPointF):
@@ -739,7 +763,7 @@ class SketchCanvas(QWidget):
         else:
             for label, t in (("Rectangle tool", "rect"), ("Line tool", "line"),
                              ("Circle tool", "circle"), ("Slot tool", "slot"),
-                             ("Arc tool", "arc")):
+                             ("Polygon tool", "poly"), ("Arc tool", "arc")):
                 menu.addAction(label, lambda t=t: self.set_tool(t))
         return menu
 
@@ -751,6 +775,10 @@ class SketchCanvas(QWidget):
         if k == Qt.Key_Escape:
             self._line_start = None
             self.set_tool("select")
+            return
+        if self._tool == "poly" and Qt.Key_3 <= k <= Qt.Key_9:
+            self._poly_n = k - Qt.Key_0            # live side count (3..9)
+            self.update()
             return
         if k == Qt.Key_Z and ev.modifiers() & Qt.ControlModifier:
             if ev.modifiers() & Qt.ShiftModifier:
@@ -776,6 +804,8 @@ class SketchCanvas(QWidget):
             self.set_tool("arc")
         elif k == Qt.Key_O and not sel:
             self.set_tool("slot")
+        elif k == Qt.Key_Y and not sel:
+            self.set_tool("poly")
         elif k == Qt.Key_Return and self._tool == "line":
             self._line_start = None
             self.set_tool("select")
@@ -991,6 +1021,8 @@ class SketchCanvas(QWidget):
                 q_prev = qn
         p.setPen(solid_pen)
         for c in sk.circles:
+            p.setPen(constr_pen if getattr(c, "construction", False)
+                     else solid_pen)
             cen = self.w2s(c.c.x, c.c.y)
             r = c.r * self._scale
             p.drawEllipse(cen, r, r)
@@ -1193,6 +1225,22 @@ class SketchCanvas(QWidget):
                                self.w2s(x2 + nx, y2 + ny))
                     p.drawLine(self.w2s(x1 - nx, y1 - ny),
                                self.w2s(x2 - nx, y2 - ny))
+        if self._tool == "poly" and self._poly:
+            cur = self.mapFromGlobal(self.cursor().pos())
+            wp = self._world(QPointF(cur))
+            cx, cy = self._poly[0]
+            r = math.hypot(wp[0] - cx, wp[1] - cy)
+            if r * self._scale > 2:
+                rot = math.atan2(wp[1] - cy, wp[0] - cx)
+                n = self._poly_n
+                p.setPen(QPen(ACCENT, 1.2, Qt.DashLine))
+                p.drawEllipse(self.w2s(cx, cy), r * self._scale,
+                              r * self._scale)
+                vs = [self.w2s(cx + r * math.cos(rot + 2 * math.pi * i / n),
+                               cy + r * math.sin(rot + 2 * math.pi * i / n))
+                      for i in range(n)]
+                for i in range(n):
+                    p.drawLine(vs[i], vs[(i + 1) % n])
         if not self._preview:
             return
         kind, a, b = self._preview
@@ -1213,13 +1261,15 @@ class SketchCanvas(QWidget):
         if self._cursor is not None:
             cx, cy = self._cursor
             lines.append((f"X {cx:.2f}   Y {cy:.2f} mm", DIM))
-        tool = {"select": ("Select (S/L/R/C/O/A) · H/V/F/D/Q/T/I constraints · "
+        tool = {"select": ("Select (S/L/R/C/O/Y/A) · H/V/F/D/Q/T/I constraints · "
                            "/ trim · X extrude"),
                 "line": "Line — click points, Enter/Esc stops",
                 "rect": "Rectangle — drag corners or click · move · click",
                 "circle": "Circle — drag from center or click · move · click",
                 "arc": "Arc — 3 clicks: start · end · bulge (chains)",
-                "slot": "Slot — 3 clicks: centre · centre · width"}
+                "slot": "Slot — 3 clicks: centre · centre · width",
+                "poly": "Polygon — click centre · click vertex · "
+                        "3-9 sides"}
         lines.append(("Tool: " + tool.get(self._tool, "?"), DIM))
         if self._last_result is not None:
             r = self._last_result

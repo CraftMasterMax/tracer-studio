@@ -60,9 +60,11 @@ class Line(Entity):
 
 
 class Circle(Entity):
-    def __init__(self, center: Point, radius: float):
+    def __init__(self, center: Point, radius: float,
+                 construction: bool = False):
         super().__init__()
         self.c, self.r = center, float(radius)
+        self.construction = bool(construction)   # guide geometry: no profile
 
     def get_params(self): return np.array([self.c.x, self.c.y, self.r])
 

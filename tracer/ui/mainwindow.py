@@ -627,7 +627,8 @@ class MainWindow(QMainWindow):
         model.name = self._next_sketch_name()
         self._begin_sketch(model)
         self.status.showMessage(f"Sketching on {plane} — R rect · L line · C circle · "
-                                "O slot · A arc · H/V/F/G/D/P/Q/T/I/M/2 constraints · "
+                                "O slot · Y polygon · A arc · "
+                                "H/V/F/G/D/P/Q/T/I/M/2 constraints · "
                                 "/ trim · K construction · X extrude · Esc select")
 
     def _start_sketch_on_face(self, point, normal):
@@ -747,7 +748,7 @@ class MainWindow(QMainWindow):
         self._tool_btns = {}
         for tool, label in (("select", "Select"), ("line", "Line"),
                             ("rect", "Rect"), ("circle", "Circle"),
-                            ("slot", "Slot"), ("arc", "Arc")):
+                            ("slot", "Slot"), ("poly", "Poly"), ("arc", "Arc")):
             b = QPushButton(label, checkable=True,
                             clicked=lambda checked, t=tool: self._pick_tool(t))
             b.setProperty("tb", True)

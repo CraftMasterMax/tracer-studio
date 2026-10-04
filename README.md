@@ -10,8 +10,11 @@ independent project with no Autodesk assets or affiliation.)
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
 - 2D constraint sketcher: line/rect/circle/**arc**/**slot** (3-click,
-  tangent-locked), click-drag geometry,
+  tangent-locked)/**regular polygon** (Y: 3–9 sides, parametrically locked
+  regular — drag spins it, edit R resizes it, the circumring is guide
+  geometry), click-drag geometry,
   coincident/H/V/parallel/perp/equal(len **or radius**)/point-on-line/
+  **point-on-circle (the polygon's vertex lock)**/
   distance/**radius (arc & circle)**/**tangent (line↔curve, curve↔curve)**/
   **concentric (curves)**/**symmetric points about a line (M)**/**angular dimensions
   (line or between two, arc + editable badge)** constraints, editable
@@ -40,7 +43,7 @@ independent project with no Autodesk assets or affiliation.)
   of icon chips, and a blue-grey horizon viewport — plus first-launch
   shortcut tour and a persistent Shortcuts tab driven by one canonical
   key table
-- 336 headless tests (EGL rendering + Qt pixel assertions)
+- 353 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -56,14 +59,14 @@ python3 -m venv .venv
 cancel, release to commit) · **double-click a face** to sketch on it ·
 **MMB/RMB** orbit · **Shift+MMB** pan · **wheel** zoom · **F** fit ·
 **G** grid · **E** edges · **0/1/2/3** iso/front/top/right.
-Sketch: **N** new sketch · **S/L/R/C/O/A** line/rect/circle/slot/arc · **D**
+Sketch: **N** new sketch · **S/L/R/C/O/Y/A** line/rect/circle/slot/polygon/arc · **D**
 dimension · **H/V/F/G/T/I/M/2** constraints · **/** trim-to-corner · **X** extrude · **Ctrl+Z** undo.
 Full list: **?** / the Shortcuts tab.
 
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 336 tests, fully headless
+./.venv/bin/python -m pytest -q          # 353 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

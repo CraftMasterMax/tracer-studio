@@ -14,8 +14,9 @@ import numpy as np
 from .entities import Point, Line, Circle, Arc, curve_radius, curve_center
 from .constraints import (Angle, AngleBetween, ArcMiddle, Coincident,
                           Concentric, Distance, Equal, Fixed, Horizontal,
-                          Perpendicular, Radius, PointOnLine, Parallel,
-                          Symmetry, Tangent, Vertical, make_tangent)
+                          Perpendicular, PointOnCircle, PointOnLine,
+                          Parallel, Radius, Symmetry, Tangent, Vertical,
+                          make_tangent)
 from .solver import Sketch, SolveResult
 
 # Sketch planes: (u_axis, v_axis) in world coords; extrude normal = u x v.
@@ -148,6 +149,29 @@ class SketchModel:
                        make_tangent(bot, cap1), make_tangent(bot, cap2))
         return [top, bot, cap1, cap2]
 
+    def add_polygon(self, cx: float, cy: float, r: float,
+                    rot: float = 0.0, n: int = 6) -> list:
+        """Regular n-gon on a circumcircle (the hex-nut primitive):
+        n shared-endpoint lines around a CONSTRUCTION circle, regularity
+        locked by PointOnCircle×n + Equal×(n-1) + one Radius. That's
+        2n-1 equations on 2n vertex coords — leaving exactly rotation,
+        so dragging spins a true regular polygon, and editing the R
+        badge resizes it. The ring is guide geometry: the profile is
+        the polygon itself."""
+        sk = self.sketch
+        if n < 3 or r <= 1e-9:
+            return []
+        C = sk.point(cx, cy)
+        ring = sk.circle(C, r, construction=True)
+        pts = [sk.point(cx + r * math.cos(rot + 2 * math.pi * i / n),
+                        cy + r * math.sin(rot + 2 * math.pi * i / n))
+               for i in range(n)]
+        edges = [sk.line(pts[i], pts[(i + 1) % n]) for i in range(n)]
+        self.constrain(Radius(ring, r),
+                       *[PointOnCircle(p, ring) for p in pts],
+                       *[Equal(edges[0], e) for e in edges[1:]])
+        return edges
+
     # ---- constraints ------------------------------------------------------
     def constrain(self, *cs: object):
         self.sketch.constrain(*cs)
@@ -187,6 +211,8 @@ class SketchModel:
             self.constrain(Concentric(ents[0], ents[1]))
         elif ctype is Symmetry:
             self.constrain(Symmetry(ents[0], ents[1], ents[2]))
+        elif ctype is PointOnCircle:
+            self.constrain(PointOnCircle(ents[0], ents[1]))
         else:
             raise ValueError(f"toggle cannot construct {ctype.__name__}")
         return True
@@ -240,7 +266,8 @@ class SketchModel:
         from .profile import loops_from_lines_and_circles
         return loops_from_lines_and_circles(
             [l for l in self.sketch.lines if not l.construction],
-            self.sketch.circles,
+            [c for c in self.sketch.circles
+             if not getattr(c, "construction", False)],
             [a for a in self.sketch.arcs if not a.construction])
 
 
@@ -296,6 +323,9 @@ def model_to_dict(m: SketchModel) -> dict:
         elif isinstance(c, PointOnLine):
             cons.append({"t": "on", "p": _add_pt(pts, idx, c.p),
                          "line": m.sketch.lines.index(c.line)})
+        elif isinstance(c, PointOnCircle):
+            cons.append({"t": "oc", "p": _add_pt(pts, idx, c.p),
+                         "e": _ent_ref(m, c.curve)})
         elif isinstance(c, Parallel):
             cons.append({"t": "//", "l1": m.sketch.lines.index(c.l1),
                          "l2": m.sketch.lines.index(c.l2)})
@@ -332,7 +362,8 @@ def model_to_dict(m: SketchModel) -> dict:
          "points": [[p.x, p.y] for p in pts],
          "lines": [[idx[l.a.id], idx[l.b.id], int(l.construction)]
                    for l in m.sketch.lines],
-         "circles": [[idx[c.c.id], c.r] for c in m.sketch.circles],
+         "circles": [[idx[c.c.id], c.r, int(c.construction)]
+                     for c in m.sketch.circles],
          "arcs": [[idx[a.a.id], idx[a.m.id], idx[a.b.id], int(a.construction)]
                   for a in m.sketch.arcs],
          "constraints": cons}
@@ -378,8 +409,9 @@ def model_from_dict(d: dict) -> SketchModel:
     for e in d.get("lines", []):
         ln = m.add_line(pts[e[0]], pts[e[1]])
         ln.construction = bool(e[2]) if len(e) > 2 else False
-    for ic, r in d.get("circles", []):
-        m.add_circle(pts[ic], r)
+    for e in d.get("circles", []):
+        c = m.add_circle(pts[e[0]], e[1])
+        c.construction = bool(e[2]) if len(e) > 2 else False
     for e in d.get("arcs", []):
         ar = m.sketch.arc(pts[e[0]], pts[e[1]], pts[e[2]])
         ar.construction = bool(e[3]) if len(e) > 3 else False
@@ -402,6 +434,8 @@ def model_from_dict(d: dict) -> SketchModel:
             m.constrain(Coincident(pts[c["p"]], pts[c["q"]]))
         elif t == "on":
             m.constrain(PointOnLine(pts[c["p"]], m.sketch.lines[c["line"]]))
+        elif t == "oc":
+            m.constrain(PointOnCircle(pts[c["p"]], _ent_at(m, c["e"])))
         elif t == "//":
             m.constrain(Parallel(m.sketch.lines[c["l1"]], m.sketch.lines[c["l2"]]))
         elif t == "perp":

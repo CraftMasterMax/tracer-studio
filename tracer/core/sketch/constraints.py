@@ -181,6 +181,23 @@ class Concentric(Constraint):
 
 
 @dataclass
+class PointOnCircle(Constraint):
+    """A point lies ON a circle's (or arc's) circumference — the natural
+    curve twin of PointOnLine, and the per-vertex lock of the polygon
+    tool: n points on a ring + equal chords ⇒ a regular n-gon. Editing
+    the ring's Radius grows the whole polygon."""
+    p: Point
+    curve: object               # Circle | Arc
+
+    def entities(self): return [self.p, self.curve]
+
+    def residual(self, pos):
+        cx, cy = curve_center(self.curve)
+        d = math.hypot(self.p.x - cx, self.p.y - cy)
+        return (d - curve_radius(self.curve)) / _LEN_SCALE
+
+
+@dataclass
 class Symmetry(Constraint):
     """p1 and p2 mirror across the (infinite) axis line: the chord's
     midpoint lies ON the axis (row 0) and the chord is PERPENDICULAR to

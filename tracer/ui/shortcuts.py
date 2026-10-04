@@ -39,6 +39,8 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("C", "Circle tool", True),
         ("A", "Arc tool — start · end · bulge, chained", True),
         ("O", "Slot tool — centre · centre · width, tangent-locked", True),
+        ("Y", "Polygon tool — centre · vertex · number keys 3-9 set sides",
+         True),
         ("S", "Select / drag tool", True),
         ("Esc", "Cancel chain, switch to select", True),
         ("Enter", "Finish the line chain", True),
@@ -78,7 +80,7 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
 ]
 
 TOUR_HIGHLIGHTS = [
-    ("N", "sketch · R/L/C/O/A to draw"),
+    ("N", "sketch · R/L/C/O/Y/A to draw"),
     ("X", "finish → extrude"),
     ("MMB / wheel", "orbit · zoom (Shift pans)"),
     ("Double-click face", "sketch on it"),

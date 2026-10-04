@@ -45,8 +45,9 @@ class Sketch:
         self.lines.append(ln)
         return ln
 
-    def circle(self, center: Point, radius: float) -> Circle:
-        c = Circle(center, radius)
+    def circle(self, center: Point, radius: float,
+               construction: bool = False) -> Circle:
+        c = Circle(center, radius, construction)
         self.circles.append(c)
         return c
 
