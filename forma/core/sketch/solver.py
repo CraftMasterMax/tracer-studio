@@ -31,6 +31,7 @@ class Sketch:
         self.points: list[Point] = []
         self.lines: list[Line] = []
         self.circles: list[Circle] = []
+        self.arcs: list["Arc"] = []
         self.constraints: list[Constraint] = []
 
     # ---- construction ---------------------------------------------------
@@ -49,6 +50,13 @@ class Sketch:
         self.circles.append(c)
         return c
 
+    def arc(self, a: Point, m: Point, b: Point,
+            construction: bool = False):
+        from .entities import Arc
+        ar = Arc(a, m, b, construction)
+        self.arcs.append(ar)
+        return ar
+
     def constrain(self, *c: Constraint):
         self.constraints.extend(c)
 
@@ -61,6 +69,9 @@ class Sketch:
                 seen.setdefault(p.id, p)
         for c in self.circles:
             seen.setdefault(c.c.id, c.c)
+        for a in self.arcs:
+            for p in (a.a, a.m, a.b):
+                seen.setdefault(p.id, p)
         for p in self.points:
             seen.setdefault(p.id, p)
         return list(seen.values())

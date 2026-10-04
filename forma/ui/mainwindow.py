@@ -379,7 +379,7 @@ class MainWindow(QMainWindow):
         model.name = self._next_sketch_name()
         self._begin_sketch(model)
         self.status.showMessage(f"Sketching on {plane} — R rect · L line · C circle · "
-                                "H/V/F/D/P/Q constraints · K construction · "
+                                "A arc · H/V/F/D/P/Q constraints · K construction · "
                                 "X extrude · Esc select")
 
     def _start_sketch_on_face(self, point, normal):
@@ -498,7 +498,8 @@ class MainWindow(QMainWindow):
         bl.setSpacing(6)
         self._tool_btns = {}
         for tool, label in (("select", "Select"), ("line", "Line"),
-                            ("rect", "Rect"), ("circle", "Circle")):
+                            ("rect", "Rect"), ("circle", "Circle"),
+                            ("arc", "Arc")):
             b = QPushButton(label, checkable=True,
                             clicked=lambda checked, t=tool: self._pick_tool(t))
             b.setProperty("tb", True)

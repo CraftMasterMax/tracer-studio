@@ -173,6 +173,8 @@ class SketchModel:
             sk.lines.remove(ent)
         elif isinstance(ent, Circle):
             sk.circles.remove(ent)
+        elif sk.arcs and any(ent is a for a in sk.arcs):
+            sk.arcs = [a for a in sk.arcs if a is not ent]
         elif isinstance(ent, Point):
             sk.points = [p for p in sk.points if p is not ent]
 
@@ -202,7 +204,8 @@ class SketchModel:
         from .profile import loops_from_lines_and_circles
         return loops_from_lines_and_circles(
             [l for l in self.sketch.lines if not l.construction],
-            self.sketch.circles)
+            self.sketch.circles,
+            [a for a in self.sketch.arcs if not a.construction])
 
 
 def math_dist(a: Point, b: Point) -> float:
@@ -222,6 +225,8 @@ def _point_index(model: SketchModel):
         touch(l.a); touch(l.b)
     for c in model.sketch.circles:
         touch(c.c)
+    for a in model.sketch.arcs:
+        touch(a.a); touch(a.m); touch(a.b)
     for p in model.sketch.points:
         touch(p)
     return pts, index
@@ -263,6 +268,8 @@ def model_to_dict(m: SketchModel) -> dict:
          "lines": [[idx[l.a.id], idx[l.b.id], int(l.construction)]
                    for l in m.sketch.lines],
          "circles": [[idx[c.c.id], c.r] for c in m.sketch.circles],
+         "arcs": [[idx[a.a.id], idx[a.m.id], idx[a.b.id], int(a.construction)]
+                  for a in m.sketch.arcs],
          "constraints": cons}
     if m.plane == "FACE":
         d["axes"] = [[float(t) for t in a] for a in m.axes]
@@ -290,6 +297,9 @@ def model_from_dict(d: dict) -> SketchModel:
         ln.construction = bool(e[2]) if len(e) > 2 else False
     for ic, r in d.get("circles", []):
         m.add_circle(pts[ic], r)
+    for e in d.get("arcs", []):
+        ar = m.sketch.arc(pts[e[0]], pts[e[1]], pts[e[2]])
+        ar.construction = bool(e[3]) if len(e) > 3 else False
     for c in d.get("constraints", []):
         t = c["t"]
         if t == "H":

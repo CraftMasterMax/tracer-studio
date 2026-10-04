@@ -1,6 +1,6 @@
 """2D sketch canvas (QPainter — crisp text/glyphs, no GL needed in 2D).
 
-Tools: S select · L line chain · R rectangle · C circle.
+Tools: S select · L line chain · R rectangle · C circle · A arc.
 Constraint keys act on selection: H/V (line), F (point), D (distance on
 line), plus Del. X finishes into profile(s). Solver runs live on every
 drag with the grabbed point pinned — like it should.
@@ -18,7 +18,7 @@ from PySide6.QtWidgets import QInputDialog, QWidget
 
 from ..core.sketch.constraints import (Distance, Equal, Fixed, Horizontal,
                                        Perpendicular, Radius, Vertical)
-from ..core.sketch.entities import Circle, Line, Point
+from ..core.sketch.entities import Arc, Circle, Line, Point
 from ..core.sketch.model import (SketchModel, math_dist, model_from_dict,
                                  model_to_dict)
 from ..core.sketch.profile import regions
@@ -54,6 +54,7 @@ class SketchCanvas(QWidget):
         self._pan_from: QPointF | None = None
         self._line_start: Point | None = None
         self._rect_corner: np.ndarray | None = None
+        self._arc_pts: list[Point] = []       # 3-pt tool: start, end, bulge
         self._preview: tuple | None = None  # tool drag preview
         self._snap_hint: Point | None = None
         self._last_result = None
@@ -70,6 +71,7 @@ class SketchCanvas(QWidget):
         self._sel = []
         self._line_start = None
         self._rect_corner = None
+        self._arc_pts = []
         self._preview = None
         self._last_result = None
         self._hist = []
@@ -108,6 +110,7 @@ class SketchCanvas(QWidget):
         self._drag_pt = None
         self._line_start = None
         self._rect_corner = None
+        self._arc_pts = []
         self._preview = None
         self._solve()
         self.update()
@@ -117,6 +120,7 @@ class SketchCanvas(QWidget):
         if tool != "line":
             self._line_start = None
         self._rect_corner = None
+        self._arc_pts = []
         self._preview = None
         self.update()
 
@@ -160,6 +164,9 @@ class SketchCanvas(QWidget):
                 seen[p.id] = p
         for c in sk.circles:
             seen[c.c.id] = c.c
+        for a in sk.arcs:
+            for p in (a.a, a.b, a.m):
+                seen[p.id] = p
         for p in sk.points:
             seen[p.id] = p
         return [(p, None) for p in seen.values()]
@@ -174,10 +181,31 @@ class SketchCanvas(QWidget):
                            q.y() - self.w2s(c.c.x, c.c.y).y())
             if abs(d - c.r * self._scale) <= _HIT_PX:
                 return ("circle", c)
+        for ar in sk.arcs:
+            if self._arc_hit(ar, q):
+                return ("arc", ar)
         for l in sk.lines:
             if self._pt_seg_px(q, l.a, l.b) <= _HIT_PX:
                 return ("line", l)
         return None
+
+    def _arc_hit(self, ar, q: QPointF) -> bool:
+        smp = ar.sample(32)
+        for i in range(len(smp) - 1):
+            a = self.w2s(float(smp[i][0]), float(smp[i][1]))
+            b = self.w2s(float(smp[i + 1][0]), float(smp[i + 1][1]))
+            abx, aby = b.x() - a.x(), b.y() - a.y()
+            L2 = abx * abx + aby * aby
+            if L2 < 1e-9:
+                if math.hypot(q.x() - a.x(), q.y() - a.y()) <= _HIT_PX:
+                    return True
+                continue
+            t = max(0.0, min(1.0, ((q.x() - a.x()) * abx
+                                   + (q.y() - a.y()) * aby) / L2))
+            px, py = a.x() + t * abx, a.y() + t * aby
+            if math.hypot(q.x() - px, q.y() - py) <= _HIT_PX:
+                return True
+        return False
 
     def _pt_seg_px(self, q, a, b) -> float:
         ax, ay = self.w2s(a.x, a.y).x(), self.w2s(a.x, a.y).y()
@@ -262,6 +290,29 @@ class SketchCanvas(QWidget):
                 if r * self._scale > 4:
                     self._push_hist()
                     self.model.add_circle(self.model.point(*a), r)
+                    self._solve()
+            self.update()
+        elif self._tool == "arc":
+            # 3-point arc: start · end · point-on-arc, chained like a line.
+            snap = self._snap_point(q)
+            p = snap if snap is not None else self.model.point(*wp)
+            if len(self._arc_pts) == 2 and p is self._arc_pts[0]:
+                self._arc_pts = []                   # back-click cancels
+                self.update()
+                return
+            self._arc_pts.append(p)
+            if len(self._arc_pts) == 3:
+                a, b, mid = self._arc_pts
+                self._arc_pts = [b]                  # chain from our end
+                chord = math.hypot(b.x - a.x, b.y - a.y)
+                bulge = abs((b.x - a.x) * (mid.y - a.y)
+                            - (b.y - a.y) * (mid.x - a.x))
+                if chord > 1e-9:
+                    self._push_hist()
+                    if bulge / chord * self._scale < 1.0:
+                        self.model.add_line(a, b)    # flat enough -> line
+                    else:
+                        self.model.sketch.arc(a, mid, b)
                     self._solve()
             self.update()
 
@@ -422,11 +473,11 @@ class SketchCanvas(QWidget):
             self._solve(); self.update()
 
     def act_construction(self):
-        if not any(isinstance(e, Line) for e in self._sel):
+        if not any(isinstance(e, (Line, Arc)) for e in self._sel):
             return
         self._push_hist()
         for e in self._sel:
-            if isinstance(e, Line):
+            if isinstance(e, (Line, Arc)):
                 e.construction = not e.construction
         self._solve(); self.update()
 
@@ -458,6 +509,10 @@ class SketchCanvas(QWidget):
             menu.addAction("Dimension…", self.act_dim)
         elif len(sel) == 1 and isinstance(sel[0], Circle):
             menu.addAction("Radius…", self.act_dim)
+        elif len(sel) == 1 and isinstance(sel[0], Arc):
+            menu.addAction("Hide construction"
+                           if sel[0].construction else
+                           "Construction geometry", self.act_construction)
         elif len(sel) == 1 and isinstance(sel[0], Point):
             menu.addAction("Fix", self.act_fix)
         if sel:
@@ -467,6 +522,7 @@ class SketchCanvas(QWidget):
             menu.addAction("Rectangle tool", lambda: self.set_tool("rect"))
             menu.addAction("Line tool", lambda: self.set_tool("line"))
             menu.addAction("Circle tool", lambda: self.set_tool("circle"))
+            menu.addAction("Arc tool", lambda: self.set_tool("arc"))
         menu.exec(ev.globalPosition().toPoint())
         self.update()
 
@@ -499,6 +555,8 @@ class SketchCanvas(QWidget):
             self.set_tool("rect")
         elif k == Qt.Key_C and not sel:
             self.set_tool("circle")
+        elif k == Qt.Key_A and not sel:
+            self.set_tool("arc")
         elif k == Qt.Key_Return and self._tool == "line":
             self._line_start = None
             self.set_tool("select")
@@ -658,6 +716,14 @@ class SketchCanvas(QWidget):
         for l in sk.lines:
             p.setPen(constr_pen if l.construction else solid_pen)
             p.drawLine(self.w2s(l.a.x, l.a.y), self.w2s(l.b.x, l.b.y))
+        for ar in sk.arcs:
+            p.setPen(constr_pen if ar.construction else solid_pen)
+            smp = ar.sample(64)
+            q_prev = self.w2s(float(smp[0][0]), float(smp[0][1]))
+            for xy in smp[1:]:
+                qn = self.w2s(float(xy[0]), float(xy[1]))
+                p.drawLine(q_prev, qn)
+                q_prev = qn
         p.setPen(solid_pen)
         for c in sk.circles:
             cen = self.w2s(c.c.x, c.c.y)
@@ -671,6 +737,13 @@ class SketchCanvas(QWidget):
             elif isinstance(e, Circle):
                 cen = self.w2s(e.c.x, e.c.y)
                 p.drawEllipse(cen, e.r * self._scale, e.r * self._scale)
+            elif isinstance(e, Arc):
+                smp = e.sample(64)
+                q_prev = self.w2s(float(smp[0][0]), float(smp[0][1]))
+                for xy in smp[1:]:
+                    qn = self.w2s(float(xy[0]), float(xy[1]))
+                    p.drawLine(q_prev, qn)
+                    q_prev = qn
         # points
         for pt, _ in self._all_points():
             pos = self.w2s(pt.x, pt.y)
@@ -727,6 +800,22 @@ class SketchCanvas(QWidget):
             p.setPen(QPen(ACCENT, 1.2, Qt.DashLine))
             p.drawLine(self.w2s(self._line_start.x, self._line_start.y),
                        self.w2s(*wp))
+        if self._tool == "arc" and self._arc_pts:
+            cur = self.mapFromGlobal(self.cursor().pos())
+            wp = self._world(QPointF(cur))
+            p.setPen(QPen(ACCENT, 1.2, Qt.DashLine))
+            if len(self._arc_pts) == 1:
+                a = self._arc_pts[0]
+                p.drawLine(self.w2s(a.x, a.y), self.w2s(*wp))
+            elif len(self._arc_pts) == 2:
+                a, b = self._arc_pts
+                tmp = Arc(a, Point(float(wp[0]), float(wp[1])), b)
+                smp = tmp.sample(48)
+                q_prev = self.w2s(float(smp[0][0]), float(smp[0][1]))
+                for xy in smp[1:]:
+                    qn = self.w2s(float(xy[0]), float(xy[1]))
+                    p.drawLine(q_prev, qn)
+                    q_prev = qn
         if not self._preview:
             return
         kind, a, b = self._preview
@@ -747,10 +836,11 @@ class SketchCanvas(QWidget):
         if self._cursor is not None:
             cx, cy = self._cursor
             lines.append((f"X {cx:.2f}   Y {cy:.2f} mm", DIM))
-        tool = {"select": "Select (S/L/R/C) · H/V/F/D constraints · X extrude",
+        tool = {"select": "Select (S/L/R/C/A) · H/V/F/D constraints · X extrude",
                 "line": "Line — click points, Enter/Esc stops",
-                "rect": "Rectangle — drag corners",
-                "circle": "Circle — drag from center"}
+                "rect": "Rectangle — drag corners or click · move · click",
+                "circle": "Circle — drag from center or click · move · click",
+                "arc": "Arc — 3 clicks: start · end · bulge (chains)"}
         lines.append(("Tool: " + tool.get(self._tool, "?"), DIM))
         if self._last_result is not None:
             r = self._last_result

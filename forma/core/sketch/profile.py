@@ -54,11 +54,14 @@ def _point_in_poly(pt, poly: np.ndarray) -> bool:
     return inside
 
 
-def loops_from_lines_and_circles(lines, circles):
+def loops_from_lines_and_circles(lines, circles, arcs=()):
     """Returns (loops, warnings).
 
     loops: list of dicts {points: Nx2 float64 ccw, area: float}
     warnings: list of strings (dangling/open geometry etc).
+    Arcs contribute their chord-subdivided polyline: the endpoints are the
+    arc's real shared Points (connect to lines); interior samples are
+    ephemeral degree-2 nodes.
     """
     warnings: list[str] = []
     uf = _UnionFind()
@@ -73,6 +76,11 @@ def loops_from_lines_and_circles(lines, circles):
         pts[n] = (float(p.x), float(p.y))
         return n
 
+    def node_xy(xy):                      # ephemeral tessellation vertex
+        n = uf.add()
+        pts[n] = (float(xy[0]), float(xy[1]))
+        return n
+
     edges = []  # (n0, n1) half-edge pool
     for ln in lines:
         n0, n1 = node_for(ln.a), node_for(ln.b)
@@ -80,6 +88,17 @@ def loops_from_lines_and_circles(lines, circles):
             warnings.append("zero-length edge skipped")
             continue
         edges.append([n0, n1, False])
+
+    for ar in arcs:
+        smp = ar.sample(48)
+        if len(smp) < 3:
+            continue
+        chain = [node_for(ar.a)]
+        chain += [node_xy(r) for r in smp[1:-1]]
+        chain.append(node_for(ar.b))
+        for u_, v_ in zip(chain, chain[1:]):
+            if u_ != v_:
+                edges.append([u_, v_, False])
 
     # merge coincident-but-distinct endpoints (drawn without snap)
     coords = {n: xy for n, xy in pts.items()}
