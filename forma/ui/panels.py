@@ -107,6 +107,10 @@ class PropertiesPanel(QWidget):
         lines = [f"<b>{feature.name}</b>", f"operation: {feature.op}"]
         if isinstance(feature, ExtrudeFeature):
             lines.append(f"height: {feature.height:g} mm")
+            if feature.fillet > 0:
+                lines.append(f"vertical fillet: {feature.fillet:g} mm")
+            if feature.chamfer > 0:
+                lines.append(f"vertical chamfer: {feature.chamfer:g} mm")
             lines.append(f"outer vertices: {len(np.asarray(feature.outer))}")
             lines.append(f"holes: {len(feature.holes)}")
         elif isinstance(feature, RevolveFeature):

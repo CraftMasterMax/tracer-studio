@@ -214,6 +214,10 @@ class MainWindow(QMainWindow):
         if isinstance(feature, ExtrudeFeature):
             menu.addAction("Set extrude distance…",
                            lambda: self._set_distance(feature))
+            menu.addAction("Fillet vertical edges…",
+                           lambda: self._set_corner(feature, "fillet"))
+            menu.addAction("Chamfer vertical edges…",
+                           lambda: self._set_corner(feature, "chamfer"))
         if isinstance(feature, RevolveFeature):
             menu.addAction("Set revolve angle…",
                            lambda: self._set_angle(feature))
@@ -282,6 +286,26 @@ class MainWindow(QMainWindow):
         self.doc.dirty = True
         self.recompute()
         self.status.showMessage(f"{feature.name}: height {val:g} mm", 4000)
+
+    def _set_corner(self, feature, kind: str):
+        """Round (fillet) or cut (chamfer) the extrusion's vertical edges.
+        The two are mutually exclusive; 0 clears."""
+        cur = getattr(feature, kind)
+        title = "Fillet vertical edges" if kind == "fillet" \
+            else "Chamfer vertical edges"
+        val, ok = QInputDialog.getDouble(self, title, "Size (mm, 0 = none):",
+                                         cur, 0.0, 5000.0, 3)
+        if not ok:
+            return
+        self._capture()
+        setattr(feature, kind, float(val))
+        setattr(feature, "fillet" if kind == "chamfer" else "chamfer", 0.0)
+        self.doc.dirty = True
+        self.recompute()
+        verb = "filleted" if kind == "fillet" else "chamfered"
+        self.status.showMessage(
+            f"{feature.name}: {verb} {val:g} mm" if val > 0
+            else f"{feature.name}: sharp edges restored", 4000)
 
     def _set_angle(self, feature):
         val, ok = QInputDialog.getDouble(self, "Revolve angle",

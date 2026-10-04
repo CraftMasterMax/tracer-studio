@@ -38,6 +38,63 @@ def _cross_section(outer, holes) -> m3.CrossSection:
     return m3.CrossSection(contours, fillrule=m3.FillRule.EvenOdd)
 
 
+def round_corners(pts, radius: float = 0.0, chamfer: float = 0.0) -> np.ndarray:
+    """Cut the convex corners of a closed 2D loop with arcs (``radius``) or
+    straight legs (``chamfer``, equal legs).  Concave corners and near-
+    straight vertices (arc tessellation, e.g. circles) are left untouched,
+    so the op is safe on any profile: it rounds the *design* corners.
+    Used by ExtrudeFeature to fillet/chamfer its vertical edges without a
+    B-rep kernel — the profile is filleted in 2D, then swept as usual.
+    """
+    pts = np.asarray(pts, float)
+    if len(pts) > 1 and np.allclose(pts[0], pts[-1]):
+        pts = pts[:-1]                       # implicit close
+    n = len(pts)
+    if n < 3 or (radius <= 0 and chamfer <= 0):
+        return pts
+    area2 = float(np.sum(pts[:, 0] * np.roll(pts[:, 1], -1)
+                         - np.roll(pts[:, 0], -1) * pts[:, 1]))
+    orient = 1.0 if area2 > 0 else -1.0
+    out: list[np.ndarray] = []
+    for i in range(n):
+        p, a, b = pts[i], pts[i - 1], pts[(i + 1) % n]
+        va, vb = a - p, b - p
+        na, nb = np.linalg.norm(va), np.linalg.norm(vb)
+        if na < 1e-9 or nb < 1e-9:
+            out.append(p)
+            continue
+        ua, ub = va / na, vb / nb
+        cross = float(ua[0] * ub[1] - ua[1] * ub[0]) * orient
+        theta = math.acos(float(np.clip(np.dot(ua, ub), -1.0, 1.0)))
+        if cross >= -1e-9 or theta > math.radians(165) or theta < 1e-6:
+            out.append(p)                    # concave / straight / spike: keep
+            continue
+        half = theta / 2.0
+        if chamfer > 0:
+            t = min(chamfer, 0.45 * na, 0.45 * nb)
+            out.append(p + ua * t)
+            out.append(p + ub * t)
+        else:
+            t = min(radius / math.tan(half), 0.45 * na, 0.45 * nb)
+            r_eff = t * math.tan(half)
+            entry, exit_ = p + ua * t, p + ub * t
+            bis = ua + ub
+            bis = bis / np.linalg.norm(bis)
+            c = p + bis * (r_eff / math.sin(half))
+            a0 = math.atan2(*(entry - c)[::-1])
+            a1 = math.atan2(*(exit_ - c)[::-1])
+            sweep = a1 - a0
+            while sweep > math.pi:
+                sweep -= 2 * math.pi
+            while sweep < -math.pi:
+                sweep += 2 * math.pi
+            steps = max(2, math.ceil(abs(sweep) / math.radians(6)))
+            for k in range(steps + 1):
+                ang = a0 + sweep * k / steps
+                out.append(c + r_eff * np.array([math.cos(ang), math.sin(ang)]))
+    return np.asarray(out, float)
+
+
 class Solid:
     """An immutable watertight solid. Booleans return new Solids."""
 

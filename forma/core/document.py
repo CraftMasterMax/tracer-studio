@@ -13,7 +13,7 @@ from typing import Literal
 
 import numpy as np
 
-from .geometry import Solid, circle_contour
+from .geometry import Solid, circle_contour, round_corners
 from .sketch.model import plane_matrix, revolve_matrix
 
 CombineOp = Literal["union", "subtract", "intersect"]
@@ -62,9 +62,20 @@ class ExtrudeFeature(Feature):
     sketch: dict | None = None
     sid: int | None = None
     region: int = 0
+    fillet: float = 0.0      # round vertical edges (2D corner fillet, mm)
+    chamfer: float = 0.0     # cut vertical edges (2D corner chamfer, mm)
+
+    def _profile(self):
+        if self.fillet > 0 or self.chamfer > 0:
+            outer = round_corners(self.outer, self.fillet, self.chamfer)
+            holes = [round_corners(h, self.fillet, self.chamfer)
+                     for h in self.holes]
+            return outer, holes
+        return self.outer, self.holes
 
     def build(self) -> Solid:
-        s = Solid.extrude(self.outer, self.holes, self.height)
+        outer, holes = self._profile()
+        s = Solid.extrude(outer, holes, self.height)
         if self.plane == "XY":
             return s.translated(self.placement)
         m = plane_matrix(self.plane, self.placement, self.axes)
@@ -235,6 +246,7 @@ class Document:
                 d.update(outer=np.asarray(f.outer).tolist(),
                          holes=[np.asarray(h).tolist() for h in f.holes],
                          height=float(f.height),
+                         fillet=float(f.fillet), chamfer=float(f.chamfer),
                          placement=list(map(float, f.placement)),
                          plane=f.plane, axes=f.axes, sketch=f.sketch,
                          sid=f.sid, region=f.region)
@@ -277,7 +289,10 @@ class Document:
                     name=fd["name"],
                     outer=np.array(fd["outer"], float),
                     holes=[np.array(h, float) for h in fd["holes"]],
-                    height=fd["height"], placement=tuple(fd["placement"]),
+                    height=fd["height"],
+                    fillet=float(fd.get("fillet", 0.0)),
+                    chamfer=float(fd.get("chamfer", 0.0)),
+                    placement=tuple(fd["placement"]),
                     plane=fd.get("plane", "XY"), axes=fd.get("axes"),
                     sketch=fd.get("sketch"),
                     sid=fd.get("sid"), region=fd.get("region", 0), **base))
