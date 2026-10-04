@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog,
                                QSplitter, QStackedWidget, QVBoxLayout, QWidget)
 
 from ..core import io as fio
-from ..core.document import Document, ExtrudeFeature, LinearPatternFeature
+from ..core.document import (CircularPatternFeature, Document,
+                             ExtrudeFeature, LinearPatternFeature)
 from ..core.sketch.model import SketchModel, model_from_dict, model_to_dict
 from .renderer import SceneRenderer
 from .panels import LeftRail
@@ -67,6 +68,7 @@ class MainWindow(QMainWindow):
         self.timeline = TimelineHost()
         self.timeline.bar.feature_activated.connect(self._feature_activated)
         self.timeline.bar.feature_menu.connect(self._feature_menu)
+        self.timeline.bar.feature_delete.connect(self._delete_feature)
         cl.addWidget(self.timeline)
         self.setCentralWidget(center)
 
@@ -111,6 +113,8 @@ class MainWindow(QMainWindow):
         m_cr = self.menuBar().addMenu("C&reate")
         m_cr.addAction(QAction("&Linear pattern…", self,
                                triggered=lambda checked=False: self.action_linear_pattern()))
+        m_cr.addAction(QAction("C&ircular pattern…", self,
+                               triggered=lambda checked=False: self.action_circular_pattern()))
 
         m_edit = self.menuBar().addMenu("&Edit")
         m_edit.addAction(QAction("&Undo", self, shortcut=QKeySequence.Undo,
@@ -495,12 +499,56 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.warning(self, "Export failed", f"Could not write {path}")
 
-    # ---- linear pattern --------------------------------------------------------
+    # ---- patterns ----------------------------------------------------------------
+    def _pattern_candidates(self):
+        return [f for f in self.doc.features
+                if not isinstance(f, (LinearPatternFeature,
+                                      CircularPatternFeature))
+                and not f.suppressed]
+
+    def action_circular_pattern(self):
+        if self.doc is None:
+            return
+        cands = self._pattern_candidates()
+        if not cands:
+            QMessageBox.information(self, "Nothing to pattern",
+                                    "Create a feature first.")
+            return
+        names = [f.name for f in cands]
+        name, ok = QInputDialog.getItem(self, "Circular pattern",
+                                        "Feature to pattern:", names, 0, False)
+        if not ok:
+            return
+        src = cands[names.index(name)]
+        cx, ok = QInputDialog.getDouble(self, "Circular pattern",
+                                        "Center X (mm):", 0.0, -1e5, 1e5, 2)
+        if not ok:
+            return
+        cy, ok = QInputDialog.getDouble(self, "Circular pattern",
+                                        "Center Y (mm):", 0.0, -1e5, 1e5, 2)
+        if not ok:
+            return
+        ang, ok = QInputDialog.getDouble(self, "Circular pattern",
+                                         "Angle (deg):", 360.0, -360.0, 360.0, 1)
+        if not ok:
+            return
+        count, ok = QInputDialog.getInt(self, "Circular pattern",
+                                        "Occurrences:", 6, 2, 500, 1)
+        if not ok:
+            return
+        self._capture()
+        self.doc.add_circular_pattern(f"Circle of {src.name}", src,
+                                      (cx, cy), ang, count)
+        self.recompute()
+        self.viewport.refresh(fit=True)
+        self.status.showMessage(
+            f"Patterned {src.name}: {count}x over {ang:g}° about "
+            f"({cx:g}, {cy:g})", 6000)
+
     def action_linear_pattern(self):
         if self.doc is None:
             return
-        cands = [f for f in self.doc.features
-                 if not isinstance(f, LinearPatternFeature) and not f.suppressed]
+        cands = self._pattern_candidates()
         if not cands:
             QMessageBox.information(self, "Nothing to pattern",
                                     "Create a feature first.")

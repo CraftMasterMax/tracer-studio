@@ -19,6 +19,7 @@ class TimelineBar(QWidget):
     feature_clicked = Signal(object)        # Feature
     feature_activated = Signal(object)      # double-click = edit
     feature_menu = Signal(object, object)   # Feature, global QPoint
+    feature_delete = Signal(object)         # Delete key on selected chip
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -27,7 +28,17 @@ class TimelineBar(QWidget):
         self._sel: int = -1
         self.setMinimumHeight(38)
         self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.StrongFocus)
         self._font = self.font()
+
+    def keyPressEvent(self, ev):
+        if (ev.key() in (Qt.Key_Delete, Qt.Key_Backspace)
+                and self.doc is not None and 0 <= self._sel < len(self.doc.features)):
+            self.feature_delete.emit(self.doc.features[self._sel])
+            self._sel = -1
+            self.update()
+            return
+        super().keyPressEvent(ev)
 
     def set_document(self, doc: Document):
         self.doc = doc
@@ -75,6 +86,7 @@ class TimelineBar(QWidget):
                     self.feature_menu.emit(f, ev.globalPosition().toPoint())
                     return
                 self._sel = self.doc.features.index(f)
+                self.setFocus()
                 self.feature_clicked.emit(f)
                 self.update()
                 return

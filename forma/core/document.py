@@ -6,6 +6,7 @@ true history tree will replace later — files written today stay readable.
 """
 from __future__ import annotations
 
+import math
 import uuid
 from dataclasses import dataclass, field
 from typing import Literal
@@ -34,6 +35,17 @@ class LinearPatternFeature(Feature):
     source_uid: str = ""
     vector: tuple = (0.0, 0.0, 0.0)
     count: int = 2
+
+
+@dataclass
+class CircularPatternFeature(Feature):
+    """Copies of the source solid rotated CCW about +Z through `center`.
+    angle=360 spaces copies evenly without a wrap duplicate; a partial
+    angle spans its copies inclusive (Fusion's circular pattern)."""
+    source_uid: str = ""
+    center: tuple = (0.0, 0.0)
+    angle: float = 360.0
+    count: int = 6
 
 
 @dataclass
@@ -109,6 +121,22 @@ class Document:
             name=name, op=op or source.op, source_uid=source.uid,
             vector=tuple(float(v) for v in vector), count=int(count)))
 
+    def add_circular_pattern(self, name, source: Feature, center=(0, 0),
+                             angle=360.0, count=6, op=None):
+        return self.add(CircularPatternFeature(
+            name=name, op=op or source.op, source_uid=source.uid,
+            center=(float(center[0]), float(center[1])),
+            angle=float(angle), count=int(count)))
+
+    @staticmethod
+    def _rotz_about(cx, cy, t) -> "np.ndarray":
+        c, s = np.cos(t), np.sin(t)
+        m = np.eye(4)
+        m[:2, :2] = [[c, -s], [s, c]]
+        m[0, 3] = cx - (c * cx - s * cy)        # T(p) R T(-p)
+        m[1, 3] = cy - (s * cx + c * cy)
+        return m
+
     # ---- evaluation ------------------------------------------------------
     def recompute(self) -> Solid | None:
         acc: Solid | None = None
@@ -123,6 +151,20 @@ class Document:
                 solid = None
                 for k in range(max(1, int(f.count))):
                     c = src.translated(tuple(v * k for v in f.vector))
+                    solid = c if solid is None else solid.union(c)
+            elif isinstance(f, CircularPatternFeature):
+                src = by_uid.get(f.source_uid)
+                if src is None:
+                    continue
+                n = max(1, int(f.count))
+                ang = float(f.angle)
+                full = abs(abs(ang) - 360.0) < 1e-9
+                step = ang / (n if full else max(n - 1, 1))
+                solid = None
+                for k in range(n):
+                    m = self._rotz_about(f.center[0], f.center[1],
+                                         math.radians(step * k))
+                    c = src.transformed(m)
                     solid = c if solid is None else solid.union(c)
             else:
                 solid = f.build()
@@ -167,6 +209,10 @@ class Document:
                 d.update(source_uid=f.source_uid,
                          vector=list(map(float, f.vector)),
                          count=int(f.count))
+            elif isinstance(f, CircularPatternFeature):
+                d.update(source_uid=f.source_uid,
+                         center=list(map(float, f.center)),
+                         angle=float(f.angle), count=int(f.count))
             return d
         return {"format": "forma/document", "version": 2,
                 "title": self.title, "units": self.units,
@@ -198,6 +244,11 @@ class Document:
                 doc.features.append(LinearPatternFeature(
                     name=fd["name"], source_uid=fd["source_uid"],
                     vector=tuple(fd["vector"]), count=int(fd["count"]), **base))
+            elif t == "CircularPatternFeature":
+                doc.features.append(CircularPatternFeature(
+                    name=fd["name"], source_uid=fd["source_uid"],
+                    center=tuple(fd["center"]), angle=float(fd["angle"]),
+                    count=int(fd["count"]), **base))
             else:
                 raise ValueError(f"unknown feature type {t!r}")
         doc.dirty = True
