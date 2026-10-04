@@ -780,11 +780,10 @@ class SketchCanvas(QWidget):
             elif isinstance(c, Fixed):
                 m = self.w2s(c.p.x, c.p.y)
                 self._badge(p, m, "\u25a0")   # ■
-            elif isinstance(c, Distance) and isinstance(c.p, Point):
-                m = self.w2s((c.p.x + c.q.x) / 2, (c.p.y + c.q.y) / 2)
-                self._badge(p, m, f"{c.value:g}", wide=True)
-            # Radius: no glyph — the editable "R 8.00" dimension label from
-            # _draw_dimensions is the single indicator (as in Fusion).
+            # Distance & Radius: no badge — the editable dimension label
+            # from _draw_dimensions is the single indicator (as in
+            # Fusion). Two glyphs for one value used to collide
+            # ("26.00" drawn over a stale "26").
         p.setFont(font)
 
     def _radius_pos(self, e, dist: float = 16.0) -> QPointF:
