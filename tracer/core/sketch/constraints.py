@@ -227,6 +227,68 @@ def make_tangent(e1, e2) -> Tangent:
     return Tangent(e1, e2, internal=bool(internal))
 
 
+@dataclass
+class Angle(Constraint):
+    """Inclination of a line, radians from +X. Residual is the wrapped
+    signed angle error: gradient ±1 everywhere, so — unlike a sin form —
+    it never stalls when the line starts exactly 90° from the target.
+    make_angle/snapped pick the branch the geometry already occupies, so
+    a segment that reads 20° while pointing at 200° never flips."""
+    line: Line
+    value: float
+
+    def entities(self): return [self.line]
+
+    def measured(self) -> float:
+        return math.atan2(self.line.b.y - self.line.a.y,
+                          self.line.b.x - self.line.a.x)
+
+    def residual(self, pos):
+        return _wrap(self.measured() - self.value)
+
+
+@dataclass
+class AngleBetween(Constraint):
+    """Directed angle from l1 to l2, radians; wrapped-error residual."""
+    l1: Line
+    l2: Line
+    value: float
+
+    def entities(self): return [self.l1, self.l2]
+
+    def measured(self) -> float:
+        t1 = math.atan2(self.l1.b.y - self.l1.a.y, self.l1.b.x - self.l1.a.x)
+        t2 = math.atan2(self.l2.b.y - self.l2.a.y, self.l2.b.x - self.l2.a.x)
+        return t2 - t1
+
+    def residual(self, pos):
+        return _wrap(self.measured() - self.value)
+
+
+def _wrap(a: float) -> float:
+    """Angle error into (−π, π] — continuous mod 2π, crest at the seam."""
+    return (a + math.pi) % (2 * math.pi) - math.pi
+
+
+def snapped(current: float, want: float) -> float:
+    """Pick want or want+π — whichever branch current already lies on, so
+    a fresh constraint never drags geometry across a flip and editing a
+    value on a flipped line doesn't flip it back."""
+    return want if math.cos(current - want) >= 0 else want + math.pi
+
+
+def make_angle(line, deg: float) -> Angle:
+    c = Angle(line, None)
+    c.value = snapped(c.measured(), math.radians(deg))
+    return c
+
+
+def make_angle_between(l1, l2, deg: float) -> AngleBetween:
+    c = AngleBetween(l1, l2, None)
+    c.value = snapped(c.measured(), math.radians(deg))
+    return c
+
+
 def expand(constraints: list[Constraint]) -> list[Constraint]:
     """Coincident carries two DOFs; split into per-axis rows."""
     out = []

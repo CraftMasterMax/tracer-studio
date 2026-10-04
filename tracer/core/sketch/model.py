@@ -11,9 +11,10 @@ from typing import Iterable
 import numpy as np
 
 from .entities import Point, Line, Circle, Arc, curve_radius, curve_center
-from .constraints import (Coincident, Distance, Equal, Fixed, Horizontal,
-                          Perpendicular, Radius, PointOnLine, Parallel,
-                          Tangent, Vertical, make_tangent)
+from .constraints import (Angle, AngleBetween, Coincident, Distance, Equal,
+                          Fixed, Horizontal, Perpendicular, Radius,
+                          PointOnLine, Parallel, Tangent, Vertical,
+                          make_tangent)
 from .solver import Sketch, SolveResult
 
 # Sketch planes: (u_axis, v_axis) in world coords; extrude normal = u x v.
@@ -275,6 +276,12 @@ def model_to_dict(m: SketchModel) -> dict:
             cons.append({"t": "tan", "a": _ent_ref(m, c.e1),
                          "b": _ent_ref(m, c.e2), "side": c.side,
                          "internal": bool(c.internal)})
+        elif isinstance(c, Angle):
+            cons.append({"t": "ang", "line": m.sketch.lines.index(c.line),
+                         "v": c.value})
+        elif isinstance(c, AngleBetween):
+            cons.append({"t": "angb", "l1": m.sketch.lines.index(c.l1),
+                         "l2": m.sketch.lines.index(c.l2), "v": c.value})
     d = {"name": m.name, "plane": m.plane,
          "points": [[p.x, p.y] for p in pts],
          "lines": [[idx[l.a.id], idx[l.b.id], int(l.construction)]
@@ -360,4 +367,9 @@ def model_from_dict(d: dict) -> SketchModel:
             m.constrain(Tangent(_ent_at(m, c["a"]), _ent_at(m, c["b"]),
                                 side=c.get("side", 1.0),
                                 internal=bool(c.get("internal", False))))
+        elif t == "ang":
+            m.constrain(Angle(m.sketch.lines[c["line"]], c["v"]))
+        elif t == "angb":
+            m.constrain(AngleBetween(m.sketch.lines[c["l1"]],
+                                     m.sketch.lines[c["l2"]], c["v"]))
     return m

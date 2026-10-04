@@ -16,9 +16,11 @@ from PySide6.QtGui import (QColor, QFont, QKeyEvent, QMouseEvent, QPainter,
                            QPen, QWheelEvent)
 from PySide6.QtWidgets import QInputDialog, QWidget
 
-from ..core.sketch.constraints import (Distance, Equal, Fixed, Horizontal,
-                                       Perpendicular, Radius, Tangent,
-                                       Vertical, make_tangent)
+from ..core.sketch.constraints import (Angle, AngleBetween, Distance, Equal,
+                                       Fixed, Horizontal, Perpendicular,
+                                       Radius, Tangent, Vertical,
+                                       make_angle, make_angle_between,
+                                       make_tangent, snapped)
 from ..core.sketch.entities import (Arc, Circle, Line, Point, curve_center,
                                      curve_radius)
 from ..core.sketch.model import (SketchModel, math_dist, model_from_dict,
@@ -38,6 +40,22 @@ OK = QColor("#7ec97e")
 WARN = QColor("#e5b567")
 
 _HIT_PX = 9
+
+
+def _line_pivot(l1, l2):
+    """Shared endpoint if any, else the intersection of the two infinite
+    lines, else None when parallel (an AngleBetween on parallel lines has
+    no visible vertex, so no arc is drawn)."""
+    for p in (l1.a, l1.b):
+        if p is l2.a or p is l2.b:
+            return p.x, p.y
+    d1 = (l1.b.x - l1.a.x, l1.b.y - l1.a.y)
+    d2 = (l2.b.x - l2.a.x, l2.b.y - l2.a.y)
+    den = d1[0] * d2[1] - d1[1] * d2[0]
+    if abs(den) < 1e-12:
+        return None
+    t = ((l2.a.x - l1.a.x) * d2[1] - (l2.a.y - l1.a.y) * d2[0]) / den
+    return l1.a.x + d1[0] * t, l1.a.y + d1[1] * t
 
 
 class SketchCanvas(QWidget):
@@ -497,6 +515,37 @@ class SketchCanvas(QWidget):
         self.model.toggle(Tangent, (line, curves[0]) if line else curves)
         self._solve(); self.update()
 
+    def act_angle(self):
+        """Angular dimension: one line → angle from +X; two lines → angle
+        between (Fusion pivots the arc at the shared/intersection point)."""
+        sel = self._sel
+        if len(sel) == 1 and isinstance(sel[0], Line):
+            ln = sel[0]
+            deg = math.degrees(math.atan2(ln.b.y - ln.a.y, ln.b.x - ln.a.x)) % 180
+            val, ok = QInputDialog.getDouble(self, "Angular dimension",
+                                             "Angle from +X (deg):",
+                                             round(deg, 2), 0.0, 179.99, 2)
+            if not ok:
+                return
+            self._push_hist()
+            self.model.remove_last(Angle, (ln,))
+            self.model.constrain(make_angle(ln, val))
+            self._solve(); self.update()
+        elif len(sel) == 2 and all(isinstance(e, Line) for e in sel):
+            l1, l2 = sel
+            t1 = math.atan2(l1.b.y - l1.a.y, l1.b.x - l1.a.x)
+            t2 = math.atan2(l2.b.y - l2.a.y, l2.b.x - l2.a.x)
+            deg = math.degrees(t2 - t1) % 180
+            val, ok = QInputDialog.getDouble(self, "Angular dimension",
+                                             "Angle between (deg):",
+                                             round(deg, 2), 0.0, 179.99, 2)
+            if not ok:
+                return
+            self._push_hist()
+            self.model.remove_last(AngleBetween, (l1, l2))
+            self.model.constrain(make_angle_between(l1, l2, val))
+            self._solve(); self.update()
+
     def act_construction(self):
         if not any(isinstance(e, (Line, Arc)) for e in self._sel):
             return
@@ -523,6 +572,7 @@ class SketchCanvas(QWidget):
             menu.addAction("Horizontal", self.act_H)
             menu.addAction("Vertical", self.act_V)
             menu.addAction("Dimension…", self.act_dim)
+            menu.addAction("Angle…", self.act_angle)
             menu.addSeparator()
             menu.addAction("Hide construction"
                            if sel[0].construction else
@@ -530,6 +580,7 @@ class SketchCanvas(QWidget):
         elif len(sel) == 2 and all(isinstance(e, Line) for e in sel):
             menu.addAction("Perpendicular", self.act_perp)
             menu.addAction("Equal length", self.act_equal)
+            menu.addAction("Angle between…", self.act_angle)
         elif self.tangent_ok(sel):
             menu.addAction("Tangent", self.act_tangent)
         elif len(sel) == 2 and all(isinstance(e, Point) for e in sel):
@@ -608,6 +659,8 @@ class SketchCanvas(QWidget):
             self.act_equal()
         elif k == Qt.Key_T:
             self.act_tangent()
+        elif k == Qt.Key_I:
+            self.act_angle()
         elif k == Qt.Key_K:
             self.act_construction()
         else:
@@ -660,6 +713,7 @@ class SketchCanvas(QWidget):
         sk = self.model.sketch
         p.setFont(self._font)
         fm = p.fontMetrics()
+        seen_pivots = []                 # screen pts of angle dims so far
         for c in sk.constraints:
             text = pos = None
             if isinstance(c, Distance):
@@ -674,6 +728,22 @@ class SketchCanvas(QWidget):
             elif isinstance(c, Radius):
                 pos = self._radius_pos(c.curve)
                 text = f"R {c.value:.2f}"
+            elif isinstance(c, (Angle, AngleBetween)):
+                arc = None
+                pv = self._angle_pivot(c)
+                ring = 0
+                if pv is not None:
+                    s = self.w2s(pv[0], pv[1])
+                    ring = sum(1 for q in seen_pivots
+                               if math.hypot(s.x() - q.x(), s.y() - q.y()) < 14)
+                    seen_pivots.append(s)
+                arc = self._angle_arc_pts(c, ring)
+                if arc is None:
+                    continue
+                pts, label = arc
+                self._draw_arc(p, pts)
+                pos = label
+                text = f"{math.degrees(c.value) % 180:.2f}\u00b0"
             if text is None:
                 continue
             br = fm.boundingRect(text)
@@ -697,13 +767,25 @@ class SketchCanvas(QWidget):
         super().mouseDoubleClickEvent(ev)
 
     def _edit_dim(self, c):
-        val, ok = QInputDialog.getDouble(self, "Edit dimension",
-                                         "Value (mm):", float(c.value),
-                                         0.001, 1e6, 3)
-        if not ok:
-            return
-        self._push_hist()
-        c.value = float(val)
+        if isinstance(c, (Angle, AngleBetween)):
+            deg = math.degrees(c.value) % 180
+            val, ok = QInputDialog.getDouble(self, "Edit angle",
+                                             "Angle (deg):", round(deg, 2),
+                                             0.0, 179.99, 2)
+            if not ok:
+                return
+            self._push_hist()
+            # re-snap to the branch the geometry currently occupies, so
+            # editing never flips the line through 180°
+            c.value = snapped(c.measured(), math.radians(val))
+        else:
+            val, ok = QInputDialog.getDouble(self, "Edit dimension",
+                                             "Value (mm):", float(c.value),
+                                             0.001, 1e6, 3)
+            if not ok:
+                return
+            self._push_hist()
+            c.value = float(val)
         self._solve()
         self.update()
 
@@ -858,6 +940,47 @@ class SketchCanvas(QWidget):
             return QPointF(s.x() + dx / ln * dist, s.y() - dy / ln * dist)
         cen = self.w2s(e.c.x, e.c.y)
         return QPointF(cen.x(), cen.y() - e.r * self._scale - dist + 4)
+
+    @staticmethod
+    def _angle_pivot(c):
+        """World vertex the angle arc is drawn around (None if unknown)."""
+        if isinstance(c, Angle):
+            return c.line.a.x, c.line.a.y
+        return _line_pivot(c.l1, c.l2)
+
+    def _angle_arc_pts(self, c, ring: int = 0):
+        """Arc polyline + label anchor for an angular dimension. The arc
+        spans the CURRENT geometry (Fusion behaves the same: the witness
+        follows the line, the badge shows the constraint value). ring
+        staggers stacked arcs that share a vertex."""
+        scale = self._scale
+        if scale <= 1e-9:
+            return None
+        r = (24.0 + 16.0 * ring) / scale               # world → px radii
+        if isinstance(c, Angle):
+            ln = c.line
+            px, py = ln.a.x, ln.a.y
+            a0, a1 = 0.0, math.atan2(ln.b.y - py, ln.b.x - px)
+        else:
+            p = _line_pivot(c.l1, c.l2)
+            if p is None:
+                return None                          # parallel, unshared
+            px, py = p
+            a0 = math.atan2(c.l1.b.y - py, c.l1.b.x - px)
+            a1 = math.atan2(c.l2.b.y - py, c.l2.b.x - px)
+        da = (a1 - a0 + math.pi) % (2 * math.pi) - math.pi    # short way
+        n = max(8, int(abs(da) / 0.18))
+        pts = [self.w2s(px + r * math.cos(a0 + da * i / n),
+                        py + r * math.sin(a0 + da * i / n))
+               for i in range(n + 1)]
+        mid = a0 + da * 0.5
+        lab = r + 18.0 / scale
+        return pts, self.w2s(px + lab * math.cos(mid), py + lab * math.sin(mid))
+
+    def _draw_arc(self, p: QPainter, pts):
+        p.setPen(QPen(DIM, 1))
+        for a, b in zip(pts, pts[1:]):
+            p.drawLine(a, b)
 
     def _badge(self, p: QPainter, at: QPointF, text: str, wide=False):
         w = 20 if wide else 13
