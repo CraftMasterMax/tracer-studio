@@ -152,6 +152,9 @@ class SketchCanvas(QWidget):
             return
         q = ev.position()
         if ev.button() in (Qt.MiddleButton, Qt.RightButton):
+            if ev.button() == Qt.RightButton and self._tool == "select":
+                self._context_menu(ev)
+                return
             self._pan_from = q
             return
         if ev.button() != Qt.LeftButton:
@@ -181,7 +184,8 @@ class SketchCanvas(QWidget):
                 if p is self._line_start:
                     self._line_start = None          # close chain
                 else:
-                    self.model.add_line(self._line_start, p)
+                    ln = self.model.add_line(self._line_start, p)
+                    self._auto_constraints(ln, q)
                     self._solve()
                     self._line_start = p
             self.update()
@@ -189,6 +193,20 @@ class SketchCanvas(QWidget):
             self._preview = ("rect", wp, wp)
         elif self._tool == "circle":
             self._preview = ("circle", wp, wp)
+
+    def _auto_constraints(self, ln: Line, end_q: QPointF):
+        """Fusion's drawing feel: release near-horizontal -> it IS
+        horizontal (snapped), and the constraint is recorded."""
+        a, b = self.w2s(ln.a.x, ln.a.y), self.w2s(ln.b.x, ln.b.y)
+        dx, dy = abs(b.x() - a.x()), abs(b.y() - a.y())
+        if max(dx, dy) < 4:
+            return
+        if dy <= 3 and dx > 6:                      # near horizontal
+            ln.b.y = ln.a.y
+            self.model.constrain(Horizontal(ln))
+        elif dx <= 3 and dy > 6:                    # near vertical
+            ln.b.x = ln.a.x
+            self.model.constrain(Vertical(ln))
 
     def mouseMoveEvent(self, ev: QMouseEvent):
         q = ev.position()
@@ -250,12 +268,77 @@ class SketchCanvas(QWidget):
                          (cy - q.y()) / self._scale + self._center[1]])
 
     # ---- keyboard ----------------------------------------------------------
+    # ---- constraint actions (keys + context menu share these) --------------
+    def act_H(self):
+        if len(self._sel) == 1 and isinstance(self._sel[0], Line):
+            self.model.toggle(Horizontal, (self._sel[0],))
+            self._solve(); self.update()
+
+    def act_V(self):
+        if len(self._sel) == 1 and isinstance(self._sel[0], Line):
+            self.model.toggle(Vertical, (self._sel[0],))
+            self._solve(); self.update()
+
+    def act_fix(self):
+        if len(self._sel) == 1 and isinstance(self._sel[0], Point):
+            self.model.toggle(Fixed, (self._sel[0],))
+            self._solve(); self.update()
+
+    def act_dim(self):
+        from PySide6.QtWidgets import QInputDialog
+        if len(self._sel) != 1:
+            return
+        e = self._sel[0]
+        if isinstance(e, Line):
+            cur = math_dist(e.a, e.b)
+            val, ok = QInputDialog.getDouble(self, "Dimension", "Length (mm):",
+                                             round(cur, 3), 0.001, 1e6, 3)
+            if ok:
+                self.model.remove_last(Distance, (e.a, e.b))
+                self.model.constrain(Distance(e.a, e.b, val))
+                self._solve(); self.update()
+        elif isinstance(e, Circle):
+            val, ok = QInputDialog.getDouble(self, "Dimension", "Radius (mm):",
+                                             round(e.r, 3), 0.001, 1e6, 3)
+            if ok:
+                self.model.remove_last(Radius, (e,))
+                self.model.constrain(Radius(e, val))
+                self._solve(); self.update()
+
+    def act_delete(self):
+        for e in list(self._sel):
+            self.model.delete_entity(e)
+        self._sel = []
+        self._solve(); self.update()
+
+    def _context_menu(self, ev: QMouseEvent):
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        sel = self._sel
+        if len(sel) == 1 and isinstance(sel[0], Line):
+            menu.addAction("Horizontal", self.act_H)
+            menu.addAction("Vertical", self.act_V)
+            menu.addAction("Dimension…", self.act_dim)
+        elif len(sel) == 1 and isinstance(sel[0], Circle):
+            menu.addAction("Radius…", self.act_dim)
+        elif len(sel) == 1 and isinstance(sel[0], Point):
+            menu.addAction("Fix", self.act_fix)
+        if sel:
+            menu.addSeparator()
+            menu.addAction("Delete", self.act_delete)
+        else:
+            menu.addAction("Rectangle tool", lambda: self.set_tool("rect"))
+            menu.addAction("Line tool", lambda: self.set_tool("line"))
+            menu.addAction("Circle tool", lambda: self.set_tool("circle"))
+        menu.exec(ev.globalPosition().toPoint())
+        self.update()
+
     def keyPressEvent(self, ev: QKeyEvent):
-        k, mods = ev.key(), ev.modifiers()
+        k = ev.key()
         if self.model is None:
             return super().keyPressEvent(ev)
         sel = self._sel
-        if k in (Qt.Key_Escape,):
+        if k == Qt.Key_Escape:
             self._line_start = None
             self.set_tool("select")
             return
@@ -274,31 +357,15 @@ class SketchCanvas(QWidget):
             self.finish()
             return
         elif k == Qt.Key_Delete:
-            for e in list(sel):
-                self.model.delete_entity(e)
-            self._sel = []
-            self._solve()
-        elif k in (Qt.Key_H, Qt.Key_V) and len(sel) == 1 and isinstance(sel[0], Line):
-            self.model.toggle(Horizontal if k == Qt.Key_H else Vertical, (sel[0],))
-            self._solve()
-        elif k == Qt.Key_F and len(sel) == 1 and isinstance(sel[0], Point):
-            self.model.toggle(Fixed, (sel[0],))
-            self._solve()
-        elif k == Qt.Key_D and len(sel) == 1 and isinstance(sel[0], Line):
-            cur = math_dist(sel[0].a, sel[0].b)
-            val, ok = QInputDialog.getDouble(self, "Distance", "Length (mm):",
-                                             round(cur, 3), 0.001, 1e6, 3)
-            if ok:
-                self.model.remove_last(Distance, (sel[0].a, sel[0].b))
-                self.model.constrain(Distance(sel[0].a, sel[0].b, val))
-                self._solve()
-        elif k == Qt.Key_D and len(sel) == 1 and isinstance(sel[0], Circle):
-            val, ok = QInputDialog.getDouble(self, "Radius", "Radius (mm):",
-                                             round(sel[0].r, 3), 0.001, 1e6, 3)
-            if ok:
-                self.model.remove_last(Radius, (sel[0],))
-                self.model.constrain(Radius(sel[0], val))
-                self._solve()
+            self.act_delete()
+        elif k == Qt.Key_H:
+            self.act_H()
+        elif k == Qt.Key_V:
+            self.act_V()
+        elif k == Qt.Key_F:
+            self.act_fix()
+        elif k == Qt.Key_D:
+            self.act_dim()
         else:
             return super().keyPressEvent(ev)
         self.update()
@@ -460,7 +527,8 @@ class SketchCanvas(QWidget):
     def _draw_hud(self, p: QPainter):
         lines = []
         if self.model:
-            lines.append((f"Sketch: {self.model.name}", FG))
+            lines.append((f"Sketch: {self.model.name}  ·  plane {self.model.plane}",
+                          FG))
         tool = {"select": "Select (S/L/R/C) · H/V/F/D constraints · X extrude",
                 "line": "Line — click points, Enter/Esc stops",
                 "rect": "Rectangle — drag corners",

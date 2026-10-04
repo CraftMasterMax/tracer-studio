@@ -100,6 +100,13 @@ class Solid:
         return Solid(self._m.translate(off))
 
     # ---- mesh conversion (rendering & export) --------------------------
+    def transformed(self, m4) -> "Solid":
+        """Apply a 4x4 homogeneous transform via mesh round-trip through the
+        kernel (re-manifolded, stays watertight)."""
+        tm = self.to_trimesh()
+        tm.apply_transform(np.asarray(m4, dtype=np.float64))
+        return Solid.from_mesh(tm.vertices, tm.faces)
+
     def to_trimesh(self) -> trimesh.Trimesh:
         tm = self._m.to_mesh()
         verts = np.asarray(tm.vert_properties, dtype=np.float64)[:, :3]

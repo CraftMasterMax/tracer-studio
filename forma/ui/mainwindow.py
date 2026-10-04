@@ -6,18 +6,18 @@ from pathlib import Path
 import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import (QApplication, QFileDialog, QHBoxLayout,
+from PySide6.QtWidgets import (QFileDialog, QHBoxLayout,
                                QInputDialog, QMainWindow, QMessageBox,
                                QPushButton, QSplitter, QStackedWidget,
                                QVBoxLayout, QWidget)
 
 from ..core import io as fio
 from ..core.document import Document, ExtrudeFeature
-from ..core.sketch.model import SketchModel
-from . import theme
+from ..core.sketch.model import SketchModel, model_from_dict, model_to_dict
 from .renderer import SceneRenderer
 from .panels import LeftRail
 from .sketcheditor import SketchCanvas
+from .timeline import TimelineHost
 from .viewport import Viewport
 
 
@@ -47,6 +47,7 @@ class MainWindow(QMainWindow):
         self.rail = LeftRail()
         self.rail.tree.currentItemChanged.connect(
             lambda *_: self.rail.props.show_feature(self.rail.tree.current_feature()))
+        self.rail.tree.itemDoubleClicked.connect(self._tree_activated)
 
         split = QSplitter(Qt.Horizontal)
         split.addWidget(self.rail)
@@ -58,7 +59,15 @@ class MainWindow(QMainWindow):
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
         split.setSizes([280, 1000])
-        self.setCentralWidget(split)
+        center = QWidget()
+        cl = QVBoxLayout(center)
+        cl.setContentsMargins(0, 0, 0, 0)
+        cl.setSpacing(0)
+        cl.addWidget(split, 1)
+        self.timeline = TimelineHost()
+        self.timeline.bar.feature_activated.connect(self._feature_activated)
+        cl.addWidget(self.timeline)
+        self.setCentralWidget(center)
 
         self._make_actions()
         self.status = self.statusBar()
@@ -91,7 +100,7 @@ class MainWindow(QMainWindow):
 
         m_sk = self.menuBar().addMenu("S&ketch")
         m_sk.addAction(QAction("&New sketch", self, shortcut="N",
-                               triggered=self.action_new_sketch))
+                               triggered=lambda checked=False: self.action_new_sketch()))
         m_sk.addAction(QAction("&Extrude profile…", self, shortcut="X",
                                triggered=lambda: self.sketch.finish()))
 
@@ -114,7 +123,112 @@ class MainWindow(QMainWindow):
         m_view.addAction(QAction("Toggle edges", self, shortcut="E",
                                  triggered=self.action_toggle_edges))
 
-    # ---- sketching -----------------------------------------------------------
+    # ---- sketching: new, finish (associative extrude), re-edit ---------------
+    def _tree_activated(self, item, col):
+        role = item.data(0, Qt.UserRole) if item else None
+        if not role:
+            return
+        kind, arg = role
+        if kind == "plane":
+            self.action_new_sketch(arg)
+        elif kind == "sketch":
+            self._feature_activated(self.doc.features[arg])
+
+    def _feature_activated(self, feature):
+        if isinstance(feature, ExtrudeFeature) and feature.sketch:
+            self.edit_sketch(feature)
+        else:
+            self.status.showMessage("Feature has no editable sketch (yet)", 3000)
+
+    def edit_sketch(self, feature):
+        if self.doc is None:
+            return
+        model = model_from_dict(feature.sketch)
+        model.sid = feature.sid or id(model)
+        self._editing_sid = model.sid
+        self.sketch.set_model(model)
+        self.stack.setCurrentWidget(self._sketch_page)
+        self._pick_tool("select")
+        self.status.showMessage(f"Editing {feature.sketch.get('name', 'Sketch')} — "
+                                "X to update solid")
+
+    def action_new_sketch(self, plane: str = "XY"):
+        if self.doc is None:
+            return
+        if self.stack.currentWidget() is self._sketch_page and self.sketch.model \
+                and (self.sketch.model.sketch.lines or self.sketch.model.sketch.circles):
+            ans = QMessageBox.question(
+                self, "Discard current sketch?",
+                "You are sketching. Start a new sketch and discard?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if ans != QMessageBox.Yes:
+                return
+        model = SketchModel(plane=plane)
+        model.name = f"Sketch{sum(1 for f in self.doc.features if isinstance(f, ExtrudeFeature) and f.sketch) + 1}"
+        self._editing_sid = None
+        self.sketch.set_model(model)
+        self.stack.setCurrentWidget(self._sketch_page)
+        self._pick_tool("rect")     # most sketches start with a rectangle
+        self.status.showMessage(f"Sketching on {plane} — R rect · L line · C circle · "
+                                "H/V/F/D constraints · X extrude · Esc select")
+
+    def _on_profiles(self, profiles, name):
+        m = self.sketch.model
+        payload = model_to_dict(m)
+        payload["name"] = name
+        sid = self._editing_sid
+        if sid is not None:
+            self._update_sketch_features(sid, profiles, payload)
+            self.stack.setCurrentWidget(self.viewport)
+            self.recompute()
+            self.status.showMessage(f"Updated {name} — solid recomputed", 5000)
+            return
+        height, ok = QInputDialog.getDouble(
+            self, "Extrude", "Height (mm):", 5.0, 0.01, 1e5, 2)
+        if not ok:
+            return
+        self._capture()
+        for i, (outer, holes) in enumerate(profiles):
+            tag = name if len(profiles) == 1 else f"{name} #{i + 1}"
+            self.doc.add(ExtrudeFeature(
+                name=tag, outer=np.asarray(outer),
+                holes=[np.asarray(h) for h in holes],
+                height=height, op="union", plane=m.plane,
+                sketch=dict(payload, regions=len(profiles), region=i),
+                sid=m.sid, region=i))
+        self.stack.setCurrentWidget(self.viewport)
+        self.recompute()
+        self.viewport.refresh(fit=True)
+        self.status.showMessage(
+            f"Extruded {len(profiles)} region(s) from {name} by {height:g} mm", 6000)
+
+    def _update_sketch_features(self, sid, profiles, payload):
+        """Re-edit: swap profiles in the features born from this sketch,
+        keeping each one's height; add/remove features to match regions."""
+        group = [f for f in self.doc.features
+                 if isinstance(f, ExtrudeFeature) and f.sid == sid]
+        if not group:
+            return
+        self._capture()
+        for i, (outer, holes) in enumerate(profiles):
+            if i < len(group):
+                f = group[i]
+                f.outer = np.asarray(outer)
+                f.holes = [np.asarray(h) for h in holes]
+                f.region = i
+                f.sketch = dict(payload, regions=len(profiles), region=i)
+            else:
+                self.doc.features.append(ExtrudeFeature(
+                    name=f"{payload['name']} #{i + 1}", outer=np.asarray(outer),
+                    holes=[np.asarray(h) for h in holes],
+                    height=group[-1].height, op=group[-1].op,
+                    plane=group[-1].plane, sid=sid,
+                    sketch=dict(payload, regions=len(profiles), region=i),
+                    region=i))
+        for f in group[len(profiles):]:     # regions shrank: drop stale features
+            self.doc.features.remove(f)
+        self.doc.dirty = True
+
     def _make_sketch_page(self) -> QWidget:
         page = QWidget()
         lay = QVBoxLayout(page)
@@ -145,42 +259,6 @@ class MainWindow(QMainWindow):
         self.sketch.set_tool(tool)
         for t, b in self._tool_btns.items():
             b.setChecked(t == tool)
-
-    def action_new_sketch(self):
-        if self.doc is None:
-            return
-        if self.stack.currentWidget() is self._sketch_page and self.sketch.model \
-                and (self.sketch.model.sketch.lines or self.sketch.model.sketch.circles):
-            ans = QMessageBox.question(
-                self, "Discard current sketch?",
-                "You are sketching. Start a new sketch and discard?",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if ans != QMessageBox.Yes:
-                return
-        model = SketchModel()
-        model.name = f"Sketch{len(self.doc.features) + 1}"
-        self.sketch.set_model(model)
-        self.stack.setCurrentWidget(self._sketch_page)
-        self._pick_tool("rect")     # most sketches start with a rectangle
-        self.status.showMessage("Sketching: R rect · L line · C circle · H/V/F/D "
-                                "constraints · X extrude · Esc select")
-
-    def _on_profiles(self, profiles, name):
-        height, ok = QInputDialog.getDouble(
-            self, "Extrude", "Height (mm):", 5.0, 0.01, 1e5, 2)
-        if not ok:
-            return
-        self._capture()
-        for i, (outer, holes) in enumerate(profiles):
-            tag = name if len(profiles) == 1 else f"{name} #{i + 1}"
-            self.doc.add(ExtrudeFeature(name=tag, outer=np.asarray(outer),
-                                        holes=[np.asarray(h) for h in holes],
-                                        height=height, op="union"))
-        self.stack.setCurrentWidget(self.viewport)
-        self.recompute()
-        self.viewport.refresh(fit=True)
-        self.status.showMessage(
-            f"Extruded {len(profiles)} region(s) from {name} by {height:g} mm", 6000)
 
     # ---- document lifecycle ---------------------------------------------------
     def _capture(self):
@@ -213,15 +291,18 @@ class MainWindow(QMainWindow):
 
     def _adopt_doc(self):
         self.rail.tree.set_document(self.doc)
+        self.timeline.set_document(self.doc)
         self.viewport.set_document(self.doc)
         self.viewport.refresh(fit=False)
         self._update_status()
     def new_document(self, doc: Document | None = None):
         self.doc = doc or Document("Untitled")
         self.file_path = None
+        self._editing_sid = None
         self._undo.clear()
         self._redo.clear()
         self.rail.tree.set_document(self.doc)
+        self.timeline.set_document(self.doc)
         self.viewport.set_document(self.doc)
         self._update_status()
 
@@ -274,6 +355,7 @@ class MainWindow(QMainWindow):
             return
         self.viewport.refresh()
         self.rail.tree.reload()
+        self.timeline.bar.update()
         self._update_status()
 
     def _update_status(self):

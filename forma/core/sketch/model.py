@@ -12,14 +12,34 @@ import numpy as np
 
 from .entities import Point, Line, Circle
 from .constraints import (Coincident, Distance, Fixed, Horizontal, Vertical,
-                          Radius)
+                          Radius, PointOnLine, Parallel)
 from .solver import Sketch, SolveResult
+
+# Sketch planes: (u_axis, v_axis) in world coords; extrude normal = u x v.
+# Matches Fusion's origin planes: XY n=+Z, XZ n=-Y (front), YZ n=+X (right).
+PLANES = {
+    "XY": ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),
+    "XZ": ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+    "YZ": ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+}
+
+
+def plane_matrix(plane: str, origin=(0.0, 0.0, 0.0)) -> np.ndarray:
+    """4x4 local->world: local x,y = sketch (u,v); extrude along local +z."""
+    u, v = np.array(PLANES[plane][0]), np.array(PLANES[plane][1])
+    n = np.cross(u, v)
+    m = np.eye(4)
+    m[:3, 0], m[:3, 1], m[:3, 2] = u, v, n
+    m[:3, 3] = np.array(origin, dtype=float)
+    return m
 
 
 class SketchModel:
-    def __init__(self):
+    def __init__(self, plane: str = "XY"):
         self.sketch = Sketch()
         self.name = "Sketch1"
+        self.plane = plane
+        self.sid = id(self)          # association key while in memory
 
     # ---- entity factory --------------------------------------------------
     def point(self, x: float, y: float) -> Point:
@@ -131,3 +151,91 @@ class SketchModel:
 
 def math_dist(a: Point, b: Point) -> float:
     return float(np.hypot(b.x - a.x, b.y - a.y))
+
+
+# ---- serialization (associative sketches depend on this) ----------------
+
+def _point_index(model: SketchModel):
+    pts = []
+    index = {}
+    def touch(p):
+        if p.id not in index:
+            index[p.id] = len(pts)
+            pts.append(p)
+    for l in model.sketch.lines:
+        touch(l.a); touch(l.b)
+    for c in model.sketch.circles:
+        touch(c.c)
+    for p in model.sketch.points:
+        touch(p)
+    return pts, index
+
+
+def model_to_dict(m: SketchModel) -> dict:
+    pts, idx = _point_index(m)
+    cons = []
+    for c in m.sketch.constraints:
+        if isinstance(c, Horizontal):
+            cons.append({"t": "H", "line": m.sketch.lines.index(c.line)})
+        elif isinstance(c, Vertical):
+            cons.append({"t": "V", "line": m.sketch.lines.index(c.line)})
+        elif isinstance(c, Fixed):
+            cons.append({"t": "F", "p": _add_pt(pts, idx, c.p),
+                         "x": c.p.x, "y": c.p.y})
+        elif isinstance(c, Distance):
+            cons.append({"t": "D", "p": _add_pt(pts, idx, c.p),
+                         "q": _add_pt(pts, idx, c.q), "v": c.value})
+        elif isinstance(c, Radius):
+            cons.append({"t": "R", "c": m.sketch.circles.index(c.circle), "v": c.value})
+        elif isinstance(c, Coincident):
+            cons.append({"t": "==",
+                         "p": _add_pt(pts, idx, c.p), "q": _add_pt(pts, idx, c.q)})
+        elif isinstance(c, PointOnLine):
+            cons.append({"t": "on", "p": _add_pt(pts, idx, c.p),
+                         "line": m.sketch.lines.index(c.line)})
+        elif isinstance(c, Parallel):
+            cons.append({"t": "//", "l1": m.sketch.lines.index(c.l1),
+                         "l2": m.sketch.lines.index(c.l2)})
+    return {"name": m.name, "plane": m.plane,
+            "points": [[p.x, p.y] for p in pts],
+            "lines": [[idx[l.a.id], idx[l.b.id]] for l in m.sketch.lines],
+            "circles": [[idx[c.c.id], c.r] for c in m.sketch.circles],
+            "constraints": cons}
+
+
+def _add_pt(pts, idx, p) -> int:
+    if p.id in idx:
+        return idx[p.id]
+    idx[p.id] = len(pts)
+    pts.append(p)
+    return idx[p.id]
+
+
+def model_from_dict(d: dict) -> SketchModel:
+    m = SketchModel(plane=d.get("plane", "XY"))
+    m.name = d.get("name", "Sketch")
+    pts = [m.point(x, y) for x, y in d.get("points", [])]
+    for ia, ib in d.get("lines", []):
+        m.add_line(pts[ia], pts[ib])
+    for ic, r in d.get("circles", []):
+        m.add_circle(pts[ic], r)
+    for c in d.get("constraints", []):
+        t = c["t"]
+        if t == "H":
+            m.constrain(Horizontal(m.sketch.lines[c["line"]]))
+        elif t == "V":
+            m.constrain(Vertical(m.sketch.lines[c["line"]]))
+        elif t == "F":
+            p = pts[c["p"]]
+            m.constrain(Fixed(p, x=c["x"], y=c["y"]))
+        elif t == "D":
+            m.constrain(Distance(pts[c["p"]], pts[c["q"]], c["v"]))
+        elif t == "R":
+            m.constrain(Radius(m.sketch.circles[c["c"]], c["v"]))
+        elif t == "==":
+            m.constrain(Coincident(pts[c["p"]], pts[c["q"]]))
+        elif t == "on":
+            m.constrain(PointOnLine(pts[c["p"]], m.sketch.lines[c["line"]]))
+        elif t == "//":
+            m.constrain(Parallel(m.sketch.lines[c["l1"]], m.sketch.lines[c["l2"]]))
+    return m

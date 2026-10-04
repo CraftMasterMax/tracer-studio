@@ -16,6 +16,7 @@ from ..core.document import Document
 from ..core.geometry import Solid
 from .camera import Camera
 from .renderer import SceneRenderer
+from .viewcube import ViewCube
 
 
 class Viewport(QWidget):
@@ -23,6 +24,7 @@ class Viewport(QWidget):
         super().__init__(parent)
         self._r = renderer
         self._cam = Camera()
+        self._cube = ViewCube()
         self._doc: Document | None = None
         self._bbox: np.ndarray | None = None
         self._last: QPoint | None = None
@@ -64,36 +66,62 @@ class Viewport(QWidget):
         qimg.setDevicePixelRatio(dpr)
         p = QPainter(self)
         p.drawImage(0, 0, qimg)
+        self._cube.place(self.width(), self.height())
+        self._cube.draw(p, self._cam)
         p.end()
 
-    # ---- mouse -----------------------------------------------------------
+    # ---- mouse (Fusion default scheme) ------------------------------------
+    # LMB: select (picking lands in M4)   MMB drag: orbit
+    # Shift+MMB drag: pan                  wheel: zoom at cursor-ish depth
+    # MMB click (no drag): return home
     def mousePressEvent(self, ev):
+        hit = self._cube.hit(ev.position())
+        if hit:
+            self._cam.set_view(hit)
+            self.update()
+            ev.accept()
+            return
         self._last = ev.position().toPoint()
         self._buttons |= ev.button()
-        if ev.button() in (Qt.MiddleButton, Qt.RightButton):
+        self._dragged = False
+        if ev.button() == Qt.MiddleButton:
             self.setCursor(QCursor(Qt.ClosedHandCursor))
 
     def mouseMoveEvent(self, ev):
         if self._last is None:
             return
         d = ev.position().toPoint() - self._last
+        if d.manhattanLength() > 2:
+            self._dragged = True
         self._last = ev.position().toPoint()
-        orbit = Qt.LeftButton in self._buttons
-        pan = (Qt.MiddleButton in self._buttons or Qt.RightButton in self._buttons
-               or (orbit and ev.modifiers() & Qt.ShiftModifier))
-        if pan:
-            self._cam.pan(d.x(), d.y(), self.height())
-        elif orbit:
+        if Qt.MiddleButton in self._buttons:
+            if ev.modifiers() & Qt.ShiftModifier:
+                self._cam.pan(d.x(), d.y(), self.height())
+            else:
+                self._cam.orbit(d.x(), d.y(), self.height())
+            self.update()
+        elif Qt.RightButton in self._buttons:
             self._cam.orbit(d.x(), d.y(), self.height())
-        self.update()
+            self.update()
 
     def mouseReleaseEvent(self, ev):
         self._buttons &= ~ev.button()
+        if ev.button() == Qt.MiddleButton:
+            self.unsetCursor()
+            if not getattr(self, "_dragged", False):
+                self.home()
         if not (self._buttons & (Qt.MiddleButton | Qt.RightButton)):
             self.unsetCursor()
 
     def wheelEvent(self, ev):
         self._cam.zoom(pow(1.0015, -ev.angleDelta().y()))
+        self.update()
+
+    # ---- home view ---------------------------------------------------------
+    def home(self):
+        if self._bbox is not None:
+            self._cam.set_view("iso")
+            self._cam.fit(self._bbox)
         self.update()
 
     # ---- keys (F fit, G grid, 0/1/2/3 views) -------------------------------

@@ -12,6 +12,7 @@ from typing import Literal
 import numpy as np
 
 from .geometry import Solid, circle_contour
+from .sketch.model import plane_matrix
 
 CombineOp = Literal["union", "subtract", "intersect"]
 
@@ -24,15 +25,24 @@ class Feature:
 
 @dataclass
 class ExtrudeFeature(Feature):
-    """Profile (outer contour + holes) in the XY plane extruded by height."""
+    """Profile (outer contour + holes) on a sketch plane extruded along
+    the plane normal. `sketch` is the serialized SketchModel payload that
+    makes this feature re-editable (associative)."""
     outer: np.ndarray = field(default_factory=lambda: np.zeros((0, 2)))
     holes: list = field(default_factory=list)
     height: float = 1.0
     placement: tuple = (0.0, 0.0, 0.0)
+    plane: str = "XY"
+    sketch: dict | None = None
+    sid: int | None = None
+    region: int = 0
 
     def build(self) -> Solid:
         s = Solid.extrude(self.outer, self.holes, self.height)
-        return s.translated(self.placement)
+        if self.plane == "XY":
+            return s.translated(self.placement)
+        m = plane_matrix(self.plane, self.placement)
+        return s.transformed(m)
 
 
 @dataclass
@@ -114,7 +124,9 @@ class Document:
                 d.update(outer=np.asarray(f.outer).tolist(),
                          holes=[np.asarray(h).tolist() for h in f.holes],
                          height=float(f.height),
-                         placement=list(map(float, f.placement)))
+                         placement=list(map(float, f.placement)),
+                         plane=f.plane, sketch=f.sketch,
+                         sid=f.sid, region=f.region)
             elif isinstance(f, PrimitiveFeature):
                 d.update(kind=f.kind,
                          dims={k: float(v) for k, v in f.dims.items()},
@@ -137,7 +149,9 @@ class Document:
                     name=fd["name"], op=fd["op"],
                     outer=np.array(fd["outer"], float),
                     holes=[np.array(h, float) for h in fd["holes"]],
-                    height=fd["height"], placement=tuple(fd["placement"])))
+                    height=fd["height"], placement=tuple(fd["placement"]),
+                    plane=fd.get("plane", "XY"), sketch=fd.get("sketch"),
+                    sid=fd.get("sid"), region=fd.get("region", 0)))
             elif t == "PrimitiveFeature":
                 doc.features.append(PrimitiveFeature(
                     name=fd["name"], op=fd["op"], kind=fd["kind"],

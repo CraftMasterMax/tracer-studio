@@ -93,12 +93,19 @@ class Camera:
         self.distance = radius / math.sin(math.radians(self.fov) / 2.0) * margin
 
     def set_view(self, kind: str):
-        """'front' (-Y), 'top' (+Z), 'right' (+X), 'iso'."""
+        """Axis views: front (-Y), back (+Y), right (+X), left (-X), top, bottom, iso."""
+        deg = math.radians
         if kind == "top":
-            self.yaw, self.pitch = 0.0, math.radians(89.0)
+            self.yaw, self.pitch = 0.0, deg(89.0)
+        elif kind == "bottom":
+            self.yaw, self.pitch = 0.0, deg(-89.0)
         elif kind == "front":
-            self.yaw, self.pitch = -math.radians(90.0), 0.0
+            self.yaw, self.pitch = deg(-90.0), 0.0
+        elif kind == "back":
+            self.yaw, self.pitch = deg(90.0), 0.0
         elif kind == "right":
             self.yaw, self.pitch = 0.0, 0.0
+        elif kind == "left":
+            self.yaw, self.pitch = deg(180.0), 0.0
         else:
-            self.yaw, self.pitch = math.radians(45.0), math.radians(28.0)
+            self.yaw, self.pitch = deg(45.0), deg(28.0)

@@ -33,8 +33,9 @@ def win(qapp):
 
 def test_shell_builds(win):
     root = win.rail.tree.topLevelItem(0)
-    names = [root.child(i).text(0) for i in range(root.childCount())]
+    names = [root.child(i).text(0) for i in range(1, root.childCount())]
     assert len(names) == 3
+    assert "Origin" in root.child(0).text(0)
     assert any("plate" in n for n in names)
     assert "volume" in win.status.currentMessage()
 
@@ -53,12 +54,12 @@ def test_recompute_after_edit(win):
     win.recompute()
     assert win.doc.result.volume > v0
     root = win.rail.tree.topLevelItem(0)
-    assert root.childCount() == 4
+    assert root.childCount() == 5          # Origin + 4 features
 
 
 def test_properties_panel_updates(win):
     root = win.rail.tree.topLevelItem(0)
-    win.rail.tree.setCurrentItem(root.child(1))
+    win.rail.tree.setCurrentItem(root.child(2))   # Origin=0, plate=1, boss=2
     assert "boss" in win.rail.props._body.text()
 
 
@@ -74,10 +75,10 @@ def test_save_open_roundtrip(win, qapp, tmp_path, monkeypatch):
     # mutate, then reopen and verify we get the saved state back
     win.doc.add_cylinder("oops", radius=1, height=1, center=(0, 0))
     win.recompute()
-    assert win.rail.tree.topLevelItem(0).childCount() == 4
+    assert win.rail.tree.topLevelItem(0).childCount() == 5
     monkeypatch.setattr(QFileDialog, "getOpenFileName",
                         staticmethod(lambda *a, **k: (str(save_to), "")))
     win.action_open()
-    assert win.rail.tree.topLevelItem(0).childCount() == 3
+    assert win.rail.tree.topLevelItem(0).childCount() == 4
     assert win.doc.result.volume == pytest.approx(
         demo_document().recompute().volume, rel=1e-9)

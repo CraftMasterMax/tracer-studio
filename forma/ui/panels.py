@@ -34,16 +34,36 @@ class FeatureTree(QTreeWidget):
         root = QTreeWidgetItem([self._doc.title])
         root.setFlags(root.flags() & ~Qt.ItemIsSelectable)
         self.addTopLevelItem(root)
-        for f in self._doc.features:
+        origin = QTreeWidgetItem(["Origin"])
+        origin.setData(0, Qt.UserRole, ("origin", None))
+        root.addChild(origin)
+        for pl in ("XY-Plane", "XZ-Plane", "YZ-Plane"):
+            it = QTreeWidgetItem([pl])
+            it.setData(0, Qt.UserRole, ("plane", pl[:2]))
+            origin.addChild(it)
+        origin.setExpanded(False)
+        for i, f in enumerate(self._doc.features):
             item = QTreeWidgetItem([f"{_OP_GLYPH.get(f.op, f.op)}  {f.name}"])
-            item.setData(0, Qt.UserRole, f)
+            item.setData(0, Qt.UserRole, ("feature", i))
             root.addChild(item)
+            if isinstance(f, ExtrudeFeature) and f.sketch:
+                sk = QTreeWidgetItem([f"\u270e {f.sketch.get('name', 'Sketch')}"])
+                sk.setData(0, Qt.UserRole, ("sketch", i))
+                item.addChild(sk)
+                item.setExpanded(True)
         root.setExpanded(True)
         self.setCurrentItem(None)
 
     def current_feature(self):
         it = self.currentItem()
-        return it.data(0, Qt.UserRole) if it else None
+        if not it:
+            return None
+        role = it.data(0, Qt.UserRole)
+        if role and role[0] in ("feature", "sketch") and self._doc:
+            idx = role[1]
+            if idx < len(self._doc.features):
+                return self._doc.features[idx]
+        return None
 
 
 class PropertiesPanel(QWidget):
