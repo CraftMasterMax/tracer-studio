@@ -16,7 +16,8 @@ from PySide6.QtWidgets import (QDialog, QFrame, QHBoxLayout, QLabel,
 SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
     ("Look around (3D viewport)", [
         ("LMB click a face", "Select / deselect the whole face", False),
-        ("Esc", "Clear the face selection", False),
+        ("LMB drag a flat face", "Press-Pull: push or pull material", False),
+        ("Esc", "Cancel the drag / clear the face selection", False),
         ("MMB drag", "Orbit the model", False),
         ("Shift + MMB drag", "Pan the view", False),
         ("Mouse wheel", "Zoom in / out", False),
@@ -74,6 +75,7 @@ TOUR_HIGHLIGHTS = [
     ("X", "finish → extrude"),
     ("MMB / wheel", "orbit · zoom (Shift pans)"),
     ("Double-click face", "sketch on it"),
+    ("Drag a flat face", "press-pull material"),
     ("D + double-click", "dimension, then edit it"),
     ("Ctrl + Z", "undo inside the sketch"),
     ("1 2 3 0", "front / top / right / iso"),

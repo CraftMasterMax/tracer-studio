@@ -25,6 +25,7 @@ from .viewcube import ViewCube
 class Viewport(QWidget):
     face_picked = Signal(object, object)   # world point, outward normal (planar)
     coords = Signal(object)                # world point under cursor | None
+    press_pull = Signal(object)            # Press-Pull drag payload dict
 
     def __init__(self, renderer: SceneRenderer, parent=None):
         super().__init__(parent)
@@ -39,6 +40,8 @@ class Viewport(QWidget):
         self._gid = None                   # face -> coplanar group id
         self._hover: list[int] | None = None
         self._sel: list[int] = []
+        self._pp = None                    # press-pull drag state
+        self._pp_drag = False
         self.setMinimumSize(QSize(320, 240))
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -52,6 +55,7 @@ class Viewport(QWidget):
     def refresh(self, fit: bool = False):
         solid = self._doc.result if self._doc else None
         self._hover, self._sel = None, []
+        self._pp, self._pp_drag = None, False
         if solid is None:
             self._r.clear_mesh()
             self._bbox = None
@@ -100,6 +104,21 @@ class Viewport(QWidget):
         self._last = ev.position().toPoint()
         self._buttons |= ev.button()
         self._dragged = False
+        self._pp = None
+        self._pp_drag = False
+        if ev.button() == Qt.LeftButton and self._tm is not None \
+                and Qt.KeyboardModifier(0) == ev.modifiers():
+            px, py = ev.position().x(), ev.position().y()
+            hit = self._shoot(self._tm, px, py)
+            if hit is not None:
+                g = self._group(hit[2])
+                n = np.asarray(self._tm.face_normals, float)[g].sum(0)
+                n /= max(float(np.linalg.norm(n)), 1e-12)
+                o0, d0 = self._cam.ray(px, py, self.width(), self.height())
+                t0 = float((hit[0] - o0) @ d0)       # grab depth along ray
+                self._pp = dict(faces=g, point=np.asarray(hit[0], float),
+                                normal=n, px0=ev.position().toPoint(),
+                                t0=t0, offset=0.0)
         if self._hover:
             self._hover = None                       # no wash while dragging
             self._apply_hi()
@@ -116,6 +135,18 @@ class Viewport(QWidget):
         if d.manhattanLength() > 2:
             self._dragged = True
         self._last = ev.position().toPoint()
+        if self._pp is not None and Qt.LeftButton in self._buttons \
+                and not (self._buttons & (Qt.MiddleButton | Qt.RightButton)):
+            pos = ev.position().toPoint()
+            if not self._pp_drag \
+                    and (pos - self._pp["px0"]).manhattanLength() > 4:
+                self._pp_drag = True
+                self.setCursor(QCursor(Qt.SizeAllCursor))
+            if self._pp_drag:
+                self._pp["offset"] = self._plane_offset(pos.x(), pos.y())
+                self.press_pull.emit({**self._pp, "live": True})
+                self.update()
+                return
         if Qt.MiddleButton in self._buttons:
             if ev.modifiers() & Qt.ShiftModifier:
                 self._cam.pan(d.x(), d.y(), self.height())
@@ -131,12 +162,39 @@ class Viewport(QWidget):
         if (ev.button() == Qt.LeftButton
                 and not getattr(self, "_dragged", True)):
             self._click_select(ev.position())       # Fusion: pick a face
+        if ev.button() == Qt.LeftButton and getattr(self, "_pp_drag", False):
+            self.press_pull.emit({**self._pp, "live": False})
+            self.unsetCursor()
+            self._pp, self._pp_drag = None, False
+        elif ev.button() == Qt.LeftButton:
+            self._pp, self._pp_drag = None, False
         if ev.button() == Qt.MiddleButton:
             self.unsetCursor()
             if not getattr(self, "_dragged", False):
                 self.home()
         if not (self._buttons & (Qt.MiddleButton | Qt.RightButton)):
             self.unsetCursor()
+
+    def _plane_offset(self, px: float, py: float) -> float:
+        """Signed mm the face should travel along its normal under the
+        cursor. The new ray is sampled at the original grab depth — that
+        world move lies in the view plane, so divide out the foreshortening
+        (1 − (view·n)²) of the normal's projection. Nearly head-on faces
+        have no usable screen direction for their normal: fall back to
+        vertical cursor travel in ground-plane mm (drag up = pull out)."""
+        pp = self._pp
+        n, c = pp["normal"], pp["point"]
+        o, d = self._cam.ray(px, py, self.width(), self.height())
+        o0, d0 = self._cam.ray(pp["px0"].x(), pp["px0"].y(),
+                               self.width(), self.height())
+        foresh = 1.0 - float(d0 @ n) ** 2
+        if foresh < 0.05:                        # viewing along the normal
+            f = getattr(self._cam, "fov", math.radians(45.0))
+            mm_per_px = 2.0 * pp["t0"] * math.tan(f / 2.0) / self.height()
+            k = (pp["px0"].y() - py) * mm_per_px  # drag up = toward viewer
+            return k * (1.0 if float(d0 @ n) < 0 else -1.0)
+        q = o + pp["t0"] * d
+        return float((q - c) @ n) / foresh
 
     def wheelEvent(self, ev):
         self._cam.zoom(pow(1.0015, -ev.angleDelta().y()))
@@ -234,6 +292,11 @@ class Viewport(QWidget):
     def keyPressEvent(self, ev):
         k = ev.key()
         if k == Qt.Key_Escape:
+            if self._pp is not None:                 # abort a press-pull
+                self._pp, self._pp_drag = None, False
+                self.unsetCursor()
+                self.press_pull.emit({"cancel": True})
+                return
             if self._sel or self._hover:
                 self._sel, self._hover = [], None
                 self._apply_hi()

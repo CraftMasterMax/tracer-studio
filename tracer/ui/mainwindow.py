@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import trimesh
 from PySide6.QtCore import QSize, Qt, QSettings
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog,
@@ -80,6 +81,7 @@ class MainWindow(QMainWindow):
         self.timeline.bar.home_clicked.connect(self.viewport.home)
         self.viewport.face_picked.connect(self._start_sketch_on_face)
         self.viewport.coords.connect(self._show_coords)
+        self.viewport.press_pull.connect(self._press_pull)
         cl.addWidget(self.timeline)
         self.setCentralWidget(center)
 
@@ -100,6 +102,65 @@ class MainWindow(QMainWindow):
         else:
             self._coords.setText(f"x {pt[0]:.2f}   y {pt[1]:.2f}   "
                                  f"z {pt[2]:.2f}")
+
+    # ---- Press-Pull (drag a face to add/remove material) -------------------
+    def _press_pull(self, d: dict):
+        if "cancel" in d:
+            self.status.showMessage("Press-Pull cancelled", 3000)
+            return
+        if d.get("live"):
+            self.status.showMessage(
+                f"Press-Pull: {d['offset']:+.2f} mm   "
+                "(release to apply, Esc to cancel)")
+            return
+        self._apply_press_pull(d)
+
+    def _apply_press_pull(self, d: dict):
+        off = float(d["offset"])
+        if abs(off) < 0.05:
+            self.status.clearMessage()
+            return
+        if self.doc is None or self.doc.result is None:
+            return
+        from ..core.presspull import face_region
+        solid = self.doc.result
+        v, _n, f = solid.to_render_arrays()          # viewport's index space
+        mesh = trimesh.Trimesh(vertices=v, faces=f, process=False)
+        reg = face_region(mesh, d["faces"])
+        if reg is None:
+            self.status.showMessage(
+                "Press-Pull works on flat faces — select a plane and drag",
+                5000)
+            return
+        u, vn, n = reg["u"], reg["v"], reg["normal"]
+        pull = off > 0
+        # union grows the prism out along +n; subtract pushes it into the
+        # material (flip an axis so plane_matrix extrudes along −n).
+        axes = [u.tolist(), vn.tolist()] if pull else [[-u[0], -u[1], -u[2]],
+                                                        vn.tolist()]
+        idx = sum(isinstance(x, ExtrudeFeature) and x.name.startswith("PressPull")
+                  for x in self.doc.features) + 1
+        feat = ExtrudeFeature(
+            name=f"PressPull{idx}", op="union" if pull else "subtract",
+            outer=reg["outer"], holes=reg["holes"], height=abs(off),
+            plane="FACE", axes=axes, placement=tuple(reg["point"]),
+            sketch=None, region=0)
+        self._capture()
+        self.doc.add(feat)
+        try:
+            self.doc.recompute()               # not the dialog wrapper:
+        except Exception:                      # a bad press-pull must undo
+            self.undo()                        # silently
+            self.status.showMessage("Press-Pull failed — geometry rejected",
+                                    5000)
+            return
+        self.viewport.refresh()
+        self.rail.tree.reload()
+        self.timeline.bar.update()
+        self._update_status()
+        verb = "added" if pull else "removed"
+        self.status.showMessage(
+            f"Press-Pull {verb} {feat.name}: {abs(off):+.2f} mm", 5000)
 
     # ---- quick toolbar (Fusion-style icon strip under the menus) ----------
     def _make_toolbar(self):
@@ -320,6 +381,8 @@ class MainWindow(QMainWindow):
             self.edit_sketch(feature)
         elif isinstance(feature, BodyFilletFeature):
             self._set_fillet_size(feature)      # reopen the size dialog
+        elif isinstance(feature, ExtrudeFeature):
+            self._set_distance(feature)         # e.g. Press-Pull: no sketch
         else:
             self.status.showMessage("Feature has no editable sketch (yet)", 3000)
 

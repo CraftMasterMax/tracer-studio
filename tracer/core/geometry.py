@@ -223,6 +223,12 @@ class Solid:
             mesh.merge_vertices(digits_vertex=2)     # weld ~micron duplicates
         except Exception:
             pass
+        # welding can collapse a near-duplicate triangle to zero area with
+        # a NaN normal (which would poison the vertex normals it shares)
+        a2 = np.asarray(mesh.area_faces)
+        dead = ~np.isfinite(a2) | (a2 <= 0.0)
+        if dead.any() and not dead.all():
+            mesh.update_faces(~dead)
         return (
             np.asarray(mesh.vertices, dtype=np.float32),
             np.asarray(mesh.vertex_normals, dtype=np.float32),
