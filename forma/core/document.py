@@ -58,6 +58,7 @@ class ExtrudeFeature(Feature):
     height: float = 1.0
     placement: tuple = (0.0, 0.0, 0.0)
     plane: str = "XY"
+    axes: list | None = None
     sketch: dict | None = None
     sid: int | None = None
     region: int = 0
@@ -66,7 +67,7 @@ class ExtrudeFeature(Feature):
         s = Solid.extrude(self.outer, self.holes, self.height)
         if self.plane == "XY":
             return s.translated(self.placement)
-        m = plane_matrix(self.plane, self.placement)
+        m = plane_matrix(self.plane, self.placement, self.axes)
         return s.transformed(m)
 
 
@@ -199,7 +200,7 @@ class Document:
                          holes=[np.asarray(h).tolist() for h in f.holes],
                          height=float(f.height),
                          placement=list(map(float, f.placement)),
-                         plane=f.plane, sketch=f.sketch,
+                         plane=f.plane, axes=f.axes, sketch=f.sketch,
                          sid=f.sid, region=f.region)
             elif isinstance(f, PrimitiveFeature):
                 d.update(kind=f.kind,
@@ -234,7 +235,8 @@ class Document:
                     outer=np.array(fd["outer"], float),
                     holes=[np.array(h, float) for h in fd["holes"]],
                     height=fd["height"], placement=tuple(fd["placement"]),
-                    plane=fd.get("plane", "XY"), sketch=fd.get("sketch"),
+                    plane=fd.get("plane", "XY"), axes=fd.get("axes"),
+                    sketch=fd.get("sketch"),
                     sid=fd.get("sid"), region=fd.get("region", 0), **base))
             elif t == "PrimitiveFeature":
                 doc.features.append(PrimitiveFeature(

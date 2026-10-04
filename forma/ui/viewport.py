@@ -7,8 +7,10 @@ and on Wayland/X11/Windows without per-platform GL plumbing.
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
-from PySide6.QtCore import Qt, QPoint, QSize
+from PySide6.QtCore import Qt, QPoint, QSize, Signal
 from PySide6.QtGui import QImage, QPainter, QCursor
 from PySide6.QtWidgets import QWidget
 
@@ -20,6 +22,8 @@ from .viewcube import ViewCube
 
 
 class Viewport(QWidget):
+    face_picked = Signal(object, object)   # world point, outward normal (planar)
+
     def __init__(self, renderer: SceneRenderer, parent=None):
         super().__init__(parent)
         self._r = renderer
@@ -116,6 +120,43 @@ class Viewport(QWidget):
     def wheelEvent(self, ev):
         self._cam.zoom(pow(1.0015, -ev.angleDelta().y()))
         self.update()
+
+    # ---- picking (double-click a planar face -> sketch on it) ---------------
+    def _shoot(self, tm, px: float, py: float):
+        o, d = self._cam.ray(px, py, self.width(), self.height())
+        # NB: trimesh returns (locations, index_RAY, index_TRI)
+        locs, _, itri = tm.ray.intersects_location([o], [d],
+                                                   multiple_hits=False)
+        if len(locs) == 0:
+            return None
+        return locs[0], tm.face_normals[itri[0]]
+
+    def _pick_planar(self, pos):
+        """Hit test at pos; accept only faces flat within ~2 degrees across
+        a +/-3 px neighbourhood (kills cylinders/cones hiding in meshes)."""
+        solid = self._doc.result if self._doc else None
+        if solid is None:
+            return None
+        tm = solid.to_trimesh()
+        hit = self._shoot(tm, pos.x(), pos.y())
+        if hit is None:
+            return None
+        point, n0 = hit
+        cos_lim = math.cos(math.radians(2.0))
+        for dx, dy in ((10, 0), (-10, 0), (0, 10), (0, -10)):
+            h = self._shoot(tm, pos.x() + dx, pos.y() + dy)
+            if h is None or float(h[1] @ n0) < cos_lim:
+                return None
+        return point, n0
+
+    def mouseDoubleClickEvent(self, ev):
+        if ev.button() == Qt.LeftButton:
+            hit = self._pick_planar(ev.position())
+            if hit is not None:
+                self.face_picked.emit(hit[0], hit[1])
+                ev.accept()
+                return
+        super().mouseDoubleClickEvent(ev)
 
     # ---- home view ---------------------------------------------------------
     def home(self):

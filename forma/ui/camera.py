@@ -57,6 +57,17 @@ class Camera:
     def view_matrix(self) -> np.ndarray:
         return look_at(self.position, self.target)
 
+    def ray(self, px: float, py: float, w_px: float, h_px: float):
+        """Screen pixel -> (world origin, unit direction)."""
+        vp = self.proj_matrix(w_px / max(h_px, 1.0)) @ self.view_matrix()
+        inv = np.linalg.inv(vp)
+        nx, ny = 2 * px / w_px - 1.0, 1.0 - 2 * py / h_px
+        near = inv @ np.array([nx, ny, -1.0, 1.0])
+        far = inv @ np.array([nx, ny, 1.0, 1.0])
+        near, far = near[:3] / near[3], far[:3] / far[3]
+        d = far - near
+        return near, d / max(np.linalg.norm(d), 1e-12)
+
     def proj_matrix(self, aspect: float) -> np.ndarray:
         radius = max(self.distance, 1e-3)
         return perspective(self.fov, aspect, max(radius * 0.002, 0.05),

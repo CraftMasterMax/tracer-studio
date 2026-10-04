@@ -25,9 +25,23 @@ PLANES = {
 }
 
 
-def plane_matrix(plane: str, origin=(0.0, 0.0, 0.0)) -> np.ndarray:
-    """4x4 local->world: local x,y = sketch (u,v); extrude along local +z."""
-    u, v = np.array(PLANES[plane][0]), np.array(PLANES[plane][1])
+def plane_matrix(plane: str, origin=(0.0, 0.0, 0.0), axes=None) -> np.ndarray:
+    """4x4 local->world: local x,y = sketch (u,v); extrude along local +z.
+
+    For a face sketch the caller supplies axes=[u,v] (world unit vectors);
+    origin-plane sketches look up the fixed basis by name."""
+    if plane == "FACE" or axes is not None:
+        if axes is None:
+            raise ValueError("FACE plane requires axes")
+        u, v = np.asarray(axes[0], float), np.asarray(axes[1], float)
+    else:
+        u, v = np.array(PLANES[plane][0]), np.array(PLANES[plane][1])
+    return frame_matrix(u, v, origin)
+
+
+def frame_matrix(u, v, origin=(0.0, 0.0, 0.0)) -> np.ndarray:
+    """Local->world from an arbitrary right-handed in-plane basis (u, v, n)."""
+    u, v = np.asarray(u, float), np.asarray(v, float)
     n = np.cross(u, v)
     m = np.eye(4)
     m[:3, 0], m[:3, 1], m[:3, 2] = u, v, n
@@ -35,11 +49,25 @@ def plane_matrix(plane: str, origin=(0.0, 0.0, 0.0)) -> np.ndarray:
     return m
 
 
+def face_basis(normal) -> tuple:
+    """Stable (u, v) for a face normal: extrude dir = n, right-handed.
+    Reference axis flips only for horizontal faces so X stays predictable."""
+    n = np.asarray(normal, float)
+    n = n / max(np.linalg.norm(n), 1e-12)
+    ref = np.array([1.0, 0.0, 0.0]) if abs(n[2]) > 0.999 else np.array([0.0, 0.0, 1.0])
+    u = np.cross(n, ref)
+    u /= max(np.linalg.norm(u), 1e-12)
+    v = np.cross(n, u)
+    return u, v
+
+
 class SketchModel:
     def __init__(self, plane: str = "XY"):
         self.sketch = Sketch()
         self.name = "Sketch1"
         self.plane = plane
+        self.axes: list | None = None      # FACE plane: [u, v] as 3-lists
+        self.origin: tuple = (0.0, 0.0, 0.0)
         self.sid = id(self)          # association key while in memory
 
     # ---- entity factory --------------------------------------------------
@@ -209,12 +237,16 @@ def model_to_dict(m: SketchModel) -> dict:
         elif isinstance(c, Equal):
             cons.append({"t": "eq", "l1": m.sketch.lines.index(c.l1),
                          "l2": m.sketch.lines.index(c.l2)})
-    return {"name": m.name, "plane": m.plane,
-            "points": [[p.x, p.y] for p in pts],
-            "lines": [[idx[l.a.id], idx[l.b.id], int(l.construction)]
-                      for l in m.sketch.lines],
-            "circles": [[idx[c.c.id], c.r] for c in m.sketch.circles],
-            "constraints": cons}
+    d = {"name": m.name, "plane": m.plane,
+         "points": [[p.x, p.y] for p in pts],
+         "lines": [[idx[l.a.id], idx[l.b.id], int(l.construction)]
+                   for l in m.sketch.lines],
+         "circles": [[idx[c.c.id], c.r] for c in m.sketch.circles],
+         "constraints": cons}
+    if m.plane == "FACE":
+        d["axes"] = [[float(t) for t in a] for a in m.axes]
+        d["origin"] = [float(t) for t in m.origin]
+    return d
 
 
 def _add_pt(pts, idx, p) -> int:
@@ -228,6 +260,9 @@ def _add_pt(pts, idx, p) -> int:
 def model_from_dict(d: dict) -> SketchModel:
     m = SketchModel(plane=d.get("plane", "XY"))
     m.name = d.get("name", "Sketch")
+    if m.plane == "FACE":
+        m.axes = d["axes"]
+        m.origin = tuple(d["origin"])
     pts = [m.point(x, y) for x, y in d.get("points", [])]
     for e in d.get("lines", []):
         ln = m.add_line(pts[e[0]], pts[e[1]])

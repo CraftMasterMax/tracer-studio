@@ -13,7 +13,8 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog,
 from ..core import io as fio
 from ..core.document import (CircularPatternFeature, Document,
                              ExtrudeFeature, LinearPatternFeature)
-from ..core.sketch.model import SketchModel, model_from_dict, model_to_dict
+from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
+                                 model_to_dict)
 from .renderer import SceneRenderer
 from .panels import LeftRail
 from .sketcheditor import SketchCanvas
@@ -69,6 +70,7 @@ class MainWindow(QMainWindow):
         self.timeline.bar.feature_activated.connect(self._feature_activated)
         self.timeline.bar.feature_menu.connect(self._feature_menu)
         self.timeline.bar.feature_delete.connect(self._delete_feature)
+        self.viewport.face_picked.connect(self._start_sketch_on_face)
         cl.addWidget(self.timeline)
         self.setCentralWidget(center)
 
@@ -217,9 +219,12 @@ class MainWindow(QMainWindow):
         self.status.showMessage(f"Editing {feature.sketch.get('name', 'Sketch')} — "
                                 "X to update solid")
 
-    def action_new_sketch(self, plane: str = "XY"):
-        if self.doc is None:
-            return
+    def _next_sketch_name(self) -> str:
+        n = sum(1 for f in self.doc.features
+                if isinstance(f, ExtrudeFeature) and f.sketch) + 1
+        return f"Sketch{n}"
+
+    def _discard_guard(self) -> bool:
         if self.stack.currentWidget() is self._sketch_page and self.sketch.model \
                 and (self.sketch.model.sketch.lines or self.sketch.model.sketch.circles):
             ans = QMessageBox.question(
@@ -227,16 +232,36 @@ class MainWindow(QMainWindow):
                 "You are sketching. Start a new sketch and discard?",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if ans != QMessageBox.Yes:
-                return
-        model = SketchModel(plane=plane)
-        model.name = f"Sketch{sum(1 for f in self.doc.features if isinstance(f, ExtrudeFeature) and f.sketch) + 1}"
+                return False
+        return True
+
+    def _begin_sketch(self, model: SketchModel):
         self._editing_sid = None
         self.sketch.set_model(model)
         self.stack.setCurrentWidget(self._sketch_page)
         self._pick_tool("rect")     # most sketches start with a rectangle
+
+    def action_new_sketch(self, plane: str = "XY"):
+        if self.doc is None or not self._discard_guard():
+            return
+        model = SketchModel(plane=plane)
+        model.name = self._next_sketch_name()
+        self._begin_sketch(model)
         self.status.showMessage(f"Sketching on {plane} — R rect · L line · C circle · "
                                 "H/V/F/D/P/Q constraints · K construction · "
                                 "X extrude · Esc select")
+
+    def _start_sketch_on_face(self, point, normal):
+        if self.doc is None or not self._discard_guard():
+            return
+        u, v = face_basis(normal)
+        model = SketchModel(plane="FACE")
+        model.axes = [u.tolist(), v.tolist()]
+        model.origin = tuple(float(t) for t in point)
+        model.name = self._next_sketch_name()
+        self._begin_sketch(model)
+        self.status.showMessage(
+            "Sketching on face — draw, then X extrudes outward from it")
 
     def _on_profiles(self, profiles, name):
         m = self.sketch.model
@@ -256,10 +281,13 @@ class MainWindow(QMainWindow):
         self._capture()
         for i, (outer, holes) in enumerate(profiles):
             tag = name if len(profiles) == 1 else f"{name} #{i + 1}"
+            face = m.plane == "FACE"
             self.doc.add(ExtrudeFeature(
                 name=tag, outer=np.asarray(outer),
                 holes=[np.asarray(h) for h in holes],
                 height=height, op="union", plane=m.plane,
+                axes=[list(map(float, a)) for a in m.axes] if face else None,
+                placement=tuple(m.origin) if face else (0.0, 0.0, 0.0),
                 sketch=dict(payload, regions=len(profiles), region=i),
                 sid=m.sid, region=i))
         self.stack.setCurrentWidget(self.viewport)
