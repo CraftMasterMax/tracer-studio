@@ -4,11 +4,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtCore import QSize, Qt, QSettings
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog,
-                               QMainWindow, QMenu, QMessageBox, QPushButton,
-                               QSplitter, QStackedWidget, QVBoxLayout, QWidget)
+                               QLabel, QMainWindow, QMenu, QMessageBox,
+                               QPushButton, QSplitter, QStackedWidget,
+                               QToolBar, QToolButton, QVBoxLayout, QWidget)
 
 from ..core import io as fio
 from ..core import step
@@ -18,10 +19,12 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              PrimitiveFeature, RevolveFeature)
 from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
                                  model_to_dict)
+from . import icons
 from .renderer import SceneRenderer
 from .panels import LeftRail
 from .shortcuts import TourDialog
 from .sketcheditor import SketchCanvas
+from .theme import DARK
 from .timeline import TimelineHost
 from .viewport import Viewport
 
@@ -74,14 +77,109 @@ class MainWindow(QMainWindow):
         self.timeline.bar.feature_activated.connect(self._feature_activated)
         self.timeline.bar.feature_menu.connect(self._feature_menu)
         self.timeline.bar.feature_delete.connect(self._delete_feature)
+        self.timeline.bar.home_clicked.connect(self.viewport.home)
         self.viewport.face_picked.connect(self._start_sketch_on_face)
+        self.viewport.coords.connect(self._show_coords)
         cl.addWidget(self.timeline)
         self.setCentralWidget(center)
 
         self._make_actions()
+        self._make_toolbar()
         self.status = self.statusBar()
+        self._coords = QLabel("x 0.00   y 0.00   z 0.00")
+        self._coords.setObjectName("dim")
+        self._coords.setMinimumWidth(170)
+        self._coords.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.status.addPermanentWidget(self._coords)
         self.status.showMessage("Ready — F fit · G grid · E edges · 0/1/2/3 views")
         self.new_document(demo_document())
+
+    def _show_coords(self, pt):
+        if pt is None:
+            self._coords.setText("x —   y —   z —")
+        else:
+            self._coords.setText(f"x {pt[0]:.2f}   y {pt[1]:.2f}   "
+                                 f"z {pt[2]:.2f}")
+
+    # ---- quick toolbar (Fusion-style icon strip under the menus) ----------
+    def _make_toolbar(self):
+        tb = QToolBar("Tools", self)
+        tb.setMovable(False)
+        tb.setFloatable(False)
+        tb.setIconSize(QSize(22, 22))
+        t = DARK
+        tb.setStyleSheet(
+            f"QToolBar {{ background: {t['bg0']}; padding: 2px 6px;"
+            f" border-bottom: 1px solid {t['line']}; spacing: 3px; }}"
+            f" QToolButton {{ border: none; border-radius: 5px;"
+            f" padding: 3px; background: transparent; }}"
+            f" QToolButton:hover {{ background: {t['bg2']}; }}"
+            f" QToolButton:pressed {{ background: {t['line']}; }}"
+            f" QToolButton::menu-indicator {{ subcontrol-position: right;"
+            f" right: 2px; }}"
+            f" QToolBar::separator {{ width: 8px; background: transparent; }}"
+            f" QMenu {{ background: {t['bg1']}; border: 1px solid {t['line']};"
+            f" border-radius: 8px; padding: 4px; }}"
+            f" QMenu::item:selected {{ background: {t['bg2']}; color:"
+            f" {t['accent']}; }}")
+        self.addToolBarBreak(Qt.TopToolBarArea)
+        self.addToolBar(Qt.TopToolBarArea, tb)
+
+        def btn(name, tip, slot=None, menu=None):
+            b = QToolButton(tb)
+            b.setIcon(icons.icon(name))
+            b.setToolTip(tip)
+            b.setAutoRaise(True)
+            if menu is not None:
+                b.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+                b.setMenu(menu)
+            elif slot is not None:
+                b.clicked.connect(slot)
+            tb.addWidget(b)
+            return b
+
+        def sep():
+            tb.addSeparator()
+
+        btn("sketch", "New sketch (N)",
+            lambda checked=False: self.action_new_sketch())
+        sep()
+        m_create = QMenu(tb)
+        m_create.addAction("E&xtrude profile… (X)", self._tb_extrude)
+        m_create.addAction("&Revolve profile… (⇧R)", self._tb_revolve)
+        btn("extrude", "Extrude — sweep a sketch profile into a solid",
+            menu=m_create)
+        m_pat = QMenu(tb)
+        m_pat.addAction(self.act_linpat)
+        m_pat.addAction(self.act_cirpat)
+        m_pat.addAction(self.act_mirror)
+        btn("pattern", "Pattern & mirror — replicate features", menu=m_pat)
+        btn("cpattern", "Circular pattern…",
+            lambda checked=False: self.action_circular_pattern())
+        sep()
+        m_mod = QMenu(tb)
+        m_mod.addAction(self.act_fillet)
+        m_mod.addAction(self.act_chamfer)
+        btn("fillet", "Fillet — round every sharp edge of the body",
+            menu=m_mod)
+
+    def _tb_extrude(self, checked=False):
+        """Fusion flow: Extrude wants a profile. On the sketch page it
+        finishes the sketch; in the model it starts one and hints."""
+        if self.stack.currentWidget() is not self.viewport:
+            self.sketch.finish()
+            return
+        self.action_new_sketch()
+        self.status.showMessage("Draw a closed profile, then press X to "
+                                "extrude", 5000)
+
+    def _tb_revolve(self, checked=False):
+        if self.stack.currentWidget() is not self.viewport:
+            self.sketch.finish(revolve=True)
+            return
+        self.action_new_sketch()
+        self.status.showMessage("Draw a profile beside the axis, then press "
+                                "⇧R to revolve", 5000)
 
     # ---- actions -----------------------------------------------------------
     def _make_actions(self):
@@ -116,26 +214,30 @@ class MainWindow(QMainWindow):
                                  triggered=self.close))
 
         m_sk = self.menuBar().addMenu("S&ketch")
-        m_sk.addAction(QAction("&New sketch", self, shortcut="N",
-                               triggered=lambda checked=False: self.action_new_sketch()))
-        m_sk.addAction(QAction("&Extrude profile…", self, shortcut="X",
-                               triggered=lambda: self.sketch.finish()))
-        m_sk.addAction(QAction("&Revolve profile…", self, shortcut="Shift+R",
-                               triggered=lambda: self.sketch.finish(revolve=True)))
+        self.act_new_sketch = QAction("&New sketch", self, shortcut="N",
+                                      triggered=lambda checked=False: self.action_new_sketch())
+        self.act_extrude = QAction("&Extrude profile…", self, shortcut="X",
+                                   triggered=lambda: self.sketch.finish())
+        self.act_revolve = QAction("&Revolve profile…", self, shortcut="Shift+R",
+                                   triggered=lambda: self.sketch.finish(revolve=True))
+        m_sk.addActions([self.act_new_sketch, self.act_extrude,
+                         self.act_revolve])
 
         m_cr = self.menuBar().addMenu("C&reate")
-        m_cr.addAction(QAction("&Linear pattern…", self,
-                               triggered=lambda checked=False: self.action_linear_pattern()))
-        m_cr.addAction(QAction("C&ircular pattern…", self,
-                               triggered=lambda checked=False: self.action_circular_pattern()))
-        m_cr.addAction(QAction("&Mirror…", self,
-                               triggered=lambda checked=False: self.action_mirror()))
+        self.act_linpat = QAction("&Linear pattern…", self,
+                                  triggered=lambda checked=False: self.action_linear_pattern())
+        self.act_cirpat = QAction("C&ircular pattern…", self,
+                                  triggered=lambda checked=False: self.action_circular_pattern())
+        self.act_mirror = QAction("&Mirror…", self,
+                                  triggered=lambda checked=False: self.action_mirror())
+        m_cr.addActions([self.act_linpat, self.act_cirpat, self.act_mirror])
 
         m_mo = self.menuBar().addMenu("Mo&dify")
-        m_mo.addAction(QAction("&Fillet body edges…", self,
-                               triggered=lambda checked=False: self._body_fillet(False)))
-        m_mo.addAction(QAction("C&hamfer body edges…", self,
-                               triggered=lambda checked=False: self._body_fillet(True)))
+        self.act_fillet = QAction("&Fillet body edges…", self,
+                                  triggered=lambda checked=False: self._body_fillet(False))
+        self.act_chamfer = QAction("C&hamfer body edges…", self,
+                                   triggered=lambda checked=False: self._body_fillet(True))
+        m_mo.addActions([self.act_fillet, self.act_chamfer])
 
         m_edit = self.menuBar().addMenu("&Edit")
         self.act_undo = QAction("&Undo", self, shortcut=QKeySequence.Undo,

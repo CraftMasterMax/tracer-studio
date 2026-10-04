@@ -19,17 +19,20 @@ in vec3 in_pos;
 in vec3 in_nrm;
 in vec3 in_bary;
 in vec3 in_mask;
+in float in_hi;
 uniform mat4 u_view;
 uniform mat4 u_proj;
 out vec3 v_nrm;
 out vec3 v_world;
 out vec3 v_bary;
 out vec3 v_mask;
+out float v_hi;
 void main() {
     v_world = in_pos;
     v_nrm = in_nrm;
     v_bary = in_bary;
     v_mask = in_mask;
+    v_hi = in_hi;
     gl_Position = u_proj * u_view * vec4(in_pos, 1.0);
 }
 """
@@ -40,9 +43,12 @@ in vec3 v_nrm;
 in vec3 v_world;
 in vec3 v_bary;
 in vec3 v_mask;
+in float v_hi;
 uniform vec3 u_eye;
 uniform vec3 u_base;
 uniform vec3 u_edge_col;
+uniform vec3 u_hi_hover;
+uniform vec3 u_hi_sel;
 uniform float u_edge_width;
 uniform int u_show_edges;
 out vec4 frag;
@@ -67,6 +73,8 @@ void main() {
     vec3 col = hemi + u_base * d1 * 0.55 + u_base * d2 * vec3(0.10, 0.13, 0.18)
              + vec3(0.85, 0.90, 1.0) * spec;
     col += vec3(0.10, 0.14, 0.20) * pow(1.0 - max(dot(N, V), 0.0), 3.0);  // rim
+    if (v_hi > 0.75)       col = mix(col, u_hi_sel, 0.45);   // picked face
+    else if (v_hi > 0.25)  col = mix(col, u_hi_hover, 0.25); // face under cursor
     if (u_show_edges == 1) {
         float e = clamp(edge_amount(), 0.0, 1.0);
         col = mix(col, u_edge_col, e * 0.8);
@@ -143,6 +151,8 @@ class SceneRenderer:
         self._bg_vao = c.vertex_array(self._bg_prog, [], mode=moderngl.TRIANGLES)
         self._solid_vao: moderngl.VertexArray | None = None
         self._solid_count = 0
+        self._solid_buf = None
+        self._solid_data = None
         self._grid_vao: moderngl.VertexArray | None = None
         self._grid_count = 0
         self.show_grid = True
@@ -216,20 +226,41 @@ class SceneRenderer:
         bary = np.tile(np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], np.float32),
                        (n_tri, 1))
         m_flat = mask.repeat(3, axis=0)   # constant across each face's 3 corners
-        data = np.hstack([pos, nrm, bary, m_flat]).astype(np.float32)
+        hi = np.zeros((len(idx), 1), np.float32)   # per-vertex highlight weight
+        data = np.hstack([pos, nrm, bary, m_flat, hi]).astype(np.float32)
         c = self.ctx
         if self._solid_vao is not None:
             self._solid_vao.release()
+        self._solid_data = data
         buf = c.buffer(data.tobytes())
+        self._solid_buf = buf
+        self._solid_ntri = n_tri
         self._solid_vao = c.vertex_array(
             self._solid_prog,
-            [(buf, "3f 3f 3f 3f", "in_pos", "in_nrm", "in_bary", "in_mask")])
+            [(buf, "3f 3f 3f 3f 1f",
+              "in_pos", "in_nrm", "in_bary", "in_mask", "in_hi")])
         self._solid_count = len(idx)
+
+    def set_highlight(self, hover_faces=None, sel_faces=()):
+        """Tint whole mesh faces: cyan wash under the cursor, blue for
+        picked. Cheap: rewrites only the highlight column of the buffer."""
+        if self._solid_vao is None:
+            return
+        col = self._solid_data[:, 12]
+        col[:] = 0.0
+        if hover_faces is not None:
+            for f in hover_faces:
+                col[3 * f:3 * f + 3] = 0.5
+        for f in sel_faces:
+            col[3 * f:3 * f + 3] = 1.0
+        self._solid_buf.write(self._solid_data.tobytes())
 
     def clear_mesh(self):
         if self._solid_vao is not None:
             self._solid_vao.release()
         self._solid_vao, self._solid_count = None, 0
+        self._solid_buf = None
+        self._solid_data = None
 
     def set_grid(self, extent: float, minor: float):
         """XY ground grid at z=0 with highlighted axes."""
@@ -315,6 +346,8 @@ class SceneRenderer:
             u["u_eye"].value = tuple(np.asarray(camera.position, "f4"))
             u["u_base"].value = p["solid_base"]
             u["u_edge_col"].value = p["solid_edge"]
+            u["u_hi_hover"].value = p["hi_hover"]
+            u["u_hi_sel"].value = p["hi_sel"]
             u["u_edge_width"].value = 1.2
             u["u_show_edges"].value = 1 if self.show_edges else 0
             self._solid_vao.render(moderngl.TRIANGLES, vertices=self._solid_count)

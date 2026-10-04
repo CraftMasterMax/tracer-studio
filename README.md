@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M19**
+**Status: M20**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -23,10 +23,12 @@ independent project with no Autodesk assets or affiliation.)
   on-demand OpenCascade bridge (compiled with your system g++, cached;
   degrades gracefully where OCCT is absent — e.g. stock Windows, which
   still gets rim fillets)
-- UX: Fusion-style mouse, ViewCube, first-launch shortcut tour, and a
-  persistent Shortcuts tab — one canonical key table drives tour, tab,
-  menus and tooltip bindings
-- 215 headless tests (EGL rendering + Qt pixel assertions)
+- UX: Fusion-style mouse, ViewCube, **hover/whole-face selection tinting**
+  with live cursor coordinates, an icon quick-toolbar, a playhead timeline
+  of icon chips, and a blue-grey horizon viewport — plus first-launch
+  shortcut tour and a persistent Shortcuts tab driven by one canonical
+  key table
+- 228 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 

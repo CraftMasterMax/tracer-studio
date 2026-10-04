@@ -53,12 +53,28 @@ def _render_doc(renderer, cam_kind="iso"):
     return renderer.render(cam, solid.bounding_box), solid
 
 
+def _rowbg(img):
+    """Expected horizon-gradient background per image row (top->bottom)."""
+    from tracer.ui.theme import DARK
+
+    def hx(s):
+        s = s.lstrip("#")
+        return np.array([int(s[i:i + 2], 16) for i in (0, 2, 4)], float)
+    top, bot = hx(DARK["sky_top"]), hx(DARK["sky_bottom"])
+    h = img.shape[0]
+    t = np.linspace(0.0, 1.0, h)[:, None, None]        # 0 at top row
+    return top + (bot - top) * t                        # (h,1,3)
+
+
+def _fg_mask(img):
+    return np.any(np.abs(img[:, :, :3].astype(float) - _rowbg(img)) > 24,
+                  axis=2)
+
+
 def test_solid_renders_as_silhouette(renderer):
     img, solid = _render_doc(renderer)
     assert img.shape == (300, 400, 4)
-    nonbg = np.any(np.abs(img[:, :, :3].astype(int) -
-                          np.array([21, 23, 25])) > 24, axis=2)
-    coverage = nonbg.mean()
+    coverage = _fg_mask(img).mean()
     assert 0.05 < coverage < 0.90, f"coverage {coverage:.3f} — model missing/full-frame"
 
 
@@ -72,11 +88,7 @@ def test_depth_occlusion(renderer):
     """Front view of the bracket: boss must cover fewer pixels than iso."""
     iso, _ = _render_doc(renderer, "iso")
     front, _ = _render_doc(renderer, "front")
-
-    def fg(img):
-        return np.mean(np.any(np.abs(img[:, :, :3].astype(int) -
-                                     np.array([21, 23, 25])) > 24, axis=2))
-    assert fg(front) < fg(iso)
+    assert _fg_mask(front).mean() < _fg_mask(iso).mean()
 
 
 def test_edges_toggle_changes_pixels(renderer):
@@ -89,16 +101,16 @@ def test_edges_toggle_changes_pixels(renderer):
 
 
 def test_grid_actually_draws(renderer):
-    """Ground plane must show line pixels in the lower band (regression:
-    a vertex-count bug once drew only 13 lines and every test still passed)."""
-    img, _ = _render_doc(renderer)
-    w = img.shape[1]
-    band = img[:, :][int(img.shape[0] * 0.72):, :]     # foreground strip
-    lum = band[:, :, :3].astype(int).mean(axis=2)
-    grid_px = int((lum > 34).sum())                     # above sky/ground base
-    assert grid_px > 150, f"grid nearly invisible ({grid_px} px)"
+    """Ground plane must visibly change pixels (regression: a vertex-count
+    bug once drew only 13 lines and every absolute-threshold test still
+    passed — measure the grid by its on/off difference instead)."""
+    img_on, _ = _render_doc(renderer)
     renderer.show_grid = False
-    img_ng, _ = _render_doc(renderer)
-    band_ng = img_ng[int(img_ng.shape[0] * 0.72):, :, :3].astype(int).mean(axis=2)
+    img_off, _ = _render_doc(renderer)
     renderer.show_grid = True
-    assert (band_ng > 34).sum() < grid_px * 0.4, "grid toggle ineffective"
+    diff = np.abs(img_on.astype(int) - img_off.astype(int)).sum(axis=2)
+    h = img_on.shape[0]
+    grid_px = int((diff[int(h * 0.72):] > 20).sum())    # foreground strip
+    assert grid_px > 300, f"grid nearly invisible ({grid_px} px)"
+    assert (diff > 20).sum() < 0.6 * img_on.shape[0] * img_on.shape[1], \
+        "grid toggle changed the whole frame — it should only touch ground"

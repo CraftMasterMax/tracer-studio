@@ -24,10 +24,10 @@ from ..core.sketch.model import (SketchModel, math_dist, model_from_dict,
 from ..core.sketch.profile import regions
 
 ACCENT = QColor("#4ea1ff")
-FG = QColor("#e8eaed")
-DIM = QColor("#9aa1ac")
+FG = QColor("#e6e9ec")
+DIM = QColor("#a9b1bb")
 FAINT = QColor("#454b55")
-BG = QColor("#1b1d22")
+BG = QColor("#2f343c")
 GRID = QColor(255, 255, 255, 14)
 GRID_MAJOR = QColor(255, 255, 255, 28)
 AXIS_X = QColor(200, 100, 105)
@@ -656,7 +656,7 @@ class SketchCanvas(QWidget):
             rect = QRectF(pos.x() - br.width() / 2 - 5,
                           pos.y() - br.height() / 2 - 2,
                           br.width() + 10, br.height() + 4)
-            p.setBrush(QColor("#23262c"))
+            p.setBrush(QColor("#3f444c"))
             p.setPen(QPen(QColor("#2c6fb8"), 1))
             p.drawRoundedRect(rect, 3, 3)
             p.setPen(FG)

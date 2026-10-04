@@ -76,7 +76,7 @@ class FeatureTree(QTreeWidget):
             item = QTreeWidgetItem([label])
             item.setData(0, Qt.UserRole, ("feature", i))
             if f.suppressed:
-                item.setForeground(0, QColor("#5f6672"))
+                item.setForeground(0, QColor("#767e8a"))
             root.addChild(item)
             if (isinstance(f, (ExtrudeFeature, RevolveFeature))
                     and f.sketch):

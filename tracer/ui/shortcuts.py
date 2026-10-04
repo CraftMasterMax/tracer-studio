@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (QDialog, QFrame, QHBoxLayout, QLabel,
 # (group title, [(keys, what, is_keyboard), ...])
 SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
     ("Look around (3D viewport)", [
+        ("LMB click a face", "Select / deselect the whole face", False),
+        ("Esc", "Clear the face selection", False),
         ("MMB drag", "Orbit the model", False),
         ("Shift + MMB drag", "Pan the view", False),
         ("Mouse wheel", "Zoom in / out", False),

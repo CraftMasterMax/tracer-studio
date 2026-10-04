@@ -7,26 +7,28 @@ saturated accent, and a warm paper-white foreground. Spacing follows a
 from __future__ import annotations
 
 DARK = {
-    "bg0": "#141518",          # app chrome base
-    "bg1": "#1b1d22",          # panels
-    "bg2": "#23262c",          # raised (inputs, hover)
-    "line": "#2d313a",         # separators / borders
-    "fg": "#e8eaed",
-    "fg_dim": "#9aa1ac",
-    "fg_faint": "#5f6672",
+    "bg0": "#2b2e33",          # app chrome base (cool blue-grey, CAD-style)
+    "bg1": "#33373d",          # panels
+    "bg2": "#3f444c",          # raised (inputs, hover)
+    "line": "#4a5059",         # separators / borders
+    "fg": "#e6e9ec",
+    "fg_dim": "#a9b1bb",
+    "fg_faint": "#767e8a",
     "accent": "#4ea1ff",
     "accent_dim": "#2c6fb8",
     "danger": "#e06c75",
 
     # viewport
-    "sky_top": "#22252b",
-    "sky_bottom": "#151719",
-    "grid_minor": (0.22, 0.24, 0.28),
-    "grid_major": (0.30, 0.33, 0.38),
-    "axis_x": (0.85, 0.42, 0.44),
-    "axis_y": (0.55, 0.78, 0.50),
-    "solid_base": (0.62, 0.66, 0.72),
-    "solid_edge": (0.13, 0.15, 0.18),
+    "sky_top": "#2f343c",      # horizon gradient: dark steel above, lighter
+    "sky_bottom": "#5a6270",   # grey-blue under the model (CAD viewport look)
+    "grid_minor": (0.35, 0.38, 0.43),
+    "grid_major": (0.46, 0.50, 0.56),
+    "axis_x": (0.87, 0.42, 0.44),
+    "axis_y": (0.55, 0.80, 0.52),
+    "solid_base": (0.70, 0.73, 0.78),
+    "solid_edge": (0.16, 0.18, 0.21),
+    "hi_hover": (0.36, 0.82, 1.0),   # face under the cursor: cyan wash
+    "hi_sel": (0.13, 0.56, 1.0),     # picked face: stronger blue
 }
 
 LIGHT = {
@@ -88,6 +90,14 @@ def stylesheet(t: dict) -> str:
     QStatusBar {{ background: {t['bg0']}; color: {t['fg_dim']};
                   border-top: 1px solid {t['line']}; }}
     QSplitter::handle {{ background: {t['line']}; width: 1px; }}
+    QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
+    QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
+    QScrollBar::handle {{ background: {t['line']}; border-radius: 4px;
+                          min-height: 24px; min-width: 24px; }}
+    QScrollBar::handle:hover {{ background: {t['fg_faint']}; }}
+    QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+    QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+    QToolBar {{ border-bottom: 1px solid {t['line']}; }}
     QLabel#docTitle {{ font-size: 14px; font-weight: 700; padding: {SP*2}px; }}
     QLabel#dim {{ color: {t['fg_dim']}; }}
     """
