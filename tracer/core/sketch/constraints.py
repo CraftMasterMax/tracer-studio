@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .entities import Point, Line, Circle
+from .entities import Point, Line, Circle, curve_center, curve_radius
 
 _LEN_SCALE = 100.0  # mm; keeps residuals dimensionless-ish for solving
 
@@ -156,6 +156,75 @@ class Equal(Constraint):
         d1 = np.linalg.norm([self.l1.b.x - self.l1.a.x, self.l1.b.y - self.l1.a.y])
         d2 = np.linalg.norm([self.l2.b.x - self.l2.a.x, self.l2.b.y - self.l2.a.y])
         return (d1 - d2) / _LEN_SCALE
+
+
+def _split_line_curve(e1, e2):
+    """Return (line, curve) if the pair is line+curve, else (None, None)."""
+    if isinstance(e1, Line):
+        return e1, e2
+    if isinstance(e2, Line):
+        return e2, e1
+    return None, None
+
+
+def _unit_normal(line):
+    t = _unit(np.array([line.b.x - line.a.x, line.b.y - line.a.y]))
+    return np.array([-t[1], t[0]])
+
+
+@dataclass
+class Tangent(Constraint):
+    """One-point contact: a line touching a Circle/Arc, or two curves
+    touching each other (the round-tip slot and the touching-bolt-circle
+    are the maker classics).
+
+    The configuration is frozen at creation — which side of the line the
+    centre sits on, external vs internal for two curves — so the solver
+    can never jump the contact through to the mirror branch mid-relax.
+    For arcs the centre/radius are derived from the shared points, so no
+    extra DOF exists; the numerical Jacobian differentiates through them.
+    """
+    e1: object               # Line | Circle | Arc
+    e2: object               # Circle | Arc (Line only as e1 via make below)
+    side: float = 1.0        # line-curve: sign of the centre off the line
+    internal: bool = False   # curve-curve: one curve inside the other
+
+    def entities(self): return [self.e1, self.e2]
+
+    def residual(self, pos):
+        l, cv = _split_line_curve(self.e1, self.e2)
+        if l is not None:
+            n = _unit_normal(l)
+            cx, cy = curve_center(cv)
+            g = n[0] * (cx - l.a.x) + n[1] * (cy - l.a.y)
+            return (g - self.side * curve_radius(cv)) / _LEN_SCALE
+        c1x, c1y = curve_center(self.e1)
+        c2x, c2y = curve_center(self.e2)
+        r1, r2 = curve_radius(self.e1), curve_radius(self.e2)
+        target = abs(r1 - r2) if self.internal else r1 + r2
+        return (math.hypot(c2x - c1x, c2y - c1y) - target) / _LEN_SCALE
+
+
+def make_tangent(e1, e2) -> Tangent:
+    """Build Tangent(e1, e2) in whichever branch the current geometry
+    lives in. Raises ValueError for pairs tangent cannot relate."""
+    from .entities import Arc
+    if not isinstance(e1, (Line, Circle, Arc)) or not isinstance(e2, (Line, Circle, Arc)):
+        raise ValueError("Tangent applies to lines and circles/arcs")
+    if isinstance(e1, Line) and isinstance(e2, Line):
+        raise ValueError("Two lines take parallel/perpendicular, not tangent")
+    l, cv = _split_line_curve(e1, e2)
+    if l is not None:
+        n = _unit_normal(l)
+        cx, cy = curve_center(cv)
+        g = n[0] * (cx - l.a.x) + n[1] * (cy - l.a.y)
+        return Tangent(e1, e2, side=1.0 if g >= 0 else -1.0)
+    c1x, c1y = curve_center(e1)
+    c2x, c2y = curve_center(e2)
+    r1, r2 = curve_radius(e1), curve_radius(e2)
+    d = math.hypot(c2x - c1x, c2y - c1y)
+    internal = abs(d - abs(r1 - r2)) < abs(d - (r1 + r2))
+    return Tangent(e1, e2, internal=bool(internal))
 
 
 def expand(constraints: list[Constraint]) -> list[Constraint]:

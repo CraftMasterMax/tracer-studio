@@ -17,8 +17,10 @@ from PySide6.QtGui import (QColor, QFont, QKeyEvent, QMouseEvent, QPainter,
 from PySide6.QtWidgets import QInputDialog, QWidget
 
 from ..core.sketch.constraints import (Distance, Equal, Fixed, Horizontal,
-                                       Perpendicular, Radius, Vertical)
-from ..core.sketch.entities import Arc, Circle, Line, Point, curve_radius
+                                       Perpendicular, Radius, Tangent,
+                                       Vertical, make_tangent)
+from ..core.sketch.entities import (Arc, Circle, Line, Point, curve_center,
+                                     curve_radius)
 from ..core.sketch.model import (SketchModel, math_dist, model_from_dict,
                                  model_to_dict)
 from ..core.sketch.profile import regions
@@ -477,6 +479,24 @@ class SketchCanvas(QWidget):
             self.model.toggle(Equal, tuple(self._sel))
             self._solve(); self.update()
 
+    @staticmethod
+    def tangent_ok(sel) -> bool:
+        """line + curve or curve + curve — the pairs tangent can relate."""
+        curves = sum(isinstance(e, (Circle, Arc)) for e in sel)
+        lines = sum(isinstance(e, Line) for e in sel)
+        return len(sel) == 2 and (curves == 2 or (curves == 1 and lines == 1))
+
+    def act_tangent(self):
+        """Tangent between a line and a circle/arc, or between two curves.
+        Mirrors Fusion: one gesture, the geometry decides the branch."""
+        if not self.tangent_ok(self._sel):
+            return
+        self._push_hist()
+        line = next((e for e in self._sel if isinstance(e, Line)), None)
+        curves = tuple(e for e in self._sel if isinstance(e, (Circle, Arc)))
+        self.model.toggle(Tangent, (line, curves[0]) if line else curves)
+        self._solve(); self.update()
+
     def act_construction(self):
         if not any(isinstance(e, (Line, Arc)) for e in self._sel):
             return
@@ -510,6 +530,8 @@ class SketchCanvas(QWidget):
         elif len(sel) == 2 and all(isinstance(e, Line) for e in sel):
             menu.addAction("Perpendicular", self.act_perp)
             menu.addAction("Equal length", self.act_equal)
+        elif self.tangent_ok(sel):
+            menu.addAction("Tangent", self.act_tangent)
         elif len(sel) == 2 and all(isinstance(e, Point) for e in sel):
             menu.addAction("Dimension…", self.act_dim)
         elif len(sel) == 1 and isinstance(sel[0], Circle):
@@ -584,6 +606,8 @@ class SketchCanvas(QWidget):
             self.act_perp()
         elif k == Qt.Key_Q:
             self.act_equal()
+        elif k == Qt.Key_T:
+            self.act_tangent()
         elif k == Qt.Key_K:
             self.act_construction()
         else:
@@ -780,11 +804,47 @@ class SketchCanvas(QWidget):
             elif isinstance(c, Fixed):
                 m = self.w2s(c.p.x, c.p.y)
                 self._badge(p, m, "\u25a0")   # ■
+            elif isinstance(c, Tangent):
+                pt = self._tangent_point(c)
+                if pt is not None:
+                    self._tangent_mark(p, pt)
             # Distance & Radius: no badge — the editable dimension label
             # from _draw_dimensions is the single indicator (as in
             # Fusion). Two glyphs for one value used to collide
             # ("26.00" drawn over a stale "26").
         p.setFont(font)
+
+    def _tangent_point(self, c: Tangent):
+        """World point where the two entities touch (screen via w2s)."""
+        from ..core.sketch.constraints import _split_line_curve
+        l, cv = _split_line_curve(c.e1, c.e2)
+        if l is not None:                       # line touches curve
+            d = np.array([l.b.x - l.a.x, l.b.y - l.a.y])
+            ln = np.linalg.norm(d)
+            if ln < 1e-12:
+                return None
+            t = d / ln
+            cx, cy = curve_center(cv)
+            s = (cx - l.a.x) * t[0] + (cy - l.a.y) * t[1]   # project centre
+            return self.w2s(l.a.x + t[0] * s, l.a.y + t[1] * s)
+        c1x, c1y = curve_center(c.e1)            # curve touches curve
+        c2x, c2y = curve_center(c.e2)
+        dx, dy = c2x - c1x, c2y - c1y
+        dist = math.hypot(dx, dy)
+        if dist < 1e-12:
+            return None
+        ux, uy = dx / dist, dy / dist
+        r1 = curve_radius(c.e1)
+        if not c.internal:                      # contact between centres
+            return self.w2s(c1x + ux * r1, c1y + uy * r1)
+        sign = 1.0 if r1 >= curve_radius(c.e2) else -1.0
+        return self.w2s(c1x + ux * r1 * sign, c1y + uy * r1 * sign)
+
+    def _tangent_mark(self, p: QPainter, at: QPointF):
+        p.setPen(QPen(ACCENT, 1.4))
+        p.setBrush(BG)
+        p.drawEllipse(at, 3.4, 3.4)
+        p.setBrush(Qt.NoBrush)
 
     def _radius_pos(self, e, dist: float = 16.0) -> QPointF:
         """Editable dimension anchor: top of a full circle, or the bulge

@@ -10,10 +10,10 @@ from typing import Iterable
 
 import numpy as np
 
-from .entities import Point, Line, Circle, Arc, curve_radius
+from .entities import Point, Line, Circle, Arc, curve_radius, curve_center
 from .constraints import (Coincident, Distance, Equal, Fixed, Horizontal,
                           Perpendicular, Radius, PointOnLine, Parallel,
-                          Vertical)
+                          Tangent, Vertical, make_tangent)
 from .solver import Sketch, SolveResult
 
 # Sketch planes: (u_axis, v_axis) in world coords; extrude normal = u x v.
@@ -151,6 +151,8 @@ class SketchModel:
             self.constrain(Distance(a, b, math_dist(a, b)))
         elif ctype in (Parallel, Perpendicular, Equal):
             self.constrain(ctype(ents[0], ents[1]))
+        elif ctype is Tangent:
+            self.constrain(make_tangent(ents[0], ents[1]))
         else:
             raise ValueError(f"toggle cannot construct {ctype.__name__}")
         return True
@@ -269,6 +271,10 @@ def model_to_dict(m: SketchModel) -> dict:
         elif isinstance(c, Equal):
             cons.append({"t": "eq", "l1": m.sketch.lines.index(c.l1),
                          "l2": m.sketch.lines.index(c.l2)})
+        elif isinstance(c, Tangent):
+            cons.append({"t": "tan", "a": _ent_ref(m, c.e1),
+                         "b": _ent_ref(m, c.e2), "side": c.side,
+                         "internal": bool(c.internal)})
     d = {"name": m.name, "plane": m.plane,
          "points": [[p.x, p.y] for p in pts],
          "lines": [[idx[l.a.id], idx[l.b.id], int(l.construction)]
@@ -281,6 +287,24 @@ def model_to_dict(m: SketchModel) -> dict:
         d["axes"] = [[float(t) for t in a] for a in m.axes]
         d["origin"] = [float(t) for t in m.origin]
     return d
+
+
+def _ent_ref(m, e) -> list:
+    """Tagged index reference for Tangent's polymorphic endpoints."""
+    if isinstance(e, Line):
+        return ["l", m.sketch.lines.index(e)]
+    if isinstance(e, Arc):
+        return ["a", m.sketch.arcs.index(e)]
+    return ["c", m.sketch.circles.index(e)]
+
+
+def _ent_at(m, ref):
+    kind, i = ref
+    if kind == "l":
+        return m.sketch.lines[i]
+    if kind == "a":
+        return m.sketch.arcs[i]
+    return m.sketch.circles[i]
 
 
 def _add_pt(pts, idx, p) -> int:
@@ -332,4 +356,8 @@ def model_from_dict(d: dict) -> SketchModel:
                                       m.sketch.lines[c["l2"]]))
         elif t == "eq":
             m.constrain(Equal(m.sketch.lines[c["l1"]], m.sketch.lines[c["l2"]]))
+        elif t == "tan":
+            m.constrain(Tangent(_ent_at(m, c["a"]), _ent_at(m, c["b"]),
+                                side=c.get("side", 1.0),
+                                internal=bool(c.get("internal", False))))
     return m

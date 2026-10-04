@@ -627,7 +627,7 @@ class MainWindow(QMainWindow):
         model.name = self._next_sketch_name()
         self._begin_sketch(model)
         self.status.showMessage(f"Sketching on {plane} — R rect · L line · C circle · "
-                                "A arc · H/V/F/D/P/Q constraints · K construction · "
+                                "A arc · H/V/F/D/P/Q/T constraints · K construction · "
                                 "X extrude · Esc select")
 
     def _start_sketch_on_face(self, point, normal):

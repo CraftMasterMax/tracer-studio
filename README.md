@@ -11,8 +11,9 @@ independent project with no Autodesk assets or affiliation.)
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
 - 2D constraint sketcher: line/rect/circle/**arc**, click-drag geometry,
   coincident/H/V/parallel/perp/equal/point-on-line/distance/**radius (arc
-  & circle)** constraints, editable dimension badges, snap to origin/axes,
-  construction geometry, Levenberg-Marquardt solver (SVD-damped)
+  & circle)**/**tangent (line↔curve, curve↔curve)** constraints, editable
+  dimension badges, snap to origin/axes, construction geometry,
+  Levenberg-Marquardt solver (SVD-damped)
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, linear & circular patterns, **mirror**, sketch-on-face,
   **Press-Pull** — grab any flat face and drag it along its normal to add
@@ -31,7 +32,7 @@ independent project with no Autodesk assets or affiliation.)
   of icon chips, and a blue-grey horizon viewport — plus first-launch
   shortcut tour and a persistent Shortcuts tab driven by one canonical
   key table
-- 243 headless tests (EGL rendering + Qt pixel assertions)
+- 258 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -48,13 +49,13 @@ cancel, release to commit) · **double-click a face** to sketch on it ·
 **MMB/RMB** orbit · **Shift+MMB** pan · **wheel** zoom · **F** fit ·
 **G** grid · **E** edges · **0/1/2/3** iso/front/top/right.
 Sketch: **N** new sketch · **S/L/R/C/A** line/rect/circle/arc · **D**
-dimension · **H/V/F** constraints · **X** extrude · **Ctrl+Z** undo.
+dimension · **H/V/F/T** constraints · **X** extrude · **Ctrl+Z** undo.
 Full list: **?** / the Shortcuts tab.
 
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 243 tests, fully headless
+./.venv/bin/python -m pytest -q          # 258 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

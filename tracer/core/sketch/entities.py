@@ -138,6 +138,13 @@ def curve_radius(entity) -> float:
     return entity.circle()[1]
 
 
+def curve_center(entity) -> tuple[float, float]:
+    """Centre of a Circle or of an Arc's circumcircle (x, y)."""
+    if isinstance(entity, Circle):
+        return entity.c.x, entity.c.y
+    return entity.circle()[0]
+
+
 def _circumcenter(p1, p2, p3):
     ax, ay = p1; bx, by = p2; cx, cy = p3
     d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
