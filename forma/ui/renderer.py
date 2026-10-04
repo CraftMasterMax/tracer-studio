@@ -126,7 +126,14 @@ void main() { frag = vec4(mix(u_bottom, u_top, v_uv.y), 1.0); }
 class SceneRenderer:
     def __init__(self, ctx: moderngl.BaseContext | None = None,
                  palette: dict = DARK, samples: int = 4):
-        self.ctx = ctx or moderngl.create_standalone_context()
+        if ctx is None:
+            try:
+                # EGL first: no X11/XWayland dependency (clean headless CI,
+                # pure-Wayland sessions, no teardown X errors)
+                ctx = moderngl.create_standalone_context(backend="egl")
+            except Exception:
+                ctx = moderngl.create_standalone_context()
+        self.ctx = ctx
         self.palette = palette
         self._samples = samples
         c = self.ctx
