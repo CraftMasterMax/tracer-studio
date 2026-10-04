@@ -9,7 +9,9 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QTreeWidget, QTreeWidgetItem, QLabel, QVBoxLayout,
                                QTabWidget, QWidget, QFrame)
 
-from ..core.document import (Document, ExtrudeFeature, ImportedFeature,
+from ..core.document import (CircularPatternFeature, Document,
+                             ExtrudeFeature, ImportedFeature,
+                             LinearPatternFeature, MirrorFeature,
                              PrimitiveFeature, RevolveFeature)
 
 _OP_GLYPH = {"union": "+", "subtract": "−", "intersect": "∩"}
@@ -61,6 +63,9 @@ class FeatureTree(QTreeWidget):
             glyph = "\u25cb" if f.suppressed else _OP_GLYPH.get(f.op, f.op)
             kind = ("\u21bb" if isinstance(f, RevolveFeature)
                     else "\u25c8" if isinstance(f, ImportedFeature)
+                    else "\u25e7" if isinstance(f, MirrorFeature)
+                    else "\u29c9" if isinstance(f, (LinearPatternFeature,
+                                                    CircularPatternFeature))
                     else "\u25a1")
             item = QTreeWidgetItem([f"{glyph} {kind} {f.name}"])
             item.setData(0, Qt.UserRole, ("feature", i))
@@ -125,8 +130,20 @@ class PropertiesPanel(QWidget):
                 lines.append(f"{k}: {v:g} mm")
         elif isinstance(feature, ImportedFeature):
             lines.append(f"imported mesh: {len(feature.faces)} triangles")
-        px, py, pz = feature.placement
-        lines.append(f"placed at ({px:g}, {py:g}, {pz:g})")
+        elif isinstance(feature, MirrorFeature):
+            lines.append(f"mirror across {feature.plane}"
+                         f" @ {feature.offset:g} mm")
+        elif isinstance(feature, LinearPatternFeature):
+            lines.append(f"pattern: {feature.count}x at "
+                         f"({feature.vector[0]:g}, {feature.vector[1]:g}, "
+                         f"{feature.vector[2]:g}) mm")
+        elif isinstance(feature, CircularPatternFeature):
+            lines.append(f"pattern: {feature.count}x over {feature.angle:g}° "
+                         f"about ({feature.center[0]:g}, {feature.center[1]:g})")
+        placement = getattr(feature, "placement", None)
+        if placement is not None:                    # patterns have none
+            px, py, pz = placement
+            lines.append(f"placed at ({px:g}, {py:g}, {pz:g})")
         self._body.setText("<br>".join(lines))
 
 

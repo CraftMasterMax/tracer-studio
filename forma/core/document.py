@@ -66,6 +66,19 @@ class CircularPatternFeature(Feature):
 
 
 @dataclass
+class MirrorFeature(Feature):
+    """Mirror twin of the source solid across a datum plane: the coordinate
+    plane XY/XZ/YZ shifted `offset` mm along its normal. Inherits the
+    source's op, so mirroring a Cut gives a matching second Cut — the
+    maker's symmetric-lug trick."""
+    NORMALS = {"XY": (0.0, 0.0, 1.0), "XZ": (0.0, 1.0, 0.0),
+               "YZ": (1.0, 0.0, 0.0)}
+    source_uid: str = ""
+    plane: str = "YZ"
+    offset: float = 0.0
+
+
+@dataclass
 class ExtrudeFeature(Feature):
     """Profile (outer contour + holes) on a sketch plane extruded along
     the plane normal. `sketch` is the serialized SketchModel payload that
@@ -193,6 +206,12 @@ class Document:
             center=(float(center[0]), float(center[1])),
             angle=float(angle), count=int(count)))
 
+    def add_mirror(self, name, source: Feature, plane="YZ", offset=0.0,
+                   op=None):
+        return self.add(MirrorFeature(
+            name=name, op=op or source.op, source_uid=source.uid,
+            plane=plane, offset=float(offset)))
+
     @staticmethod
     def _rotz_about(cx, cy, t) -> "np.ndarray":
         c, s = np.cos(t), np.sin(t)
@@ -231,6 +250,16 @@ class Document:
                                          math.radians(step * k))
                     c = src.transformed(m)
                     solid = c if solid is None else solid.union(c)
+            elif isinstance(f, MirrorFeature):
+                src = by_uid.get(f.source_uid)
+                if src is None:
+                    continue
+                n = MirrorFeature.NORMALS.get(f.plane)
+                if n is None:
+                    raise ValueError(f"unknown mirror plane {f.plane!r}")
+                shift = tuple(v * f.offset for v in n)
+                solid = src.translated((-shift[0], -shift[1], -shift[2])) \
+                            .mirror(n).translated(shift)
             else:
                 solid = f.build()
             by_uid[f.uid] = solid
@@ -290,6 +319,9 @@ class Document:
                 d.update(source_uid=f.source_uid,
                          center=list(map(float, f.center)),
                          angle=float(f.angle), count=int(f.count))
+            elif isinstance(f, MirrorFeature):
+                d.update(source_uid=f.source_uid, plane=f.plane,
+                         offset=float(f.offset))
             return d
         return {"format": "forma/document", "version": 2,
                 "title": self.title, "units": self.units,
@@ -343,6 +375,10 @@ class Document:
                     name=fd["name"], source_uid=fd["source_uid"],
                     center=tuple(fd["center"]), angle=float(fd["angle"]),
                     count=int(fd["count"]), **base))
+            elif t == "MirrorFeature":
+                doc.features.append(MirrorFeature(
+                    name=fd["name"], source_uid=fd["source_uid"],
+                    plane=fd["plane"], offset=float(fd["offset"]), **base))
             else:
                 raise ValueError(f"unknown feature type {t!r}")
         doc.dirty = True

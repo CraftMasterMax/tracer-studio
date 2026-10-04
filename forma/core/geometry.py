@@ -163,6 +163,14 @@ class Solid:
         off = np.asarray(offset, dtype=np.float32)
         return Solid(self._m.translate(off))
 
+    def mirror(self, normal) -> "Solid":
+        """Reflect across the plane through the origin perpendicular to
+        ``normal`` (the kernel welds the two halves when they touch)."""
+        n = np.asarray(normal, dtype=np.float64)
+        if not np.any(n):
+            raise ValueError("mirror needs a non-zero plane normal")
+        return Solid(self._m.mirror(n))
+
     # ---- mesh conversion (rendering & export) --------------------------
     def transformed(self, m4) -> "Solid":
         """Apply a 4x4 homogeneous transform via mesh round-trip through the

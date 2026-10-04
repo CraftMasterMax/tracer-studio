@@ -14,8 +14,8 @@ from ..core import io as fio
 from ..core import step
 from ..core.document import (CircularPatternFeature, Document,
                              ExtrudeFeature, ImportedFeature,
-                             LinearPatternFeature, PrimitiveFeature,
-                             RevolveFeature)
+                             LinearPatternFeature, MirrorFeature,
+                             PrimitiveFeature, RevolveFeature)
 from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
                                  model_to_dict)
 from .renderer import SceneRenderer
@@ -128,6 +128,8 @@ class MainWindow(QMainWindow):
                                triggered=lambda checked=False: self.action_linear_pattern()))
         m_cr.addAction(QAction("C&ircular pattern…", self,
                                triggered=lambda checked=False: self.action_circular_pattern()))
+        m_cr.addAction(QAction("&Mirror…", self,
+                               triggered=lambda checked=False: self.action_mirror()))
 
         m_edit = self.menuBar().addMenu("&Edit")
         self.act_undo = QAction("&Undo", self, shortcut=QKeySequence.Undo,
@@ -241,6 +243,12 @@ class MainWindow(QMainWindow):
                 act.setEnabled(not base or op == "union")
                 act.triggered.connect(
                     lambda checked=False, o=op: self._set_operation(feature, o))
+        mir_menu = menu.addMenu("Mirror copy")
+        for pl, hint in (("YZ", "X\u2192\u2212X"), ("XZ", "Y\u2192\u2212Y"),
+                         ("XY", "Z\u2192\u2212Z")):
+            mir_menu.addAction(f"across {pl} ({hint})",
+                               lambda checked=False, p=pl:
+                               self._mirror_feature(feature, p))
         menu.addAction("Rename…", lambda: self._rename_feature(feature))
         menu.addSeparator()
         menu.addAction("Unsuppress" if feature.suppressed else "Suppress",
@@ -793,6 +801,50 @@ class MainWindow(QMainWindow):
         self.viewport.refresh(fit=True)
         self.status.showMessage(
             f"Patterned {src.name}: {count}x at ({dx:g}, {dy:g}, {dz:g}) mm", 6000)
+
+    def _mirror_feature(self, src, plane=None):
+        """Symmetric twin of ``src`` across a datum plane offset from the
+        origin. Mirroring the part's mid-plane reproduces Fusion's most
+        common mirror (e.g. a one-sided lug on a bracket)."""
+        if plane is None:
+            plane, ok = QInputDialog.getItem(
+                self, "Mirror", "Mirror plane:", ["YZ", "XZ", "XY"], 0, False)
+            if not ok:
+                return
+        else:
+            plane = plane[:2]
+        n = np.array(MirrorFeature.NORMALS[plane], float)
+        # default the offset to the model's own mid-plane along the normal
+        off = 0.0
+        if self.doc.result is not None:
+            bb = self.doc.result.bounding_box
+            off = float((bb.mean(0) * n).sum())
+        off, ok = QInputDialog.getDouble(self, "Mirror",
+                                         "Plane offset (mm):", off,
+                                         -1e6, 1e6, 2)
+        if not ok:
+            return
+        self._capture()
+        self.doc.add_mirror(f"Mirror of {src.name}", src, plane, off)
+        self.recompute()
+        self.viewport.refresh(fit=True)
+        self.status.showMessage(
+            f"Mirrored {src.name} across {plane} @ {off:g} mm", 6000)
+
+    def action_mirror(self):
+        if self.doc is None:
+            return
+        cands = self._pattern_candidates()
+        if not cands:
+            QMessageBox.information(self, "Nothing to mirror",
+                                    "Create a feature first.")
+            return
+        names = [f.name for f in cands]
+        name, ok = QInputDialog.getItem(self, "Mirror", "Feature to mirror:",
+                                        names, 0, False)
+        if not ok:
+            return
+        self._mirror_feature(cands[names.index(name)])
 
     # ---- unsaved-changes guard ---------------------------------------------------
     def closeEvent(self, ev):
