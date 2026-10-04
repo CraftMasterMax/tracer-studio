@@ -28,6 +28,7 @@ def win(qapp):
     w.show()
     qapp.processEvents()
     yield w
+    w._unsaved = False       # close guard would open a modal
     w.close()
 
 

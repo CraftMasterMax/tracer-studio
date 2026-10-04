@@ -35,7 +35,9 @@ class TimelineBar(QWidget):
         self.update()
 
     def _label(self, f) -> str:
-        glyph = {"union": "+", "subtract": "−", "intersect": "∩"}[f.op]
+        if getattr(f, "suppressed", False):
+            return f"\u25cb {f.name}"
+        glyph = {"union": "+", "subtract": "\u2212", "intersect": "\u2229"}[f.op]
         return f"{glyph} {f.name}"
 
     def paintEvent(self, ev):
@@ -54,12 +56,14 @@ class TimelineBar(QWidget):
                 w = fm.horizontalAdvance(label) + 22
                 y, h = 6, self.height() - 14
                 r = QRectF(x, y, w, h)
-                p.setBrush(QColor("#23262c" if i != self._sel else "#2c313b"))
-                pen = QPen(QColor(OP_COLOR[f.op]))
+                dim = getattr(f, "suppressed", False)
+                p.setBrush(QColor("#1b1d22" if dim else
+                                 ("#23262c" if i != self._sel else "#2c313b")))
+                pen = QPen(QColor("#5f6672") if dim else QColor(OP_COLOR[f.op]))
                 pen.setWidthF(1.0 if i != self._sel else 1.8)
                 p.setPen(pen)
                 p.drawRoundedRect(r, 4, 4)
-                p.setPen(QColor("#e8eaed"))
+                p.setPen(QColor("#5f6672") if dim else QColor("#e8eaed"))
                 p.drawText(r, Qt.AlignCenter, label)
                 self._chips.append((x, w, f))
                 x += w + 6

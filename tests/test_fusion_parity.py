@@ -38,6 +38,7 @@ def win(qapp):
     w.show()
     qapp.processEvents()
     yield w
+    w._unsaved = False       # close guard would open a modal
     w.close()
 
 
@@ -202,6 +203,7 @@ def test_delete_feature_and_undo(qapp):
     win.undo()
     assert len(win.doc.features) == 1
     assert win.doc.result.volume == pytest.approx(v0)
+    win._unsaved = False
     win.close()
 
 
@@ -228,6 +230,7 @@ def test_set_distance_and_rename(qapp, monkeypatch):
     assert win.doc.features[0].name == "bearing block"
     root = win.rail.tree.topLevelItem(0)
     assert "bearing block" in root.child(1).text(0)   # tree refreshed
+    win._unsaved = False
     win.close()
 
 

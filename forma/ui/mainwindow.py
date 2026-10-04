@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog,
                                QSplitter, QStackedWidget, QVBoxLayout, QWidget)
 
 from ..core import io as fio
-from ..core.document import Document, ExtrudeFeature
+from ..core.document import Document, ExtrudeFeature, LinearPatternFeature
 from ..core.sketch.model import SketchModel, model_from_dict, model_to_dict
 from .renderer import SceneRenderer
 from .panels import LeftRail
@@ -96,6 +96,9 @@ class MainWindow(QMainWindow):
         m_file.addActions([self.act_new, self.act_open, self.act_save,
                            self.act_save_as, self.act_import])
         m_file.addSeparator()
+        m_file.addAction(QAction("Export &render (PNG)…", self,
+                                 triggered=lambda checked=False: self.action_export_render()))
+        m_file.addSeparator()
         m_file.addAction(QAction("E&xit", self, shortcut=QKeySequence.Quit,
                                  triggered=self.close))
 
@@ -104,6 +107,10 @@ class MainWindow(QMainWindow):
                                triggered=lambda checked=False: self.action_new_sketch()))
         m_sk.addAction(QAction("&Extrude profile…", self, shortcut="X",
                                triggered=lambda: self.sketch.finish()))
+
+        m_cr = self.menuBar().addMenu("C&reate")
+        m_cr.addAction(QAction("&Linear pattern…", self,
+                               triggered=lambda checked=False: self.action_linear_pattern()))
 
         m_edit = self.menuBar().addMenu("&Edit")
         m_edit.addAction(QAction("&Undo", self, shortcut=QKeySequence.Undo,
@@ -151,8 +158,18 @@ class MainWindow(QMainWindow):
                            lambda: self._set_distance(feature))
         menu.addAction("Rename…", lambda: self._rename_feature(feature))
         menu.addSeparator()
+        menu.addAction("Unsuppress" if feature.suppressed else "Suppress",
+                       lambda: self._toggle_suppress(feature))
         menu.addAction("Delete feature", lambda: self._delete_feature(feature))
         menu.exec(pos)
+
+    def _toggle_suppress(self, feature):
+        self._capture()
+        feature.suppressed = not feature.suppressed
+        self.doc.dirty = True
+        self.recompute()
+        verb = "Suppressed" if feature.suppressed else "Unsuppressed"
+        self.status.showMessage(f"{verb} {feature.name}", 4000)
 
     def _set_distance(self, feature):
         val, ok = QInputDialog.getDouble(self, "Extrude distance",
@@ -316,6 +333,7 @@ class MainWindow(QMainWindow):
         if len(self._undo) > 60:
             self._undo.pop(0)
         self._redo.clear()
+        self._unsaved = True
 
     def undo(self):
         import json
@@ -345,6 +363,7 @@ class MainWindow(QMainWindow):
         self.doc = doc or Document("Untitled")
         self.file_path = None
         self._editing_sid = None
+        self._unsaved = False
         self._undo.clear()
         self._redo.clear()
         self.rail.tree.set_document(self.doc)
@@ -375,6 +394,7 @@ class MainWindow(QMainWindow):
             return
         self.status.showMessage(f"Saved {self.file_path}", 5000)
         self.doc.dirty = False
+        self._unsaved = False
         self._update_title()
 
     def action_open(self):
@@ -451,6 +471,80 @@ class MainWindow(QMainWindow):
             self.status.showMessage(f"Exported {out}", 6000)
         except Exception as e:
             QMessageBox.critical(self, "Export failed", str(e))
+
+    def action_export_render(self):
+        """Save what's on screen as a PNG (makers post these everywhere)."""
+        name = (self.doc.title if self.doc and self.doc.title else "render")
+        name = name.replace(" ", "-")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export render", str(Path.home() / f"{name}.png"),
+            "PNG image (*.png)")
+        if not path:
+            return
+        if not Path(path).suffix:
+            path += ".png"
+        if self.viewport.grab().save(path):
+            self.status.showMessage(f"Render saved to {path}", 6000)
+        else:
+            QMessageBox.warning(self, "Export failed", f"Could not write {path}")
+
+    # ---- linear pattern --------------------------------------------------------
+    def action_linear_pattern(self):
+        if self.doc is None:
+            return
+        cands = [f for f in self.doc.features
+                 if not isinstance(f, LinearPatternFeature) and not f.suppressed]
+        if not cands:
+            QMessageBox.information(self, "Nothing to pattern",
+                                    "Create a feature first.")
+            return
+        names = [f.name for f in cands]
+        name, ok = QInputDialog.getItem(self, "Linear pattern",
+                                        "Feature to pattern:", names, 0, False)
+        if not ok:
+            return
+        src = cands[names.index(name)]
+        dx, ok = QInputDialog.getDouble(self, "Linear pattern",
+                                        "X spacing (mm):", 10.0, -1e5, 1e5, 3)
+        if not ok:
+            return
+        dy, ok = QInputDialog.getDouble(self, "Linear pattern",
+                                        "Y spacing (mm):", 0.0, -1e5, 1e5, 3)
+        if not ok:
+            return
+        dz, ok = QInputDialog.getDouble(self, "Linear pattern",
+                                        "Z spacing (mm):", 0.0, -1e5, 1e5, 3)
+        if not ok:
+            return
+        count, ok = QInputDialog.getInt(self, "Linear pattern",
+                                        "Occurrences:", 3, 2, 500, 1)
+        if not ok:
+            return
+        self._capture()
+        self.doc.add_linear_pattern(f"Pattern of {src.name}", src,
+                                    (dx, dy, dz), count)
+        self.recompute()
+        self.viewport.refresh(fit=True)
+        self.status.showMessage(
+            f"Patterned {src.name}: {count}x at ({dx:g}, {dy:g}, {dz:g}) mm", 6000)
+
+    # ---- unsaved-changes guard ---------------------------------------------------
+    def closeEvent(self, ev):
+        if getattr(self, "_unsaved", False):
+            ans = QMessageBox.question(
+                self, "Unsaved changes",
+                "This document has unsaved changes. Save before closing?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save)
+            if ans == QMessageBox.Cancel:
+                ev.ignore()
+                return
+            if ans == QMessageBox.Save:
+                self.action_save()
+                if getattr(self, "_unsaved", False):   # dialog was cancelled
+                    ev.ignore()
+                    return
+        ev.accept()
 
     def action_import(self):
         path, _ = QFileDialog.getOpenFileName(

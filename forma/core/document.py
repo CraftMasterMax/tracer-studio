@@ -6,6 +6,7 @@ true history tree will replace later — files written today stay readable.
 """
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -21,6 +22,18 @@ CombineOp = Literal["union", "subtract", "intersect"]
 class Feature:
     name: str
     op: CombineOp = "union"
+    uid: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
+    suppressed: bool = False
+
+
+@dataclass
+class LinearPatternFeature(Feature):
+    """Count copies of the source feature's solid offset by a vector —
+    Fusion's linear pattern, and the maker's fastest route to hole arrays.
+    Inherits the source's op unless overridden."""
+    source_uid: str = ""
+    vector: tuple = (0.0, 0.0, 0.0)
+    count: int = 2
 
 
 @dataclass
@@ -91,11 +104,29 @@ class Document:
             dims={"radius": radius, "height": height},
             placement=(center[0], center[1], z)))
 
+    def add_linear_pattern(self, name, source: Feature, vector, count, op=None):
+        return self.add(LinearPatternFeature(
+            name=name, op=op or source.op, source_uid=source.uid,
+            vector=tuple(float(v) for v in vector), count=int(count)))
+
     # ---- evaluation ------------------------------------------------------
     def recompute(self) -> Solid | None:
         acc: Solid | None = None
+        by_uid: dict[str, Solid] = {}
         for f in self.features:
-            solid = f.build()
+            if f.suppressed:
+                continue
+            if isinstance(f, LinearPatternFeature):
+                src = by_uid.get(f.source_uid)
+                if src is None:          # source deleted/suppressed: no-op
+                    continue
+                solid = None
+                for k in range(max(1, int(f.count))):
+                    c = src.translated(tuple(v * k for v in f.vector))
+                    solid = c if solid is None else solid.union(c)
+            else:
+                solid = f.build()
+            by_uid[f.uid] = solid
             if acc is None:
                 if f.op == "subtract":
                     raise ValueError(f"first feature {f.name!r} cannot be a subtract")
@@ -119,7 +150,8 @@ class Document:
     # ---- serialization ----------------------------------------------------
     def to_dict(self) -> dict:
         def _feat(f: Feature) -> dict:
-            d = {"type": type(f).__name__, "name": f.name, "op": f.op}
+            d = {"type": type(f).__name__, "name": f.name, "op": f.op,
+                 "uid": f.uid, "suppressed": bool(f.suppressed)}
             if isinstance(f, ExtrudeFeature):
                 d.update(outer=np.asarray(f.outer).tolist(),
                          holes=[np.asarray(h).tolist() for h in f.holes],
@@ -131,31 +163,41 @@ class Document:
                 d.update(kind=f.kind,
                          dims={k: float(v) for k, v in f.dims.items()},
                          placement=list(map(float, f.placement)))
+            elif isinstance(f, LinearPatternFeature):
+                d.update(source_uid=f.source_uid,
+                         vector=list(map(float, f.vector)),
+                         count=int(f.count))
             return d
-        return {"format": "forma/document", "version": 1,
+        return {"format": "forma/document", "version": 2,
                 "title": self.title, "units": self.units,
                 "features": [_feat(f) for f in self.features]}
 
     @classmethod
     def from_dict(cls, data: dict) -> "Document":
-        if data.get("format") != "forma/document" or data.get("version", 0) > 1:
+        if data.get("format") != "forma/document" or data.get("version", 0) > 2:
             raise ValueError("not a readable Forma document")
         doc = cls(title=data.get("title", "Untitled"))
         doc.units = data.get("units", "mm")
         for fd in data.get("features", []):
             t = fd["type"]
+            base = dict(op=fd["op"], uid=fd.get("uid") or uuid.uuid4().hex[:8],
+                        suppressed=bool(fd.get("suppressed", False)))
             if t == "ExtrudeFeature":
                 doc.features.append(ExtrudeFeature(
-                    name=fd["name"], op=fd["op"],
+                    name=fd["name"],
                     outer=np.array(fd["outer"], float),
                     holes=[np.array(h, float) for h in fd["holes"]],
                     height=fd["height"], placement=tuple(fd["placement"]),
                     plane=fd.get("plane", "XY"), sketch=fd.get("sketch"),
-                    sid=fd.get("sid"), region=fd.get("region", 0)))
+                    sid=fd.get("sid"), region=fd.get("region", 0), **base))
             elif t == "PrimitiveFeature":
                 doc.features.append(PrimitiveFeature(
-                    name=fd["name"], op=fd["op"], kind=fd["kind"],
-                    dims=fd["dims"], placement=tuple(fd["placement"])))
+                    name=fd["name"], kind=fd["kind"],
+                    dims=fd["dims"], placement=tuple(fd["placement"]), **base))
+            elif t == "LinearPatternFeature":
+                doc.features.append(LinearPatternFeature(
+                    name=fd["name"], source_uid=fd["source_uid"],
+                    vector=tuple(fd["vector"]), count=int(fd["count"]), **base))
             else:
                 raise ValueError(f"unknown feature type {t!r}")
         doc.dirty = True

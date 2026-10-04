@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QTreeWidget, QTreeWidgetItem, QLabel, QVBoxLayout,
                                QWidget, QFrame)
 
@@ -56,8 +57,11 @@ class FeatureTree(QTreeWidget):
             origin.addChild(it)
         origin.setExpanded(False)
         for i, f in enumerate(self._doc.features):
-            item = QTreeWidgetItem([f"{_OP_GLYPH.get(f.op, f.op)}  {f.name}"])
+            glyph = "\u25cb" if f.suppressed else _OP_GLYPH.get(f.op, f.op)
+            item = QTreeWidgetItem([f"{glyph}  {f.name}"])
             item.setData(0, Qt.UserRole, ("feature", i))
+            if f.suppressed:
+                item.setForeground(0, QColor("#5f6672"))
             root.addChild(item)
             if isinstance(f, ExtrudeFeature) and f.sketch:
                 sk = QTreeWidgetItem([f"\u270e {f.sketch.get('name', 'Sketch')}"])
