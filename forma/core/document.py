@@ -28,6 +28,23 @@ class Feature:
 
 
 @dataclass
+class ImportedFeature(Feature):
+    """A solid imported from a mesh/STEP file, stored as triangles.
+
+    Imported bodies are first-class history: they participate in
+    Join/Cut/Intersect like sketched features, and they save with the
+    document (arrays are JSON — fine for maker-scale meshes)."""
+    verts: list = field(default_factory=list)
+    faces: list = field(default_factory=list)
+    placement: tuple = (0.0, 0.0, 0.0)
+
+    def build(self) -> Solid:
+        s = Solid.from_mesh(np.asarray(self.verts, float),
+                            np.asarray(self.faces, np.int32))
+        return s.translated(self.placement)
+
+
+@dataclass
 class LinearPatternFeature(Feature):
     """Count copies of the source feature's solid offset by a vector —
     Fusion's linear pattern, and the maker's fastest route to hole arrays.
@@ -261,6 +278,10 @@ class Document:
                 d.update(kind=f.kind,
                          dims={k: float(v) for k, v in f.dims.items()},
                          placement=list(map(float, f.placement)))
+            elif isinstance(f, ImportedFeature):
+                d.update(verts=np.asarray(f.verts).tolist(),
+                         faces=np.asarray(f.faces).tolist(),
+                         placement=list(map(float, f.placement)))
             elif isinstance(f, LinearPatternFeature):
                 d.update(source_uid=f.source_uid,
                          vector=list(map(float, f.vector)),
@@ -309,6 +330,10 @@ class Document:
                 doc.features.append(PrimitiveFeature(
                     name=fd["name"], kind=fd["kind"],
                     dims=fd["dims"], placement=tuple(fd["placement"]), **base))
+            elif t == "ImportedFeature":
+                doc.features.append(ImportedFeature(
+                    name=fd["name"], verts=fd["verts"], faces=fd["faces"],
+                    placement=tuple(fd["placement"]), **base))
             elif t == "LinearPatternFeature":
                 doc.features.append(LinearPatternFeature(
                     name=fd["name"], source_uid=fd["source_uid"],

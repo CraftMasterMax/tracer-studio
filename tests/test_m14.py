@@ -150,7 +150,8 @@ def test_arc_chains_second_arc(win, qapp):
 def test_flat_arc_becomes_a_line(win, qapp):
     win.new_document(); win.action_new_sketch()
     cv = win.sketch
-    cv.set_tool("arc")
+    cv._scale = 10.0                          # px/mm — the old screen-space
+    cv.set_tool("arc")                        # rule would fail at this zoom
     _click(cv, 0, 0); _click(cv, 20, 0); _click(cv, 10, 0.1)  # ~flat
     qapp.processEvents()
     assert len(cv.model.sketch.arcs) == 0

@@ -307,9 +307,13 @@ class SketchCanvas(QWidget):
                 chord = math.hypot(b.x - a.x, b.y - a.y)
                 bulge = abs((b.x - a.x) * (mid.y - a.y)
                             - (b.y - a.y) * (mid.x - a.x))
+                # bulge = chord * sagitta, so bulge/chord**2 is the sagitta
+                # as a fraction of chord: flat below 1 % (a ~5.7 deg arc).
+                # Purely geometric — zooming must not change the entity type.
+                flat = bulge < 0.01 * chord * chord
                 if chord > 1e-9:
                     self._push_hist()
-                    if bulge / chord * self._scale < 1.0:
+                    if flat:
                         self.model.add_line(a, b)    # flat enough -> line
                     else:
                         self.model.sketch.arc(a, mid, b)

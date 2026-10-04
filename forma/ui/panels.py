@@ -9,8 +9,8 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QTreeWidget, QTreeWidgetItem, QLabel, QVBoxLayout,
                                QTabWidget, QWidget, QFrame)
 
-from ..core.document import (Document, ExtrudeFeature, PrimitiveFeature,
-                             RevolveFeature)
+from ..core.document import (Document, ExtrudeFeature, ImportedFeature,
+                             PrimitiveFeature, RevolveFeature)
 
 _OP_GLYPH = {"union": "+", "subtract": "−", "intersect": "∩"}
 
@@ -59,7 +59,9 @@ class FeatureTree(QTreeWidget):
         origin.setExpanded(False)
         for i, f in enumerate(self._doc.features):
             glyph = "\u25cb" if f.suppressed else _OP_GLYPH.get(f.op, f.op)
-            kind = "\u21bb" if isinstance(f, RevolveFeature) else "\u25a1"
+            kind = ("\u21bb" if isinstance(f, RevolveFeature)
+                    else "\u25c8" if isinstance(f, ImportedFeature)
+                    else "\u25a1")
             item = QTreeWidgetItem([f"{glyph} {kind} {f.name}"])
             item.setData(0, Qt.UserRole, ("feature", i))
             if f.suppressed:
@@ -121,6 +123,8 @@ class PropertiesPanel(QWidget):
             lines.append(f"kind: {feature.kind}")
             for k, v in feature.dims.items():
                 lines.append(f"{k}: {v:g} mm")
+        elif isinstance(feature, ImportedFeature):
+            lines.append(f"imported mesh: {len(feature.faces)} triangles")
         px, py, pz = feature.placement
         lines.append(f"placed at ({px:g}, {py:g}, {pz:g})")
         self._body.setText("<br>".join(lines))

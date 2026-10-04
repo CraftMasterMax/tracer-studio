@@ -11,9 +11,11 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog,
                                QSplitter, QStackedWidget, QVBoxLayout, QWidget)
 
 from ..core import io as fio
+from ..core import step
 from ..core.document import (CircularPatternFeature, Document,
-                             ExtrudeFeature, LinearPatternFeature,
-                             PrimitiveFeature, RevolveFeature)
+                             ExtrudeFeature, ImportedFeature,
+                             LinearPatternFeature, PrimitiveFeature,
+                             RevolveFeature)
 from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
                                  model_to_dict)
 from .renderer import SceneRenderer
@@ -93,14 +95,19 @@ class MainWindow(QMainWindow):
                                    triggered=lambda: self.action_save(as_new=True))
         self.act_open = QAction("&Open…", self, shortcut=QKeySequence.Open,
                                 triggered=self.action_open)
-        self.act_import = QAction("&Import mesh…", self, triggered=self.action_import)
+        self.act_import = QAction("&Import body…", self,
+                                  triggered=self.action_import)
+        m_file.addActions([self.act_new, self.act_open, self.act_save,
+                           self.act_save_as])
+        m_file.addSeparator()
+        m_file.addAction(self.act_import)
         m_export = m_file.addMenu("&Export mesh")
         for ext in (".stl", ".3mf", ".obj", ".ply"):
             m_export.addAction(QAction(
                 ext.upper().lstrip("."), self,
                 triggered=lambda checked=False, e=ext: self.action_export(e)))
-        m_file.addActions([self.act_new, self.act_open, self.act_save,
-                           self.act_save_as, self.act_import])
+        m_file.addAction(QAction("Export &STEP (.step)…", self,
+                                 triggered=self.action_export_step))
         m_file.addSeparator()
         m_file.addAction(QAction("Export &render (PNG)…", self,
                                  triggered=lambda checked=False: self.action_export_render()))
@@ -806,22 +813,66 @@ class MainWindow(QMainWindow):
         ev.accept()
 
     def action_import(self):
+        """Import a body (STEP / STL / OBJ / …) as a real history feature.
+
+        Imported solids join the feature tree: they can be Cut/Joined with
+        sketched geometry, suppressed, and they save inside the .forma
+        document."""
         path, _ = QFileDialog.getOpenFileName(
-            self, "Import mesh", str(Path.home()),
-            "Meshes (*.stl *.obj *.ply *.3mf *.glb *.gltf)")
+            self, "Import body", str(Path.home()),
+            "CAD & meshes (*.step *.stp *.stl *.obj *.ply *.3mf *.glb *.gltf)")
         if not path:
             return
+        ext = Path(path).suffix.lower()
         try:
-            solid = fio.import_mesh(path)
+            if ext in (".step", ".stp"):
+                if not step.available():
+                    QMessageBox.information(
+                        self, "STEP import",
+                        "STEP support needs the system OpenCascade and g++.\n"
+                        "On Arch: sudo pacman -S opencascade\n"
+                        "STL/OBJ/3MF import works on every machine.")
+                    return
+                solid = step.import_step(path)
+            else:
+                solid = fio.import_mesh(path)
         except Exception as e:
             QMessageBox.critical(self, "Import failed", str(e))
             return
-        self.viewport._r.clear_mesh()
-        v, n, f = solid.to_render_arrays()
-        self.viewport._r.set_mesh(v, n, f)
-        self.viewport._bbox = solid.bounding_box
-        self.viewport._r._grid_auto(solid.bounding_box)
-        self.viewport._cam.fit(solid.bounding_box)
-        self.viewport.update()
-        self.status.showMessage(f"Imported {Path(path).name} (display only — "
-                                "mesh becomes an editable feature in M3)", 8000)
+        tr = solid.to_trimesh()
+        self._capture()
+        self.doc.add(ImportedFeature(
+            name=Path(path).stem, verts=tr.vertices.tolist(),
+            faces=tr.faces.astype(int).tolist()))
+        self.recompute()
+        self.viewport.refresh(fit=True)
+        self.status.showMessage(
+            f"Imported {Path(path).name} — right-click it in the browser "
+            "to Cut/Join with your model", 7000)
+
+    def action_export_step(self):
+        """Boundary-rep STEP export through the OpenCascade bridge."""
+        if self.doc is None or self.doc.result is None:
+            QMessageBox.information(self, "Nothing to export",
+                                    "Add a feature first.")
+            return
+        if not step.available():
+            QMessageBox.information(
+                self, "STEP export",
+                "STEP support uses the system OpenCascade + g++, which was "
+                "not found on this machine.\nSTL/OBJ/3MF export works "
+                "everywhere.")
+            return
+        name = (self.doc.title or "model").replace(" ", "-")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export STEP", str(Path.home() / f"{name}.step"),
+            "STEP (*.step *.stp)")
+        if not path:
+            return
+        if not Path(path).suffix:
+            path += ".step"
+        try:
+            out = step.export_step(self.doc.result, path)
+            self.status.showMessage(f"Exported {out}", 6000)
+        except Exception as e:
+            QMessageBox.critical(self, "STEP export failed", str(e))
