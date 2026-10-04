@@ -6,10 +6,9 @@ from pathlib import Path
 import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import (QFileDialog, QHBoxLayout,
-                               QInputDialog, QMainWindow, QMessageBox,
-                               QPushButton, QSplitter, QStackedWidget,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog,
+                               QMainWindow, QMenu, QMessageBox, QPushButton,
+                               QSplitter, QStackedWidget, QVBoxLayout, QWidget)
 
 from ..core import io as fio
 from ..core.document import Document, ExtrudeFeature
@@ -48,6 +47,7 @@ class MainWindow(QMainWindow):
         self.rail.tree.currentItemChanged.connect(
             lambda *_: self.rail.props.show_feature(self.rail.tree.current_feature()))
         self.rail.tree.itemDoubleClicked.connect(self._tree_activated)
+        self.rail.tree.feature_menu.connect(self._feature_menu)
 
         split = QSplitter(Qt.Horizontal)
         split.addWidget(self.rail)
@@ -66,6 +66,7 @@ class MainWindow(QMainWindow):
         cl.addWidget(split, 1)
         self.timeline = TimelineHost()
         self.timeline.bar.feature_activated.connect(self._feature_activated)
+        self.timeline.bar.feature_menu.connect(self._feature_menu)
         cl.addWidget(self.timeline)
         self.setCentralWidget(center)
 
@@ -139,6 +140,49 @@ class MainWindow(QMainWindow):
             self.edit_sketch(feature)
         else:
             self.status.showMessage("Feature has no editable sketch (yet)", 3000)
+
+    # ---- feature management (context menus: timeline + browser) --------------
+    def _feature_menu(self, feature, pos):
+        menu = QMenu(self)
+        if isinstance(feature, ExtrudeFeature) and feature.sketch:
+            menu.addAction("Edit sketch", lambda: self.edit_sketch(feature))
+        if isinstance(feature, ExtrudeFeature):
+            menu.addAction("Set extrude distance…",
+                           lambda: self._set_distance(feature))
+        menu.addAction("Rename…", lambda: self._rename_feature(feature))
+        menu.addSeparator()
+        menu.addAction("Delete feature", lambda: self._delete_feature(feature))
+        menu.exec(pos)
+
+    def _set_distance(self, feature):
+        val, ok = QInputDialog.getDouble(self, "Extrude distance",
+                                         "Height (mm):", feature.height,
+                                         0.01, 1e5, 3)
+        if not ok or abs(val - feature.height) < 1e-12:
+            return
+        self._capture()
+        feature.height = float(val)
+        self.doc.dirty = True
+        self.recompute()
+        self.status.showMessage(f"{feature.name}: height {val:g} mm", 4000)
+
+    def _rename_feature(self, feature):
+        name, ok = QInputDialog.getText(self, "Rename feature", "Name:",
+                                        text=feature.name)
+        if not ok or not name.strip():
+            return
+        self._capture()
+        feature.name = name.strip()
+        self.doc.dirty = True
+        self.recompute()
+
+    def _delete_feature(self, feature):
+        self._capture()
+        self.doc.features.remove(feature)
+        self.doc.dirty = True
+        self.rail.props.show_feature(None)
+        self.recompute()
+        self.status.showMessage(f"Deleted {feature.name} (Ctrl+Z restores)", 4000)
 
     def edit_sketch(self, feature):
         if self.doc is None:
@@ -243,10 +287,12 @@ class MainWindow(QMainWindow):
                             ("rect", "Rect"), ("circle", "Circle")):
             b = QPushButton(label, checkable=True,
                             clicked=lambda checked, t=tool: self._pick_tool(t))
+            b.setProperty("tb", True)
             bl.addWidget(b)
             self._tool_btns[tool] = b
         bl.addStretch(1)
-        done = QPushButton("Extrude profile…  (X)")
+        done = QPushButton("Extrude… (X)")
+        done.setProperty("tb", True)
         done.clicked.connect(lambda: self.sketch.finish())
         bl.addWidget(done)
         self.sketch = SketchCanvas()

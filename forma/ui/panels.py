@@ -4,7 +4,7 @@ panel into a live editor; keeping it a label now is honest, not lazy.
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QTreeWidget, QTreeWidgetItem, QLabel, QVBoxLayout,
                                QWidget, QFrame)
 
@@ -14,6 +14,8 @@ _OP_GLYPH = {"union": "+", "subtract": "−", "intersect": "∩"}
 
 
 class FeatureTree(QTreeWidget):
+    feature_menu = Signal(object, object)   # Feature, global QPoint
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setHeaderHidden(True)
@@ -22,6 +24,17 @@ class FeatureTree(QTreeWidget):
         self.setIndentation(14)
         self._doc: Document | None = None
         self.feature_selected = None  # callback(feature|None)
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_menu)
+
+    def _show_menu(self, pos):
+        it = self.itemAt(pos)
+        role = it.data(0, Qt.UserRole) if it else None
+        if role and role[0] in ("feature", "sketch") and self._doc:
+            idx = role[1]
+            if idx < len(self._doc.features):
+                self.feature_menu.emit(self._doc.features[idx],
+                                       self.viewport().mapToGlobal(pos))
 
     def set_document(self, doc: Document):
         self._doc = doc

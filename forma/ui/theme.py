@@ -79,6 +79,7 @@ def stylesheet(t: dict) -> str:
     }}
     QPushButton:hover {{ border-color: {t['accent_dim']}; }}
     QPushButton:pressed {{ background: {t['line']}; }}
+    QPushButton[tb="true"] {{ padding: 4px 9px; border-radius: 6px; }}
     QMenuBar {{ background: {t['bg0']}; color: {t['fg_dim']}; }}
     QMenuBar::item:selected {{ background: {t['bg2']}; color: {t['fg']}; }}
     QMenu {{ background: {t['bg1']}; border: 1px solid {t['line']};

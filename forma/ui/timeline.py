@@ -18,6 +18,7 @@ OP_COLOR = {"union": "#4ea1ff", "subtract": "#e06c75", "intersect": "#9aa1ac"}
 class TimelineBar(QWidget):
     feature_clicked = Signal(object)        # Feature
     feature_activated = Signal(object)      # double-click = edit
+    feature_menu = Signal(object, object)   # Feature, global QPoint
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -66,6 +67,9 @@ class TimelineBar(QWidget):
     def mousePressEvent(self, ev):
         for x, w, f in self._chips:
             if x <= ev.position().x() <= x + w:
+                if ev.button() == Qt.RightButton:
+                    self.feature_menu.emit(f, ev.globalPosition().toPoint())
+                    return
                 self._sel = self.doc.features.index(f)
                 self.feature_clicked.emit(f)
                 self.update()

@@ -8,7 +8,7 @@ import pytest
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QPointF, QPoint, Qt  # noqa: E402
-from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtTest import QSignalSpy, QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox  # noqa: E402
 
 from forma.core.document import ExtrudeFeature  # noqa: E402
@@ -180,6 +180,86 @@ def test_sketch_reedit_removes_and_adds_region_features(win, qapp, monkeypatch):
     qapp.processEvents()
     assert len([f for f in win.doc.features if f.sketch]) == 2
     assert win.doc.result.volume == pytest.approx(2 * 100 * 6, rel=1e-2)
+
+
+# ---- feature management (context menus) --------------------------------------
+def test_delete_feature_and_undo(qapp):
+    from forma.ui.mainwindow import MainWindow
+    from forma.ui.renderer import SceneRenderer
+    try:
+        r = SceneRenderer()
+    except Exception as e:
+        pytest.skip(f"no headless GL: {e}")
+    win = MainWindow(renderer=r)
+    win.new_document()
+    outer = np.array([[0, 0], [10, 0], [10, 10], [0, 10]], float)
+    win.doc.add(ExtrudeFeature(name="sq", outer=outer, height=2))
+    win.recompute()
+    v0 = win.doc.result.volume
+    win._delete_feature(win.doc.features[0])
+    assert len(win.doc.features) == 0
+    assert win.doc.result is None or win.doc.result.volume == pytest.approx(0)
+    win.undo()
+    assert len(win.doc.features) == 1
+    assert win.doc.result.volume == pytest.approx(v0)
+    win.close()
+
+
+def test_set_distance_and_rename(qapp, monkeypatch):
+    from forma.ui.mainwindow import MainWindow
+    from forma.ui.renderer import SceneRenderer
+    try:
+        r = SceneRenderer()
+    except Exception as e:
+        pytest.skip(f"no headless GL: {e}")
+    win = MainWindow(renderer=r)
+    win.new_document()
+    outer = np.array([[0, 0], [10, 0], [10, 10], [0, 10]], float)
+    win.doc.add(ExtrudeFeature(name="sq", outer=outer, height=2))
+    win.recompute()
+    monkeypatch.setattr(QInputDialog, "getDouble",
+                        staticmethod(lambda *a, **k: (5.0, True)))
+    win._set_distance(win.doc.features[0])
+    assert win.doc.features[0].height == 5.0
+    assert win.doc.result.volume == pytest.approx(500)
+    monkeypatch.setattr(QInputDialog, "getText",
+                        staticmethod(lambda *a, **k: ("bearing block", True)))
+    win._rename_feature(win.doc.features[0])
+    assert win.doc.features[0].name == "bearing block"
+    root = win.rail.tree.topLevelItem(0)
+    assert "bearing block" in root.child(1).text(0)   # tree refreshed
+    win.close()
+
+
+def test_timeline_right_click_emits_menu(qapp):
+    from forma.core.document import Document
+    from forma.ui.timeline import TimelineBar
+    doc = Document("t")
+    outer = np.array([[0, 0], [10, 0], [10, 10], [0, 10]], float)
+    doc.add(ExtrudeFeature(name="sq", outer=outer, height=2))
+    bar = TimelineBar()
+    bar.resize(400, 38)
+    bar.set_document(doc)
+    bar.grab()                               # force paint -> chip layout
+    assert bar._chips, "timeline painted no chips"
+    x, w, f = bar._chips[0]
+    spy = QSignalSpy(bar.feature_menu)
+    QTest.mousePress(bar, Qt.RightButton, Qt.NoModifier,
+                     QPoint(int(x + w / 2), 20), 10)
+    assert spy.count() == 1
+    assert spy.at(0)[0] is f
+
+
+# ---- sketch cursor readout ----------------------------------------------------
+def test_sketch_shows_cursor_coordinates(win, qapp):
+    win.action_new_sketch()
+    cv = win.sketch
+    QTest.mouseMove(cv, cv.w2s(12.5, -7.25).toPoint())
+    qapp.processEvents()
+    assert cv._cursor is not None
+    assert cv._cursor[0] == pytest.approx(12.5, abs=0.2)
+    assert cv._cursor[1] == pytest.approx(-7.25, abs=0.2)
+    cv.grab()                                # HUD with coords must not crash
 
 
 # ---- Fusion mouse scheme (3D viewport) ---------------------------------------

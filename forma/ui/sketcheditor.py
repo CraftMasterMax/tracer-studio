@@ -41,6 +41,8 @@ class SketchCanvas(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setMouseTracking(True)      # live coordinate readout, like Fusion
+        self._cursor: tuple | None = None
         self.model: SketchModel | None = None
         self._scale = 4.0                   # px per mm
         self._center = np.array([0.0, 0.0])  # world point at widget center
@@ -210,6 +212,8 @@ class SketchCanvas(QWidget):
 
     def mouseMoveEvent(self, ev: QMouseEvent):
         q = ev.position()
+        self._cursor = self._world(q)
+        self.update()                    # keep the readout live
         if self._pan_from is not None:
             d = (q - self._pan_from)
             self._center -= np.array([d.x() / self._scale, -d.y() / self._scale])
@@ -529,6 +533,9 @@ class SketchCanvas(QWidget):
         if self.model:
             lines.append((f"Sketch: {self.model.name}  ·  plane {self.model.plane}",
                           FG))
+        if self._cursor is not None:
+            cx, cy = self._cursor
+            lines.append((f"X {cx:.2f}   Y {cy:.2f} mm", DIM))
         tool = {"select": "Select (S/L/R/C) · H/V/F/D constraints · X extrude",
                 "line": "Line — click points, Enter/Esc stops",
                 "rect": "Rectangle — drag corners",
