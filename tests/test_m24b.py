@@ -1,15 +1,17 @@
-"""M24b — sketch corner fillet: trim a corner into a tangent arc.
+"""M24b/M26b — sketch corner ops: fillet (tangent arc) and chamfer
+(flat cut) on a corner of two lines.
 
-The arc arrives fully parametric (two Tangent + Radius + ArcMiddle), so
-drags keep it tangent instead of breaking into an eyeballed blob, and it
-survives save/load and extrudes through the real kernel.
+The fillet's arc arrives fully parametric (two Tangent + Radius +
+ArcMiddle), so drags keep it tangent instead of breaking into an
+eyeballed blob, and both ops survive save/load and extrude through the
+real kernel.
 """
 import math
 
 import numpy as np
 import pytest
 
-from tracer.core.sketch.fillet import corner_fillet
+from tracer.core.sketch.fillet import corner_fillet, corner_chamfer
 from tracer.core.sketch.model import SketchModel, model_from_dict, model_to_dict
 from tracer.core.sketch.constraints import (Fixed, Radius, Tangent, ArcMiddle,
                                             _unit_normal)
@@ -132,6 +134,69 @@ def test_refuses_nonpositive_radius():
         corner_fillet(m, lines[1], lines[2], 0.0)
 
 
+# ---- chamfer ---------------------------------------------------------------
+
+def test_chamfer_two_corners_matches_analytic_area():
+    m, lines = _rect()
+    for i in (1, 3):
+        corner_chamfer(m, lines[i], lines[(i + 1) % 4], 5.0)
+    assert m.solve().converged
+    assert len(m.sketch.lines) == 6 and not m.sketch.arcs
+    loops, warns = m.to_loops()
+    assert len(loops) == 1 and not warns
+    assert loops[0]["area"] == pytest.approx(800 - 2 * 12.5, abs=1e-6)
+
+
+def test_fillet_and_chamfer_coexist_on_one_plate():
+    m, lines = _rect()
+    corner_fillet(m, lines[0], lines[1], 5.0)       # one round corner
+    corner_chamfer(m, lines[2], lines[3], 5.0)      # one flat corner
+    assert m.solve().converged
+    loops, warns = m.to_loops()
+    assert len(loops) == 1 and not warns
+    want = 800 - (25 - math.pi * 25 / 4) - 12.5
+    assert loops[0]["area"] == pytest.approx(want, abs=0.05)
+
+
+def test_chamfer_extrudes_to_analytic_volume():
+    from tracer.core.document import ExtrudeFeature
+    m, lines = _rect()
+    corner_chamfer(m, lines[1], lines[2], 5.0)
+    m.solve()
+    loops, _ = m.to_loops()
+    sol = ExtrudeFeature(name="chamfered plate",
+                         outer=np.asarray(loops[0]["points"]),
+                         height=3.0).build()
+    assert sol.volume == pytest.approx((800 - 12.5) * 3, abs=0.5)
+    assert sol.to_trimesh().is_watertight
+
+
+def test_chamfer_guards():
+    m, lines = _rect(10.0, 8.0)
+    with pytest.raises(ValueError, match="too large"):
+        corner_chamfer(m, lines[1], lines[2], 50.0)
+    assert len(m.sketch.lines) == 4                  # nothing mutated
+    with pytest.raises(ValueError, match="positive"):
+        corner_chamfer(m, lines[1], lines[2], -1.0)
+    L1 = m.add_line(m.point(50, 50), m.point(60, 50))
+    L2 = m.add_line(m.point(50, 55), m.point(60, 55))
+    with pytest.raises(ValueError, match="sharing exactly one corner"):
+        corner_chamfer(m, L1, L2, 2.0)
+
+
+def test_chamfer_endpoint_sharing_survives_save_roundtrip():
+    m, lines = _rect()
+    cl = corner_chamfer(m, lines[1], lines[2], 4.0)
+    m.solve()
+    d = model_to_dict(m)
+    m2 = model_from_dict(d)
+    assert len(m2.sketch.lines) == 5
+    assert m2.solve().converged
+    loops, warns = m2.to_loops()
+    assert len(loops) == 1 and not warns
+    assert loops[0]["area"] == pytest.approx(800 - 8, abs=1e-6)
+
+
 # ---- UI ---------------------------------------------------------------------
 
 pytest.importorskip("PySide6")
@@ -214,3 +279,48 @@ def test_canvas_fillet_rejection_shows_warning_not_exception(win, qapp,
     qapp.processEvents()
     assert not m.sketch.arcs
     assert "too large" in (getattr(cv, "_warn_text", "") or "")
+
+
+def test_G_key_chamfers_a_corner_and_undoes(win, qapp, monkeypatch):
+    cv = _canvas(win, qapp)
+    m = cv.model
+    lines = m.add_rect(m.point(0, 0), m.point(40, 20))
+    monkeypatch.setattr(QInputDialog, "getDouble",
+                        staticmethod(lambda *A, **K: (5.0, True)))
+    cv._sel = [lines[1], lines[2]]
+    QTest.keyClick(cv, Qt.Key_G)
+    qapp.processEvents()
+    assert len(m.sketch.lines) == 5 and not m.sketch.arcs
+    loops, warns = m.to_loops()
+    assert len(loops) == 1 and abs(loops[0]["area"] - 787.5) < 1e-6
+    cv.undo_op()
+    qapp.processEvents()
+    assert len(m.sketch.lines) == 4
+
+
+def test_G_without_two_lines_is_not_swallowed(win, qapp):
+    """'G' stays a 3D-view key everywhere else — the canvas must only
+    consume it when the selection actually forms a corner."""
+    cv = _canvas(win, qapp)
+    m = cv.model
+    p = m.point(0, 0)
+    cv._sel = [p]
+    # an ineligible selection falls through to Qt's default chain: no crash,
+    # no chamfer
+    QTest.keyClick(cv, Qt.Key_G)
+    qapp.processEvents()
+    assert len(m.sketch.lines) == 0
+
+
+def test_corner_menu_offers_both_ops_on_eligible_pairs_only(win, qapp):
+    cv = _canvas(win, qapp)
+    m = cv.model
+    lines = m.add_rect(m.point(0, 0), m.point(30, 30))
+    cv._sel = [lines[0], lines[1]]
+    texts = [a.text() for a in cv._build_menu().actions()]
+    assert "Fillet corner…" in texts and "Chamfer corner…" in texts
+    far = m.add_line(m.point(100, 100), m.point(110, 100))
+    cv._sel = [lines[0], far]                    # disjoint pair
+    texts = [a.text() for a in cv._build_menu().actions()]
+    assert "Fillet corner…" not in texts
+    assert "Chamfer corner…" not in texts

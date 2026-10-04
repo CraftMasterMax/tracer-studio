@@ -556,11 +556,22 @@ class SketchCanvas(QWidget):
         self._solve(); self.update()
 
     def act_fillet(self):
-        """Trim the selected corner to a tangent arc (Fusion's sketch F):
-        radius dialog, then corner_fillet builds the arc + tangents.
-        Refusals bounce back as canvas warnings with the real reason."""
-        from PySide6.QtWidgets import QInputDialog
+        """Trim the selected corner to a tangent arc (Fusion's sketch F)."""
         from ..core.sketch.fillet import corner_fillet
+        self._corner_op("Fillet corner", "Radius (mm):",
+                        lambda l1, l2, v: corner_fillet(self.model, l1, l2, v))
+
+    def act_chamfer(self):
+        """Cut the selected corner flat by an equal trim on both legs."""
+        from ..core.sketch.fillet import corner_chamfer
+        self._corner_op("Chamfer corner", "Distance (mm):",
+                        lambda l1, l2, v: corner_chamfer(self.model, l1, l2, v))
+
+    def _corner_op(self, title, label, apply):
+        """Shared plumbing for fillet/chamfer: two selected lines sharing a
+        corner, a size dialog defaulted from the shorter leg, and refusals
+        surfaced as canvas warnings (never a half-cut sketch)."""
+        from PySide6.QtWidgets import QInputDialog
         if len(self._sel) != 2 or not all(isinstance(e, Line)
                                           for e in self._sel):
             return
@@ -573,14 +584,13 @@ class SketchCanvas(QWidget):
                  [p for p in (l2.a, l2.b) if p is not shared]
         leg = min(math.dist((shared.x, shared.y), (p.x, p.y)) for p in others)
         default = max(0.5, round(min(5.0, leg / 4.0), 1))
-        r, ok = QInputDialog.getDouble(self, "Fillet corner",
-                                       "Radius (mm):", default, 0.01,
+        v, ok = QInputDialog.getDouble(self, title, label, default, 0.01,
                                        max(0.02, leg / 2.0 - 0.01), 2)
         if not ok:
             return
         self._push_hist()
         try:
-            corner_fillet(self.model, l1, l2, r)
+            apply(l1, l2, v)
         except ValueError as e:
             self._hist.pop()                      # nothing was mutated yet
             self._warn(str(e))
@@ -662,6 +672,7 @@ class SketchCanvas(QWidget):
             menu.addAction("Angle between…", self.act_angle)
             if any(p in (sel[1].a, sel[1].b) for p in (sel[0].a, sel[0].b)):
                 menu.addAction("Fillet corner…", self.act_fillet)
+                menu.addAction("Chamfer corner…", self.act_chamfer)
         elif self.tangent_ok(sel):
             menu.addAction("Tangent", self.act_tangent)
             if all(isinstance(e, (Circle, Arc)) for e in sel):
@@ -739,6 +750,9 @@ class SketchCanvas(QWidget):
                 self.act_fillet()                 # Fusion: F fillets a corner
             else:
                 self.act_fix()
+        elif k == Qt.Key_G and len(sel) == 2 and \
+                all(isinstance(e, Line) for e in sel):
+            self.act_chamfer()                    # G = the corner's flat twin
         elif k == Qt.Key_D:
             self.act_dim()
         elif k == Qt.Key_P:
