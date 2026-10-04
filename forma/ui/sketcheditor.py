@@ -15,8 +15,8 @@ from PySide6.QtGui import (QColor, QFont, QKeyEvent, QMouseEvent, QPainter,
                            QPen, QWheelEvent)
 from PySide6.QtWidgets import QInputDialog, QWidget
 
-from ..core.sketch.constraints import (Distance, Fixed, Horizontal, Radius,
-                                       Vertical)
+from ..core.sketch.constraints import (Distance, Equal, Fixed, Horizontal,
+                                       Perpendicular, Radius, Vertical)
 from ..core.sketch.entities import Circle, Line, Point
 from ..core.sketch.model import SketchModel, math_dist
 from ..core.sketch.profile import regions
@@ -291,6 +291,17 @@ class SketchCanvas(QWidget):
 
     def act_dim(self):
         from PySide6.QtWidgets import QInputDialog
+        if len(self._sel) == 2 and all(isinstance(e, Point) for e in self._sel):
+            p, q = self._sel
+            cur = math_dist(p, q)
+            val, ok = QInputDialog.getDouble(self, "Dimension",
+                                             "Distance (mm):",
+                                             round(cur, 3), 0.001, 1e6, 3)
+            if ok:
+                self.model.remove_last(Distance, (p, q))
+                self.model.constrain(Distance(p, q, val))
+                self._solve(); self.update()
+            return
         if len(self._sel) != 1:
             return
         e = self._sel[0]
@@ -310,6 +321,25 @@ class SketchCanvas(QWidget):
                 self.model.constrain(Radius(e, val))
                 self._solve(); self.update()
 
+    def act_perp(self):
+        if len(self._sel) == 2 and all(isinstance(e, Line) for e in self._sel):
+            self.model.toggle(Perpendicular, tuple(self._sel))
+            self._solve(); self.update()
+
+    def act_equal(self):
+        if len(self._sel) == 2 and all(isinstance(e, Line) for e in self._sel):
+            self.model.toggle(Equal, tuple(self._sel))
+            self._solve(); self.update()
+
+    def act_construction(self):
+        touched = False
+        for e in self._sel:
+            if isinstance(e, Line):
+                e.construction = not e.construction
+                touched = True
+        if touched:
+            self._solve(); self.update()
+
     def act_delete(self):
         for e in list(self._sel):
             self.model.delete_entity(e)
@@ -323,6 +353,15 @@ class SketchCanvas(QWidget):
         if len(sel) == 1 and isinstance(sel[0], Line):
             menu.addAction("Horizontal", self.act_H)
             menu.addAction("Vertical", self.act_V)
+            menu.addAction("Dimension…", self.act_dim)
+            menu.addSeparator()
+            menu.addAction("Hide construction"
+                           if sel[0].construction else
+                           "Construction geometry", self.act_construction)
+        elif len(sel) == 2 and all(isinstance(e, Line) for e in sel):
+            menu.addAction("Perpendicular", self.act_perp)
+            menu.addAction("Equal length", self.act_equal)
+        elif len(sel) == 2 and all(isinstance(e, Point) for e in sel):
             menu.addAction("Dimension…", self.act_dim)
         elif len(sel) == 1 and isinstance(sel[0], Circle):
             menu.addAction("Radius…", self.act_dim)
@@ -371,6 +410,12 @@ class SketchCanvas(QWidget):
             self.act_fix()
         elif k == Qt.Key_D:
             self.act_dim()
+        elif k == Qt.Key_P:
+            self.act_perp()
+        elif k == Qt.Key_Q:
+            self.act_equal()
+        elif k == Qt.Key_K:
+            self.act_construction()
         else:
             return super().keyPressEvent(ev)
         self.update()
@@ -502,9 +547,12 @@ class SketchCanvas(QWidget):
         sk = self.model.sketch
         r = self._last_result
         constrained = r is not None and r.converged and r.dof == 0
-        p.setPen(QPen(FG if constrained else ACCENT, 1.7))
+        solid_pen = QPen(FG if constrained else ACCENT, 1.7)
+        constr_pen = QPen(DIM, 1.2, Qt.DashLine)
         for l in sk.lines:
+            p.setPen(constr_pen if l.construction else solid_pen)
             p.drawLine(self.w2s(l.a.x, l.a.y), self.w2s(l.b.x, l.b.y))
+        p.setPen(solid_pen)
         for c in sk.circles:
             cen = self.w2s(c.c.x, c.c.y)
             r = c.r * self._scale

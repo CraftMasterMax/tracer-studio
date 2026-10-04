@@ -40,9 +40,10 @@ class Point(Entity):
 
 
 class Line(Entity):
-    def __init__(self, a: Point, b: Point):
+    def __init__(self, a: Point, b: Point, construction: bool = False):
         super().__init__()
         self.a, self.b = a, b
+        self.construction = bool(construction)   # guide geometry: no profile
 
     def get_params(self): return np.array([self.a.x, self.a.y, self.b.x, self.b.y])
 

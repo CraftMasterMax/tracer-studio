@@ -235,7 +235,8 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self._sketch_page)
         self._pick_tool("rect")     # most sketches start with a rectangle
         self.status.showMessage(f"Sketching on {plane} — R rect · L line · C circle · "
-                                "H/V/F/D constraints · X extrude · Esc select")
+                                "H/V/F/D/P/Q constraints · K construction · "
+                                "X extrude · Esc select")
 
     def _on_profiles(self, profiles, name):
         m = self.sketch.model

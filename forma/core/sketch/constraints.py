@@ -137,6 +137,20 @@ class Perpendicular(Constraint):
         return float(d1 @ d2 / n) if n > 1e-12 else 0.0
 
 
+@dataclass
+class Equal(Constraint):
+    """Same length for two lines."""
+    l1: Line
+    l2: Line
+
+    def entities(self): return [self.l1, self.l2]
+
+    def residual(self, pos):
+        d1 = np.linalg.norm([self.l1.b.x - self.l1.a.x, self.l1.b.y - self.l1.a.y])
+        d2 = np.linalg.norm([self.l2.b.x - self.l2.a.x, self.l2.b.y - self.l2.a.y])
+        return (d1 - d2) / _LEN_SCALE
+
+
 def expand(constraints: list[Constraint]) -> list[Constraint]:
     """Coincident carries two DOFs; split into per-axis rows."""
     out = []

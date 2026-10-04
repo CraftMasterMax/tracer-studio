@@ -11,8 +11,9 @@ from typing import Iterable
 import numpy as np
 
 from .entities import Point, Line, Circle
-from .constraints import (Coincident, Distance, Fixed, Horizontal, Vertical,
-                          Radius, PointOnLine, Parallel)
+from .constraints import (Coincident, Distance, Equal, Fixed, Horizontal,
+                          Perpendicular, Radius, PointOnLine, Parallel,
+                          Vertical)
 from .solver import Sketch, SolveResult
 
 # Sketch planes: (u_axis, v_axis) in world coords; extrude normal = u x v.
@@ -99,6 +100,10 @@ class SketchModel:
         elif ctype is Distance:
             a, b = (ents[0].a, ents[0].b) if isinstance(ents[0], Line) else ents[:2]
             self.constrain(Distance(a, b, math_dist(a, b)))
+        elif ctype in (Parallel, Perpendicular, Equal):
+            self.constrain(ctype(ents[0], ents[1]))
+        else:
+            raise ValueError(f"toggle cannot construct {ctype.__name__}")
         return True
 
     @staticmethod
@@ -142,11 +147,13 @@ class SketchModel:
         """Return [(outer Nx2 array, area, ccw), ...] from closed loops.
 
         Shared points define connectivity; circles become 96-gons.
+        Construction lines are guide geometry and never bound a profile.
         Non-closed dangling edges are ignored (with a warning tuple).
         """
         from .profile import loops_from_lines_and_circles
-        return loops_from_lines_and_circles(self.sketch.lines,
-                                            self.sketch.circles)
+        return loops_from_lines_and_circles(
+            [l for l in self.sketch.lines if not l.construction],
+            self.sketch.circles)
 
 
 def math_dist(a: Point, b: Point) -> float:
@@ -196,9 +203,16 @@ def model_to_dict(m: SketchModel) -> dict:
         elif isinstance(c, Parallel):
             cons.append({"t": "//", "l1": m.sketch.lines.index(c.l1),
                          "l2": m.sketch.lines.index(c.l2)})
+        elif isinstance(c, Perpendicular):
+            cons.append({"t": "perp", "l1": m.sketch.lines.index(c.l1),
+                         "l2": m.sketch.lines.index(c.l2)})
+        elif isinstance(c, Equal):
+            cons.append({"t": "eq", "l1": m.sketch.lines.index(c.l1),
+                         "l2": m.sketch.lines.index(c.l2)})
     return {"name": m.name, "plane": m.plane,
             "points": [[p.x, p.y] for p in pts],
-            "lines": [[idx[l.a.id], idx[l.b.id]] for l in m.sketch.lines],
+            "lines": [[idx[l.a.id], idx[l.b.id], int(l.construction)]
+                      for l in m.sketch.lines],
             "circles": [[idx[c.c.id], c.r] for c in m.sketch.circles],
             "constraints": cons}
 
@@ -215,8 +229,9 @@ def model_from_dict(d: dict) -> SketchModel:
     m = SketchModel(plane=d.get("plane", "XY"))
     m.name = d.get("name", "Sketch")
     pts = [m.point(x, y) for x, y in d.get("points", [])]
-    for ia, ib in d.get("lines", []):
-        m.add_line(pts[ia], pts[ib])
+    for e in d.get("lines", []):
+        ln = m.add_line(pts[e[0]], pts[e[1]])
+        ln.construction = bool(e[2]) if len(e) > 2 else False
     for ic, r in d.get("circles", []):
         m.add_circle(pts[ic], r)
     for c in d.get("constraints", []):
@@ -238,4 +253,9 @@ def model_from_dict(d: dict) -> SketchModel:
             m.constrain(PointOnLine(pts[c["p"]], m.sketch.lines[c["line"]]))
         elif t == "//":
             m.constrain(Parallel(m.sketch.lines[c["l1"]], m.sketch.lines[c["l2"]]))
+        elif t == "perp":
+            m.constrain(Perpendicular(m.sketch.lines[c["l1"]],
+                                      m.sketch.lines[c["l2"]]))
+        elif t == "eq":
+            m.constrain(Equal(m.sketch.lines[c["l1"]], m.sketch.lines[c["l2"]]))
     return m
