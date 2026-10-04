@@ -588,6 +588,24 @@ class SketchCanvas(QWidget):
         self._corner_op("Chamfer corner", "Distance (mm):",
                         lambda l1, l2, v: corner_chamfer(self.model, l1, l2, v))
 
+    def act_trim(self):
+        """Close the corner between two loose lines (Fusion's trim):
+        overshoot is cut back, gaps are extended — ends land EXACTLY on
+        the infinite-line intersection and merge into one shared point."""
+        from ..core.sketch.trim import close_corner
+        if len(self._sel) != 2 or not all(isinstance(e, Line)
+                                          for e in self._sel):
+            return
+        self._push_hist()
+        try:
+            close_corner(self.model, *self._sel)
+        except ValueError as e:
+            self._hist.pop()                      # nothing was mutated yet
+            self._warn(str(e))
+            return
+        self._sel = []
+        self._solve(); self.update()
+
     def _corner_op(self, title, label, apply):
         """Shared plumbing for fillet/chamfer: two selected lines sharing a
         corner, a size dialog defaulted from the shorter leg, and refusals
@@ -694,6 +712,8 @@ class SketchCanvas(QWidget):
             if any(p in (sel[1].a, sel[1].b) for p in (sel[0].a, sel[0].b)):
                 menu.addAction("Fillet corner…", self.act_fillet)
                 menu.addAction("Chamfer corner…", self.act_chamfer)
+            else:
+                menu.addAction("Trim / extend to corner", self.act_trim)
         elif self.tangent_ok(sel):
             menu.addAction("Tangent", self.act_tangent)
             if all(isinstance(e, (Circle, Arc)) for e in sel):
@@ -776,6 +796,9 @@ class SketchCanvas(QWidget):
         elif k == Qt.Key_G and len(sel) == 2 and \
                 all(isinstance(e, Line) for e in sel):
             self.act_chamfer()                    # G = the corner's flat twin
+        elif k == Qt.Key_Slash and len(sel) == 2 and \
+                all(isinstance(e, Line) for e in sel):
+            self.act_trim()                       # / closes a sloppy corner
         elif k == Qt.Key_D:
             self.act_dim()
         elif k == Qt.Key_P:
@@ -1190,7 +1213,8 @@ class SketchCanvas(QWidget):
         if self._cursor is not None:
             cx, cy = self._cursor
             lines.append((f"X {cx:.2f}   Y {cy:.2f} mm", DIM))
-        tool = {"select": "Select (S/L/R/C/O/A) · H/V/F/D/Q/T/I constraints · X extrude",
+        tool = {"select": ("Select (S/L/R/C/O/A) · H/V/F/D/Q/T/I constraints · "
+                           "/ trim · X extrude"),
                 "line": "Line — click points, Enter/Esc stops",
                 "rect": "Rectangle — drag corners or click · move · click",
                 "circle": "Circle — drag from center or click · move · click",

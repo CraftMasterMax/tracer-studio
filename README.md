@@ -17,7 +17,10 @@ independent project with no Autodesk assets or affiliation.)
   (line or between two, arc + editable badge)** constraints, editable
   dimension badges, snap to origin/axes, construction geometry, **corner
   fillet (F on two lines): trims the corner to a tangent arc that stays
-  tangent when you drag**, **corner chamfer (G): its flat twin**,
+  tangent when you drag**, **corner chamfer (G): its flat twin**, **trim /
+  extend (/): two loose lines snap to their exact crossing and merge into
+  one shared corner point (extend any distance, trim only a stub — T- and
+  X-junctions stay intact)**,
   Levenberg-Marquardt solver (SVD-damped)
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, linear & circular patterns, **mirror**, sketch-on-face,
@@ -37,7 +40,7 @@ independent project with no Autodesk assets or affiliation.)
   of icon chips, and a blue-grey horizon viewport — plus first-launch
   shortcut tour and a persistent Shortcuts tab driven by one canonical
   key table
-- 321 headless tests (EGL rendering + Qt pixel assertions)
+- 336 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -54,13 +57,13 @@ cancel, release to commit) · **double-click a face** to sketch on it ·
 **MMB/RMB** orbit · **Shift+MMB** pan · **wheel** zoom · **F** fit ·
 **G** grid · **E** edges · **0/1/2/3** iso/front/top/right.
 Sketch: **N** new sketch · **S/L/R/C/O/A** line/rect/circle/slot/arc · **D**
-dimension · **H/V/F/G/T/I/M/2** constraints · **X** extrude · **Ctrl+Z** undo.
+dimension · **H/V/F/G/T/I/M/2** constraints · **/** trim-to-corner · **X** extrude · **Ctrl+Z** undo.
 Full list: **?** / the Shortcuts tab.
 
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 321 tests, fully headless
+./.venv/bin/python -m pytest -q          # 336 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
