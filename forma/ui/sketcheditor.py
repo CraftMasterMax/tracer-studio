@@ -54,6 +54,7 @@ class SketchCanvas(QWidget):
         self._preview: tuple | None = None  # tool drag preview
         self._snap_hint: Point | None = None
         self._last_result = None
+        self._dim_hits: list = []
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMinimumSize(320, 240)
         f = QFont()
@@ -408,10 +409,64 @@ class SketchCanvas(QWidget):
         self._draw_grid(p)
         if self.model:
             self._draw_entities(p)
+            self._draw_dimensions(p)
             self._draw_glyphs(p)
             self._draw_preview(p)
         self._draw_hud(p)
         p.end()
+
+    # ---- dimension labels (double-click editable, Fusion-style) ------------
+    def _draw_dimensions(self, p: QPainter):
+        self._dim_hits = []
+        sk = self.model.sketch
+        p.setFont(self._font)
+        fm = p.fontMetrics()
+        for c in sk.constraints:
+            text = pos = None
+            if isinstance(c, Distance):
+                mid = self.w2s((c.p.x + c.q.x) / 2, (c.p.y + c.q.y) / 2)
+                d = QPointF(c.q.x - c.p.x, c.q.y - c.p.y)
+                ln = math.hypot(d.x(), d.y())
+                if ln < 1e-9:
+                    continue
+                nx, ny = -d.y() / ln, d.x() / ln        # screen-space-ish normal
+                pos = QPointF(mid.x() + nx * 16, mid.y() - ny * 16)
+                text = f"{c.value:.2f}"
+            elif isinstance(c, Radius):
+                cen = self.w2s(c.circle.c.x, c.circle.c.y)
+                pos = QPointF(cen.x(), cen.y() - c.circle.r * self._scale - 12)
+                text = f"R {c.value:.2f}"
+            if text is None:
+                continue
+            br = fm.boundingRect(text)
+            rect = QRectF(pos.x() - br.width() / 2 - 5,
+                          pos.y() - br.height() / 2 - 2,
+                          br.width() + 10, br.height() + 4)
+            p.setBrush(QColor("#23262c"))
+            p.setPen(QPen(QColor("#2c6fb8"), 1))
+            p.drawRoundedRect(rect, 3, 3)
+            p.setPen(FG)
+            p.drawText(rect, Qt.AlignCenter, text)
+            p.setBrush(Qt.NoBrush)
+            self._dim_hits.append((rect, c))
+
+    def mouseDoubleClickEvent(self, ev: QMouseEvent):
+        q = ev.position()
+        for rect, c in getattr(self, "_dim_hits", []):
+            if rect.contains(q):
+                self._edit_dim(c)
+                return
+        super().mouseDoubleClickEvent(ev)
+
+    def _edit_dim(self, c):
+        val, ok = QInputDialog.getDouble(self, "Edit dimension",
+                                         "Value (mm):", float(c.value),
+                                         0.001, 1e6, 3)
+        if not ok:
+            return
+        c.value = float(val)
+        self._solve()
+        self.update()
 
     def _grid_step(self) -> float:
         for s in (0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500):
@@ -445,7 +500,9 @@ class SketchCanvas(QWidget):
 
     def _draw_entities(self, p: QPainter):
         sk = self.model.sketch
-        p.setPen(QPen(FG, 1.7))
+        r = self._last_result
+        constrained = r is not None and r.converged and r.dof == 0
+        p.setPen(QPen(FG if constrained else ACCENT, 1.7))
         for l in sk.lines:
             p.drawLine(self.w2s(l.a.x, l.a.y), self.w2s(l.b.x, l.b.y))
         for c in sk.circles:

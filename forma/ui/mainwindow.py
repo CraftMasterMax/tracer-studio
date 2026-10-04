@@ -337,6 +337,10 @@ class MainWindow(QMainWindow):
 
     def undo(self):
         import json
+        if self.stack.currentWidget() is self._sketch_page:
+            self.status.showMessage("Press X to update the solid before "
+                                    "undoing document changes", 4000)
+            return
         if not self._undo or self.doc is None:
             self.status.showMessage("Nothing to undo", 2500)
             return
@@ -346,6 +350,9 @@ class MainWindow(QMainWindow):
 
     def redo(self):
         import json
+        if self.stack.currentWidget() is self._sketch_page:
+            self.status.showMessage("Finish the sketch first", 4000)
+            return
         if not self._redo or self.doc is None:
             self.status.showMessage("Nothing to redo", 2500)
             return
