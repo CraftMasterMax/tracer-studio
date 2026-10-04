@@ -38,6 +38,7 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("Esc", "Cancel chain, switch to select", True),
         ("Enter", "Finish the line chain", True),
         ("X", "Finish sketch → extrude profile", True),
+        ("Shift + R", "Finish sketch → revolve about sketch's vertical axis", True),
         ("Ctrl + Z", "Undo last sketch step", True),
         ("Ctrl + Shift + Z", "Redo (or Ctrl + Y)", True),
         ("Double-click a badge", "Type a new dimension value", False),

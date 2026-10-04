@@ -39,7 +39,7 @@ _HIT_PX = 9
 
 
 class SketchCanvas(QWidget):
-    profiles_ready = Signal(list, str)      # [(outer Nx2, [holes Nx2...])], name
+    profiles_ready = Signal(list, str, bool)   # profiles, name, revolve?
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -492,6 +492,9 @@ class SketchCanvas(QWidget):
             self.set_tool("select")
         elif k == Qt.Key_L:
             self.set_tool("line")
+        elif k == Qt.Key_R and ev.modifiers() & Qt.ShiftModifier:
+            self.finish(revolve=True)
+            return
         elif k == Qt.Key_R and not sel:
             self.set_tool("rect")
         elif k == Qt.Key_C and not sel:
@@ -526,7 +529,7 @@ class SketchCanvas(QWidget):
         self._last_result = self.model.solve(pins=pins)
 
     # ---- finish -----------------------------------------------------------
-    def finish(self):
+    def finish(self, revolve: bool = False):
         loops, warns = self.model.to_loops()
         if warns:
             self.setToolTip("Warnings: " + "; ".join(warns))
@@ -542,7 +545,7 @@ class SketchCanvas(QWidget):
                 self._warn("Hole bigger than its outline — fix the sketch.")
                 return
             out.append((r["points"], holes))
-        self.profiles_ready.emit(out, self.model.name)
+        self.profiles_ready.emit(out, self.model.name, bool(revolve))
 
     def _warn(self, msg: str):
         self._warn_text = msg

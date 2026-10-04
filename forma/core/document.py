@@ -14,7 +14,7 @@ from typing import Literal
 import numpy as np
 
 from .geometry import Solid, circle_contour
-from .sketch.model import plane_matrix
+from .sketch.model import plane_matrix, revolve_matrix
 
 CombineOp = Literal["union", "subtract", "intersect"]
 
@@ -69,6 +69,42 @@ class ExtrudeFeature(Feature):
             return s.translated(self.placement)
         m = plane_matrix(self.plane, self.placement, self.axes)
         return s.transformed(m)
+
+
+@dataclass
+class RevolveFeature(Feature):
+    """Sketch profile revolved about the sketch's V-axis (the vertical line
+    through the sketch origin) — Fusion's Revolve. angle in degrees.
+    A profile entirely behind the axis is mirrored; one crossing it is an
+    error (Fusion rejects it too)."""
+    outer: np.ndarray = field(default_factory=lambda: np.zeros((0, 2)))
+    holes: list = field(default_factory=list)
+    angle: float = 360.0
+    placement: tuple = (0.0, 0.0, 0.0)
+    plane: str = "XY"
+    axes: list | None = None
+    sketch: dict | None = None
+    sid: int | None = None
+    region: int = 0
+
+    def build(self) -> Solid:
+        outer = np.asarray(self.outer, float)
+        if outer.size == 0:
+            raise ValueError(f"{self.name}: empty profile")
+        umin, umax = outer[:, 0].min(), outer[:, 0].max()
+        if umin < -1e-6 < umax:
+            raise ValueError(
+                f"{self.name}: profile crosses the revolve axis "
+                "(the sketch's vertical origin line) — move it aside")
+        neg = umax <= 1e-6                 # entirely behind the axis: mirror
+
+        def adj(pts):
+            pts = np.asarray(pts, float)
+            return pts * [[-1.0, 1.0]] if neg else pts.copy()
+
+        s = Solid.revolve(adj(outer), [adj(h) for h in self.holes], self.angle)
+        return s.transformed(revolve_matrix(self.plane, self.placement,
+                                            self.axes))
 
 
 @dataclass
@@ -202,6 +238,13 @@ class Document:
                          placement=list(map(float, f.placement)),
                          plane=f.plane, axes=f.axes, sketch=f.sketch,
                          sid=f.sid, region=f.region)
+            elif isinstance(f, RevolveFeature):
+                d.update(outer=np.asarray(f.outer).tolist(),
+                         holes=[np.asarray(h).tolist() for h in f.holes],
+                         angle=float(f.angle),
+                         placement=list(map(float, f.placement)),
+                         plane=f.plane, axes=f.axes, sketch=f.sketch,
+                         sid=f.sid, region=f.region)
             elif isinstance(f, PrimitiveFeature):
                 d.update(kind=f.kind,
                          dims={k: float(v) for k, v in f.dims.items()},
@@ -235,6 +278,15 @@ class Document:
                     outer=np.array(fd["outer"], float),
                     holes=[np.array(h, float) for h in fd["holes"]],
                     height=fd["height"], placement=tuple(fd["placement"]),
+                    plane=fd.get("plane", "XY"), axes=fd.get("axes"),
+                    sketch=fd.get("sketch"),
+                    sid=fd.get("sid"), region=fd.get("region", 0), **base))
+            elif t == "RevolveFeature":
+                doc.features.append(RevolveFeature(
+                    name=fd["name"],
+                    outer=np.array(fd["outer"], float),
+                    holes=[np.array(h, float) for h in fd["holes"]],
+                    angle=fd.get("angle", 360.0), placement=tuple(fd["placement"]),
                     plane=fd.get("plane", "XY"), axes=fd.get("axes"),
                     sketch=fd.get("sketch"),
                     sid=fd.get("sid"), region=fd.get("region", 0), **base))

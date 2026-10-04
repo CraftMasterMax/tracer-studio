@@ -68,6 +68,13 @@ class Solid:
         return cls(m3.Manifold.extrude(cs, height))
 
     @classmethod
+    def revolve(cls, outer, holes=(), angle: float = 360.0) -> "Solid":
+        """Sweep a 2D profile about the local z-axis: point (u, v) maps to
+        (u·cosθ, u·sinθ, v).  Kernel handles full and partial angles."""
+        cs = _cross_section(outer, holes)
+        return cls(m3.Manifold.revolve(cs, revolve_degrees=float(angle)))
+
+    @classmethod
     def from_mesh(cls, vertices, faces) -> "Solid":
         verts = np.ascontiguousarray(vertices, dtype=np.float32)[:, :3]
         tris = np.ascontiguousarray(faces, dtype=np.uint32)

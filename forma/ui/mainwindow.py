@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog,
 from ..core import io as fio
 from ..core.document import (CircularPatternFeature, Document,
                              ExtrudeFeature, LinearPatternFeature,
-                             PrimitiveFeature)
+                             PrimitiveFeature, RevolveFeature)
 from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
                                  model_to_dict)
 from .renderer import SceneRenderer
@@ -113,6 +113,8 @@ class MainWindow(QMainWindow):
                                triggered=lambda checked=False: self.action_new_sketch()))
         m_sk.addAction(QAction("&Extrude profile…", self, shortcut="X",
                                triggered=lambda: self.sketch.finish()))
+        m_sk.addAction(QAction("&Revolve profile…", self, shortcut="Shift+R",
+                               triggered=lambda: self.sketch.finish(revolve=True)))
 
         m_cr = self.menuBar().addMenu("C&reate")
         m_cr.addAction(QAction("&Linear pattern…", self,
@@ -196,7 +198,8 @@ class MainWindow(QMainWindow):
             self._feature_activated(self.doc.features[arg])
 
     def _feature_activated(self, feature):
-        if isinstance(feature, ExtrudeFeature) and feature.sketch:
+        if (isinstance(feature, (ExtrudeFeature, RevolveFeature))
+                and feature.sketch):
             self.edit_sketch(feature)
         else:
             self.status.showMessage("Feature has no editable sketch (yet)", 3000)
@@ -204,13 +207,19 @@ class MainWindow(QMainWindow):
     # ---- feature management (context menus: timeline + browser) --------------
     def _feature_menu(self, feature, pos):
         menu = QMenu(self)
-        if isinstance(feature, ExtrudeFeature) and feature.sketch:
+        sketchy = (isinstance(feature, (ExtrudeFeature, RevolveFeature))
+                   and feature.sketch)
+        if sketchy:
             menu.addAction("Edit sketch", lambda: self.edit_sketch(feature))
         if isinstance(feature, ExtrudeFeature):
             menu.addAction("Set extrude distance…",
                            lambda: self._set_distance(feature))
+        if isinstance(feature, RevolveFeature):
+            menu.addAction("Set revolve angle…",
+                           lambda: self._set_angle(feature))
         base = self._is_base_feature(feature)
-        if isinstance(feature, (ExtrudeFeature, PrimitiveFeature)):
+        if isinstance(feature, (ExtrudeFeature, RevolveFeature,
+                                PrimitiveFeature)):
             op_menu = menu.addMenu("Boolean operation")
             for label, op in (("Join (union)", "union"),
                               ("Cut (subtract)", "subtract"),
@@ -274,6 +283,18 @@ class MainWindow(QMainWindow):
         self.recompute()
         self.status.showMessage(f"{feature.name}: height {val:g} mm", 4000)
 
+    def _set_angle(self, feature):
+        val, ok = QInputDialog.getDouble(self, "Revolve angle",
+                                         "Angle (°):", feature.angle,
+                                         1.0, 360.0, 1)
+        if not ok or abs(val - feature.angle) < 1e-9:
+            return
+        self._capture()
+        feature.angle = float(val)
+        self.doc.dirty = True
+        self.recompute()
+        self.status.showMessage(f"{feature.name}: {val:g}° revolve", 4000)
+
     def _rename_feature(self, feature):
         name, ok = QInputDialog.getText(self, "Rename feature", "Name:",
                                         text=feature.name)
@@ -306,7 +327,8 @@ class MainWindow(QMainWindow):
 
     def _next_sketch_name(self) -> str:
         n = sum(1 for f in self.doc.features
-                if isinstance(f, ExtrudeFeature) and f.sketch) + 1
+                if isinstance(f, (ExtrudeFeature, RevolveFeature))
+                and f.sketch) + 1
         return f"Sketch{n}"
 
     def _discard_guard(self) -> bool:
@@ -348,7 +370,7 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             "Sketching on face — draw, then X extrudes outward from it")
 
-    def _on_profiles(self, profiles, name):
+    def _on_profiles(self, profiles, name, revolve=False):
         m = self.sketch.model
         payload = model_to_dict(m)
         payload["name"] = name
@@ -360,34 +382,58 @@ class MainWindow(QMainWindow):
             self.recompute()
             self.status.showMessage(f"Updated {name} — solid recomputed", 5000)
             return
-        height, ok = QInputDialog.getDouble(
-            self, "Extrude", "Height (mm):", 5.0, 0.01, 1e5, 2)
-        if not ok:
-            return
+        if revolve:
+            for outer, _holes in profiles:
+                o = np.asarray(outer)
+                if o[:, 0].min() < -1e-6 < o[:, 0].max():
+                    QMessageBox.warning(
+                        self, "Revolve",
+                        "A profile crosses the sketch's vertical axis (the "
+                        "u=0 line through the origin) — Fusion revolves "
+                        "profiles about it, so keep each one on a side.")
+                    return
+            angle, ok = QInputDialog.getDouble(
+                self, "Revolve", "Angle (degrees):", 360.0, 1.0, 360.0, 1)
+            if not ok:
+                return
+        else:
+            height, ok = QInputDialog.getDouble(
+                self, "Extrude", "Height (mm):", 5.0, 0.01, 1e5, 2)
+            if not ok:
+                return
         self._capture()
         for i, (outer, holes) in enumerate(profiles):
             tag = name if len(profiles) == 1 else f"{name} #{i + 1}"
             face = m.plane == "FACE"
-            self.doc.add(ExtrudeFeature(
-                name=tag, outer=np.asarray(outer),
-                holes=[np.asarray(h) for h in holes],
-                height=height, op="union", plane=m.plane,
-                axes=[list(map(float, a)) for a in m.axes] if face else None,
-                placement=tuple(m.origin) if face else (0.0, 0.0, 0.0),
-                sketch=dict(payload, regions=len(profiles), region=i),
-                sid=m.sid, region=i))
+            axes = [list(map(float, a)) for a in m.axes] if face else None
+            placement = tuple(m.origin) if face else (0.0, 0.0, 0.0)
+            sketch = dict(payload, regions=len(profiles), region=i)
+            common = dict(name=tag, outer=np.asarray(outer),
+                          holes=[np.asarray(h) for h in holes],
+                          op="union", plane=m.plane, axes=axes,
+                          placement=placement, sketch=sketch,
+                          sid=m.sid, region=i)
+            self.doc.add(RevolveFeature(angle=angle, **common) if revolve
+                         else ExtrudeFeature(height=height, **common))
         self.sketch.set_model(SketchModel())         # committed: clear editor
         self._show_page(self.viewport)
         self.recompute()
         self.viewport.refresh(fit=True)
-        self.status.showMessage(
-            f"Extruded {len(profiles)} region(s) from {name} by {height:g} mm", 6000)
+        if revolve:
+            self.status.showMessage(
+                f"Revolved {len(profiles)} region(s) from {name} "
+                f"by {angle:g}°", 6000)
+        else:
+            self.status.showMessage(
+                f"Extruded {len(profiles)} region(s) from {name} "
+                f"by {height:g} mm", 6000)
 
     def _update_sketch_features(self, sid, profiles, payload):
         """Re-edit: swap profiles in the features born from this sketch,
-        keeping each one's height; add/remove features to match regions."""
+        keeping each one's height/angle; add/remove features to match."""
         group = [f for f in self.doc.features
-                 if isinstance(f, ExtrudeFeature) and f.sid == sid]
+                 if isinstance(f, (ExtrudeFeature, RevolveFeature))
+                 and f.sid == sid]
         if not group:
             return
         self._capture()
@@ -399,13 +445,20 @@ class MainWindow(QMainWindow):
                 f.region = i
                 f.sketch = dict(payload, regions=len(profiles), region=i)
             else:
-                self.doc.features.append(ExtrudeFeature(
-                    name=f"{payload['name']} #{i + 1}", outer=np.asarray(outer),
-                    holes=[np.asarray(h) for h in holes],
-                    height=group[-1].height, op=group[-1].op,
-                    plane=group[-1].plane, sid=sid,
-                    sketch=dict(payload, regions=len(profiles), region=i),
-                    region=i))
+                src = group[-1]
+                extra = dict(name=f"{payload['name']} #{i + 1}",
+                             outer=np.asarray(outer),
+                             holes=[np.asarray(h) for h in holes],
+                             op=src.op, plane=src.plane,
+                             axes=src.axes, placement=src.placement,
+                             sid=sid,
+                             sketch=dict(payload, regions=len(profiles),
+                                         region=i),
+                             region=i)
+                if isinstance(src, RevolveFeature):
+                    self.doc.add(RevolveFeature(angle=src.angle, **extra))
+                else:
+                    self.doc.add(ExtrudeFeature(height=src.height, **extra))
         for f in group[len(profiles):]:     # regions shrank: drop stale features
             self.doc.features.remove(f)
         self.doc.dirty = True
@@ -437,6 +490,11 @@ class MainWindow(QMainWindow):
         done.setProperty("tb", True)
         done.clicked.connect(lambda: self.sketch.finish())
         bl.addWidget(done)
+        rev = QPushButton("Revolve… (⇧R)")
+        rev.setProperty("tb", True)
+        rev.setToolTip("Sweep the profile 360° about the sketch vertical axis")
+        rev.clicked.connect(lambda: self.sketch.finish(revolve=True))
+        bl.addWidget(rev)
         self.sketch = SketchCanvas()
         self.sketch.profiles_ready.connect(self._on_profiles)
         lay.addWidget(bar)

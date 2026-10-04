@@ -9,7 +9,8 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QTreeWidget, QTreeWidgetItem, QLabel, QVBoxLayout,
                                QTabWidget, QWidget, QFrame)
 
-from ..core.document import Document, ExtrudeFeature, PrimitiveFeature
+from ..core.document import (Document, ExtrudeFeature, PrimitiveFeature,
+                             RevolveFeature)
 
 _OP_GLYPH = {"union": "+", "subtract": "−", "intersect": "∩"}
 
@@ -58,12 +59,14 @@ class FeatureTree(QTreeWidget):
         origin.setExpanded(False)
         for i, f in enumerate(self._doc.features):
             glyph = "\u25cb" if f.suppressed else _OP_GLYPH.get(f.op, f.op)
-            item = QTreeWidgetItem([f"{glyph}  {f.name}"])
+            kind = "\u21bb" if isinstance(f, RevolveFeature) else "\u25a1"
+            item = QTreeWidgetItem([f"{glyph} {kind} {f.name}"])
             item.setData(0, Qt.UserRole, ("feature", i))
             if f.suppressed:
                 item.setForeground(0, QColor("#5f6672"))
             root.addChild(item)
-            if isinstance(f, ExtrudeFeature) and f.sketch:
+            if (isinstance(f, (ExtrudeFeature, RevolveFeature))
+                    and f.sketch):
                 sk = QTreeWidgetItem([f"\u270e {f.sketch.get('name', 'Sketch')}"])
                 sk.setData(0, Qt.UserRole, ("sketch", i))
                 item.addChild(sk)
@@ -104,6 +107,10 @@ class PropertiesPanel(QWidget):
         lines = [f"<b>{feature.name}</b>", f"operation: {feature.op}"]
         if isinstance(feature, ExtrudeFeature):
             lines.append(f"height: {feature.height:g} mm")
+            lines.append(f"outer vertices: {len(np.asarray(feature.outer))}")
+            lines.append(f"holes: {len(feature.holes)}")
+        elif isinstance(feature, RevolveFeature):
+            lines.append(f"angle: {feature.angle:g}°")
             lines.append(f"outer vertices: {len(np.asarray(feature.outer))}")
             lines.append(f"holes: {len(feature.holes)}")
         elif isinstance(feature, PrimitiveFeature):

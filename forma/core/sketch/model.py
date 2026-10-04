@@ -49,6 +49,27 @@ def frame_matrix(u, v, origin=(0.0, 0.0, 0.0)) -> np.ndarray:
     return m
 
 
+def plane_uv(plane: str, axes=None) -> tuple:
+    """Sketch in-plane unit axes (u, v) for a named plane or a face sketch."""
+    if plane == "FACE" or axes is not None:
+        if axes is None:
+            raise ValueError("FACE plane requires axes")
+        return np.asarray(axes[0], float), np.asarray(axes[1], float)
+    return np.array(PLANES[plane][0], float), np.array(PLANES[plane][1], float)
+
+
+def revolve_matrix(plane: str, origin=(0.0, 0.0, 0.0), axes=None) -> np.ndarray:
+    """Local->world for a REVOLVED solid. The kernel sweeps the profile
+    about ITS local z, mapping sketch (u, v) -> (u·cosθ, u·sinθ, v); so the
+    world revolve axis is the sketch v-axis (the vertical line through the
+    origin), and local columns become [u, v×u, v]."""
+    u, v = plane_uv(plane, axes)
+    m = np.eye(4)
+    m[:3, 0], m[:3, 1], m[:3, 2] = u, np.cross(v, u), v
+    m[:3, 3] = np.asarray(origin, float)
+    return m
+
+
 def face_basis(normal) -> tuple:
     """Stable (u, v) for a face normal: extrude dir = n, right-handed.
     Reference axis flips only for horizontal faces so X stays predictable."""
