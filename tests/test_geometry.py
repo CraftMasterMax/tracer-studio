@@ -62,3 +62,44 @@ def test_from_mesh_roundtrip():
     mesh = Solid.cylinder(3, 7).to_trimesh()
     s = Solid.from_mesh(mesh.vertices, mesh.faces)
     approx_ratio(s.volume, mesh.volume)
+
+
+# ---- display sanitiser (M21) ---------------------------------------------
+def test_render_arrays_keep_clean_primitives_intact():
+    """The needle filter must never eat legitimate geometry."""
+    for s in (Solid.box(20, 20, 10), Solid.cylinder(5, 12, center=(2, 3))):
+        v, n, f = s.to_render_arrays()
+        assert len(f) == len(s.to_trimesh().faces)
+        assert v.dtype == np.float32 and f.dtype == np.int32
+        np.testing.assert_allclose(np.linalg.norm(n, axis=1), 1.0, atol=1e-3)
+
+
+def test_render_arrays_smooth_boolean_welds():
+    """Rim-fillet booleans leave zero-area needles and vertex duplicates a
+    few microns apart on the boss wall; unfiltered they hatch the shading
+    (smooth normals tilt >25 deg off the surface). The display arrays drop
+    the garbage and weld the duplicates; the mesh data stays watertight.
+    """
+    import trimesh
+
+    from tracer.core.rimfillet import rim_fillet
+    plate = (Solid.box(60, 40, 8)
+             .union(Solid.cylinder(7, 12, center=(30, 20)).translated((0, 0, 8))))
+    out, n_rims = rim_fillet(plate, 2.0)
+    assert n_rims >= 2
+    assert out.to_trimesh().is_watertight
+
+    v, nrm, f = out.to_render_arrays()
+    assert len(f) < len(out.to_trimesh().faces)     # needles removed
+    tm = trimesh.Trimesh(vertices=v, faces=f, process=False)
+    tc = np.asarray(tm.triangles_center)
+    rad = np.hypot(tc[:, 0] - 30, tc[:, 1] - 20)
+    wt = (np.abs(rad - 7) < 0.05) & (tc[:, 2] > 11) & (tc[:, 2] < 17)
+    assert wt.sum() > 200                            # wall still covered
+    ideal = np.stack([(tc[wt, 0] - 30) / rad[wt],
+                      (tc[wt, 1] - 20) / rad[wt],
+                      np.zeros(int(wt.sum()))], 1)
+    vn = np.asarray(tm.vertex_normals)
+    dev = np.degrees(np.arccos(np.clip(
+        (vn[f[wt].reshape(-1)] * np.repeat(ideal, 3, 0)).sum(1), -1, 1)))
+    assert np.percentile(dev, 99) < 10.0             # was >25 deg (stripes)

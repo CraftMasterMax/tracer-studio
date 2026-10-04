@@ -149,6 +149,14 @@ def _tool(rim: dict, size: float, chamfer: bool) -> Solid | None:
     polygon: the corner square [0,R]² minus the quarter-disk of radius R
     centered at (R,R). That arc is tangent to both faces, so the round-over
     blends in smoothly — a second pass finds no sharp rim there.
+
+    The square is extended a hair past a=0: a tool face exactly coincident
+    with the *curved* wall would force the boolean to weld two different
+    tessellations of the same cylinder, fanning the whole wall with
+    zero-area slivers. The overlap lands in void (cutter) or in existing
+    material (bead), so it is invisible, while wall coincidence never
+    happens. Coincidence with the planar cap is safe (manifold is exact
+    on coplanar planes) and is kept flush.
     """
     r, R = rim["radius"], size
     dr, dh = (rim["dr_mat"], rim["dh_mat"])
@@ -156,13 +164,14 @@ def _tool(rim: dict, size: float, chamfer: bool) -> Solid | None:
         dr, dh = -dr, -dh                            # bead fills the void
     if dr < 0 and r - R <= 1e-6:
         return None                                  # tool would cross axis
+    d = min(0.005, 0.02 * R)                         # anti-coincidence skirt
     P = lambda a, b: (r + dr * a, dh * b)             # noqa: E731
     if chamfer:
-        pts = [P(0.0, 0.0), P(R, 0.0), P(0.0, R)]
+        pts = [P(-d, 0.0), P(R, 0.0), P(0.0, R)]
     else:
         th = np.linspace(np.pi, 1.5 * np.pi, _ARC_SEG + 1)
         arc = [P(R + R * np.cos(t), R + R * np.sin(t)) for t in th]
-        pts = [P(R, 0.0), P(0.0, 0.0), P(0.0, R)] + arc[1:-1]
+        pts = [P(R, 0.0), P(-d, 0.0), P(-d, R), P(0.0, R)] + arc[1:-1]
     pts = np.asarray(pts, float)
     if pts[:, 0].min() <= 1e-9:
         return None

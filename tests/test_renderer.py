@@ -114,3 +114,29 @@ def test_grid_actually_draws(renderer):
     assert grid_px > 300, f"grid nearly invisible ({grid_px} px)"
     assert (diff > 20).sum() < 0.6 * img_on.shape[0] * img_on.shape[1], \
         "grid toggle changed the whole frame — it should only touch ground"
+
+
+def test_coplanar_seams_are_not_drawn(renderer):
+    """A box top is one planar region split by a triangulation diagonal.
+    Drawing those seams would streak every flat face (M21: the edge mask
+    briefly wrote the wrong slot and every cylinder column hatched)."""
+    from tracer.core.geometry import Solid
+    solid = Solid.box(60, 40, 8)
+    v, n, f = solid.to_render_arrays()
+    renderer.resize(400, 300)
+    renderer.set_mesh(v, n, f)
+    renderer.show_grid = False
+    cam = Camera()
+    cam.set_view("top")
+    cam.fit(solid.bounding_box)
+    img = renderer.render(cam, solid.bounding_box)
+    renderer.show_grid = True
+    fg = _fg_mask(img)
+    rows = np.flatnonzero(fg.any(1))
+    cols = np.flatnonzero(fg.any(0))
+    r0, r1 = int(rows[0]), int(rows[-1])
+    c0, c1 = int(cols[0]), int(cols[-1])
+    dr, dc = int((r1 - r0) * 0.2), int((c1 - c0) * 0.2)
+    interior = img[r0 + dr:r1 - dr, c0 + dc:c1 - dc, :3].mean(2)
+    n_dark = int((interior < 120).sum())
+    assert n_dark == 0, f"{n_dark} dark pixels inside a flat face (seams?)"

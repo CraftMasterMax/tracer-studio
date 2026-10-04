@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
+import trimesh
 from PySide6.QtCore import Qt, QPoint, QSize, Signal
 from PySide6.QtGui import QImage, QPainter, QCursor
 from PySide6.QtWidgets import QWidget
@@ -58,7 +59,9 @@ class Viewport(QWidget):
         else:
             v, n, f = solid.to_render_arrays()
             self._r.set_mesh(v, n, f)
-            self._tm = solid.to_trimesh()
+            # Pick mesh shares the uploaded (needle-filtered) index space,
+            # so raycast face ids map 1:1 onto highlight rows.
+            self._tm = trimesh.Trimesh(vertices=v, faces=f, process=False)
             self._gid = _coplanar_groups(self._tm)
             self._bbox = solid.bounding_box
             self._r._grid_auto(self._bbox)
@@ -197,10 +200,9 @@ class Viewport(QWidget):
     def _pick_planar(self, pos):
         """Hit test at pos; accept only faces flat within ~2 degrees across
         a +/-3 px neighbourhood (kills cylinders/cones hiding in meshes)."""
-        solid = self._doc.result if self._doc else None
-        if solid is None:
+        if self._tm is None:
             return None
-        tm = solid.to_trimesh()
+        tm = self._tm
         hit = self._shoot(tm, pos.x(), pos.y())
         if hit is None:
             return None

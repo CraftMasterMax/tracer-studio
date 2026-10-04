@@ -202,22 +202,53 @@ class SceneRenderer:
         """
         import trimesh
         CREASE_DEG = 25.0
+        cos_lim = math.cos(math.radians(CREASE_DEG))
         mask = np.ones((len(faces), 3), np.float32)     # 1 = draw edge
-        mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
-        adj = np.asarray(mesh.face_adjacency)
-        ade = np.asarray(mesh.face_adjacency_edges)
-        if len(adj):
-            tn = np.asarray(mesh.face_normals)
-            cosang = np.einsum("ij,ij->i", tn[adj[:, 0]], tn[adj[:, 1]])
-            crease = cosang < math.cos(math.radians(CREASE_DEG))
-            v_of_face = np.asarray(faces)
-            for (f0, f1), (va, vb), cr in zip(adj, ade, crease):
-                if cr:
-                    continue
-                for f_idx in (f0, f1):
-                    vs = v_of_face[f_idx]
-                    opp = int(next(v for v in range(3) if vs[v] not in (va, vb)))
-                    mask[f_idx, opp] = 0.0
+        F = len(faces)
+        if F:
+            mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+            fn = np.asarray(mesh.face_normals)
+            areas = np.asarray(mesh.area_faces)
+            tol = 1e-9 * float(areas.max() or 1.0)
+            real = areas > tol          # zero-area needles never define a crease
+            # Group edge occurrences by vertex pair. face_adjacency can't be
+            # used: after a position weld several faces may share a vertex
+            # pair, and trimesh keeps only one adjacency per edge — the rest
+            # would render as fake feature lines (hatched cylinder walls).
+            nv = len(verts) + 1
+            segs = np.stack([faces[:, (0, 1)], faces[:, (1, 2)], faces[:, (2, 0)]])
+            es = np.sort(segs.reshape(3 * F, 2), axis=1)
+            key = es[:, 0].astype(np.int64) * nv + es[:, 1]
+            ordr = np.argsort(key, kind="stable")
+            k = key[ordr]
+            starts = np.r_[0, np.flatnonzero(k[1:] != k[:-1]) + 1]
+            ends = np.r_[starts[1:], len(k)]
+            gsz = ends - starts
+            fac = ordr % F
+            seg = ordr // F
+            # mask[f, k] = "draw edge opposite vertex k" (barycentric
+            # convention); an edge slot s spans vertices s, s+1 → opposite is s+2.
+            two = np.flatnonzero(gsz == 2)
+            if len(two):
+                a0 = fac[starts[two]]
+                a1 = fac[starts[two] + 1]
+                s0 = (seg[starts[two]] + 2) % 3
+                s1 = (seg[starts[two] + 1] + 2) % 3
+                crease = real[a0] & real[a1] & \
+                    (np.einsum("ij,ij->i", fn[a0], fn[a1]) < cos_lim)
+                hide = np.flatnonzero(~crease)
+                mask[a0[hide], s0[hide]] = 0.0
+                mask[a1[hide], s1[hide]] = 0.0
+            for g in np.flatnonzero(gsz > 2):      # weld collisions
+                mem_f = fac[starts[g]:ends[g]]
+                mem_s = (seg[starts[g]:ends[g]] + 2) % 3
+                rr = mem_f[real[mem_f]]
+                drawn = False
+                if len(rr) >= 2:
+                    nf = fn[rr]
+                    drawn = float(np.min(nf @ nf.T)) < cos_lim
+                mask[mem_f, mem_s] = 1.0 if drawn else 0.0
+            # groups of one: genuine boundary/silhouette edges, stay drawn
 
         idx = faces.reshape(-1)
         pos = verts[idx]

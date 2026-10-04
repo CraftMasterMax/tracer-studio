@@ -186,8 +186,43 @@ class Solid:
         return trimesh.Trimesh(vertices=verts, faces=faces, process=False)
 
     def to_render_arrays(self):
-        """Interleaved-free arrays for the GPU: positions, unit normals, faces."""
+        """Interleaved-free arrays for the GPU: positions, unit normals, faces.
+
+        Boolean welds leave two display artefacts behind: zero-area needle
+        triangles that poison smooth normals, and vertex duplicates a few
+        microns apart which stop normals from smoothing *across* a
+        cylinder's columns (banded, patchwork shading). Both are fixed for
+        display only: needles are dropped (they cover no pixels), remaining
+        positions are welded on a 10-micron grid before computing vertex
+        normals. The mesh itself — volume, watertightness, STL/STEP export,
+        rim detection — is untouched. Real creases stay crisp because the
+        feature-edge overlay is computed from face geometry, not normals.
+        """
         mesh = self.to_trimesh()
+        tri = mesh.triangles
+        e2 = (((tri[:, 1] - tri[:, 0]) ** 2).sum(1)
+              + ((tri[:, 2] - tri[:, 1]) ** 2).sum(1)
+              + ((tri[:, 0] - tri[:, 2]) ** 2).sum(1))
+        q = 4.0 * math.sqrt(3.0) * mesh.area_faces / np.maximum(e2, 1e-30)
+        fn = np.asarray(mesh.face_normals)
+        adj = np.asarray(mesh.face_adjacency)
+        worst = np.zeros(len(fn))
+        has_nb = np.zeros(len(fn), bool)
+        if len(adj):
+            d = np.abs(np.einsum("ij,ij->i", fn[adj[:, 0]], fn[adj[:, 1]]))
+            np.maximum.at(worst, adj[:, 0], d)
+            np.maximum.at(worst, adj[:, 1], d)
+            has_nb[adj[:, 0]] = has_nb[adj[:, 1]] = True
+        # Drop only faces that are both degenerate-slender AND disagree with
+        # every neighbour (garbage normals). Legitimate thin triangles — the
+        # fillet band near its tangent rings — match neighbours and stay.
+        remove = (q < 1e-4) & has_nb & (worst < 0.5)
+        if remove.any() and not remove.all():
+            mesh.update_faces(~remove)
+        try:
+            mesh.merge_vertices(digits_vertex=2)     # weld ~micron duplicates
+        except Exception:
+            pass
         return (
             np.asarray(mesh.vertices, dtype=np.float32),
             np.asarray(mesh.vertex_normals, dtype=np.float32),
