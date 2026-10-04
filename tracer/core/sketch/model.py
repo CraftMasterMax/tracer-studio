@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
+import math
 import numpy as np
 
 from .entities import Point, Line, Circle, Arc, curve_radius, curve_center
@@ -118,6 +119,34 @@ class SketchModel:
 
     def add_circle(self, center: Point, radius: float) -> Circle:
         return self.sketch.circle(center, radius)
+
+    def add_slot(self, p1: Point, p2: Point, r: float) -> list:
+        """Centerline slot: two tangent lines closing two 180° caps,
+        stitched through shared points and locked by Radius×2 + Tangent×4
+        — the shape stays a true slot under any drag (the endpoints are
+        the tangent points, so tangency-at-endpoint follows for free,
+        same trick as the corner fillet)."""
+        sk = self.sketch
+        dx, dy = p2.x - p1.x, p2.y - p1.y
+        L = math.hypot(dx, dy)
+        if L < 1e-9 or r <= 1e-9:
+            return []
+        ux, uy = dx / L, dy / L
+        nx, ny = -uy, ux
+        A1 = sk.point(p1.x + nx * r, p1.y + ny * r)      # cap1 top
+        A2 = sk.point(p2.x + nx * r, p2.y + ny * r)      # cap2 top
+        A3 = sk.point(p2.x - nx * r, p2.y - ny * r)      # cap2 bottom
+        A4 = sk.point(p1.x - nx * r, p1.y - ny * r)      # cap1 bottom
+        M1 = sk.point(p2.x + ux * r, p2.y + uy * r)      # cap2 bulge
+        M2 = sk.point(p1.x - ux * r, p1.y - uy * r)      # cap1 bulge
+        top = sk.line(A1, A2)
+        bot = sk.line(A3, A4)
+        cap2 = sk.arc(A2, M1, A3)
+        cap1 = sk.arc(A4, M2, A1)
+        self.constrain(Radius(cap1, r), Radius(cap2, r),
+                       make_tangent(top, cap1), make_tangent(top, cap2),
+                       make_tangent(bot, cap1), make_tangent(bot, cap2))
+        return [top, bot, cap1, cap2]
 
     # ---- constraints ------------------------------------------------------
     def constrain(self, *cs: object):

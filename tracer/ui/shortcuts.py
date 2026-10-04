@@ -38,6 +38,7 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("L", "Line tool — click-move-click chains", True),
         ("C", "Circle tool", True),
         ("A", "Arc tool — start · end · bulge, chained", True),
+        ("O", "Slot tool — centre · centre · width, tangent-locked", True),
         ("S", "Select / drag tool", True),
         ("Esc", "Cancel chain, switch to select", True),
         ("Enter", "Finish the line chain", True),

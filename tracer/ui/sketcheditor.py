@@ -92,6 +92,7 @@ class SketchCanvas(QWidget):
         self._line_start = None
         self._rect_corner = None
         self._arc_pts = []
+        self._slot: list = []                  # slot tool: c1, c2, width
         self._preview = None
         self._last_result = None
         self._hist = []
@@ -131,6 +132,7 @@ class SketchCanvas(QWidget):
         self._line_start = None
         self._rect_corner = None
         self._arc_pts = []
+        self._slot: list = []                  # slot tool: c1, c2, width
         self._preview = None
         self._solve()
         self.update()
@@ -141,6 +143,7 @@ class SketchCanvas(QWidget):
             self._line_start = None
         self._rect_corner = None
         self._arc_pts = []
+        self._slot: list = []                  # slot tool: c1, c2, width
         self._preview = None
         self.update()
 
@@ -338,6 +341,27 @@ class SketchCanvas(QWidget):
                     else:
                         self.model.sketch.arc(a, mid, b)
                     self._solve()
+            self.update()
+        elif self._tool == "slot":
+            # 3 clicks: centre1 · centre2 · width. Snaps are honoured but we
+            # snapshot coordinates (the slot owns its tangent-point geometry,
+            # like corner_fillet), so no stray points are registered.
+            snap = self._snap_point(q)
+            xy = (snap.x, snap.y) if snap is not None else (wp[0], wp[1])
+            self._slot.append(xy)
+            self.update()
+            if len(self._slot) == 3:
+                (x1, y1), (x2, y2), (wx, wy) = self._slot
+                self._slot = []
+                self._preview = None
+                dx, dy = x2 - x1, y2 - y1
+                L = math.hypot(dx, dy)
+                if L > 1e-9:
+                    r = abs((wx - x1) * dy - (wy - y1) * dx) / L
+                    if r * self._scale > 3:
+                        self._push_hist()
+                        self.model.add_slot(Point(x1, y1), Point(x2, y2), r)
+                        self._solve()
             self.update()
 
     def _auto_constraints(self, ln: Line, end_q: QPointF):
@@ -672,6 +696,8 @@ class SketchCanvas(QWidget):
             self.set_tool("circle")
         elif k == Qt.Key_A and not sel:
             self.set_tool("arc")
+        elif k == Qt.Key_O and not sel:
+            self.set_tool("slot")
         elif k == Qt.Key_Return and self._tool == "line":
             self._line_start = None
             self.set_tool("select")
@@ -1053,6 +1079,28 @@ class SketchCanvas(QWidget):
                     qn = self.w2s(float(xy[0]), float(xy[1]))
                     p.drawLine(q_prev, qn)
                     q_prev = qn
+        if self._tool == "slot" and self._slot:
+            cur = self.mapFromGlobal(self.cursor().pos())
+            wp = self._world(QPointF(cur))
+            p.setPen(QPen(ACCENT, 1.2, Qt.DashLine))
+            if len(self._slot) == 1:
+                x1, y1 = self._slot[0]
+                p.drawLine(self.w2s(x1, y1), self.w2s(*wp))
+            else:
+                x1, y1 = self._slot[0]
+                x2, y2 = self._slot[1]
+                dx, dy = x2 - x1, y2 - y1
+                L = math.hypot(dx, dy)
+                if L > 1e-9:
+                    r = abs((wp[0] - x1) * dy - (wp[1] - y1) * dx) / L
+                    nx, ny = -dy / L * r, dx / L * r
+                    for (px, py) in ((x1, y1), (x2, y2)):
+                        s = self.w2s(px, py)
+                        p.drawEllipse(s, r * self._scale, r * self._scale)
+                    p.drawLine(self.w2s(x1 + nx, y1 + ny),
+                               self.w2s(x2 + nx, y2 + ny))
+                    p.drawLine(self.w2s(x1 - nx, y1 - ny),
+                               self.w2s(x2 - nx, y2 - ny))
         if not self._preview:
             return
         kind, a, b = self._preview
@@ -1077,7 +1125,8 @@ class SketchCanvas(QWidget):
                 "line": "Line — click points, Enter/Esc stops",
                 "rect": "Rectangle — drag corners or click · move · click",
                 "circle": "Circle — drag from center or click · move · click",
-                "arc": "Arc — 3 clicks: start · end · bulge (chains)"}
+                "arc": "Arc — 3 clicks: start · end · bulge (chains)",
+                "slot": "Slot — 3 clicks: centre · centre · width"}
         lines.append(("Tool: " + tool.get(self._tool, "?"), DIM))
         if self._last_result is not None:
             r = self._last_result
