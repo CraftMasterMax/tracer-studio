@@ -180,6 +180,33 @@ class Concentric(Constraint):
         return ((x1 - x2) if self.axis == 0 else (y1 - y2)) / _LEN_SCALE
 
 
+@dataclass
+class Symmetry(Constraint):
+    """p1 and p2 mirror across the (infinite) axis line: the chord's
+    midpoint lies ON the axis (row 0) and the chord is PERPENDICULAR to
+    it (row 1). expand() supplies both scalar rows, like Coincident.
+    Circles stand in for their centre point at the UI layer."""
+    p1: Point
+    p2: Point
+    axis: Line
+    row: int = 0
+
+    def entities(self): return [self.p1, self.p2, self.axis]
+
+    def residual(self, pos):
+        d = _unit(np.array([self.axis.b.x - self.axis.a.x,
+                            self.axis.b.y - self.axis.a.y]))
+        if self.row == 0:
+            mx = (self.p1.x + self.p2.x) / 2 - self.axis.a.x
+            my = (self.p1.y + self.p2.y) / 2 - self.axis.a.y
+            return (d[0] * my - d[1] * mx) / _LEN_SCALE
+        chord = np.array([self.p2.x - self.p1.x, self.p2.y - self.p1.y])
+        n = float(np.linalg.norm(chord))
+        if n < 1e-9:
+            return 0.0
+        return float(chord[0] * d[0] + chord[1] * d[1]) / n
+
+
 def _split_line_curve(e1, e2):
     """Return (line, curve) if the pair is line+curve, else (None, None)."""
     if isinstance(e1, Line):
@@ -340,6 +367,9 @@ def expand(constraints: list[Constraint]) -> list[Constraint]:
         elif isinstance(c, Concentric):
             out.append(Concentric(c.c1, c.c2, axis=0))
             out.append(Concentric(c.c1, c.c2, axis=1))
+        elif isinstance(c, Symmetry):
+            out.append(Symmetry(c.p1, c.p2, c.axis, row=0))
+            out.append(Symmetry(c.p1, c.p2, c.axis, row=1))
         elif isinstance(c, Fixed):
             if c.x is not None:
                 out.append(Fixed(c.p, x=c.x, y=c.y, axis=0))

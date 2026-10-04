@@ -13,7 +13,7 @@ independent project with no Autodesk assets or affiliation.)
   tangent-locked), click-drag geometry,
   coincident/H/V/parallel/perp/equal(len **or radius**)/point-on-line/
   distance/**radius (arc & circle)**/**tangent (line↔curve, curve↔curve)**/
-  **concentric (curves)**/**angular dimensions
+  **concentric (curves)**/**symmetric points about a line (M)**/**angular dimensions
   (line or between two, arc + editable badge)** constraints, editable
   dimension badges, snap to origin/axes, construction geometry, **corner
   fillet (F on two lines): trims the corner to a tangent arc that stays
@@ -37,7 +37,7 @@ independent project with no Autodesk assets or affiliation.)
   of icon chips, and a blue-grey horizon viewport — plus first-launch
   shortcut tour and a persistent Shortcuts tab driven by one canonical
   key table
-- 313 headless tests (EGL rendering + Qt pixel assertions)
+- 321 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -54,13 +54,13 @@ cancel, release to commit) · **double-click a face** to sketch on it ·
 **MMB/RMB** orbit · **Shift+MMB** pan · **wheel** zoom · **F** fit ·
 **G** grid · **E** edges · **0/1/2/3** iso/front/top/right.
 Sketch: **N** new sketch · **S/L/R/C/O/A** line/rect/circle/slot/arc · **D**
-dimension · **H/V/F/G/T/I/2** constraints · **X** extrude · **Ctrl+Z** undo.
+dimension · **H/V/F/G/T/I/M/2** constraints · **X** extrude · **Ctrl+Z** undo.
 Full list: **?** / the Shortcuts tab.
 
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 313 tests, fully headless
+./.venv/bin/python -m pytest -q          # 321 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

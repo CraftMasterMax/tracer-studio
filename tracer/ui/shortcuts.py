@@ -55,6 +55,7 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("P", "Perpendicular constraint (two lines)", True),
         ("Q", "Equal constraint (lines → same length · curves → radius)", True),
         ("2", "Concentric constraint (two circles/arcs)", True),
+        ("M", "Symmetry constraint (point · point · line axis)", True),
         ("T", "Tangent constraint (line↔circle/arc, or two curves)", True),
         ("I", "Angular dimension (one line: from +X · two lines: between)", True),
         ("F", "Fix a point · fillet a corner with two lines selected", True),
@@ -76,13 +77,13 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
 ]
 
 TOUR_HIGHLIGHTS = [
-    ("N", "sketch · R/L/C to draw"),
+    ("N", "sketch · R/L/C/O/A to draw"),
     ("X", "finish → extrude"),
     ("MMB / wheel", "orbit · zoom (Shift pans)"),
     ("Double-click face", "sketch on it"),
     ("Drag a flat face", "press-pull material"),
     ("D + double-click", "dimension, then edit it"),
-    ("T", "tangent: line↔circle, circle↔circle"),
+    ("T / F / G", "tangent · fillet · chamfer"),
     ("Ctrl + Z", "undo inside the sketch"),
     ("1 2 3 0", "front / top / right / iso"),
     ("?", "the full cheat sheet"),

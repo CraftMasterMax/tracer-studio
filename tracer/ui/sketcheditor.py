@@ -19,9 +19,9 @@ from PySide6.QtWidgets import QInputDialog, QWidget
 from ..core.sketch.constraints import (Angle, AngleBetween, Concentric,
                                        Distance, Equal, Fixed,
                                        Horizontal, Perpendicular, Radius,
-                                       Tangent, Vertical, make_angle,
-                                       make_angle_between, make_tangent,
-                                       snapped)
+                                       Symmetry, Tangent, Vertical,
+                                       make_angle, make_angle_between,
+                                       make_tangent, snapped)
 from ..core.sketch.entities import (Arc, Circle, Line, Point, curve_center,
                                      curve_radius)
 from ..core.sketch.model import (SketchModel, math_dist, model_from_dict,
@@ -538,6 +538,27 @@ class SketchCanvas(QWidget):
             self._solve(); self.update()
 
     @staticmethod
+    def sym_ok(sel) -> bool:
+        """point · point · line (a circle stands in for its centre)."""
+        if len(sel) != 3:
+            return False
+        lines = sum(isinstance(e, Line) for e in sel)
+        pts = sum(isinstance(e, (Point, Circle)) for e in sel)
+        return lines == 1 and pts == 2
+
+    def act_symmetry(self):
+        """Mirror two points across a construction line (the classic
+        symmetric-bracket trick around a centreline)."""
+        if not self.sym_ok(self._sel):
+            return
+        axis = next(e for e in self._sel if isinstance(e, Line))
+        pts = [e.c if isinstance(e, Circle) else e
+               for e in self._sel if isinstance(e, (Point, Circle))]
+        self._push_hist()
+        self.model.toggle(Symmetry, (pts[0], pts[1], axis))
+        self._solve(); self.update()
+
+    @staticmethod
     def tangent_ok(sel) -> bool:
         """line + curve or curve + curve — the pairs tangent can relate."""
         curves = sum(isinstance(e, (Circle, Arc)) for e in sel)
@@ -680,6 +701,8 @@ class SketchCanvas(QWidget):
                 menu.addAction("Concentric", self.act_concentric)
         elif len(sel) == 2 and all(isinstance(e, Point) for e in sel):
             menu.addAction("Dimension…", self.act_dim)
+        elif self.sym_ok(sel):
+            menu.addAction("Symmetric about line", self.act_symmetry)
         elif len(sel) == 1 and isinstance(sel[0], Circle):
             menu.addAction("Radius…", self.act_dim)
         elif len(sel) == 1 and isinstance(sel[0], Arc):
@@ -766,6 +789,8 @@ class SketchCanvas(QWidget):
         elif k == Qt.Key_2 and len(sel) == 2 and \
                 all(isinstance(e, (Circle, Arc)) for e in sel):
             self.act_concentric()
+        elif k == Qt.Key_M:
+            self.act_symmetry()
         elif k == Qt.Key_K:
             self.act_construction()
         else:
@@ -991,6 +1016,9 @@ class SketchCanvas(QWidget):
             elif isinstance(c, Fixed):
                 m = self.w2s(c.p.x, c.p.y)
                 self._badge(p, m, "\u25a0")   # ■
+            elif isinstance(c, Symmetry):
+                m = self.w2s((c.p1.x + c.p2.x) / 2, (c.p1.y + c.p2.y) / 2)
+                self._badge(p, m, "S")
             elif isinstance(c, Tangent):
                 pt = self._tangent_point(c)
                 if pt is not None:

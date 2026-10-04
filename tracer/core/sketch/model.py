@@ -15,7 +15,7 @@ from .entities import Point, Line, Circle, Arc, curve_radius, curve_center
 from .constraints import (Angle, AngleBetween, ArcMiddle, Coincident,
                           Concentric, Distance, Equal, Fixed, Horizontal,
                           Perpendicular, Radius, PointOnLine, Parallel,
-                          Tangent, Vertical, make_tangent)
+                          Symmetry, Tangent, Vertical, make_tangent)
 from .solver import Sketch, SolveResult
 
 # Sketch planes: (u_axis, v_axis) in world coords; extrude normal = u x v.
@@ -185,6 +185,8 @@ class SketchModel:
             self.constrain(make_tangent(ents[0], ents[1]))
         elif ctype is Concentric:
             self.constrain(Concentric(ents[0], ents[1]))
+        elif ctype is Symmetry:
+            self.constrain(Symmetry(ents[0], ents[1], ents[2]))
         else:
             raise ValueError(f"toggle cannot construct {ctype.__name__}")
         return True
@@ -322,6 +324,10 @@ def model_to_dict(m: SketchModel) -> dict:
         elif isinstance(c, Concentric):
             cons.append({"t": "cc", "a": _ent_ref(m, c.c1),
                          "b": _ent_ref(m, c.c2)})
+        elif isinstance(c, Symmetry):
+            cons.append({"t": "sym", "p": _add_pt(pts, idx, c.p1),
+                         "q": _add_pt(pts, idx, c.p2),
+                         "l": m.sketch.lines.index(c.axis)})
     d = {"name": m.name, "plane": m.plane,
          "points": [[p.x, p.y] for p in pts],
          "lines": [[idx[l.a.id], idx[l.b.id], int(l.construction)]
@@ -420,4 +426,7 @@ def model_from_dict(d: dict) -> SketchModel:
             m.constrain(ArcMiddle(m.sketch.arcs[c["arc"]]))
         elif t == "cc":
             m.constrain(Concentric(_ent_at(m, c["a"]), _ent_at(m, c["b"])))
+        elif t == "sym":
+            m.constrain(Symmetry(pts[c["p"]], pts[c["q"]],
+                                 m.sketch.lines[c["l"]]))
     return m
