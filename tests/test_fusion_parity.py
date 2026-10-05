@@ -10,6 +10,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import QPointF, QPoint, Qt  # noqa: E402
 from PySide6.QtTest import QSignalSpy, QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox  # noqa: E402
+from conftest import feature_rows, tree_texts  # noqa: E402
 
 from tracer.core.document import ExtrudeFeature  # noqa: E402
 from tracer.core.geometry import Solid  # noqa: E402
@@ -228,8 +229,7 @@ def test_set_distance_and_rename(qapp, monkeypatch):
                         staticmethod(lambda *a, **k: ("bearing block", True)))
     win._rename_feature(win.doc.features[0])
     assert win.doc.features[0].name == "bearing block"
-    root = win.rail.tree.topLevelItem(0)
-    assert "bearing block" in root.child(1).text(0)   # tree refreshed
+    assert "bearing block" in feature_rows(win)[0].text(0)  # tree refreshed
     win._unsaved = False
     win.close()
 

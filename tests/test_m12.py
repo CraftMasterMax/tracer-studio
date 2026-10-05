@@ -9,6 +9,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt                                # noqa: E402
 from PySide6.QtTest import QTest                             # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog     # noqa: E402
+from conftest import tree_texts                              # noqa: E402
 
 from tracer.core.document import (Document, ExtrudeFeature,      # noqa: E402
                                  RevolveFeature)
@@ -203,6 +204,4 @@ def test_browser_shows_revolve_glyph(win, qapp):
     QTest.keyPress(win.sketch, Qt.Key_R, Qt.ShiftModifier)
     qapp.processEvents()
     win.rail.tree.reload()
-    root = win.rail.tree.topLevelItem(0)
-    assert any("\u21bb" in root.child(i).text(0)
-               for i in range(root.childCount()))
+    assert any("\u21bb" in t for t in tree_texts(win))   # ↻ revolve node

@@ -110,6 +110,11 @@ class Viewport(QWidget):
     def solid(self) -> Solid | None:
         return self._doc.result if self._doc else None
 
+    def set_solid_visible(self, on: bool):
+        """Browser body-menu toggle (Fusion's bulb)."""
+        self._r.show_solid = bool(on)
+        self.update()
+
     def attach(self, doc: Document):
         """Track a swapped-in document without refitting the camera."""
         self._doc = doc

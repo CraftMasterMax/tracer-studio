@@ -14,6 +14,7 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              ImportedFeature, LinearPatternFeature,
                              MirrorFeature, PrimitiveFeature, RevolveFeature,
                              ShellFeature, SweepFeature, LoftFeature)
+from .theme import DARK
 
 _OP_GLYPH = {"union": "+", "subtract": "−", "intersect": "∩"}
 
@@ -21,6 +22,7 @@ _OP_GLYPH = {"union": "+", "subtract": "−", "intersect": "∩"}
 class FeatureTree(QTreeWidget):
     feature_menu = Signal(object, object)   # Feature, global QPoint
     cplane_menu = Signal(str, object)       # plane name, global QPoint
+    body_menu = Signal(object)              # global QPoint
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -43,6 +45,8 @@ class FeatureTree(QTreeWidget):
                                        self.viewport().mapToGlobal(pos))
         elif role and role[0] == "cplane":
             self.cplane_menu.emit(role[1], self.viewport().mapToGlobal(pos))
+        elif role and role[0] == "body":
+            self.body_menu.emit(self.viewport().mapToGlobal(pos))
 
     def set_document(self, doc: Document):
         self._doc = doc
@@ -55,19 +59,40 @@ class FeatureTree(QTreeWidget):
         root = QTreeWidgetItem([self._doc.title])
         root.setFlags(root.flags() & ~Qt.ItemIsSelectable)
         self.addTopLevelItem(root)
+
+        # ---- Origin: point + axes + planes, like Fusion's folder ----------
         origin = QTreeWidgetItem(["Origin"])
-        origin.setData(0, Qt.UserRole, ("origin", None))
+        origin.setData(0, Qt.UserRole, ("folder", "origin"))
         root.addChild(origin)
+        op = QTreeWidgetItem(["\u2316 Origin"])            # ⌖ origin point
+        op.setData(0, Qt.UserRole, ("originpt", None))
+        origin.addChild(op)
+        for lab, key in (("X Axis", "axis_x"), ("Y Axis", "axis_y"),
+                         ("Z Axis", "axis_z")):
+            it = QTreeWidgetItem(["\u2014 " + lab])        # — axis
+            it.setForeground(0, QColor.fromRgbF(*DARK[key]))
+            it.setData(0, Qt.UserRole, ("axis", lab[0]))
+            origin.addChild(it)
         for pl in ("XY-Plane", "XZ-Plane", "YZ-Plane"):
-            it = QTreeWidgetItem([pl])
+            it = QTreeWidgetItem(["\u25ad " + pl])         # ▭
             it.setData(0, Qt.UserRole, ("plane", pl[:2]))
             origin.addChild(it)
-        for pl in getattr(self._doc, "planes", []):   # ▭ construction planes
-            it = QTreeWidgetItem(["\u25ad " + pl["name"]])
-            it.setData(0, Qt.UserRole, ("cplane", pl["name"]))
-            origin.addChild(it)
-        origin.setExpanded(bool(getattr(self._doc, "planes", [])))
-        for i, f in enumerate(self._doc.features):
+        origin.setExpanded(False)
+
+        # ---- Bodies (1) ▸ Body 1 ▸ features (+ nested sketches) -----------
+        feats = list(self._doc.features)
+        bodies = QTreeWidgetItem([f"Bodies ({1 if feats else 0})"])
+        bodies.setData(0, Qt.UserRole, ("folder", "bodies"))
+        root.addChild(bodies)
+        parent = bodies
+        if feats:
+            body_item = QTreeWidgetItem(["\u25a3 Body 1"])  # ▣
+            body_item.setData(0, Qt.UserRole, ("body", None))
+            bodies.addChild(body_item)
+            bodies.setExpanded(True)
+            body_item.setExpanded(True)
+            parent = body_item
+        for i, f in enumerate(feats):
             fillet = isinstance(f, BodyFilletFeature)
             glyph = ("\u25cb" if f.suppressed else            # suppressed wins
                      "\u25d0" if fillet else                  # body op, no boolean
@@ -89,13 +114,36 @@ class FeatureTree(QTreeWidget):
             item.setData(0, Qt.UserRole, ("feature", i))
             if f.suppressed:
                 item.setForeground(0, QColor("#767e8a"))
-            root.addChild(item)
+            parent.addChild(item)
             if (isinstance(f, (ExtrudeFeature, RevolveFeature, HoleFeature))
                     and f.sketch):
                 sk = QTreeWidgetItem([f"\u270e {f.sketch.get('name', 'Sketch')}"])
                 sk.setData(0, Qt.UserRole, ("sketch", i))
                 item.addChild(sk)
                 item.setExpanded(True)
+
+        # ---- Sketches (n): the same sketches listed like in Fusion --------
+        sketchers = [i for i, f in enumerate(feats)
+                     if isinstance(f, (ExtrudeFeature, RevolveFeature,
+                                       HoleFeature)) and f.sketch]
+        sketches = QTreeWidgetItem([f"Sketches ({len(sketchers)})"])
+        sketches.setData(0, Qt.UserRole, ("folder", "sketches"))
+        root.addChild(sketches)
+        for i in sketchers:
+            it = QTreeWidgetItem([f"\u270e {feats[i].sketch.get('name', 'Sketch')}"])
+            it.setData(0, Qt.UserRole, ("sketch", i))
+            sketches.addChild(it)
+
+        # ---- Construction (n): Fusion parks construction planes here ------
+        planes = getattr(self._doc, "planes", [])
+        constr = QTreeWidgetItem([f"Construction ({len(planes)})"])
+        constr.setData(0, Qt.UserRole, ("folder", "construction"))
+        root.addChild(constr)
+        for pl in planes:
+            it = QTreeWidgetItem(["\u25ad " + pl["name"]])
+            it.setData(0, Qt.UserRole, ("cplane", pl["name"]))
+            constr.addChild(it)
+        constr.setExpanded(bool(planes))
         root.setExpanded(True)
         self.setCurrentItem(None)
 

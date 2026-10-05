@@ -159,6 +159,7 @@ class SceneRenderer:
         self._plane_vao: moderngl.VertexArray | None = None
         self._plane_count = 0
         self.show_grid = True
+        self.show_solid = True       # browser bulb: hide/show the body
         self.show_edges = True
         self._grid_extent = 100.0
         self._size = (2, 2)
@@ -425,7 +426,7 @@ class SceneRenderer:
             c.disable(moderngl.BLEND)
 
         # solid
-        if self._solid_vao is not None and self._solid_count:
+        if self.show_solid and self._solid_vao is not None and self._solid_count:
             c.enable(moderngl.DEPTH_TEST)
             u = self._solid_prog
             u["u_view"].write(view.tobytes())

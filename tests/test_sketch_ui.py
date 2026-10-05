@@ -10,6 +10,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import QPoint, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog  # noqa: E402
+from conftest import tree_texts  # noqa: E402
 
 from tracer.core.sketch.constraints import (Distance, Fixed,
                                            Horizontal)  # noqa: E402
@@ -136,9 +137,7 @@ def test_circle_tool_and_finish_extrudes_into_document(win, qapp, monkeypatch):
     v_after = win.doc.result.volume
     assert v_after > v_before + math.pi * 100 * 6 * 0.95
     assert "Extruded" in win.status.currentMessage()
-    root = win.rail.tree.topLevelItem(0)
-    assert any("Sketch" in root.child(i).text(0)
-               for i in range(root.childCount()))
+    assert any("Sketch" in t for t in tree_texts(win))
 
 
 def test_undo_redo_extrude_cycle(win, qapp, monkeypatch):

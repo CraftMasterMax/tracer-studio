@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog,  # noqa: E402
                                QInputDialog, QMessageBox)
 
 from tracer.core.document import (Document, LinearPatternFeature)  # noqa: E402
+from conftest import feature_rows  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -111,8 +112,7 @@ def test_suppress_toggle_via_ui(win):
     win._toggle_suppress(bump)
     assert bump.suppressed
     assert win.doc.result.volume == pytest.approx(2000, rel=1e-6)
-    root = win.rail.tree.topLevelItem(0)
-    assert root.child(2).text(0).startswith("○")       # browser glyph
+    assert feature_rows(win)[1].text(0).startswith("○")   # browser glyph
     win._toggle_suppress(bump)
     assert not bump.suppressed
     assert win.doc.result.volume == pytest.approx(v_with, rel=1e-9)

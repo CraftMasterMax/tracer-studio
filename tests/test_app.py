@@ -10,6 +10,7 @@ from PySide6.QtGui import QImage  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 from tracer.ui.mainwindow import MainWindow, demo_document  # noqa: E402
 from tracer.ui.renderer import SceneRenderer  # noqa: E402
+from conftest import feature_rows, tree_texts  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -33,11 +34,10 @@ def win(qapp):
 
 
 def test_shell_builds(win):
-    root = win.rail.tree.topLevelItem(0)
-    names = [root.child(i).text(0) for i in range(1, root.childCount())]
-    assert len(names) == 3
-    assert "Origin" in root.child(0).text(0)
-    assert any("plate" in n for n in names)
+    texts = tree_texts(win)
+    assert any("Bodies (1)" in t for t in texts)     # Fusion folder anatomy
+    assert any("Origin" in t for t in texts)
+    assert any("plate" in t for t in texts)
     assert "volume" in win.status.currentMessage()
 
 
@@ -54,13 +54,11 @@ def test_recompute_after_edit(win):
     win.doc.add_cylinder("extra boss", radius=4, height=5, center=(55, 35))
     win.recompute()
     assert win.doc.result.volume > v0
-    root = win.rail.tree.topLevelItem(0)
-    assert root.childCount() == 5          # Origin + 4 features
+    assert len(feature_rows(win)) == 4          # demo's 3 features + extra
 
 
 def test_properties_panel_updates(win):
-    root = win.rail.tree.topLevelItem(0)
-    win.rail.tree.setCurrentItem(root.child(2))   # Origin=0, plate=1, boss=2
+    win.rail.tree.setCurrentItem(feature_rows(win)[1])   # demo: plate, boss
     assert "boss" in win.rail.props._body.text()
 
 
@@ -76,10 +74,10 @@ def test_save_open_roundtrip(win, qapp, tmp_path, monkeypatch):
     # mutate, then reopen and verify we get the saved state back
     win.doc.add_cylinder("oops", radius=1, height=1, center=(0, 0))
     win.recompute()
-    assert win.rail.tree.topLevelItem(0).childCount() == 5
+    assert len(feature_rows(win)) == 4
     monkeypatch.setattr(QFileDialog, "getOpenFileName",
                         staticmethod(lambda *a, **k: (str(save_to), "")))
     win.action_open()
-    assert win.rail.tree.topLevelItem(0).childCount() == 4
+    assert len(feature_rows(win)) == 3
     assert win.doc.result.volume == pytest.approx(
         demo_document().recompute().volume, rel=1e-9)

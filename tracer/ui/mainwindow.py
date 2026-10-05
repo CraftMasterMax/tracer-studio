@@ -64,6 +64,7 @@ class MainWindow(QMainWindow):
         self.rail.tree.itemDoubleClicked.connect(self._tree_activated)
         self.rail.tree.feature_menu.connect(self._feature_menu)
         self.rail.tree.cplane_menu.connect(self._cplane_menu)
+        self.rail.tree.body_menu.connect(self._body_menu)
 
         split = QSplitter(Qt.Horizontal)
         split.addWidget(self.rail)
@@ -721,6 +722,13 @@ class MainWindow(QMainWindow):
         menu.addSeparator()
         menu.addAction("Delete construction plane",
                        lambda: self._delete_plane(name))
+        menu.exec_(pos)
+
+    def _body_menu(self, pos):
+        vis = self.viewport._r.show_solid
+        menu = QMenu(self)
+        menu.addAction(("Hide" if vis else "Show") + " body",
+                       lambda: self.viewport.set_solid_visible(not vis))
         menu.exec_(pos)
 
     def _delete_plane(self, name):

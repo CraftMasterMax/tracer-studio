@@ -98,8 +98,30 @@ def dialogs(monkeypatch):
     return install
 
 
-def _origin_node(win):
-    return win.rail.tree.topLevelItem(0).child(0)
+def _find_node(win, substr, start=None):
+    """Depth-first search for a browser node whose text contains substr,
+    so tests don't couple to the folder layout (M43 reorganised it)."""
+    root = start if start is not None else win.rail.tree.invisibleRootItem()
+    for i in range(root.childCount()):
+        ch = root.child(i)
+        if substr in ch.text(0):
+            return ch
+        hit = _find_node(win, substr, ch)
+        if hit is not None:
+            return hit
+    return None
+
+
+def _all_texts(win):
+    out = []
+
+    def walk(node):
+        for i in range(node.childCount()):
+            ch = node.child(i)
+            out.append(ch.text(0))
+            walk(ch)
+    walk(win.rail.tree.invisibleRootItem())
+    return out
 
 
 # ---- creation, browser + viewport presence ------------------------------------
@@ -110,9 +132,7 @@ def test_command_creates_plane_node_and_viewport_quad(win, qapp, dialogs):
     qapp.processEvents()
     assert len(win.doc.planes) == 1
     assert win.doc.planes[0]["origin"] == [0.0, 0.0, 12.0]
-    texts = [_origin_node(win).child(i).text(0)
-             for i in range(_origin_node(win).childCount())]
-    assert any("▭ Plane 1" in t for t in texts), texts
+    assert _find_node(win, "▭ Plane 1") is not None
     assert win.viewport._r._plane_count == 12      # 4 edges + 2 diagonals
 
 
@@ -135,9 +155,8 @@ def test_double_click_opens_sketch_on_the_plane_frame(win, qapp, dialogs):
     dialogs("XY", 12.0)
     win.action_construction_plane()
     qapp.processEvents()
-    o = _origin_node(win)
-    item = next(o.child(i) for i in range(o.childCount())
-                if "Plane 1" in o.child(i).text(0))
+    item = _find_node(win, "Plane 1")
+    assert item is not None
     win._tree_activated(item, 0)
     qapp.processEvents()
     assert win.stack.currentWidget() is win._sketch_page
@@ -151,9 +170,8 @@ def test_extrude_from_the_plane_lands_at_its_height(win, qapp, dialogs):
     dialogs("XY", 12.0, 12.0)               # plane @12, extrude distance 12
     win.action_construction_plane()
     qapp.processEvents()
-    o = _origin_node(win)
-    item = next(o.child(i) for i in range(o.childCount())
-                if "Plane 1" in o.child(i).text(0))
+    item = _find_node(win, "Plane 1")
+    assert item is not None
     win._tree_activated(item, 0)
     qapp.processEvents()
     outer = np.array([[0, 0], [10, 0], [10, 8], [0, 8]], float)
@@ -172,9 +190,7 @@ def test_delete_plane_removes_node_and_quad(win, qapp, dialogs):
     qapp.processEvents()
     assert win.doc.planes == []
     assert win.viewport._r._plane_count == 0
-    texts = [_origin_node(win).child(i).text(0)
-             for i in range(_origin_node(win).childCount())]
-    assert not any("▭" in t for t in texts)
+    assert not any("▭ Plane" in t for t in _all_texts(win))
 
 
 # ---- proof of life ---------------------------------------------------------------

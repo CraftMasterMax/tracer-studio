@@ -10,6 +10,7 @@ from tracer.core.document import (CircularPatternFeature,                    # n
                                  Document, LinearPatternFeature,
                                  MirrorFeature, PrimitiveFeature)
 from tracer.core.geometry import Solid                                        # noqa: E402
+from conftest import tree_texts                                               # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -179,7 +180,6 @@ def test_properties_panel_pattern_crash_regression(win):
     assert "YZ" in props._body.text()
     # browser tree carries the mirror + pattern glyphs
     win.recompute()
-    rows = [win.rail.tree.topLevelItem(0).child(i).text(0)
-            for i in range(1, win.rail.tree.topLevelItem(0).childCount())]
+    rows = tree_texts(win)
     assert any("\u25e7" in r for r in rows)       # ◧ mirror
     assert sum("\u29c9" in r for r in rows) == 2  # ⧉ patterns
