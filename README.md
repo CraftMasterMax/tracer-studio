@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M31**
+**Status: M33**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -26,7 +26,10 @@ independent project with no Autodesk assets or affiliation.)
   X-junctions stay intact)**,
   Levenberg-Marquardt solver (SVD-damped)
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
-  revolve, **Hole (Ctrl+H): every sketch circle drills a real hole —
+  revolve, **Shell (Modify menu): pick the face to remove, type a wall
+  thickness — the body hollows into an open case (moulded-style rounded
+  inner corners, taller features on the deck never perforated)**,
+  **Hole (Ctrl+H): every sketch circle drills a real hole —
   simple, counterbore, or countersink (82°/90°/120°), blind or through-all;
   the cut direction is probed into the material and re-editing the sketch
   moves the holes with their circles**, linear & circular patterns,
@@ -43,10 +46,12 @@ independent project with no Autodesk assets or affiliation.)
   degrades gracefully where OCCT is absent — e.g. stock Windows, which
   still gets rim fillets)
 - UX: Fusion-style mouse, ViewCube, **hover/whole-face selection tinting**
-  with live cursor coordinates, an icon quick-toolbar, a playhead timeline
-  of icon chips, and a blue-grey horizon viewport — plus first-launch
-  shortcut tour and a persistent Shortcuts tab driven by one canonical
-  key table
+  with live cursor coordinates, **measure-on-pick — click one face for its
+  area, two faces for their gap and angle (perpendicular/parallel detected);
+  the inspector always shows the body's volume & surface area**, an icon
+  quick-toolbar, a playhead timeline of icon chips, and a blue-grey horizon
+  viewport — plus first-launch shortcut tour and a persistent Shortcuts tab
+  driven by one canonical key table
 - 378 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it

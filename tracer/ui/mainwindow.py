@@ -17,7 +17,9 @@ from ..core import step
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
-                             MirrorFeature, PrimitiveFeature, RevolveFeature)
+                             MirrorFeature, PrimitiveFeature, RevolveFeature,
+                             ShellFeature)
+from ..core.measure import describe, face_stats
 from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
                                  model_to_dict, plane_uv)
 from . import icons
@@ -83,6 +85,7 @@ class MainWindow(QMainWindow):
         self.viewport.face_picked.connect(self._start_sketch_on_face)
         self.viewport.coords.connect(self._show_coords)
         self.viewport.press_pull.connect(self._press_pull)
+        self.viewport.selection_changed.connect(self._on_face_selection)
         cl.addWidget(self.timeline)
         self.setCentralWidget(center)
 
@@ -277,6 +280,7 @@ class MainWindow(QMainWindow):
         m_mod = QMenu(tb)
         m_mod.addAction(self.act_fillet)
         m_mod.addAction(self.act_chamfer)
+        m_mod.addAction(self.act_shell)
         btn("fillet", "Fillet — round every sharp edge of the body",
             menu=m_mod)
 
@@ -356,7 +360,9 @@ class MainWindow(QMainWindow):
                                   triggered=lambda checked=False: self._body_fillet(False))
         self.act_chamfer = QAction("C&hamfer body edges…", self,
                                    triggered=lambda checked=False: self._body_fillet(True))
-        m_mo.addActions([self.act_fillet, self.act_chamfer])
+        self.act_shell = QAction("&Shell…", self,
+                                 triggered=lambda checked=False: self.action_shell())
+        m_mo.addActions([self.act_fillet, self.act_chamfer, self.act_shell])
 
         m_edit = self.menuBar().addMenu("&Edit")
         self.act_undo = QAction("&Undo", self, shortcut=QKeySequence.Undo,
@@ -789,6 +795,69 @@ class MainWindow(QMainWindow):
             f"Drilled {len(circles)} {opts['type']} hole(s)"
             + (" — through all" if through else f" — {depth:g} mm deep"), 6000)
 
+    def _on_face_selection(self, n: int = 0):
+        """Measure-on-pick (Fusion's Inspect>Measure, live): picked faces
+        answer in the status bar; no selection shows the body's numbers."""
+        if self.doc is None or self.doc.result is None:
+            return
+        groups = self.viewport.selected_groups()
+        if not groups:
+            s = self.doc.result
+            self.rail.props.show_stats(s.volume, s.surface_area)
+            self._update_status()
+            return
+        try:
+            stats = [face_stats(self.viewport._tm, g) for g in groups]
+            if len(stats) == 1:
+                msg = describe(stats[0], None)
+            elif len(stats) == 2:
+                msg = describe(stats[0], stats[1])
+            else:
+                msg = (f"{len(stats)} faces selected — keep exactly two "
+                       "to measure between")
+        except Exception:          # a stale selection mid-recompute: silent
+            return
+        self.status.showMessage(msg)
+
+    def action_shell(self):
+        """Fusion Shell: hollow the body to thin walls, removing one face
+        to open it — enclosures, cases, boxes."""
+        if self.doc is None or self.doc.result is None:
+            QMessageBox.warning(self, "Shell",
+                                "Nothing to shell yet — extrude or import "
+                                "a solid first.")
+            return
+        if any(isinstance(f, ShellFeature) for f in self.doc.features):
+            QMessageBox.information(self, "Shell",
+                                    "This body is already shelled.")
+            return
+        face = self.viewport.selected_face()
+        if face is None:
+            QMessageBox.information(
+                self, "Shell",
+                "Click the face to REMOVE first — the body hollows with "
+                "that face open, exactly like Fusion's Shell.")
+            return
+        t, ok = QInputDialog.getDouble(self, "Shell",
+                                       "Wall thickness (mm):", 2.0,
+                                       0.05, 1e4, 2)
+        if not ok:
+            return
+        openings = [(tuple(float(x) for x in face["point"]),
+                     tuple(float(x) for x in face["normal"]))]
+        from ..core.shell import shell_open
+        try:                            # validate before touching history
+            shell_open(self.doc.result, float(t), openings)
+        except ValueError as e:
+            QMessageBox.warning(self, "Shell", str(e))
+            return
+        self._capture()
+        self.doc.add(ShellFeature(name="Shell", thickness=float(t),
+                                  openings=openings))
+        self.recompute()
+        self.viewport.refresh(fit=True)
+        self.status.showMessage(f"Shelled body with {t:g} mm walls", 5000)
+
     def _sync_holes(self, sid, payload):
         """Sketch re-edit through the extrude path: holes stay glued to
         their circles (moved circles move holes, deleted circles delete
@@ -985,6 +1054,7 @@ class MainWindow(QMainWindow):
         self.timeline.set_document(self.doc)
         self.viewport.set_document(self.doc)
         self._update_status()
+        self._on_face_selection()
 
     def _update_title(self):
         name = self.file_path.name if self.file_path else (
@@ -1048,6 +1118,7 @@ class MainWindow(QMainWindow):
         self.rail.tree.reload()
         self.timeline.bar.update()
         self._update_status()
+        self._on_face_selection()
 
     def _update_status(self):
         n = len(self.doc.features) if self.doc else 0

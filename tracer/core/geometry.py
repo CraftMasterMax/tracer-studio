@@ -143,6 +143,10 @@ class Solid:
         return float(self._m.volume())
 
     @property
+    def surface_area(self) -> float:
+        return float(self._m.surface_area())
+
+    @property
     def bounding_box(self) -> np.ndarray:
         """Returns [[minx, miny, minz], [maxx, maxy, maxz]] as float64."""
         return np.asarray(self._m.bounding_box(), dtype=np.float64).reshape(2, 3)

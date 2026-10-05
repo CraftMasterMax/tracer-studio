@@ -26,6 +26,7 @@ class Viewport(QWidget):
     face_picked = Signal(object, object)   # world point, outward normal (planar)
     coords = Signal(object)                # world point under cursor | None
     press_pull = Signal(object)            # Press-Pull drag payload dict
+    selection_changed = Signal(int)        # live measure: faces now selected
 
     def __init__(self, renderer: SceneRenderer, parent=None):
         super().__init__(parent)
@@ -54,8 +55,11 @@ class Viewport(QWidget):
 
     def refresh(self, fit: bool = False):
         solid = self._doc.result if self._doc else None
+        had_sel = bool(self._sel)
         self._hover, self._sel = None, []
         self._pp, self._pp_drag = None, False
+        if had_sel:
+            self.selection_changed.emit(0)
         if solid is None:
             self._r.clear_mesh()
             self._bbox = None
@@ -260,6 +264,7 @@ class Viewport(QWidget):
             if self._sel:
                 self._sel = []
                 self._apply_hi()
+                self.selection_changed.emit(0)
             return
         faces = self._group(hit[2])
         if faces[0] in self._sel:
@@ -268,6 +273,35 @@ class Viewport(QWidget):
         else:
             self._sel += [f for f in faces if f not in self._sel]
         self._apply_hi()
+        self.selection_changed.emit(len(self.selected_groups()))
+
+    def selected_groups(self) -> list[list[int]]:
+        """The current selection split into whole logical face groups."""
+        if self._tm is None or not self._sel:
+            return []
+        out, seen = [], set()
+        for f in sorted(self._sel):
+            if f in seen:
+                continue
+            g = self._group(f)
+            seen.update(g)
+            out.append(g)
+        return out
+
+    def selected_face(self) -> dict | None:
+        """Reference frame of the current face selection: {'point',
+        'normal'} — for commands that act ON a face (Shell).  None when
+        nothing is picked."""
+        if self._tm is None or not self._sel:
+            return None
+        idx = np.asarray(sorted(self._sel), int)
+        n = np.asarray(self._tm.face_normals, float)[idx].sum(0)
+        nn = float(np.linalg.norm(n))
+        if nn < 1e-9:
+            return None
+        tris = np.asarray(self._tm.faces, int)[idx]
+        pts = np.asarray(self._tm.vertices, float)[tris].reshape(-1, 3)
+        return dict(point=pts.mean(0), normal=n / nn)
 
     def _pick_planar(self, pos):
         """Hit test at pos; accept only faces flat within ~2 degrees across
@@ -312,8 +346,11 @@ class Viewport(QWidget):
                 self.press_pull.emit({"cancel": True})
                 return
             if self._sel or self._hover:
+                had = bool(self._sel)
                 self._sel, self._hover = [], None
                 self._apply_hi()
+                if had:
+                    self.selection_changed.emit(0)
             return
         if k == Qt.Key_F:
             if self._bbox is not None:

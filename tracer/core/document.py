@@ -277,6 +277,22 @@ class HoleFeature(Feature):
         return tool.transformed(m)
 
 
+@dataclass
+class ShellFeature(Feature):
+    """Hollow the accumulated body to `thickness` walls, opened at the
+    removed planar face(s).  `openings` stores each removed face as
+    [point, outward normal] — enough to erode the body and punch a window
+    through just that face, leaving higher features intact.  A body op
+    (like BodyFilletFeature): it REPLACES the body, so `op` is unused."""
+    thickness: float = 2.0
+    openings: list = field(default_factory=list)
+
+    def apply(self, src: Solid) -> Solid:
+        from .shell import shell_open
+        return shell_open(src, self.thickness,
+                          [(o[0], o[1]) for o in self.openings])
+
+
 class Document:
     def __init__(self, title: str = "Untitled"):
         self.title = title
@@ -370,9 +386,11 @@ class Document:
                 shift = tuple(v * f.offset for v in n)
                 solid = src.translated((-shift[0], -shift[1], -shift[2])) \
                             .mirror(n).translated(shift)
-            elif isinstance(f, BodyFilletFeature):
+            elif isinstance(f, (BodyFilletFeature, ShellFeature)):
                 if acc is None:
-                    raise ValueError(f"{f.name!r} has no body to fillet yet")
+                    verb = ("fillet" if isinstance(f, BodyFilletFeature)
+                            else "shell")
+                    raise ValueError(f"{f.name!r} has no body to {verb} yet")
                 acc = f.apply(acc)
                 by_uid[f.uid] = acc
                 continue          # replaces the body; not a boolean operand
@@ -442,6 +460,11 @@ class Document:
                 d.update(radius=float(f.radius), chamfer=bool(f.chamfer),
                          n_rims=int(f.n_rims), src_key=f.src_key,
                          res_verts=f.res_verts, res_faces=f.res_faces)
+            elif isinstance(f, ShellFeature):
+                d.update(thickness=float(f.thickness),
+                         openings=[[[float(x) for x in o[0]],
+                                    [float(x) for x in o[1]]]
+                                   for o in f.openings])
             elif isinstance(f, HoleFeature):
                 d.update(center=list(map(float, f.center)),
                          normal=list(map(float, f.normal)),
@@ -511,6 +534,11 @@ class Document:
                 doc.features.append(MirrorFeature(
                     name=fd["name"], source_uid=fd["source_uid"],
                     plane=fd["plane"], offset=float(fd["offset"]), **base))
+            elif t == "ShellFeature":
+                doc.features.append(ShellFeature(
+                    name=fd["name"], thickness=float(fd["thickness"]),
+                    openings=[(list(map(float, o[0])), list(map(float, o[1])))
+                              for o in fd["openings"]], **base))
             elif t == "HoleFeature":
                 doc.features.append(HoleFeature(
                     name=fd["name"],

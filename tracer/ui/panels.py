@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (QTreeWidget, QTreeWidgetItem, QLabel, QVBoxLayout
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
-                             MirrorFeature, PrimitiveFeature, RevolveFeature)
+                             MirrorFeature, PrimitiveFeature, RevolveFeature,
+                             ShellFeature)
 
 _OP_GLYPH = {"union": "+", "subtract": "−", "intersect": "∩"}
 
@@ -66,6 +67,7 @@ class FeatureTree(QTreeWidget):
                      _OP_GLYPH.get(f.op, f.op))
             kind = ("\u21bb" if isinstance(f, RevolveFeature)
                     else "\u2300" if isinstance(f, HoleFeature)
+                    else "\u25a4" if isinstance(f, ShellFeature)
                     else "\u25c8" if isinstance(f, ImportedFeature)
                     else "\u25e7" if isinstance(f, MirrorFeature)
                     else "\u2312" if fillet                    # arc = fillet/chamfer
@@ -114,6 +116,14 @@ class PropertiesPanel(QWidget):
         lay.addWidget(self._body)
         lay.addStretch(1)
 
+    def show_stats(self, volume: float, area: float):
+        """Whole-body numbers, Fusion-inspector style (no selection)."""
+        self._body.setText(
+            f"<b>Body</b><br>volume: {volume:,.1f} mm³<br>"
+            f"surface area: {area:,.1f} mm²<br>"
+            "<span style='color:#767e8a'>click a face to measure it; "
+            "click two to measure between</span>")
+
     def show_feature(self, feature):
         if feature is None:
             self._body.setText("Select a feature to inspect it.")
@@ -148,6 +158,9 @@ class PropertiesPanel(QWidget):
             if feature.cs_radius > feature.radius:
                 lines.append(f"countersink: Ø{2 * feature.cs_radius:g} at "
                              f"{feature.cs_angle:g}°")
+        elif isinstance(feature, ShellFeature):
+            lines.append(f"wall thickness: {feature.thickness:g} mm")
+            lines.append(f"faces removed: {len(feature.openings)}")
         elif isinstance(feature, PrimitiveFeature):
             lines.append(f"kind: {feature.kind}")
             for k, v in feature.dims.items():
