@@ -72,9 +72,11 @@ gradient that settles darker under the model.
 navigation widget by the ViewCube (fit / zoom in-out / fullscreen),
 ground/contact-shadow tuning.
 
-**M45 — Sketch ribbon flyouts.**  Fusion's Sketch tab: Geometric
-constraint flyout (grid of all constraints) + Dimension panel — the
-full palette reachable from the ribbon, not only canvas menu + keys.
+**✓ M45 — Sketch ribbon flyouts.**  Shipped: Sketch tab gained a
+Dimension button and the Constrain flyout — a two-column grid panel of
+all twelve geometric ties with their keys, dispatching late-bound into
+the sketcher's act_* methods (Draw ▸ Modify ▸ Dimension ▸ Constrain ▸
+Finish, Fusion's ordering).
 
 **M46 — App menu.**  Fusion's top-left launcher menu (New · Open ·
 Save · Export · Preferences · Exit) as the primary file surface.

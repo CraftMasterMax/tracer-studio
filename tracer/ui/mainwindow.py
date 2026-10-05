@@ -299,6 +299,24 @@ class MainWindow(QMainWindow):
         s("construction", "Construction — toggle selected geometry (K)",
           lambda checked=False: self.sketch.act_construction())
         r.sketch_sep()
+        s("dimension", "Dimension — distance or radius with a value (D)",
+          lambda checked=False: self.sketch.act_dim())
+        r.sketch_sep()
+        f = r.sketch_flyout
+        f("constrain", "Geometric constraints — pick a tie (keys shown)", [
+            ("Horizontal", "H", lambda: self.sketch.act_H()),
+            ("Vertical", "V", lambda: self.sketch.act_V()),
+            ("Perpendicular", "P", lambda: self.sketch.act_perp()),
+            ("Equal", "Q", lambda: self.sketch.act_equal()),
+            ("Collinear", "L", lambda: self.sketch.act_collinear()),
+            ("Midpoint", "J", lambda: self.sketch.act_midpoint()),
+            ("Symmetry", "M", lambda: self.sketch.act_symmetry()),
+            ("Concentric", "2", lambda: self.sketch.act_concentric()),
+            ("Tangent", "T", lambda: self.sketch.act_tangent()),
+            ("On-curve", ".", lambda: self.sketch.act_on()),
+            ("Angle", "I", lambda: self.sketch.act_angle()),
+            ("Fix", "F", lambda: self.sketch.act_fix())])
+        r.sketch_sep()
         s("extrude", "Finish — extrude the profile (X)",
           self._tb_extrude,
           menu_actions=[("Revolve profile… (⇧R)", self._tb_revolve),

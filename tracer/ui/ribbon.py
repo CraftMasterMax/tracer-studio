@@ -16,9 +16,10 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QMenu,
-                               QSizePolicy, QStackedWidget, QTabBar,
-                               QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel,
+                               QMenu, QSizePolicy, QStackedWidget, QTabBar,
+                               QToolButton, QVBoxLayout, QWidget,
+                               QWidgetAction)
 
 from . import icons
 from .theme import DARK
@@ -151,6 +152,9 @@ class RibbonBar(QWidget):
     def sketch_sep(self) -> QFrame:
         return _sep(self.sl)
 
+    def sketch_flyout(self, *a, **k) -> QToolButton:
+        return add_flyout(self.sl, *a, **k)
+
 
 def _sep(layout) -> QFrame:
     line = QFrame()
@@ -190,4 +194,37 @@ def add_tool(layout, icon: str, tip: str, slot=None, size: int = 26,
         _place(layout, b)
     else:
         layout.addWidget(b)
+    return b
+
+
+def add_flyout(layout, icon: str, tip: str, entries) -> QToolButton:
+    """Ribbon button whose popup is a small grid of commands — Fusion's
+    Constrain-flyout anatomy.  entries: (label, shortcut, slot) tuples."""
+    b = QToolButton()
+    b.setIcon(icons.icon(icon))
+    b.setIconSize(QSize(26, 26))
+    b.setToolTip(tip)
+    b.setAutoRaise(True)
+    b.setPopupMode(QToolButton.InstantPopup)
+    b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+    m = QMenu(b)
+    panel = QWidget()
+    g = QGridLayout(panel)
+    g.setContentsMargins(6, 6, 6, 6)
+    g.setSpacing(3)
+    for i, (label, key, fn) in enumerate(entries):
+        e = QToolButton()
+        e.setText(f"{label}\u2002{key}")              # label + key hint
+        e.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        e.setAutoRaise(True)
+        e.setStyleSheet(f"QToolButton {{ color: {DARK['fg']}; padding: 4px 8px;"
+                        f" border-radius: 4px; text-align: left; }}"
+                        f" QToolButton:hover {{ background: {DARK['bg2']}; }}")
+        e.clicked.connect(lambda checked=False, f=fn: (m.hide(), f()))
+        g.addWidget(e, i // 2, i % 2)
+    wa = QWidgetAction(m)
+    wa.setDefaultWidget(panel)
+    m.addAction(wa)
+    b.setMenu(m)
+    _place(layout, b)
     return b

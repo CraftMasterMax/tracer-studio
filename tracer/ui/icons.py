@@ -232,12 +232,32 @@ def _plane(p: QPainter):
     p.drawLine(QPointF(13, 10), QPointF(20, 22))
 
 
+def _constrain(p: QPainter):
+    """Two lines joined by a link pin: geometry tied together."""
+    p.drawLine(QPointF(7, 7), QPointF(7, 25))
+    p.drawLine(QPointF(18, 7), QPointF(18, 25))
+    p.drawLine(QPointF(7, 16), QPointF(19, 16))
+    p.drawEllipse(QPointF(22.5, 16), 3.0, 3.0)
+
+
+def _dimension(p: QPainter):
+    """Measured span: ticks, arrowheads, baseline."""
+    p.drawLine(QPointF(5, 16), QPointF(27, 16))
+    p.drawLine(QPointF(5, 11), QPointF(5, 21))
+    p.drawLine(QPointF(27, 11), QPointF(27, 21))
+    p.drawPolyline(QPolygonF([QPointF(9, 13), QPointF(5, 16),
+                              QPointF(9, 19)]))
+    p.drawPolyline(QPolygonF([QPointF(23, 13), QPointF(27, 16),
+                              QPointF(23, 19)]))
+
+
 _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "shell": _shell, "new": _new, "open": _open, "save": _save,
               "undo": _undo, "redo": _redo, "line": _line, "rect": _rect,
               "circle": _circle, "slot": _slot, "poly": _poly,
               "arc": _arc, "trim": _trim, "offset": _offset,
-              "construction": _construction, "plane": _plane})
+              "construction": _construction, "plane": _plane,
+              "constrain": _constrain, "dimension": _dimension})
 
 
 def icon(name: str) -> QIcon:
