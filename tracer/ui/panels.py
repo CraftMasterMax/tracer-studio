@@ -10,9 +10,9 @@ from PySide6.QtWidgets import (QTreeWidget, QTreeWidgetItem, QLabel, QVBoxLayout
                                QTabWidget, QWidget, QFrame)
 
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
-                             Document, ExtrudeFeature, ImportedFeature,
-                             LinearPatternFeature, MirrorFeature,
-                             PrimitiveFeature, RevolveFeature)
+                             Document, ExtrudeFeature, HoleFeature,
+                             ImportedFeature, LinearPatternFeature,
+                             MirrorFeature, PrimitiveFeature, RevolveFeature)
 
 _OP_GLYPH = {"union": "+", "subtract": "−", "intersect": "∩"}
 
@@ -65,6 +65,7 @@ class FeatureTree(QTreeWidget):
                      "\u25d0" if fillet else                  # body op, no boolean
                      _OP_GLYPH.get(f.op, f.op))
             kind = ("\u21bb" if isinstance(f, RevolveFeature)
+                    else "\u2300" if isinstance(f, HoleFeature)
                     else "\u25c8" if isinstance(f, ImportedFeature)
                     else "\u25e7" if isinstance(f, MirrorFeature)
                     else "\u2312" if fillet                    # arc = fillet/chamfer
@@ -78,7 +79,7 @@ class FeatureTree(QTreeWidget):
             if f.suppressed:
                 item.setForeground(0, QColor("#767e8a"))
             root.addChild(item)
-            if (isinstance(f, (ExtrudeFeature, RevolveFeature))
+            if (isinstance(f, (ExtrudeFeature, RevolveFeature, HoleFeature))
                     and f.sketch):
                 sk = QTreeWidgetItem([f"\u270e {f.sketch.get('name', 'Sketch')}"])
                 sk.setData(0, Qt.UserRole, ("sketch", i))
@@ -134,6 +135,19 @@ class PropertiesPanel(QWidget):
             lines.append(f"angle: {feature.angle:g}°")
             lines.append(f"outer vertices: {len(np.asarray(feature.outer))}")
             lines.append(f"holes: {len(feature.holes)}")
+        elif isinstance(feature, HoleFeature):
+            kind = ("counterbore" if feature.cb_radius > feature.radius else
+                    "countersink" if feature.cs_radius > feature.radius
+                    else "simple")
+            lines.append(f"diameter: Ø{2 * feature.radius:g} mm ({kind})")
+            lines.append("depth: through all" if feature.through
+                         else f"depth: {feature.depth:g} mm")
+            if feature.cb_radius > feature.radius:
+                lines.append(f"counterbore: Ø{2 * feature.cb_radius:g} × "
+                             f"{feature.cb_depth:g} mm deep")
+            if feature.cs_radius > feature.radius:
+                lines.append(f"countersink: Ø{2 * feature.cs_radius:g} at "
+                             f"{feature.cs_angle:g}°")
         elif isinstance(feature, PrimitiveFeature):
             lines.append(f"kind: {feature.kind}")
             for k, v in feature.dims.items():

@@ -15,12 +15,13 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog,
 from ..core import io as fio
 from ..core import step
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
-                             Document, ExtrudeFeature, ImportedFeature,
-                             LinearPatternFeature, MirrorFeature,
-                             PrimitiveFeature, RevolveFeature)
+                             Document, ExtrudeFeature, HoleFeature,
+                             ImportedFeature, LinearPatternFeature,
+                             MirrorFeature, PrimitiveFeature, RevolveFeature)
 from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
-                                 model_to_dict)
+                                 model_to_dict, plane_uv)
 from . import icons
+from .hole import HoleDialog
 from .renderer import SceneRenderer
 from .panels import LeftRail
 from .shortcuts import TourDialog
@@ -262,6 +263,7 @@ class MainWindow(QMainWindow):
         m_create = QMenu(tb)
         m_create.addAction("E&xtrude profile… (X)", self._tb_extrude)
         m_create.addAction("&Revolve profile… (⇧R)", self._tb_revolve)
+        m_create.addAction("&Hole… (Ctrl+H)", self.action_hole)
         btn("extrude", "Extrude — sweep a sketch profile into a solid",
             menu=m_create)
         m_pat = QMenu(tb)
@@ -335,8 +337,10 @@ class MainWindow(QMainWindow):
                                    triggered=lambda: self.sketch.finish())
         self.act_revolve = QAction("&Revolve profile…", self, shortcut="Shift+R",
                                    triggered=lambda: self.sketch.finish(revolve=True))
+        self.act_hole = QAction("&Hole…", self, shortcut="Ctrl+H",
+                                triggered=lambda checked=False: self.action_hole())
         m_sk.addActions([self.act_new_sketch, self.act_extrude,
-                         self.act_revolve])
+                         self.act_revolve, self.act_hole])
 
         m_cr = self.menuBar().addMenu("C&reate")
         self.act_linpat = QAction("&Linear pattern…", self,
@@ -430,7 +434,7 @@ class MainWindow(QMainWindow):
             self._feature_activated(self.doc.features[arg])
 
     def _feature_activated(self, feature):
-        if (isinstance(feature, (ExtrudeFeature, RevolveFeature))
+        if (isinstance(feature, (ExtrudeFeature, RevolveFeature, HoleFeature))
                 and feature.sketch):
             self.edit_sketch(feature)
         elif isinstance(feature, BodyFilletFeature):
@@ -443,7 +447,8 @@ class MainWindow(QMainWindow):
     # ---- feature management (context menus: timeline + browser) --------------
     def _feature_menu(self, feature, pos):
         menu = QMenu(self)
-        sketchy = (isinstance(feature, (ExtrudeFeature, RevolveFeature))
+        sketchy = (isinstance(feature, (ExtrudeFeature, RevolveFeature,
+                                        HoleFeature))
                    and feature.sketch)
         if sketchy:
             menu.addAction("Edit sketch", lambda: self.edit_sketch(feature))
@@ -650,7 +655,13 @@ class MainWindow(QMainWindow):
         payload["name"] = name
         sid = self._editing_sid
         if sid is not None:
-            self._update_sketch_features(sid, profiles, payload)
+            hole_owns = any(isinstance(f, HoleFeature) and f.sid == sid
+                            for f in self.doc.features)
+            if hole_owns:
+                self._capture()
+                self._sync_holes(sid, payload)
+            self._update_sketch_features(sid, profiles, payload,
+                                         capture=not hole_owns)
             self.sketch.set_model(SketchModel())     # committed: clear editor
             self._show_page(self.viewport)
             self.recompute()
@@ -702,7 +713,140 @@ class MainWindow(QMainWindow):
                 f"Extruded {len(profiles)} region(s) from {name} "
                 f"by {height:g} mm", 6000)
 
-    def _update_sketch_features(self, sid, profiles, payload):
+    def action_hole(self):
+        """Fusion Hole: each circle in the current sketch drills one hole —
+        simple, counterbore or countersink — into the existing solid."""
+        if self.doc is None:
+            return
+        m = self.sketch.model
+        circles = [c for c in m.sketch.circles if not c.construction] \
+            if m is not None else []
+        if not circles:
+            QMessageBox.information(
+                self, "Hole",
+                "Draw circles first — each circle becomes one drilled hole. "
+                "Sketch on a face (double-click), add the circles, run Hole.")
+            return
+        if not self.doc.features or self.doc.result is None:
+            QMessageBox.warning(
+                self, "Hole",
+                "A hole cuts into an existing solid — extrude a body first.")
+            return
+        opts = HoleDialog.ask(self, [2 * c.r for c in circles])
+        if opts is None:
+            return
+        self._capture()
+        u, v = plane_uv(m.plane, m.axes)
+        u, v = np.asarray(u, float), np.asarray(v, float)
+        n = np.cross(u, v)
+        origin = np.asarray(m.origin, float)
+        base = self.doc.result
+        lo, hi = base.bounding_box
+        diag = float(np.linalg.norm(hi - lo))
+        through = bool(opts["through"])
+        depth = float(opts["depth"])
+        cb_r = float(opts["cb_dia"]) / 2 if opts["type"] == "counterbore" else 0.0
+        cs_r = float(opts["cs_dia"]) / 2 if opts["type"] == "countersink" else 0.0
+        payload = model_to_dict(m)
+        owned = [f for f in self.doc.features
+                 if isinstance(f, HoleFeature) and f.sid == m.sid]
+        for i, c in enumerate(circles):
+            w = origin + u * float(c.c.x) + v * float(c.c.y)
+            L = (diag + 4 * max(c.r, cb_r, cs_r)) if through else depth
+            kind = (" counterbore" if cb_r > c.r else
+                    " countersink" if cs_r > c.r else "")
+            if i < len(owned):                # re-drill: update in place
+                f = owned[i]
+                f.center, f.radius = tuple(w), float(c.r)
+                f.depth, f.through, f.cut_length = depth, through, float(L)
+                f.cb_radius, f.cb_depth = cb_r, float(opts["cb_depth"])
+                f.cs_radius, f.cs_angle = cs_r, float(opts["cs_angle"])
+                f.name = f"Hole Ø{2 * c.r:g}" + kind
+                f.sketch = dict(payload)
+                continue
+            # new hole: probe which side of the sketch plane has material
+            inward = -n
+            probe = HoleFeature(name="probe", center=tuple(w),
+                                normal=tuple(inward), radius=float(c.r),
+                                cut_length=diag + 4 * c.r, through=True)
+            if base.intersect(probe.build()).volume <= 1e-6:
+                inward = n
+            self.doc.add(HoleFeature(
+                name=f"Hole Ø{2 * c.r:g}" + kind, op="subtract",
+                center=tuple(w), normal=tuple(inward), radius=float(c.r),
+                depth=depth, through=through, cut_length=float(L),
+                cb_radius=cb_r, cb_depth=float(opts["cb_depth"]),
+                cs_radius=cs_r, cs_angle=float(opts["cs_angle"]),
+                sketch=dict(payload), sid=m.sid, cidx=i))
+        for f in owned[len(circles):]:        # circles deleted while editing
+            self.doc.features.remove(f)
+        self.sketch.set_model(SketchModel())
+        self._editing_sid = None
+        self._show_page(self.viewport)
+        self.recompute()
+        self.viewport.refresh(fit=True)
+        self.status.showMessage(
+            f"Drilled {len(circles)} {opts['type']} hole(s)"
+            + (" — through all" if through else f" — {depth:g} mm deep"), 6000)
+
+    def _sync_holes(self, sid, payload):
+        """Sketch re-edit through the extrude path: holes stay glued to
+        their circles (moved circles move holes, deleted circles delete
+        theirs).  Caller captures first; returns True if anything changed.
+        """
+        holes = [f for f in self.doc.features
+                 if isinstance(f, HoleFeature) and f.sid == sid]
+        if not holes:
+            return False
+        m = model_from_dict(payload)
+        circles = [c for c in m.sketch.circles if not c.construction]
+        u, v = plane_uv(m.plane, m.axes)
+        u, v = np.asarray(u, float), np.asarray(v, float)
+        origin = np.asarray(m.origin, float)
+        changed = False
+        for f in list(holes):
+            old = [c for c in (model_from_dict(f.sketch).sketch.circles
+                               if f.sketch else []) if not c.construction]
+            j = None
+            # 1. same circle = same coords in the previous payload (survives
+            #    deletions, which shift everyone else's index)
+            if f.cidx < len(old):
+                c0 = old[f.cidx]
+                for i, c in enumerate(circles):
+                    if (abs(c.c.x - c0.c.x) < 1e-9
+                            and abs(c.c.y - c0.c.y) < 1e-9
+                            and abs(c.r - c0.r) < 1e-9):
+                        j = i
+                        break
+            # 2. still sitting exactly under the drilled centre
+            if j is None:
+                for i, c in enumerate(circles):
+                    w = origin + u * float(c.c.x) + v * float(c.c.y)
+                    if (np.linalg.norm(w - np.asarray(f.center, float)) < 1e-6
+                            and abs(float(c.r) - f.radius) < 1e-9):
+                        j = i
+                        break
+            # 3. nothing moved to meet it, and no circles vanished: assume
+            #    the one at the same index is this hole's circle, moved
+            if (j is None and old and f.cidx < len(old)
+                    and len(circles) >= len(old) and f.cidx < len(circles)):
+                j = f.cidx
+            if j is None:
+                self.doc.features.remove(f)       # its circle is gone
+                changed = True
+                continue
+            c = circles[j]
+            f.cidx = j
+            f.center = tuple(origin + u * float(c.c.x) + v * float(c.c.y))
+            f.radius = float(c.r)
+            kind = (" counterbore" if f.cb_radius > f.radius else
+                    " countersink" if f.cs_radius > f.radius else "")
+            f.name = f"Hole Ø{2 * f.radius:g}" + kind
+            f.sketch = dict(payload)
+            changed = True
+        return changed
+
+    def _update_sketch_features(self, sid, profiles, payload, capture=True):
         """Re-edit: swap profiles in the features born from this sketch,
         keeping each one's height/angle; add/remove features to match."""
         group = [f for f in self.doc.features
@@ -710,7 +854,8 @@ class MainWindow(QMainWindow):
                  and f.sid == sid]
         if not group:
             return
-        self._capture()
+        if capture:
+            self._capture()
         for i, (outer, holes) in enumerate(profiles):
             if i < len(group):
                 f = group[i]
@@ -770,6 +915,11 @@ class MainWindow(QMainWindow):
         rev.setToolTip("Sweep the profile 360° about the sketch vertical axis")
         rev.clicked.connect(lambda: self.sketch.finish(revolve=True))
         bl.addWidget(rev)
+        hole = QPushButton("Hole… (Ctrl+H)")
+        hole.setProperty("tb", True)
+        hole.setToolTip("Drill every circle in this sketch into the solid")
+        hole.clicked.connect(self.action_hole)
+        bl.addWidget(hole)
         self.sketch = SketchCanvas()
         self.sketch.profiles_ready.connect(self._on_profiles)
         lay.addWidget(bar)

@@ -15,7 +15,7 @@ import numpy as np
 
 from .geometry import Solid, circle_contour, round_corners
 from .rimfillet import rim_fillet
-from .sketch.model import plane_matrix, revolve_matrix
+from .sketch.model import frame_matrix, plane_matrix, revolve_matrix
 
 CombineOp = Literal["union", "subtract", "intersect"]
 
@@ -227,6 +227,56 @@ class PrimitiveFeature(Feature):
         return s.translated(self.placement)
 
 
+@dataclass
+class HoleFeature(Feature):
+    """Parametric hole drilled into the body at a sketch-circle placement.
+
+    Composed entirely of kernel primitives, subtracted as one tool:
+    the main cylinder, an optional counterbore cylinder, and an optional
+    countersink ring (a triangular wedge revolved 360 degrees about the
+    hole axis).  `normal` points INTO the material — the command layer
+    probes both sides at creation so the cut always bites.  `cidx` is the
+    index of the source circle in the sketch so re-editing the sketch
+    relocates the hole."""
+    center: tuple = (0.0, 0.0, 0.0)
+    normal: tuple = (0.0, 0.0, -1.0)
+    radius: float = 1.0
+    depth: float = 5.0
+    through: bool = False
+    cut_length: float = 0.0       # actual tool length (through = oversized)
+    cb_radius: float = 0.0        # counterbore outer radius (0 = none)
+    cb_depth: float = 0.0
+    cs_radius: float = 0.0        # countersink outer radius (0 = none)
+    cs_angle: float = 90.0        # cone included angle, degrees
+    sketch: dict | None = None
+    sid: int | None = None
+    cidx: int = 0
+
+    def build(self) -> Solid:
+        n = np.asarray(self.normal, float)
+        n = n / np.linalg.norm(n)
+        # stable in-plane pair: the world axis least parallel to n
+        u = np.cross(n, np.eye(3)[int(np.abs(n).argmin())])
+        u = u / np.linalg.norm(u)
+        m = frame_matrix(u, np.cross(n, u), self.center)   # local +z = INTO material
+        L = self.cut_length if self.through else self.depth
+        parts = [Solid.cylinder(self.radius, L)]           # 0..L along normal
+        if self.cb_radius > self.radius + 1e-9 and self.cb_depth > 0:
+            d = min(self.cb_depth, L)
+            parts.append(Solid.cylinder(self.cb_radius, d))
+        if self.cs_radius > self.radius + 1e-9:
+            beta = math.radians(self.cs_angle) / 2.0
+            k = min((self.cs_radius - self.radius) / math.tan(beta), L)
+            if k > 1e-9:
+                parts.append(Solid.revolve(np.array([
+                    [self.radius, 0.0], [self.cs_radius, 0.0],
+                    [self.radius, k]])))
+        tool = parts[0]
+        for p in parts[1:]:
+            tool = tool.union(p)
+        return tool.transformed(m)
+
+
 class Document:
     def __init__(self, title: str = "Untitled"):
         self.title = title
@@ -392,6 +442,17 @@ class Document:
                 d.update(radius=float(f.radius), chamfer=bool(f.chamfer),
                          n_rims=int(f.n_rims), src_key=f.src_key,
                          res_verts=f.res_verts, res_faces=f.res_faces)
+            elif isinstance(f, HoleFeature):
+                d.update(center=list(map(float, f.center)),
+                         normal=list(map(float, f.normal)),
+                         radius=float(f.radius), depth=float(f.depth),
+                         through=bool(f.through),
+                         cut_length=float(f.cut_length),
+                         cb_radius=float(f.cb_radius),
+                         cb_depth=float(f.cb_depth),
+                         cs_radius=float(f.cs_radius),
+                         cs_angle=float(f.cs_angle),
+                         sketch=f.sketch, sid=f.sid, cidx=int(f.cidx))
             return d
         return {"format": "tracer/document", "version": 2,
                 "title": self.title, "units": self.units,
@@ -450,6 +511,19 @@ class Document:
                 doc.features.append(MirrorFeature(
                     name=fd["name"], source_uid=fd["source_uid"],
                     plane=fd["plane"], offset=float(fd["offset"]), **base))
+            elif t == "HoleFeature":
+                doc.features.append(HoleFeature(
+                    name=fd["name"],
+                    center=tuple(fd["center"]), normal=tuple(fd["normal"]),
+                    radius=float(fd["radius"]), depth=float(fd["depth"]),
+                    through=bool(fd.get("through", False)),
+                    cut_length=float(fd.get("cut_length", 0.0)),
+                    cb_radius=float(fd.get("cb_radius", 0.0)),
+                    cb_depth=float(fd.get("cb_depth", 0.0)),
+                    cs_radius=float(fd.get("cs_radius", 0.0)),
+                    cs_angle=float(fd.get("cs_angle", 90.0)),
+                    sketch=fd.get("sketch"), sid=fd.get("sid"),
+                    cidx=int(fd.get("cidx", 0)), **base))
             elif t == "BodyFilletFeature":
                 doc.features.append(BodyFilletFeature(
                     name=fd["name"], radius=float(fd["radius"]),
