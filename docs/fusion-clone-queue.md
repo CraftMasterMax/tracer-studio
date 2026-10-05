@@ -22,7 +22,8 @@ interaction grammar and visual language** — never Autodesk's identity
 | Mirror                         | ✓ M27                                           |
 | Press/Pull (direct edit)       | ✓ M24                                           |
 | Inspect › Measure              | ✓ M33 (area, angle/gap, volume, surface)        |
-| Sketch: 7 tools + 14 constraints | ✓ M5..M17 (trim, corner ops, on-curve, polygon)|
+| Construction › Plane (offset)  | ✓ M40 (sketch-on-plane, browser + viewport quad)|
+| Sketch: 7 tools + 16 constraints | ✓ M5..M17, M41 (midpoint, collinear, polygon)|
 | Offset Entities                | ✓ M34 (mitred parallel copy, inward/outward)    |
 | Timeline + browser             | ✓ M9/M11 (+ glyphs, suppress, reorder-safe)     |
 | STEP / STL / 3MF / OBJ / PLY   | ✓ (STEP + fillets via OCCT bridge, degrades)    |
@@ -45,38 +46,59 @@ as document data + ▭ browser nodes + sketch-on-plane + viewport quads.
 The angled-plane variant (rotate about an in-plane axis) is still open —
 fold it into a later milestone when a workflow needs it.
 
-**M41 — Constraint set to Fusion core.**  Add Equal, Midpoint,
-Symmetry (about sketch axis or line) to the LM solver, constraint
-palette icons + shortcuts; auto-constrain on draw matches Fusion
-(H/V snap already present).
+**✓ M41 — Constraint set to Fusion core.**  Audit found Equal (Q) and
+Symmetry (M) already shipped; the true gaps Midpoint (J) and Collinear
+(L-with-selection) now live in the LM solver, badges + menus included.
 
-**M42 — Thread.**  Fusion's most-used maker feature after holes.
-v1: cosmetic-style real geometry — helical ridge cut (loft engine along
-a helix: rings on a rising circle path), or hole option "tapped Ø" with
-ISO pitch table.  Test: helix ring count, min wall, export watertight.
+**✓ M42 — Ribbon anatomy.**  User redirect: *"I dont want 15% of
+Fusion, make a 1:1 clone if possible"* — queue re-prioritised to
+GUI/interaction parity first.  Shipped: "Design ▾" workspace chip,
+centred document-title chip (live name + dirty •), Solid-tab group
+order (Sketch · Create · Pattern · Modify · Construct) with Pattern
+operations as three real buttons.
 
-**M43 — Pattern on path.**  Third pattern Fusion offers; reuses the
-M35 path chain: place N instances of a body/feature along a sketch
-path via frame-transform copies (loft kernel already builds the frames).
+**M43 — Browser anatomy.**  Fusion tree: `Origin` (Origin point +
+X/Y/Z axes + three planes), `Bodies (1) ▸ Body 1 ▸ features+sketches
+nested`, `Sketches (n)`, `Construction (n)` — construction planes move
+from Origin to Construction; body visibility (bulb) toggle.
 
-**M44 — Section Analysis.**  Clip-plane toggle in the viewport (discard
+**M44 — Viewport furniture.**  Origin point + axis arrows in-scene,
+navigation widget by the ViewCube (fit / zoom in-out / fullscreen),
+ground/contact-shadow tuning.
+
+**M45 — Sketch ribbon flyouts.**  Fusion's Sketch tab: Geometric
+constraint flyout (grid of all constraints) + Dimension panel — the
+full palette reachable from the ribbon, not only canvas menu + keys.
+
+**M46 — App menu.**  Fusion's top-left launcher menu (New · Open ·
+Save · Export · Preferences · Exit) as the primary file surface.
+
+**M47 — Command dialogs.**  One Fusion-style dialog shell (header
+strip, grouped fields, OK/Cancel, Remember Values) replacing scattered
+QInputDialogs for Extrude/Revolve/Hole/Shell/Fillet/Pattern/….
+
+**M48 — Section Analysis.**  Clip-plane toggle in the viewport (discard
 in fragment shader beyond the plane), plane = chosen face or origin
 plane (construction planes from M40 are natural candidates), flips side;
 purely visual, non-destructive — makers live in it.
 
-**M45 — Sketch origin identity.**  Origin point + axis lines visible in
-every sketch (RGB like triad), origin snap, rectangle-from-origin
-corner behaviour, "Project" origin geometry so constraints can reference
-it.
+**M49 — Thread.**  Fusion's most-used maker feature after holes.
+v1: cosmetic-style real geometry — helical ridge cut (loft engine along
+a helix: rings on a rising circle path), or hole option "tapped Ø" with
+ISO pitch table.  Test: helix ring count, min wall, export watertight.
 
-**M46 — Split Body (plane trim).**  Multi-body is out of v1 scope, but
+**M50 — Pattern on path.**  Third pattern Fusion offers; reuses the
+M35 path chain: place N instances of a body/feature along a sketch
+path via frame-transform copies (loft kernel already builds the frames).
+
+**M51 — Split Body (plane trim).**  Multi-body is out of v1 scope, but
 Fusion's most common split is "cut away one half": Split › plane ›
 discard side, kept as a parametric subtract feature.
 
 **Later candidates (researched, deferred):** Patch/Thicken
-(surface kernel gap), Draft, Combine/multi-browser-bodies, configurations,
-Appearances (per-body colour), sheet metal, drawings.  Re-evaluate after
-M45.
+(surface kernel gap), Draft, Combine/multi-browser-bodies, Appearances
+(per-body colour), configurations, assemblies/joints, sheet metal,
+drawings.  Re-evaluate after M48.
 
 ## Testing doctrine (unchanged)
 

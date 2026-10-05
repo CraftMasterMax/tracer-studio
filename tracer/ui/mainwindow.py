@@ -265,10 +265,12 @@ class MainWindow(QMainWindow):
         d("hole", "Hole — drill every sketch circle (Ctrl+H)",
           lambda checked=False: self.action_hole())
         r.design_sep()
-        d("pattern", "Pattern & mirror — replicate features",
-          menu_actions=[self.act_linpat, self.act_cirpat, self.act_mirror])
-        d("cpattern", "Circular pattern…",
+        d("pattern", "Rectangular pattern — grid-copy a feature",
+          lambda checked=False: self.action_linear_pattern())
+        d("cpattern", "Circular pattern — polar-copy a feature",
           lambda checked=False: self.action_circular_pattern())
+        d("mirror", "Mirror — flip a feature across a plane or axis",
+          lambda checked=False: self.action_mirror())
         r.design_sep()
         d("fillet", "Fillet — round every sharp edge of the body",
           menu_actions=[self.act_fillet, self.act_chamfer, self.act_shell])
@@ -1317,6 +1319,8 @@ class MainWindow(QMainWindow):
         name = self.file_path.name if self.file_path else (
             (self.doc.title if self.doc else "Untitled") + ("" if not self.doc or not self.doc.dirty else " •"))
         self.setWindowTitle(f"{name} — Tracer Studio")
+        if hasattr(self, "ribbon"):
+            self.ribbon.set_title(name)
 
     def action_save(self, as_new: bool = False):
         if self.doc is None:

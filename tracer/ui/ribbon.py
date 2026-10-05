@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QMenu, QSizePolicy,
-                               QStackedWidget, QTabBar, QToolButton,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QMenu,
+                               QSizePolicy, QStackedWidget, QTabBar,
+                               QToolButton, QVBoxLayout, QWidget)
 
 from . import icons
 from .theme import DARK
@@ -71,7 +71,28 @@ class RibbonBar(QWidget):
         q.setContentsMargins(0, 0, 0, 0)
         q.setSpacing(1)
         row1.addWidget(self.quick)
-        row1.addSpacing(14)
+        row1.addSpacing(10)
+
+        # Fusion's workspace picker: "Design ▾" chip left of the tabs
+        self.workspace = QToolButton()
+        self.workspace.setText("Design \u25be")      # ▾
+        self.workspace.setPopupMode(QToolButton.InstantPopup)
+        self.workspace.setStyleSheet(
+            f"QToolButton {{ color: {t['fg']}; padding: 3px 8px;"
+            f" border-radius: 5px; }}"
+            f" QToolButton::menu-indicator {{ image: none; }}"
+            f" QToolButton:hover {{ background: {t['bg2']}; }}")
+        wm = QMenu(self.workspace)
+        wm.addAction("Design", lambda checked=False: None).setCheckable(True)
+        wm.actions()[-1].setChecked(True)
+        wm.addSeparator()
+        for w in ("Render", "Animation", "Simulation", "Manufacture",
+                  "Drawing", "Mesh"):
+            wm.addAction(w).setEnabled(False)
+        self.workspace.setMenu(wm)
+        row1.addWidget(self.workspace)
+        row1.addSpacing(10)
+
         self.tabs = QTabBar()
         self.tabs.setExpanding(False)
         self.tabs.setDrawBase(False)
@@ -79,6 +100,13 @@ class RibbonBar(QWidget):
         self.tabs.addTab("Sketch")
         self.tabs.currentChanged.connect(lambda i: self.tab_clicked.emit(i))
         row1.addWidget(self.tabs)
+
+        # document title chip, centered like Fusion's
+        self._title = QLabel("Untitled")
+        self._title.setStyleSheet(f"color: {t['fg_dim']}; padding: 0 8px;")
+        self._title.setAlignment(Qt.AlignCenter)
+        row1.addStretch(1)
+        row1.addWidget(self._title)
         row1.addStretch(1)
         root.addLayout(row1)
 
@@ -102,6 +130,9 @@ class RibbonBar(QWidget):
         self.tabs.setCurrentIndex(index)
         self.tabs.blockSignals(False)
         self.panels.setCurrentIndex(index)
+
+    def set_title(self, text: str):
+        self._title.setText(text)
 
     # -- building blocks -------------------------------------------------------
     def quick_button(self, icon: str, tip: str, slot) -> QToolButton:
