@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M36**
+**Status: M37**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -58,14 +58,17 @@ independent project with no Autodesk assets or affiliation.)
   on-demand OpenCascade bridge (compiled with your system g++, cached;
   degrades gracefully where OCCT is absent — e.g. stock Windows, which
   still gets rim fillets)
-- UX: Fusion-style mouse, ViewCube, **hover/whole-face selection tinting**
+- UX: Fusion mouse grammar — MMB pans, Shift+MMB/RMB orbit, wheel zooms
+  toward the cursor, left-drag on empty space rubber-bands a selection
+  (window/crossing) — ViewCube, **hover/whole-face selection tinting in
+  Fusion orange**
   with live cursor coordinates, **measure-on-pick — click one face for its
   area, two faces for their gap and angle (perpendicular/parallel detected);
   the inspector always shows the body's volume & surface area**, an icon
   quick-toolbar, a playhead timeline of icon chips, and a blue-grey horizon
   viewport — plus first-launch shortcut tour and a persistent Shortcuts tab
   driven by one canonical key table
-- 448 headless tests (EGL rendering + Qt pixel assertions)
+- 462 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -79,7 +82,9 @@ python3 -m venv .venv
 
 3D: **click a face** to select · **drag a face** to Press-Pull (+Esc to
 cancel, release to commit) · **double-click a face** to sketch on it ·
-**MMB/RMB** orbit · **Shift+MMB** pan · **wheel** zoom · **F** fit ·
+**MMB** pan · **Shift+MMB or RMB** orbit · **wheel** zoom toward cursor ·
+**drag on empty space** selects (left→right window, right→left crossing) ·
+**F** fit ·
 **G** grid · **E** edges · **0/1/2/3** iso/front/top/right.
 Sketch: **N** new sketch · **S/L/R/C/O/Y/A** line/rect/circle/slot/polygon/arc · **D**
 dimension · **H/V/F/G/T/I/M/2** constraints · **/** trim-to-corner · **X** extrude · **Ctrl+Z** undo.
@@ -88,7 +93,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 448 tests, fully headless
+./.venv/bin/python -m pytest -q          # 462 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

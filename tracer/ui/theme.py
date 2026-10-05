@@ -27,8 +27,8 @@ DARK = {
     "axis_y": (0.55, 0.80, 0.52),
     "solid_base": (0.70, 0.73, 0.78),
     "solid_edge": (0.16, 0.18, 0.21),
-    "hi_hover": (0.36, 0.82, 1.0),   # face under the cursor: cyan wash
-    "hi_sel": (0.13, 0.56, 1.0),     # picked face: stronger blue
+    "hi_hover": (1.0, 0.78, 0.42),   # face under the cursor: pale orange
+    "hi_sel": (1.0, 0.55, 0.0),      # picked face: Fusion orange
 }
 
 LIGHT = {

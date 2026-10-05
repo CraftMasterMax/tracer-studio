@@ -11,8 +11,8 @@ import math
 
 import numpy as np
 import trimesh
-from PySide6.QtCore import Qt, QPoint, QSize, Signal
-from PySide6.QtGui import QImage, QPainter, QCursor
+from PySide6.QtCore import Qt, QPoint, QRect, QSize, Signal
+from PySide6.QtGui import QColor, QImage, QPainter, QPen, QCursor
 from PySide6.QtWidgets import QWidget
 
 from ..core.document import Document
@@ -43,6 +43,8 @@ class Viewport(QWidget):
         self._sel: list[int] = []
         self._pp = None                    # press-pull drag state
         self._pp_drag = False
+        self._box: list | None = None      # rubber-band select [p0, p1]
+        self._box_drag = False
         self.setMinimumSize(QSize(320, 240))
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -58,6 +60,7 @@ class Viewport(QWidget):
         had_sel = bool(self._sel)
         self._hover, self._sel = None, []
         self._pp, self._pp_drag = None, False
+        self._box, self._box_drag = None, False
         if had_sel:
             self.selection_changed.emit(0)
         if solid is None:
@@ -104,14 +107,19 @@ class Viewport(QWidget):
         qimg.setDevicePixelRatio(dpr)
         p = QPainter(self)
         p.drawImage(0, 0, qimg)
+        if self._box_drag and self._box is not None:
+            p.setPen(QPen(QColor(255, 255, 255, 220), 1, Qt.DashLine))
+            p.setBrush(QColor(120, 170, 255, 24))
+            p.drawRect(QRect(self._box[0], self._box[1]).normalized())
         self._cube.place(self.width(), self.height())
         self._cube.draw(p, self._cam)
         p.end()
 
-    # ---- mouse (Fusion default scheme) ------------------------------------
-    # LMB: select (picking lands in M4)   MMB drag: orbit
-    # Shift+MMB drag: pan                  wheel: zoom at cursor-ish depth
-    # MMB click (no drag): return home
+    # ---- mouse (Fusion scheme) ----------------------------------------------
+    # LMB: pick a face · LMB drag on empty: rubber-band select ·
+    #      LMB drag on a face: Press-Pull
+    # MMB drag: pan                      Shift+MMB / RMB drag: orbit
+    # MMB click (no drag): return home   wheel: zoom toward the cursor
     def mousePressEvent(self, ev):
         hit = self._cube.hit(ev.position())
         if hit:
@@ -124,6 +132,8 @@ class Viewport(QWidget):
         self._dragged = False
         self._pp = None
         self._pp_drag = False
+        self._box = None
+        self._box_drag = False
         if ev.button() == Qt.LeftButton and self._tm is not None \
                 and Qt.KeyboardModifier(0) == ev.modifiers():
             px, py = ev.position().x(), ev.position().y()
@@ -137,6 +147,9 @@ class Viewport(QWidget):
                 self._pp = dict(faces=g, point=np.asarray(hit[0], float),
                                 normal=n, px0=ev.position().toPoint(),
                                 t0=t0, offset=0.0, ppid=object())
+            else:
+                self._box = [ev.position().toPoint(),
+                             ev.position().toPoint()]
         if self._hover:
             self._hover = None                       # no wash while dragging
             self._apply_hi()
@@ -165,11 +178,17 @@ class Viewport(QWidget):
                 self.press_pull.emit({**self._pp, "live": True})
                 self.update()
                 return
+        if self._box is not None and Qt.LeftButton in self._buttons:
+            self._box[1] = ev.position().toPoint()
+            if (self._box[1] - self._box[0]).manhattanLength() > 4:
+                self._box_drag = True
+            self.update()
+            return
         if Qt.MiddleButton in self._buttons:
             if ev.modifiers() & Qt.ShiftModifier:
-                self._cam.pan(d.x(), d.y(), self.height())
-            else:
                 self._cam.orbit(d.x(), d.y(), self.height())
+            else:
+                self._cam.pan(d.x(), d.y(), self.height())
             self.update()
         elif Qt.RightButton in self._buttons:
             self._cam.orbit(d.x(), d.y(), self.height())
@@ -180,12 +199,17 @@ class Viewport(QWidget):
         if (ev.button() == Qt.LeftButton
                 and not getattr(self, "_dragged", True)):
             self._click_select(ev.position())       # Fusion: pick a face
-        if ev.button() == Qt.LeftButton and getattr(self, "_pp_drag", False):
+        if ev.button() == Qt.LeftButton and getattr(self, "_box_drag", False):
+            p0, p1 = self._box
+            self._box, self._box_drag = None, False
+            self._select_box(p0, p1)
+        elif ev.button() == Qt.LeftButton and getattr(self, "_pp_drag", False):
             self.press_pull.emit({**self._pp, "live": False})
             self.unsetCursor()
             self._pp, self._pp_drag = None, False
         elif ev.button() == Qt.LeftButton:
             self._pp, self._pp_drag = None, False
+            self._box, self._box_drag = None, False
         if ev.button() == Qt.MiddleButton:
             self.unsetCursor()
             if not getattr(self, "_dragged", False):
@@ -215,7 +239,21 @@ class Viewport(QWidget):
         return float((q - c) @ n) / foresh
 
     def wheelEvent(self, ev):
-        self._cam.zoom(pow(1.0015, -ev.angleDelta().y()))
+        """Fusion zooms toward the point under the cursor: raycast the
+        model first, fall back to the ground plane, else plain dolly."""
+        k = pow(1.0015, -ev.angleDelta().y())
+        px, py = ev.position().x(), ev.position().y()
+        anchor = None
+        if self._tm is not None:
+            hit = self._shoot(self._tm, px, py)
+            if hit is not None:
+                anchor = hit[0]
+        if anchor is None:
+            anchor = self._ground_point(px, py)
+        if anchor is None:
+            self._cam.zoom(k)
+        else:
+            self._cam.zoom_to(k, anchor)
         self.update()
 
     # ---- picking (double-click a planar face -> sketch on it) ---------------
@@ -272,6 +310,44 @@ class Viewport(QWidget):
             self._sel = [f for f in self._sel if f not in kill]
         else:
             self._sel += [f for f in faces if f not in self._sel]
+        self._apply_hi()
+        self.selection_changed.emit(len(self.selected_groups()))
+
+    def _select_box(self, p0, p1):
+        """Fusion's rubber-band gestures: drag left→right is a WINDOW
+        (faces whose triangles all land inside), right→left is CROSSING
+        (faces whose silhouette the box touches).  Whole logical faces
+        (coplanar groups); replaces the selection.  v1 selects by 2D
+        containment — hidden faces behind the hit count too."""
+        if self._tm is None:
+            return
+        x0, x1 = sorted((float(p0.x()), float(p1.x())))
+        y0, y1 = sorted((float(p0.y()), float(p1.y())))
+        window = float(p1.x()) >= float(p0.x())
+        w, h = float(self.width()), float(self.height())
+        V = np.asarray(self._tm.vertices, float)
+        vp = self._cam.proj_matrix(w / max(h, 1.0)) @ self._cam.view_matrix()
+        c = np.column_stack([V, np.ones(len(V))]) @ vp.T
+        fin = c[:, 3] > 1e-9
+        with np.errstate(invalid="ignore"):
+            sx = np.where(fin, (c[:, 0] / np.where(fin, c[:, 3], 1.0) + 1.0)
+                          * 0.5 * w, -1.0)
+            sy = np.where(fin, (1.0 - c[:, 1] / np.where(fin, c[:, 3], 1.0))
+                          * 0.5 * h, -1.0)
+        tri = np.asarray(self._tm.faces, int)
+        tx, ty = sx[tri], sy[tri]
+        inside = (tx >= x0) & (tx <= x1) & (ty >= y0) & (ty <= y1)
+        if window:
+            pick = inside.all(axis=1)
+        else:
+            pick = ((tx.min(axis=1) <= x1) & (tx.max(axis=1) >= x0)
+                    & (ty.min(axis=1) <= y1) & (ty.max(axis=1) >= y0))
+            pick &= fin[tri].all(axis=1)
+        self._sel = []
+        if self._gid is not None and pick.any():
+            for g in np.unique(self._gid[pick]):
+                self._sel.extend(np.flatnonzero(self._gid == g).tolist())
+        self._hover = None
         self._apply_hi()
         self.selection_changed.emit(len(self.selected_groups()))
 

@@ -266,7 +266,9 @@ def test_sketch_shows_cursor_coordinates(win, qapp):
 
 
 # ---- Fusion mouse scheme (3D viewport) ---------------------------------------
-def test_middle_drag_orbits_shift_pans_and_click_homes(win, qapp):
+def test_mmb_pans_shift_orbits_and_click_homes(win, qapp):
+    """Fusion's mouse grammar (M37): MMB drags PAN, Shift+MMB (and RMB)
+    ORBIT, a no-drag MMB click returns home."""
     vp = win.viewport
     cam = vp.camera()
     y0, p0, t0 = cam.yaw, cam.pitch, cam.target.copy()
@@ -274,17 +276,20 @@ def test_middle_drag_orbits_shift_pans_and_click_homes(win, qapp):
     QTest.mousePress(d, Qt.MiddleButton, Qt.NoModifier, QPoint(300, 300), 10)
     QTest.mouseMove(d, QPoint(340, 320))
     QTest.mouseRelease(d, Qt.MiddleButton, Qt.NoModifier, QPoint(340, 320), 10)
-    assert cam.yaw != y0 and cam.pitch != p0
+    assert cam.yaw == pytest.approx(y0) and cam.pitch == pytest.approx(p0)
+    assert not np.allclose(cam.target, t0), "MMB pan did nothing"
     # QTest.move drops modifier state; send a real event with Shift baked in
     from PySide6.QtCore import QEvent, QPointF
     from PySide6.QtGui import QMouseEvent
     ev = QMouseEvent(QEvent.Type.MouseMove, QPointF(280, 290), QPointF(280, 290),
                      Qt.MouseButton.MiddleButton,
                      Qt.MouseButton.MiddleButton, Qt.KeyboardModifier.ShiftModifier)
+    y1, t1 = cam.yaw, cam.target.copy()
     QTest.mousePress(d, Qt.MiddleButton, Qt.ShiftModifier, QPoint(300, 300), 10)
     qapp.sendEvent(d, ev)
     QTest.mouseRelease(d, Qt.MiddleButton, Qt.ShiftModifier, QPoint(280, 290), 10)
-    assert not np.allclose(cam.target, t0), "Shift+MMB pan did nothing"
+    assert cam.yaw != pytest.approx(y1), "Shift+MMB orbit did nothing"
+    assert np.allclose(cam.target, t1), "Shift+MMB panned — must only orbit"
     cam.yaw, cam.pitch = 1.234, -0.432
     QTest.mousePress(d, Qt.MiddleButton, Qt.NoModifier, QPoint(400, 300), 10)
     QTest.mouseRelease(d, Qt.MiddleButton, Qt.NoModifier, QPoint(400, 300), 10)

@@ -83,6 +83,24 @@ class Camera:
     def zoom(self, factor: float):
         self.distance = max(1e-3, min(1e9, self.distance * factor))
 
+    def zoom_to(self, factor: float, anchor):
+        """Zoom with the world point under the cursor pinned on screen:
+        scale the whole rig (target AND position) about the anchor, which
+        is the exact perspective answer — P' − A = k·(P − A)."""
+        a = np.asarray(anchor, float)
+        self.distance = max(1e-3, min(1e9, self.distance * factor))
+        self.target = a + (self.target - a) * factor
+
+    def project(self, pt, w_px: float, h_px: float):
+        """World point -> screen pixel (x, y), or None if behind the
+        camera.  The inverse of ray()."""
+        vp = self.proj_matrix(w_px / max(h_px, 1.0)) @ self.view_matrix()
+        c = vp @ np.append(np.asarray(pt, float), 1.0)
+        if c[3] <= 1e-9:
+            return None
+        return ((c[0] / c[3] + 1.0) * 0.5 * w_px,
+                (1.0 - c[1] / c[3]) * 0.5 * h_px)
+
     def pan(self, dx_px: float, dy_px: float, view_h_px: float):
         """Screen-space pan in mm, scaled by camera distance & fov."""
         mm_per_px = (2.0 * self.distance * math.tan(math.radians(self.fov) / 2.0)
