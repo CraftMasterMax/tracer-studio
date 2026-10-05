@@ -27,6 +27,7 @@ from .hole import HoleDialog
 from .loft import LoftDialog
 from .renderer import SceneRenderer
 from .panels import LeftRail
+from .ribbon import RibbonBar
 from .shortcuts import TourDialog
 from .sketcheditor import SketchCanvas
 from .theme import DARK
@@ -223,69 +224,89 @@ class MainWindow(QMainWindow):
 
     # ---- quick toolbar (Fusion-style icon strip under the menus) ----------
     def _make_toolbar(self):
+        """Fusion ribbon: quick-access strip, Design/Sketch tabs, grouped
+        panels.  Tooltip contracts from M20 stay honored: the sketch
+        button fires on click; extrude & fillet buttons carry dropdown
+        menus whose first entry is the headline operation."""
         tb = QToolBar("Tools", self)
         tb.setMovable(False)
         tb.setFloatable(False)
-        tb.setIconSize(QSize(22, 22))
-        t = DARK
-        tb.setStyleSheet(
-            f"QToolBar {{ background: {t['bg0']}; padding: 2px 6px;"
-            f" border-bottom: 1px solid {t['line']}; spacing: 3px; }}"
-            f" QToolButton {{ border: none; border-radius: 5px;"
-            f" padding: 3px; background: transparent; }}"
-            f" QToolButton:hover {{ background: {t['bg2']}; }}"
-            f" QToolButton:pressed {{ background: {t['line']}; }}"
-            f" QToolButton::menu-indicator {{ subcontrol-position: right;"
-            f" right: 2px; }}"
-            f" QToolBar::separator {{ width: 8px; background: transparent; }}"
-            f" QMenu {{ background: {t['bg1']}; border: 1px solid {t['line']};"
-            f" border-radius: 8px; padding: 4px; }}"
-            f" QMenu::item:selected {{ background: {t['bg2']}; color:"
-            f" {t['accent']}; }}")
+        tb.setStyleSheet(f"QToolBar {{ background: {DARK['bg0']};"
+                         f" border: none; padding: 0; }}")
         self.addToolBarBreak(Qt.TopToolBarArea)
         self.addToolBar(Qt.TopToolBarArea, tb)
+        r = self.ribbon = RibbonBar(tb)
+        tb.addWidget(r)
+        r.tab_clicked.connect(self._ribbon_tab)
 
-        def btn(name, tip, slot=None, menu=None):
-            b = QToolButton(tb)
-            b.setIcon(icons.icon(name))
-            b.setToolTip(tip)
-            b.setAutoRaise(True)
-            if menu is not None:
-                b.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-                b.setMenu(menu)
-            elif slot is not None:
-                b.clicked.connect(slot)
-            tb.addWidget(b)
-            return b
+        qa = r.quick_button
+        qa("new", "New (Ctrl+N)", self.act_new.trigger)
+        qa("open", "Open… (Ctrl+O)", self.act_open.trigger)
+        qa("save", "Save (Ctrl+S)", self.act_save.trigger)
+        qa("undo", "Undo (Ctrl+Z)", self.act_undo.trigger)
+        qa("redo", "Redo (Ctrl+Shift+Z)", self.act_redo.trigger)
 
-        def sep():
-            tb.addSeparator()
+        d = r.design_tool
+        d("sketch", "New sketch (N)",
+          lambda checked=False: self.action_new_sketch())
+        r.design_sep()
+        d("extrude", "Extrude — sweep a sketch profile into a solid",
+          menu_actions=[
+              ("E&xtrude profile… (X)", self._tb_extrude),
+              ("&Revolve profile… (⇧R)", self._tb_revolve),
+              ("&Hole… (Ctrl+H)", self.action_hole),
+              ("S&weep… (W)", self.action_sweep),
+              ("&Loft… (Ctrl+L)", self.action_loft)])
+        d("sweep", "Sweep — pipe the sketch's circle along its path (W)",
+          lambda checked=False: self.action_sweep())
+        d("loft", "Loft — blend one sketch's profile into another's (Ctrl+L)",
+          lambda checked=False: self.action_loft())
+        d("hole", "Hole — drill every sketch circle (Ctrl+H)",
+          lambda checked=False: self.action_hole())
+        r.design_sep()
+        d("pattern", "Pattern & mirror — replicate features",
+          menu_actions=[self.act_linpat, self.act_cirpat, self.act_mirror])
+        d("cpattern", "Circular pattern…",
+          lambda checked=False: self.action_circular_pattern())
+        r.design_sep()
+        d("fillet", "Fillet — round every sharp edge of the body",
+          menu_actions=[self.act_fillet, self.act_chamfer, self.act_shell])
+        d("shell", "Shell — hollow the body, open top face removed",
+          lambda checked=False: self.action_shell())
 
-        btn("sketch", "New sketch (N)",
-            lambda checked=False: self.action_new_sketch())
-        sep()
-        m_create = QMenu(tb)
-        m_create.addAction("E&xtrude profile… (X)", self._tb_extrude)
-        m_create.addAction("&Revolve profile… (⇧R)", self._tb_revolve)
-        m_create.addAction("&Hole… (Ctrl+H)", self.action_hole)
-        m_create.addAction("S&weep… (W)", self.action_sweep)
-        m_create.addAction("&Loft… (Ctrl+L)", self.action_loft)
-        btn("extrude", "Extrude — sweep a sketch profile into a solid",
-            menu=m_create)
-        m_pat = QMenu(tb)
-        m_pat.addAction(self.act_linpat)
-        m_pat.addAction(self.act_cirpat)
-        m_pat.addAction(self.act_mirror)
-        btn("pattern", "Pattern & mirror — replicate features", menu=m_pat)
-        btn("cpattern", "Circular pattern…",
-            lambda checked=False: self.action_circular_pattern())
-        sep()
-        m_mod = QMenu(tb)
-        m_mod.addAction(self.act_fillet)
-        m_mod.addAction(self.act_chamfer)
-        m_mod.addAction(self.act_shell)
-        btn("fillet", "Fillet — round every sharp edge of the body",
-            menu=m_mod)
+        s = r.sketch_tool
+        for glyph, tip, tool in (
+                ("rect", "Rectangle (R)", "rect"),
+                ("line", "Line (L)", "line"),
+                ("circle", "Circle (C)", "circle"),
+                ("slot", "Slot (O)", "slot"),
+                ("poly", "Polygon (Y)", "poly"),
+                ("arc", "Arc (A)", "arc")):
+            s(glyph, tip,
+              lambda checked=False, t=tool: self.sketch.set_tool(t))
+        r.sketch_sep()
+        s("trim", "Trim — close a corner between two selected lines (/)",
+          lambda checked=False: self.sketch.act_trim())
+        s("offset", "Offset — parallel copies of selected lines (U)",
+          lambda checked=False: self.sketch.act_offset())
+        s("construction", "Construction — toggle selected geometry (K)",
+          lambda checked=False: self.sketch.act_construction())
+        r.sketch_sep()
+        s("extrude", "Finish — extrude the profile (X)",
+          self._tb_extrude,
+          menu_actions=[("Revolve profile… (⇧R)", self._tb_revolve),
+                        ("Hole… (Ctrl+H)", self.action_hole),
+                        ("Sweep… (W)", self.action_sweep),
+                        ("Loft… (Ctrl+L)", self.action_loft)])
+
+    def _ribbon_tab(self, index: int):
+        """Design tab = leave to the model page (same path as the sketch
+        page's Back button); Sketch tab = start a sketch if none is open."""
+        if index == 0:
+            if self.stack.currentWidget() is not self.viewport:
+                self._show_page(self.viewport)
+        elif self.stack.currentWidget() is not self._sketch_page:
+            self.action_new_sketch()
 
     def _tb_extrude(self, checked=False):
         """Fusion flow: Extrude wants a profile. On the sketch page it
@@ -412,6 +433,8 @@ class MainWindow(QMainWindow):
 
     def _show_page(self, page):
         self.stack.setCurrentWidget(page)
+        if hasattr(self, "ribbon"):
+            self.ribbon.set_current(1 if page is self._sketch_page else 0)
         for a in getattr(self, "_sketch_conflicts", []):
             a.setEnabled(page is not self._sketch_page)
 

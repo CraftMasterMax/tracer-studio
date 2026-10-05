@@ -64,11 +64,12 @@ independent project with no Autodesk assets or affiliation.)
   Fusion orange**, **RGB axis triad docked bottom-left** (far axis
   dimmed), live cursor coordinates, **measure-on-pick — one face for its
   area, two for their gap & angle (perpendicular/parallel detected), body
-  volume & surface area always in the inspector**, an icon quick-toolbar,
+  volume & surface area always in the inspector**, a Fusion-style ribbon —
+  quick-access strip, Design/Sketch workspace tabs, grouped icon panels —
   a playhead timeline of icon chips, and a blue-grey horizon viewport —
   plus first-launch shortcut tour and a persistent Shortcuts tab driven by
   one canonical key table
-- 469 headless tests (EGL rendering + Qt pixel assertions)
+- 478 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -93,7 +94,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 469 tests, fully headless
+./.venv/bin/python -m pytest -q          # 478 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

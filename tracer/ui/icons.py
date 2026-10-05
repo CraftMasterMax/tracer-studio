@@ -111,6 +111,127 @@ _DRAW = {"sketch": _sketch, "extrude": _box, "revolve": _revolve,
          "fillet": _fillet, "chamfer": _chamfer}
 
 
+# ---- ribbon glyphs: generic geometry only (identity-safe) --------------------
+
+def _hole(p: QPainter):
+    p.drawEllipse(QPointF(16, 16), 7.5, 7.5)
+    p.drawLine(QPointF(5, 16), QPointF(27, 16))
+
+
+def _sweep(p: QPainter):
+    p.drawEllipse(QPointF(9, 16), 5, 5)
+    p.drawEllipse(QPointF(24, 13), 4, 4)
+    p.drawLine(QPointF(11, 12), QPointF(22, 10))
+    p.drawLine(QPointF(12, 20), QPointF(25, 16))
+
+
+def _loft(p: QPainter):
+    p.drawRect(QRectF(12, 7, 8, 6))
+    p.drawRect(QRectF(7, 20, 18, 6))
+    p.drawLine(QPointF(12, 13), QPointF(7, 20))
+    p.drawLine(QPointF(20, 13), QPointF(25, 20))
+
+
+def _shell(p: QPainter):
+    p.drawPolyline(QPolygonF([QPointF(8, 8), QPointF(8, 25),
+                              QPointF(25, 25), QPointF(25, 8)]))
+    p.drawRect(QRectF(13, 13, 7, 7))
+
+
+def _new(p: QPainter):
+    p.drawPolyline(QPolygonF([QPointF(9, 5), QPointF(19, 5),
+                              QPointF(24, 10), QPointF(24, 27),
+                              QPointF(9, 27), QPointF(9, 5)]))
+    p.drawLine(QPointF(19, 5), QPointF(19, 10))
+    p.drawLine(QPointF(19, 10), QPointF(24, 10))
+
+
+def _open(p: QPainter):
+    p.drawPolyline(QPolygonF([QPointF(5, 25), QPointF(5, 10),
+                              QPointF(13, 10), QPointF(16, 13),
+                              QPointF(27, 13), QPointF(27, 25),
+                              QPointF(5, 25)]))
+    p.drawLine(QPointF(5, 17), QPointF(27, 17))
+
+
+def _save(p: QPainter):
+    p.drawRect(QRectF(6, 6, 20, 20))
+    p.drawRect(QRectF(11, 6, 10, 7))
+    p.drawRect(QRectF(10, 16, 12, 10))
+
+
+def _undo(p: QPainter):
+    p.drawArc(QRectF(8, 9, 16, 14), 30 * 16, 230 * 16)
+    p.drawPolyline(QPolygonF([QPointF(8, 14), QPointF(8, 20),
+                              QPointF(14, 20)]))
+
+
+def _redo(p: QPainter):
+    p.drawArc(QRectF(8, 9, 16, 14), -80 * 16, 230 * 16)
+    p.drawPolyline(QPolygonF([QPointF(24, 14), QPointF(24, 20),
+                              QPointF(18, 20)]))
+
+
+def _line(p: QPainter):
+    p.drawLine(QPointF(8, 24), QPointF(24, 8))
+    p.drawEllipse(QPointF(8, 24), 1.6, 1.6)
+    p.drawEllipse(QPointF(24, 8), 1.6, 1.6)
+
+
+def _rect(p: QPainter):
+    p.drawRect(QRectF(7, 10, 18, 13))
+
+
+def _circle(p: QPainter):
+    p.drawEllipse(QPointF(16, 16), 8, 8)
+
+
+def _slot(p: QPainter):
+    p.drawRoundedRect(QRectF(6, 12, 20, 8), 4, 4)
+
+
+def _poly(p: QPainter):
+    p.drawPolyline(QPolygonF([QPointF(16, 6), QPointF(26, 13),
+                              QPointF(22, 25), QPointF(10, 25),
+                              QPointF(6, 13), QPointF(16, 6)]))
+
+
+def _arc(p: QPainter):
+    p.drawArc(QRectF(7, 7, 18, 18), 20 * 16, 120 * 16)
+    p.drawEllipse(QPointF(23, 11), 1.6, 1.6)
+    p.drawEllipse(QPointF(10, 22), 1.6, 1.6)
+
+
+def _trim(p: QPainter):
+    p.drawLine(QPointF(6, 20), QPointF(26, 10))
+    p.drawLine(QPointF(26, 22), QPointF(6, 12))
+    p.drawEllipse(QPointF(16, 16), 1.8, 1.8)
+
+
+def _offset(p: QPainter):
+    p.drawRect(QRectF(6, 8, 20, 16))
+    pen = QPen(_COL)
+    pen.setStyle(Qt.PenStyle.DashLine)
+    pen.setWidthF(1.4)
+    p.setPen(pen)
+    p.drawRect(QRectF(11, 12, 10, 8))
+
+
+def _construction(p: QPainter):
+    pen = QPen(_COL)
+    pen.setStyle(Qt.PenStyle.DashLine)
+    p.setPen(pen)
+    p.drawRect(QRectF(7, 9, 18, 14))
+
+
+_DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
+              "shell": _shell, "new": _new, "open": _open, "save": _save,
+              "undo": _undo, "redo": _redo, "line": _line, "rect": _rect,
+              "circle": _circle, "slot": _slot, "poly": _poly,
+              "arc": _arc, "trim": _trim, "offset": _offset,
+              "construction": _construction})
+
+
 def icon(name: str) -> QIcon:
     if name not in _DRAW:
         raise KeyError(f"no icon named {name!r}")
