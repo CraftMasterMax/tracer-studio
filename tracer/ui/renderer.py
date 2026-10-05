@@ -45,6 +45,7 @@ in vec3 v_bary;
 in vec3 v_mask;
 in float v_hi;
 uniform vec3 u_eye;
+uniform mat4 u_view;
 uniform vec3 u_base;
 uniform vec3 u_edge_col;
 uniform vec3 u_hi_hover;
@@ -63,21 +64,28 @@ float edge_amount() {
 void main() {
     vec3 N = normalize(v_nrm);
     vec3 V = normalize(u_eye - v_world);
-    vec3 L1 = normalize(vec3(0.35, 0.25, 1.0));           // key, warm-neutral
-    vec3 L2 = normalize(vec3(-0.6, -0.4, 0.35));          // fill, cool
-    float d1 = max(dot(N, L1), 0.0);
-    float d2 = max(dot(N, L2), 0.0);
-    vec3 H = normalize(L1 + V);
-    float spec = pow(max(dot(N, H), 0.0), 56.0) * 0.35;
-    vec3 hemi = mix(u_base * 0.45, u_base * 1.00, N.z * 0.5 + 0.5);
-    vec3 col = hemi + u_base * d1 * 0.55 + u_base * d2 * vec3(0.10, 0.13, 0.18)
-             + vec3(0.85, 0.90, 1.0) * spec;
-    col += vec3(0.10, 0.14, 0.20) * pow(1.0 - max(dot(N, V), 0.0), 3.0);  // rim
+    // Blender solid-mode studio: the lights are viewport-fixed, so the
+    // model reads the same from every orbit angle. Work in view space.
+    vec3 Nv = normalize(mat3(u_view) * N);
+    vec3 L1 = normalize(vec3(-0.35, 0.55, 0.75));    // key: up, camera side
+    vec3 L2 = normalize(vec3(0.65, -0.10, 0.42));    // wide soft side fill
+    float d1 = max(dot(Nv, L1), 0.0);
+    float d2 = max(dot(Nv, L2), 0.0);
+    vec3 hemi = mix(u_base * 0.36, u_base * 0.78, Nv.y * 0.5 + 0.5);
+    vec3 bounce = u_base * max(-Nv.y, 0.0) * 0.10;  // Blender's ground bounce
+    vec3 Hv = normalize(L1 + vec3(0.0, 0.0, 1.0));   // eye sits at +Z in view space
+    float spec = pow(max(dot(Nv, Hv), 0.0), 30.0) * 0.20    // soft studio gloss
+               + pow(d1, 4.0) * 0.06;                        // broad sheen
+    vec3 col = hemi + bounce + u_base * d1 * 0.35
+             + u_base * d2 * vec3(0.15, 0.15, 0.17)
+             + vec3(0.95, 0.96, 1.0) * spec;
+    col += vec3(0.06, 0.07, 0.09)
+         * pow(1.0 - max(dot(N, V), 0.0), 3.0);              // faint edge light
     if (v_hi > 0.75)       col = mix(col, u_hi_sel, 0.45);   // picked face
     else if (v_hi > 0.25)  col = mix(col, u_hi_hover, 0.25); // face under cursor
     if (u_show_edges == 1) {
         float e = clamp(edge_amount(), 0.0, 1.0);
-        col = mix(col, u_edge_col, e * 0.8);
+        col = mix(col, u_edge_col, e * 0.65);   // Blender outlines: dark, soft
     }
     frag = vec4(col, 1.0);
 }

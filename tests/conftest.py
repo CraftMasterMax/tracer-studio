@@ -1,6 +1,16 @@
 import os
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# Hard isolation for the desktop session (user's Hyprland must never see a
+# test window or XWayland wake-up): force Qt offscreen, drop the gtk3
+# platform theme (it reaches for X settings/XWayland from inside Qt
+# processes — that was thrashing the compositor), and remove every display
+# handle so even an accidental fallback (wayland client, GLX/X11, GTK)
+# fails inside the test process instead of reaching the session.
+# The real app is launched separately with its normal environment.
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+os.environ.pop("QT_QPA_PLATFORMTHEME", None)
+os.environ.pop("WAYLAND_DISPLAY", None)
+os.environ.pop("DISPLAY", None)
 
 
 # ---- browser helpers ---------------------------------------------------------

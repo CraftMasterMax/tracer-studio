@@ -62,7 +62,13 @@ X/Y/Z axes + three planes), `Bodies (1) ▸ Body 1 ▸ features+sketches
 nested`, `Sketches (n)`, `Construction (n)` — construction planes move
 from Origin to Construction; body visibility (bulb) toggle.
 
-**M44 — Viewport furniture.**  Origin point + axis arrows in-scene,
+**✓ M44 — Blender-style viewport shading (user request: "make the
+shading like the one blenders editor mode uses").**  Shipped:
+viewport-fixed studio lights (the model reads the same from every orbit
+angle), neutral grey body with ground bounce and soft gloss, graphite
+gradient that settles darker under the model.
+
+**M44b — Viewport furniture.**  Origin point + axis arrows in-scene,
 navigation widget by the ViewCube (fit / zoom in-out / fullscreen),
 ground/contact-shadow tuning.
 

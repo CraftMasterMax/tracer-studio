@@ -76,7 +76,7 @@ def _move(vp, pos):
 def test_fusionish_palette():
     assert "hi_hover" in DARK and "hi_sel" in DARK
     lum = lambda hx: sum(int(hx[i:i + 2], 16) for i in (1, 3, 5))
-    assert lum(DARK["sky_bottom"]) > lum(DARK["sky_top"])  # horizon brightens
+    assert lum(DARK["sky_top"]) > lum(DARK["sky_bottom"])  # Blender graphite: settles darker under the model
     assert DARK["bg0"] == "#2b2e33"            # blue-grey chrome
 
 

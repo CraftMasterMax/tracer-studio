@@ -18,16 +18,17 @@ DARK = {
     "accent_dim": "#2c6fb8",
     "danger": "#e06c75",
 
-    # viewport
-    "sky_top": "#2f343c",      # horizon gradient: dark steel above, lighter
-    "sky_bottom": "#5a6270",   # grey-blue under the model (CAD viewport look)
-    "grid_minor": (0.35, 0.38, 0.43),
-    "grid_major": (0.46, 0.50, 0.56),
+    # viewport — Blender solid-mode flavour: neutral graphite backdrop
+    # (brighter above, settling darker under the model), no blue cast
+    "sky_top": "#313133",      # horizon gradient: graphite top
+    "sky_bottom": "#1c1c1e",   # …deep graphite under the model
+    "grid_minor": (0.30, 0.30, 0.32),
+    "grid_major": (0.43, 0.43, 0.46),
     "axis_x": (0.87, 0.42, 0.44),
     "axis_y": (0.55, 0.80, 0.52),
     "axis_z": (0.44, 0.62, 0.95),
-    "solid_base": (0.70, 0.73, 0.78),
-    "solid_edge": (0.16, 0.18, 0.21),
+    "solid_base": (0.70, 0.70, 0.72),   # Blender's viewport grey: neutral
+    "solid_edge": (0.17, 0.17, 0.19),
     "hi_hover": (1.0, 0.78, 0.42),   # face under the cursor: pale orange
     "hi_sel": (1.0, 0.55, 0.0),      # picked face: Fusion orange
     "plane_line": (0.55, 0.72, 0.95),  # construction-plane quads
@@ -38,9 +39,9 @@ LIGHT = {
     "bg0": "#f5f6f8", "bg1": "#eceef1", "bg2": "#ffffff",
     "line": "#d5d9df", "fg": "#1f2328", "fg_dim": "#5c636e",
     "fg_faint": "#98a0ab", "accent": "#1f6feb", "accent_dim": "#4892ea",
-    "sky_top": "#e8eaee", "sky_bottom": "#d8dbe1",
-    "solid_base": (0.70, 0.73, 0.78),
-    "solid_edge": (0.25, 0.28, 0.32),
+    "sky_top": "#e9e9ea", "sky_bottom": "#d2d2d4",
+    "solid_base": (0.70, 0.70, 0.72),
+    "solid_edge": (0.30, 0.30, 0.33),
 }
 
 SP = 4  # base spacing unit

@@ -136,7 +136,10 @@ def test_coplanar_seams_are_not_drawn(renderer):
     cols = np.flatnonzero(fg.any(0))
     r0, r1 = int(rows[0]), int(rows[-1])
     c0, c1 = int(cols[0]), int(cols[-1])
-    dr, dc = int((r1 - r0) * 0.2), int((c1 - c0) * 0.2)
+    # M44 note: crop deep into the face — Blender-style belly shading puts
+    # legitimately dark pixels in the edge band (near side walls seen from
+    # above), and seam streaks would cross the centre anyway.
+    dr, dc = int((r1 - r0) * 0.35), int((c1 - c0) * 0.35)
     interior = img[r0 + dr:r1 - dr, c0 + dc:c1 - dc, :3].mean(2)
     n_dark = int((interior < 120).sum())
     assert n_dark == 0, f"{n_dark} dark pixels inside a flat face (seams?)"
