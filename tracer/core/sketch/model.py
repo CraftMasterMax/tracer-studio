@@ -13,10 +13,10 @@ import numpy as np
 
 from .entities import Point, Line, Circle, Arc, curve_radius, curve_center
 from .constraints import (Angle, AngleBetween, ArcMiddle, Coincident,
-                          Concentric, Distance, Equal, Fixed, Horizontal,
-                          Perpendicular, PointOnCircle, PointOnLine,
-                          Parallel, Radius, Symmetry, Tangent, Vertical,
-                          make_tangent)
+                          Collinear, Concentric, Distance, Equal, Fixed,
+                          Horizontal, Midpoint, Perpendicular,
+                          PointOnCircle, PointOnLine, Parallel, Radius,
+                          Symmetry, Tangent, Vertical, make_tangent)
 from .solver import Sketch, SolveResult
 
 # Sketch planes: (u_axis, v_axis) in world coords; extrude normal = u x v.
@@ -270,7 +270,7 @@ class SketchModel:
         elif ctype is Distance:
             a, b = (ents[0].a, ents[0].b) if isinstance(ents[0], Line) else ents[:2]
             self.constrain(Distance(a, b, math_dist(a, b)))
-        elif ctype in (Parallel, Perpendicular, Equal):
+        elif ctype in (Parallel, Perpendicular, Equal, Collinear, Midpoint):
             self.constrain(ctype(ents[0], ents[1]))
         elif ctype is Tangent:
             self.constrain(make_tangent(ents[0], ents[1]))
@@ -427,6 +427,12 @@ def model_to_dict(m: SketchModel) -> dict:
             cons.append({"t": "sym", "p": _add_pt(pts, idx, c.p1),
                          "q": _add_pt(pts, idx, c.p2),
                          "l": m.sketch.lines.index(c.axis)})
+        elif isinstance(c, Midpoint):
+            cons.append({"t": "mid", "p": _add_pt(pts, idx, c.p),
+                         "l": m.sketch.lines.index(c.line)})
+        elif isinstance(c, Collinear):
+            cons.append({"t": "col", "l1": m.sketch.lines.index(c.l1),
+                         "l2": m.sketch.lines.index(c.l2)})
     d = {"name": m.name, "plane": m.plane,
          "points": [[p.x, p.y] for p in pts],
          "lines": [[idx[l.a.id], idx[l.b.id], int(l.construction)]
@@ -532,4 +538,9 @@ def model_from_dict(d: dict) -> SketchModel:
         elif t == "sym":
             m.constrain(Symmetry(pts[c["p"]], pts[c["q"]],
                                  m.sketch.lines[c["l"]]))
+        elif t == "mid":
+            m.constrain(Midpoint(pts[c["p"]], m.sketch.lines[c["l"]]))
+        elif t == "col":
+            m.constrain(Collinear(m.sketch.lines[c["l1"]],
+                                  m.sketch.lines[c["l2"]]))
     return m

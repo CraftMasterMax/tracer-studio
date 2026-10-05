@@ -39,7 +39,7 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
     ("Sketching", [
         ("N", "New sketch (on origin plane or browser plane)", True),
         ("R", "Rectangle tool — click-click or drag", True),
-        ("L", "Line tool — click-move-click chains", True),
+        ("L", "Line tool — click-move-click chains · Collinear (2 lines)", True),
         ("C", "Circle tool", True),
         ("A", "Arc tool — start · end · bulge, chained", True),
         ("O", "Slot tool — centre · centre · width, tangent-locked", True),
@@ -70,6 +70,7 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("Q", "Equal constraint (lines → same length · curves → radius)", True),
         ("2", "Concentric constraint (two circles/arcs)", True),
         ("M", "Symmetry constraint (point · point · line axis)", True),
+        ("J", "Midpoint constraint (point + line → pin to center)", True),
         ("T", "Tangent constraint (line↔circle/arc, or two curves)", True),
         ("I", "Angular dimension (one line: from +X · two lines: between)", True),
         ("F", "Fix a point · fillet a corner with two lines selected", True),

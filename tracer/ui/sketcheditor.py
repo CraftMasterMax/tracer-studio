@@ -16,9 +16,9 @@ from PySide6.QtGui import (QColor, QFont, QKeyEvent, QMouseEvent, QPainter,
                            QPen, QWheelEvent)
 from PySide6.QtWidgets import QInputDialog, QWidget
 
-from ..core.sketch.constraints import (Angle, AngleBetween, Concentric,
-                                       Distance, Equal, Fixed,
-                                       Horizontal, Perpendicular,
+from ..core.sketch.constraints import (Angle, AngleBetween, Collinear,
+                                       Concentric, Distance, Equal, Fixed,
+                                       Horizontal, Midpoint, Perpendicular,
                                        PointOnCircle, PointOnLine, Radius,
                                        Symmetry, Tangent, Vertical,
                                        make_angle, make_angle_between,
@@ -618,6 +618,43 @@ class SketchCanvas(QWidget):
         self._solve(); self.update()
 
     @staticmethod
+    def midpoint_ok(sel) -> bool:
+        """point + line (a circle stands in for its centre)."""
+        if len(sel) != 2:
+            return False
+        lines = sum(isinstance(e, Line) for e in sel)
+        pts = sum(isinstance(e, (Point, Circle)) for e in sel)
+        return lines == 1 and pts == 1
+
+    def act_midpoint(self):
+        """Pin a point to the middle of a line (Fusion's Midpoint): the
+        line pivots about it while both ends stay free."""
+        if not self.midpoint_ok(self._sel):
+            return
+        line = next(e for e in self._sel if isinstance(e, Line))
+        pt = next((e for e in self._sel if isinstance(e, Point)),
+                  None) or next(e for e in self._sel
+                                if isinstance(e, Circle)).c
+        self._push_hist()
+        self.model.toggle(Midpoint, (pt, line))
+        self._solve(); self.update()
+
+    @staticmethod
+    def collinear_ok(sel) -> bool:
+        """exactly two lines."""
+        return len(sel) == 2 and all(isinstance(e, Line) for e in sel)
+
+    def act_collinear(self):
+        """Merge two segments onto one infinite line (Fusion's Collinear)
+        — the two-segment top edge of a bracket reads as one datum."""
+        if not self.collinear_ok(self._sel):
+            return
+        l1, l2 = self._sel
+        self._push_hist()
+        self.model.toggle(Collinear, (l1, l2))
+        self._solve(); self.update()
+
+    @staticmethod
     def tangent_ok(sel) -> bool:
         """line + curve or curve + curve — the pairs tangent can relate."""
         curves = sum(isinstance(e, (Circle, Arc)) for e in sel)
@@ -792,6 +829,7 @@ class SketchCanvas(QWidget):
         elif len(sel) == 2 and all(isinstance(e, Line) for e in sel):
             menu.addAction("Perpendicular", self.act_perp)
             menu.addAction("Equal length", self.act_equal)
+            menu.addAction("Collinear", self.act_collinear)
             menu.addAction("Angle between…", self.act_angle)
             if any(p in (sel[1].a, sel[1].b) for p in (sel[0].a, sel[0].b)):
                 menu.addAction("Fillet corner…", self.act_fillet)
@@ -810,6 +848,8 @@ class SketchCanvas(QWidget):
             menu.addAction("Dimension…", self.act_dim)
         elif self.on_ok(sel):
             menu.addAction("On curve", self.act_on)
+            if self.midpoint_ok(sel):
+                menu.addAction("Midpoint", self.act_midpoint)
         elif self.sym_ok(sel):
             menu.addAction("Symmetric about line", self.act_symmetry)
         elif len(sel) == 1 and isinstance(sel[0], Circle):
@@ -856,6 +896,8 @@ class SketchCanvas(QWidget):
             return
         if k == Qt.Key_S:
             self.set_tool("select")
+        elif k == Qt.Key_L and self.collinear_ok(sel):
+            self.act_collinear()
         elif k == Qt.Key_L:
             self.set_tool("line")
         elif k == Qt.Key_R and ev.modifiers() & Qt.ShiftModifier:
@@ -913,6 +955,8 @@ class SketchCanvas(QWidget):
             self.act_concentric()
         elif k == Qt.Key_M:
             self.act_symmetry()
+        elif k == Qt.Key_J:
+            self.act_midpoint()
         elif k == Qt.Key_K:
             self.act_construction()
         else:
@@ -1143,6 +1187,8 @@ class SketchCanvas(QWidget):
             elif isinstance(c, Symmetry):
                 m = self.w2s((c.p1.x + c.p2.x) / 2, (c.p1.y + c.p2.y) / 2)
                 self._badge(p, m, "S")
+            elif isinstance(c, Midpoint):
+                self._badge(p, self.w2s(c.p.x, c.p.y), "\u25c7")   # ◇
             elif isinstance(c, Tangent):
                 pt = self._tangent_point(c)
                 if pt is not None:
@@ -1330,8 +1376,8 @@ class SketchCanvas(QWidget):
         if self._cursor is not None:
             cx, cy = self._cursor
             lines.append((f"X {cx:.2f}   Y {cy:.2f} mm", DIM))
-        tool = {"select": ("Select (S/L/R/C/O/Y/A) · H/V/F/D/Q/T/I constraints · "
-                           "/ trim · . on-curve · X extrude"),
+        tool = {"select": ("Select (S/L/R/C/O/Y/A) · H/V/F/D/Q/T/I/J/M "
+                           "constraints · / trim · . on-curve · X extrude"),
                 "line": "Line — click points, Enter/Esc stops",
                 "rect": "Rectangle — drag corners or click · move · click",
                 "circle": "Circle — drag from center or click · move · click",

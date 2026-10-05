@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M40**
+**Status: M41**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -16,7 +16,9 @@ independent project with no Autodesk assets or affiliation.)
   coincident/H/V/parallel/perp/equal(len **or radius**)/point-on-line/
   **on-curve: point on line/circle/arc (point + curve, .)**/
   distance/**radius (arc & circle)**/**tangent (line↔curve, curve↔curve)**/
-  **concentric (curves)**/**symmetric points about a line (M)**/**angular dimensions
+  **concentric (curves)**/**symmetric points about a line (M)**/**midpoint —
+  pin a point to a segment's centre (J)** /**collinear — two segments on one
+  line (L with two lines selected)**/**angular dimensions
   (line or between two, arc + editable badge)** constraints, editable
   dimension badges, snap to origin/axes, construction geometry, **corner
   fillet (F on two lines): trims the corner to a tangent arc that stays
@@ -73,7 +75,7 @@ independent project with no Autodesk assets or affiliation.)
   a playhead timeline of icon chips, and a blue-grey horizon viewport —
   plus first-launch shortcut tour and a persistent Shortcuts tab driven by
   one canonical key table
-- 488 headless tests (EGL rendering + Qt pixel assertions)
+- 499 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -92,7 +94,7 @@ cancel, release to commit) · **double-click a face** to sketch on it ·
 **F** fit ·
 **G** grid · **E** edges · **0/1/2/3** iso/front/top/right.
 Sketch: **N** new sketch · **S/L/R/C/O/Y/A** line/rect/circle/slot/polygon/arc · **D**
-dimension · **H/V/F/G/T/I/M/2** constraints · **/** trim-to-corner · **X** extrude · **Ctrl+Z** undo.
+dimension · **H/V/F/G/T/I/J/M/2** constraints · **/** trim-to-corner · **X** extrude · **Ctrl+Z** undo.
 Full list: **?** / the Shortcuts tab.
 
 ## Test it

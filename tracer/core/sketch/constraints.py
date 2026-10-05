@@ -198,6 +198,45 @@ class PointOnCircle(Constraint):
 
 
 @dataclass
+class Midpoint(Constraint):
+    """A point pinned to the middle of a line — Fusion's Midpoint. Two
+    scalar rows via expand(), one per axis, like Coincident."""
+    p: Point
+    line: Line
+    axis: int = 0
+
+    def entities(self): return [self.p, self.line]
+
+    def residual(self, pos):
+        mx = (self.line.a.x + self.line.b.x) / 2
+        my = (self.line.a.y + self.line.b.y) / 2
+        return ((self.p.x - mx) if self.axis == 0
+                else (self.p.y - my)) / _LEN_SCALE
+
+
+@dataclass
+class Collinear(Constraint):
+    """Two line segments share one infinite line: parallel (row 0) plus
+    l2's start ON l1 (row 1) — with the directions parallel, that pins
+    the whole segment. expand() supplies both rows, like Coincident."""
+    l1: Line
+    l2: Line
+    row: int = 0
+
+    def entities(self): return [self.l1, self.l2]
+
+    def residual(self, pos):
+        d1 = _unit(np.array([self.l1.b.x - self.l1.a.x,
+                             self.l1.b.y - self.l1.a.y]))
+        if self.row == 0:
+            d2 = np.array([self.l2.b.x - self.l2.a.x,
+                           self.l2.b.y - self.l2.a.y])
+            return float(d1[0] * d2[1] - d1[1] * d2[0])
+        v = np.array([self.l2.a.x - self.l1.a.x, self.l2.a.y - self.l1.a.y])
+        return float(d1[0] * v[1] - d1[1] * v[0]) / _LEN_SCALE
+
+
+@dataclass
 class Symmetry(Constraint):
     """p1 and p2 mirror across the (infinite) axis line: the chord's
     midpoint lies ON the axis (row 0) and the chord is PERPENDICULAR to
@@ -387,6 +426,12 @@ def expand(constraints: list[Constraint]) -> list[Constraint]:
         elif isinstance(c, Symmetry):
             out.append(Symmetry(c.p1, c.p2, c.axis, row=0))
             out.append(Symmetry(c.p1, c.p2, c.axis, row=1))
+        elif isinstance(c, Midpoint):
+            out.append(Midpoint(c.p, c.line, axis=0))
+            out.append(Midpoint(c.p, c.line, axis=1))
+        elif isinstance(c, Collinear):
+            out.append(Collinear(c.l1, c.l2, row=0))
+            out.append(Collinear(c.l1, c.l2, row=1))
         elif isinstance(c, Fixed):
             if c.x is not None:
                 out.append(Fixed(c.p, x=c.x, y=c.y, axis=0))

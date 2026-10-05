@@ -736,7 +736,7 @@ class MainWindow(QMainWindow):
         self._begin_sketch(model)
         self.status.showMessage(f"Sketching on {plane} — R rect · L line · C circle · "
                                 "O slot · Y polygon · A arc · "
-                                "H/V/F/G/D/P/Q/T/I/M/2 constraints · "
+                                "H/V/F/G/D/P/Q/T/I/J/M/2 constraints · "
                                 "/ trim · . on-curve · U offset · W sweep · "
                                 "K construction · "
                                 "X extrude · Esc select")
