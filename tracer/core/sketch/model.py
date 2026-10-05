@@ -172,6 +172,73 @@ class SketchModel:
                        *[Equal(edges[0], e) for e in edges[1:]])
         return edges
 
+    def add_offset(self, dist: float) -> list:
+        """Fusion's Offset Entities (mitre variant): a parallel copy of
+        the sketch's single closed line loop at signed distance `dist`
+        (outward positive).  Each edge shifts along its own outward
+        normal; neighbours meet where the shifted edges cross, so convex
+        corners stretch and concave corners close in exactly like the
+        original.  Guarded against offsets that collapse or flip the
+        outline; refuses arc/circle geometry (v1) and holed outlines."""
+        if self.sketch.circles or self.sketch.arcs:
+            raise ValueError("Offset works on straight-edge sketches "
+                             "for now")
+        loops, warns = self.to_loops()
+        if len(loops) != 1:
+            raise ValueError("Offset needs exactly one closed outline "
+                             "to copy")
+        if loops[0].get("holes"):
+            raise ValueError("Offset of outlines with holes is not "
+                             "supported yet")
+        pts = np.asarray(loops[0]["points"], float)
+        n = len(pts)
+        d = float(dist)
+        if n < 3 or abs(d) < 1e-9:
+            return []
+
+        def cr2(u, v):                       # numpy 2 has no 2-D np.cross
+            return u[0] * v[1] - u[1] * v[0]
+
+        # work CCW so the right-hand edge normal points outward
+        shoelace = 0.5 * sum(cr2(pts[i], pts[(i + 1) % n])
+                             for i in range(n))
+        if shoelace < 0:
+            pts = pts[::-1]
+        offs = []
+        for i in range(n):
+            a, b = pts[i], pts[(i + 1) % n]
+            e = b - a
+            L = float(np.hypot(*e))
+            if L < 1e-9:
+                continue
+            nu = np.array([e[1], -e[0]]) / L        # outward (right) normal
+            offs.append((a + d * nu, b + d * nu))
+        m = len(offs)
+        if m < 3:
+            return []
+        corners = []
+        for i in range(m):                          # mitre = edge crossings
+            (a0, b0), (a1, b1) = offs[i - 1], offs[i]
+            e0, e1 = b0 - a0, b1 - a1
+            cr = cr2(e0, e1)
+            if abs(cr) < 1e-9:                      # collinear neighbours
+                corners.append(a1)
+                continue
+            t = float(cr2(a1 - a0, e1) / cr)
+            corners.append(a0 + t * e0)
+        area = 0.5 * sum(cr2(corners[i], corners[(i + 1) % m])
+                         for i in range(m))
+        if area <= 1e-9:
+            raise ValueError("this offset collapses or flips the outline "
+                             "— choose a smaller distance")
+        for i in range(m):
+            if np.hypot(*(corners[i] - corners[(i + 1) % m])) < 1e-9:
+                raise ValueError("this offset pinches an edge shut — "
+                                 "choose a smaller distance")
+        sk = self.sketch
+        ps = [sk.point(float(p[0]), float(p[1])) for p in corners]
+        return [sk.line(ps[i], ps[(i + 1) % m]) for i in range(m)]
+
     # ---- constraints ------------------------------------------------------
     def constrain(self, *cs: object):
         self.sketch.constrain(*cs)

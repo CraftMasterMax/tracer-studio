@@ -665,6 +665,31 @@ class SketchCanvas(QWidget):
         self._sel = []
         self._solve(); self.update()
 
+    def act_offset(self):
+        """Copy the whole outline with a parallel offset (Fusion's
+        Offset Entities): a mitred twin loop at signed distance, outward
+        positive — walls, ribs and clearance rings from any closed
+        straight-edge outline."""
+        from PySide6.QtWidgets import QInputDialog
+        if self.model is None:
+            return
+        v, ok = QInputDialog.getDouble(self, "Offset",
+                                       "Distance (mm, negative = inward):",
+                                       3.0, -10000.0, 10000.0, 2)
+        if not ok:
+            return
+        self._push_hist()
+        try:
+            self.model.add_offset(v)
+        except ValueError as e:
+            self._hist.pop()                      # nothing was mutated
+            self._warn(str(e))
+            return
+        self._sel = []
+        self.set_tool("select")
+        self._solve()
+        self.update()
+
     def _corner_op(self, title, label, apply):
         """Shared plumbing for fillet/chamfer: two selected lines sharing a
         corner, a size dialog defaulted from the shorter leg, and refusals
@@ -773,6 +798,9 @@ class SketchCanvas(QWidget):
                 menu.addAction("Chamfer corner…", self.act_chamfer)
             else:
                 menu.addAction("Trim / extend to corner", self.act_trim)
+        elif not sel and self.model and (self.model.sketch.lines
+                                         or self.model.sketch.circles):
+            menu.addAction("Offset outline\u2026 (U)", self.act_offset)
         elif self.tangent_ok(sel):
             menu.addAction("Tangent", self.act_tangent)
             if all(isinstance(e, (Circle, Arc)) for e in sel):
@@ -843,6 +871,8 @@ class SketchCanvas(QWidget):
             self.set_tool("slot")
         elif k == Qt.Key_Y and not sel:
             self.set_tool("poly")
+        elif k == Qt.Key_U and not sel:
+            self.act_offset()
         elif k == Qt.Key_Return and self._tool == "line":
             self._line_start = None
             self.set_tool("select")

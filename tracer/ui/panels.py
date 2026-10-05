@@ -13,7 +13,7 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
                              MirrorFeature, PrimitiveFeature, RevolveFeature,
-                             ShellFeature)
+                             ShellFeature, SweepFeature)
 
 _OP_GLYPH = {"union": "+", "subtract": "−", "intersect": "∩"}
 
@@ -68,6 +68,7 @@ class FeatureTree(QTreeWidget):
             kind = ("\u21bb" if isinstance(f, RevolveFeature)
                     else "\u2300" if isinstance(f, HoleFeature)
                     else "\u25a4" if isinstance(f, ShellFeature)
+                    else "\u223f" if isinstance(f, SweepFeature)
                     else "\u25c8" if isinstance(f, ImportedFeature)
                     else "\u25e7" if isinstance(f, MirrorFeature)
                     else "\u2312" if fillet                    # arc = fillet/chamfer
@@ -158,6 +159,14 @@ class PropertiesPanel(QWidget):
             if feature.cs_radius > feature.radius:
                 lines.append(f"countersink: Ø{2 * feature.cs_radius:g} at "
                              f"{feature.cs_angle:g}°")
+        elif isinstance(feature, SweepFeature):
+            import math as _m
+            pts = feature.path
+            length = sum(_m.dist(pts[i], pts[i + 1])
+                         for i in range(len(pts) - 1)) if len(pts) > 1 else 0.0
+            lines.append(f"profile: Ø{2 * feature.radius:g} circle")
+            lines.append(f"path: {length:.1f} mm "
+                         + ("closed ring" if feature.closed else "open"))
         elif isinstance(feature, ShellFeature):
             lines.append(f"wall thickness: {feature.thickness:g} mm")
             lines.append(f"faces removed: {len(feature.openings)}")

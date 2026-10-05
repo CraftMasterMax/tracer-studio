@@ -18,7 +18,7 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
                              MirrorFeature, PrimitiveFeature, RevolveFeature,
-                             ShellFeature)
+                             ShellFeature, SweepFeature)
 from ..core.measure import describe, face_stats
 from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
                                  model_to_dict, plane_uv)
@@ -267,6 +267,7 @@ class MainWindow(QMainWindow):
         m_create.addAction("E&xtrude profile… (X)", self._tb_extrude)
         m_create.addAction("&Revolve profile… (⇧R)", self._tb_revolve)
         m_create.addAction("&Hole… (Ctrl+H)", self.action_hole)
+        m_create.addAction("S&weep… (W)", self.action_sweep)
         btn("extrude", "Extrude — sweep a sketch profile into a solid",
             menu=m_create)
         m_pat = QMenu(tb)
@@ -343,8 +344,10 @@ class MainWindow(QMainWindow):
                                    triggered=lambda: self.sketch.finish(revolve=True))
         self.act_hole = QAction("&Hole…", self, shortcut="Ctrl+H",
                                 triggered=lambda checked=False: self.action_hole())
+        self.act_sweep = QAction("S&weep…", self, shortcut="W",
+                                 triggered=lambda checked=False: self.action_sweep())
         m_sk.addActions([self.act_new_sketch, self.act_extrude,
-                         self.act_revolve, self.act_hole])
+                         self.act_revolve, self.act_hole, self.act_sweep])
 
         m_cr = self.menuBar().addMenu("C&reate")
         self.act_linpat = QAction("&Linear pattern…", self,
@@ -640,7 +643,8 @@ class MainWindow(QMainWindow):
         self.status.showMessage(f"Sketching on {plane} — R rect · L line · C circle · "
                                 "O slot · Y polygon · A arc · "
                                 "H/V/F/G/D/P/Q/T/I/M/2 constraints · "
-                                "/ trim · . on-curve · K construction · "
+                                "/ trim · . on-curve · U offset · W sweep · "
+                                "K construction · "
                                 "X extrude · Esc select")
 
     def _start_sketch_on_face(self, point, normal):
@@ -663,11 +667,17 @@ class MainWindow(QMainWindow):
         if sid is not None:
             hole_owns = any(isinstance(f, HoleFeature) and f.sid == sid
                             for f in self.doc.features)
-            if hole_owns:
+            sweep_owns = any(isinstance(f, SweepFeature) and f.sid == sid
+                             for f in self.doc.features)
+            owns = hole_owns or sweep_owns
+            if owns:
                 self._capture()
+            if hole_owns:
                 self._sync_holes(sid, payload)
+            if sweep_owns:
+                self._sync_sweeps(sid, payload)
             self._update_sketch_features(sid, profiles, payload,
-                                         capture=not hole_owns)
+                                         capture=not owns)
             self.sketch.set_model(SketchModel())     # committed: clear editor
             self._show_page(self.viewport)
             self.recompute()
@@ -915,6 +925,77 @@ class MainWindow(QMainWindow):
             changed = True
         return changed
 
+    def action_sweep(self):
+        """Fusion Sweep (v1: circular profile): the sketch's circle sweeps
+        along its loose line/arc chain — tubes, handles, rods, gaskets."""
+        if self.doc is None:
+            return
+        m = self.sketch.model
+        if m is None:
+            QMessageBox.information(
+                self, "Sweep",
+                "Sweep runs from a sketch: draw ONE circle (the profile) "
+                "plus a connected chain of lines and/or arcs (the path).")
+            return
+        from ..core.sweep import path_chain
+        try:
+            pts, closed = path_chain(m)
+        except ValueError as e:
+            QMessageBox.warning(self, "Sweep", str(e))
+            return
+        r = float([c for c in m.sketch.circles
+                   if not c.construction][0].r)
+        payload = model_to_dict(m)
+        owned = [f for f in self.doc.features
+                 if isinstance(f, SweepFeature) and f.sid == m.sid]
+        self._capture()
+        if owned:                                   # re-sweep: update in place
+            f = owned[0]
+            for extra in owned[1:]:
+                self.doc.features.remove(extra)
+            f.radius, f.closed = r, bool(closed)
+            f.path = [list(map(float, p)) for p in pts]
+            f.name = f"Sweep Ø{2 * r:g}"
+            f.sketch = dict(payload)
+        else:
+            self.doc.add(SweepFeature(
+                name=f"Sweep Ø{2 * r:g}", radius=r,
+                path=[list(map(float, p)) for p in pts],
+                closed=bool(closed), plane=m.plane,
+                placement=tuple(map(float, m.origin)), axes=m.axes,
+                sketch=dict(payload), sid=m.sid))
+        self.recompute()
+        self.viewport.refresh(fit=True)
+        self.status.showMessage(
+            f"Swept Ø{2 * r:g} tube along the "
+            + ("closed path" if closed else "open path"), 5000)
+
+    def _sync_sweeps(self, sid, payload):
+        """Sketch re-edit committed: re-extract circle + path for sweeps
+        born from this sketch; drop them if the recipe stopped working."""
+        sweeps = [f for f in self.doc.features
+                  if isinstance(f, SweepFeature) and f.sid == sid]
+        if not sweeps:
+            return False
+        from ..core.sweep import path_chain
+        m = model_from_dict(payload)
+        try:
+            pts, closed = path_chain(m)
+            r = float([c for c in m.sketch.circles
+                       if not c.construction][0].r)
+        except (ValueError, IndexError):
+            for f in sweeps:                        # circle/path is gone
+                self.doc.features.remove(f)
+            return True
+        keep = sweeps[0]
+        for extra in sweeps[1:]:
+            self.doc.features.remove(extra)
+        keep.radius, keep.closed = r, bool(closed)
+        keep.path = [list(map(float, p)) for p in pts]
+        keep.name = f"Sweep Ø{2 * r:g}"
+        keep.sketch = dict(payload)
+        return True
+
     def _update_sketch_features(self, sid, profiles, payload, capture=True):
         """Re-edit: swap profiles in the features born from this sketch,
         keeping each one's height/angle; add/remove features to match."""
@@ -989,6 +1070,12 @@ class MainWindow(QMainWindow):
         hole.setToolTip("Drill every circle in this sketch into the solid")
         hole.clicked.connect(self.action_hole)
         bl.addWidget(hole)
+        sweep = QPushButton("Sweep… (W)")
+        sweep.setProperty("tb", True)
+        sweep.setToolTip("Sweep this sketch's circle along its line/arc "
+                         "path — tube, handle, rod")
+        sweep.clicked.connect(self.action_sweep)
+        bl.addWidget(sweep)
         self.sketch = SketchCanvas()
         self.sketch.profiles_ready.connect(self._on_profiles)
         lay.addWidget(bar)

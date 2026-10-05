@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M33**
+**Status: M35**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -23,10 +23,18 @@ independent project with no Autodesk assets or affiliation.)
   tangent when you drag**, **corner chamfer (G): its flat twin**, **trim /
   extend (/): two loose lines snap to their exact crossing and merge into
   one shared corner point (extend any distance, trim only a stub — T- and
-  X-junctions stay intact)**,
+  X-junctions stay intact)**, **offset outline (U): a mitred parallel
+  twin of the closed loop, outward ± — exact for straight edges, collapses
+  refused rather than mangled, and the nested twin extrudes as a walled
+  frame)**,
   Levenberg-Marquardt solver (SVD-damped)
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
-  revolve, **Shell (Modify menu): pick the face to remove, type a wall
+  revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
+  lines and arcs, open or a closed ring (true torus): tubes, handles,
+  rods; corners round over like bent tubing, volumes track Pappus'
+  theorem; rides a new loft engine that threads resampled, seam-aligned
+  cross-sections into watertight solids — the base M36's loft builds on**,
+  **Shell (Modify menu): pick the face to remove, type a wall
   thickness — the body hollows into an open case (moulded-style rounded
   inner corners, taller features on the deck never perforated)**,
   **Hole (Ctrl+H): every sketch circle drills a real hole —
@@ -52,7 +60,7 @@ independent project with no Autodesk assets or affiliation.)
   quick-toolbar, a playhead timeline of icon chips, and a blue-grey horizon
   viewport — plus first-launch shortcut tour and a persistent Shortcuts tab
   driven by one canonical key table
-- 378 headless tests (EGL rendering + Qt pixel assertions)
+- 434 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -75,7 +83,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 378 tests, fully headless
+./.venv/bin/python -m pytest -q          # 434 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

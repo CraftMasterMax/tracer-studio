@@ -293,6 +293,28 @@ class ShellFeature(Feature):
                           [(o[0], o[1]) for o in self.openings])
 
 
+@dataclass
+class SweepFeature(Feature):
+    """Sweep a circular profile along a drawn path (v1 profile: circle).
+    `path` stores the sampled 2D polyline in sketch coordinates, `closed`
+    turns it into an endless ring; stations are always circles so no
+    profile orientation is stored."""
+    radius: float = 3.0
+    path: list = field(default_factory=list)      # [[x, y], ...]
+    closed: bool = False
+    plane: str = "XY"
+    placement: tuple = (0.0, 0.0, 0.0)
+    axes: list | None = None
+    sketch: dict | None = None
+    sid: int | None = None
+
+    def build(self) -> Solid:
+        from .sweep import sweep_tube
+        s = sweep_tube(self.path, self.radius, self.closed)
+        return s.transformed(plane_matrix(self.plane, self.placement,
+                                          self.axes))
+
+
 class Document:
     def __init__(self, title: str = "Untitled"):
         self.title = title
@@ -460,6 +482,12 @@ class Document:
                 d.update(radius=float(f.radius), chamfer=bool(f.chamfer),
                          n_rims=int(f.n_rims), src_key=f.src_key,
                          res_verts=f.res_verts, res_faces=f.res_faces)
+            elif isinstance(f, SweepFeature):
+                d.update(radius=float(f.radius),
+                         path=[[float(x), float(y)] for x, y in f.path],
+                         closed=bool(f.closed), plane=f.plane,
+                         placement=list(map(float, f.placement)),
+                         axes=f.axes, sketch=f.sketch, sid=f.sid)
             elif isinstance(f, ShellFeature):
                 d.update(thickness=float(f.thickness),
                          openings=[[[float(x) for x in o[0]],
@@ -534,6 +562,15 @@ class Document:
                 doc.features.append(MirrorFeature(
                     name=fd["name"], source_uid=fd["source_uid"],
                     plane=fd["plane"], offset=float(fd["offset"]), **base))
+            elif t == "SweepFeature":
+                doc.features.append(SweepFeature(
+                    name=fd["name"], radius=float(fd["radius"]),
+                    path=[list(map(float, p)) for p in fd["path"]],
+                    closed=bool(fd.get("closed", False)),
+                    plane=fd.get("plane", "XY"),
+                    placement=tuple(fd.get("placement", (0.0, 0.0, 0.0))),
+                    axes=fd.get("axes"), sketch=fd.get("sketch"),
+                    sid=fd.get("sid"), **base))
             elif t == "ShellFeature":
                 doc.features.append(ShellFeature(
                     name=fd["name"], thickness=float(fd["thickness"]),
