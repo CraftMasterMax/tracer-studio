@@ -67,6 +67,24 @@ class RibbonBar(QWidget):
 
         row1 = QHBoxLayout()
         row1.setSpacing(1)
+
+        # Fusion's app-launcher slot: the mark at the far left whose menu
+        # is the primary file surface.  The ribbon owns the button; the
+        # host window attaches the menu (keeps app logic out of here).
+        self.launcher = QToolButton()
+        self.launcher.setObjectName("appLauncher")
+        self.launcher.setIcon(icons.icon("launcher"))
+        self.launcher.setIconSize(QSize(22, 22))
+        self.launcher.setToolTip("Tracer Studio menu")
+        self.launcher.setAutoRaise(True)
+        self.launcher.setPopupMode(QToolButton.InstantPopup)
+        self.launcher.setStyleSheet(
+            f"QToolButton {{ border-radius: 5px; padding: 2px; }}"
+            f" QToolButton:hover {{ background: {t['bg2']}; }}"
+            f" QToolButton::menu-indicator {{ image: none; }}")
+        row1.addWidget(self.launcher)
+        row1.addSpacing(6)
+
         self.quick = QWidget()
         q = QHBoxLayout(self.quick)
         q.setContentsMargins(0, 0, 0, 0)

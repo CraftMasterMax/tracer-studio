@@ -324,6 +324,27 @@ class MainWindow(QMainWindow):
                         ("Sweep… (W)", self.action_sweep),
                         ("Loft… (Ctrl+L)", self.action_loft)])
 
+        # app-launcher menu: Fusion's top-left file surface, sharing the
+        # very QActions from the menu bar so shortcuts/ids stay identical
+        lm = QMenu(self)
+        lm.setObjectName("launcherMenu")
+        lm.addActions([self.act_new, self.act_open, self.act_save,
+                       self.act_save_as])
+        lm.addSeparator()
+        lm.addAction(self.act_import)
+        lme = lm.addMenu("E&xport")
+        for a in self._export_acts:
+            lme.addAction(a)
+        lme.addSeparator()
+        lme.addAction(self.act_export_step_a)
+        lme.addAction(self.act_export_render_a)
+        lm.addSeparator()
+        lm.addAction(QAction("Keyboard &shortcuts", self,
+                             triggered=self.show_shortcuts))
+        lm.addSeparator()
+        lm.addAction(self.act_exit)
+        r.launcher.setMenu(lm)
+
     def _ribbon_tab(self, index: int):
         """Design tab = leave to the model page (same path as the sketch
         page's Back button); Sketch tab = start a sketch if none is open."""
@@ -369,19 +390,27 @@ class MainWindow(QMainWindow):
                            self.act_save_as])
         m_file.addSeparator()
         m_file.addAction(self.act_import)
+        # export actions are members: the ribbon launcher menu shares them
+        # (menus can't be shared, actions happily can)
+        self._export_acts = [
+            QAction(ext.upper().lstrip("."), self,
+                    triggered=lambda checked=False, e=ext: self.action_export(e))
+            for ext in (".stl", ".3mf", ".obj", ".ply")]
+        self.act_export_step_a = QAction("Export &STEP (.step)…", self,
+                                         triggered=self.action_export_step)
+        self.act_export_render_a = QAction(
+            "Export &render (PNG)…", self,
+            triggered=lambda checked=False: self.action_export_render())
         m_export = m_file.addMenu("&Export mesh")
-        for ext in (".stl", ".3mf", ".obj", ".ply"):
-            m_export.addAction(QAction(
-                ext.upper().lstrip("."), self,
-                triggered=lambda checked=False, e=ext: self.action_export(e)))
-        m_file.addAction(QAction("Export &STEP (.step)…", self,
-                                 triggered=self.action_export_step))
+        for a in self._export_acts:
+            m_export.addAction(a)
+        m_file.addAction(self.act_export_step_a)
         m_file.addSeparator()
-        m_file.addAction(QAction("Export &render (PNG)…", self,
-                                 triggered=lambda checked=False: self.action_export_render()))
+        m_file.addAction(self.act_export_render_a)
         m_file.addSeparator()
-        m_file.addAction(QAction("E&xit", self, shortcut=QKeySequence.Quit,
-                                 triggered=self.close))
+        self.act_exit = QAction("E&xit", self, shortcut=QKeySequence.Quit,
+                                triggered=self.close)
+        m_file.addAction(self.act_exit)
 
         m_sk = self.menuBar().addMenu("S&ketch")
         self.act_new_sketch = QAction("&New sketch", self, shortcut="N",

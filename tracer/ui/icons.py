@@ -240,6 +240,15 @@ def _constrain(p: QPainter):
     p.drawEllipse(QPointF(22.5, 16), 3.0, 3.0)
 
 
+def _launcher(p: QPainter):
+    """App mark: a rounded plate with parametric nodes (generic,
+    identity-safe — no third-party artwork)."""
+    p.drawRoundedRect(QRectF(6, 6, 20, 20), 5, 5)
+    p.setBrush(_COL)
+    for x, y in ((6, 6), (26, 6), (6, 26)):
+        p.drawEllipse(QPointF(x, y), 2.3, 2.3)
+
+
 def _dimension(p: QPainter):
     """Measured span: ticks, arrowheads, baseline."""
     p.drawLine(QPointF(5, 16), QPointF(27, 16))
@@ -257,7 +266,8 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "circle": _circle, "slot": _slot, "poly": _poly,
               "arc": _arc, "trim": _trim, "offset": _offset,
               "construction": _construction, "plane": _plane,
-              "constrain": _constrain, "dimension": _dimension})
+              "constrain": _constrain, "dimension": _dimension,
+              "launcher": _launcher})
 
 
 def icon(name: str) -> QIcon:

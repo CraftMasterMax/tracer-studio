@@ -78,8 +78,10 @@ all twelve geometric ties with their keys, dispatching late-bound into
 the sketcher's act_* methods (Draw ▸ Modify ▸ Dimension ▸ Constrain ▸
 Finish, Fusion's ordering).
 
-**M46 — App menu.**  Fusion's top-left launcher menu (New · Open ·
-Save · Export · Preferences · Exit) as the primary file surface.
+**✓ M46 — App menu.**  Shipped: launcher mark at the ribbon's far-left
+corner opens the primary file surface (New/Open/Save/Save As · Import ·
+Export ▸ all formats · Keyboard shortcuts · Exit) — the exact menu-bar
+QActions shared, so shortcuts and behaviour can never drift apart.
 
 **M47 — Command dialogs.**  One Fusion-style dialog shell (header
 strip, grouped fields, OK/Cancel, Remember Values) replacing scattered
