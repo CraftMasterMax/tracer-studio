@@ -224,12 +224,20 @@ def _construction(p: QPainter):
     p.drawRect(QRectF(7, 9, 18, 14))
 
 
+def _plane(p: QPainter):
+    p.drawPolyline(QPolygonF([QPointF(7, 22), QPointF(13, 10),
+                              QPointF(26, 10), QPointF(20, 22),
+                              QPointF(7, 22)]))
+    p.setPen(QPen(_COL, 1.2))
+    p.drawLine(QPointF(13, 10), QPointF(20, 22))
+
+
 _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "shell": _shell, "new": _new, "open": _open, "save": _save,
               "undo": _undo, "redo": _redo, "line": _line, "rect": _rect,
               "circle": _circle, "slot": _slot, "poly": _poly,
               "arc": _arc, "trim": _trim, "offset": _offset,
-              "construction": _construction})
+              "construction": _construction, "plane": _plane})
 
 
 def icon(name: str) -> QIcon:

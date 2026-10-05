@@ -155,6 +155,9 @@ class SceneRenderer:
         self._solid_data = None
         self._grid_vao: moderngl.VertexArray | None = None
         self._grid_count = 0
+        self._planes: list[dict] = []
+        self._plane_vao: moderngl.VertexArray | None = None
+        self._plane_count = 0
         self.show_grid = True
         self.show_edges = True
         self._grid_extent = 100.0
@@ -330,6 +333,44 @@ class SceneRenderer:
             if 2 * extent / step <= 60:
                 break
         self.set_grid(extent, step)
+        self._rebuild_planes()
+
+    # ---- construction planes ---------------------------------------------------
+    def set_planes(self, planes: list[dict]):
+        """Construction-plane quads (outline + faint cross), sized to the
+        model like the grid. Each dict carries origin/u/v axes."""
+        self._planes = list(planes)
+        self._rebuild_planes()
+
+    def _rebuild_planes(self):
+        if self._plane_vao is not None:
+            self._plane_vao.release()
+            self._plane_vao = None
+            self._plane_count = 0
+        if not self._planes:
+            return
+        e = max(self._grid_extent * 0.35, 20.0)     # quarter-grid squares
+        pr, pg, pb = self.palette["plane_line"]
+        lines: list = []
+
+        def add(p0, p1, rgba):
+            lines.extend([(*p0, *rgba), (*p1, *rgba)])
+
+        for pl in self._planes:
+            o = np.asarray(pl["origin"], float)
+            u = np.asarray(pl["u"], float)
+            v = np.asarray(pl["v"], float)
+            c = [o + sx * e * u + sy * e * v
+                 for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+            for i in range(4):                        # outline, solid edge
+                add(c[i], c[(i + 1) % 4], (pr, pg, pb, 0.85))
+            add(c[0], c[2], (pr, pg, pb, 0.35))       # diagonals, faint
+            add(c[1], c[3], (pr, pg, pb, 0.35))
+        arr = np.array(lines, np.float32)
+        buf = self.ctx.buffer(arr.tobytes())
+        self._plane_vao = self.ctx.vertex_array(
+            self._line_prog, [(buf, "3f 4f", "in_pos", "in_color")])
+        self._plane_count = len(arr)
 
     # ---- drawing --------------------------------------------------------------
     def render(self, camera: Camera, bbox: np.ndarray | None = None) -> np.ndarray:
@@ -366,6 +407,21 @@ class SceneRenderer:
             self._line_prog["u_fade"].value = (self._grid_extent * 0.78,
                                                self._grid_extent * 1.02)
             self._grid_vao.render(moderngl.LINES, vertices=self._grid_count)
+            c.disable(moderngl.BLEND)
+
+        # construction planes — reference geometry: always drawn, grid
+        # toggle or not (they belong to the model, not the ground)
+        if self._plane_vao is not None and self._plane_count:
+            c.enable(moderngl.DEPTH_TEST)
+            c.enable(moderngl.BLEND)
+            self._line_prog["u_view"].write(view.tobytes())
+            self._line_prog["u_proj"].write(proj.tobytes())
+            self._line_prog["u_center"].value = tuple(
+                float(t) for t in camera.target)
+            self._line_prog["u_fade"].value = (self._grid_extent * 0.78,
+                                               self._grid_extent * 1.02)
+            self._plane_vao.render(moderngl.LINES,
+                                   vertices=self._plane_count)
             c.disable(moderngl.BLEND)
 
         # solid

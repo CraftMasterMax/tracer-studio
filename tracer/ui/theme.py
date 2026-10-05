@@ -30,6 +30,7 @@ DARK = {
     "solid_edge": (0.16, 0.18, 0.21),
     "hi_hover": (1.0, 0.78, 0.42),   # face under the cursor: pale orange
     "hi_sel": (1.0, 0.55, 0.0),      # picked face: Fusion orange
+    "plane_line": (0.55, 0.72, 0.95),  # construction-plane quads
 }
 
 LIGHT = {

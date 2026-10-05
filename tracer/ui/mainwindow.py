@@ -63,6 +63,7 @@ class MainWindow(QMainWindow):
             lambda *_: self.rail.props.show_feature(self.rail.tree.current_feature()))
         self.rail.tree.itemDoubleClicked.connect(self._tree_activated)
         self.rail.tree.feature_menu.connect(self._feature_menu)
+        self.rail.tree.cplane_menu.connect(self._cplane_menu)
 
         split = QSplitter(Qt.Horizontal)
         split.addWidget(self.rail)
@@ -273,6 +274,9 @@ class MainWindow(QMainWindow):
           menu_actions=[self.act_fillet, self.act_chamfer, self.act_shell])
         d("shell", "Shell — hollow the body, open top face removed",
           lambda checked=False: self.action_shell())
+        r.design_sep()
+        d("plane", "Construction plane — offset work plane (Ctrl+Shift+P)",
+          lambda checked=False: self.action_construction_plane())
 
         s = r.sketch_tool
         for glyph, tip, tool in (
@@ -371,9 +375,13 @@ class MainWindow(QMainWindow):
                                  triggered=lambda checked=False: self.action_sweep())
         self.act_loft = QAction("&Loft…", self, shortcut="Ctrl+L",
                                 triggered=lambda checked=False: self.action_loft())
+        self.act_plane = QAction("Construction &plane…", self,
+                                 shortcut="Ctrl+Shift+P",
+                                 triggered=lambda checked=False:
+                                 self.action_construction_plane())
         m_sk.addActions([self.act_new_sketch, self.act_extrude,
                          self.act_revolve, self.act_hole, self.act_sweep,
-                         self.act_loft])
+                         self.act_loft, self.act_plane])
 
         m_cr = self.menuBar().addMenu("C&reate")
         self.act_linpat = QAction("&Linear pattern…", self,
@@ -467,6 +475,8 @@ class MainWindow(QMainWindow):
         kind, arg = role
         if kind == "plane":
             self.action_new_sketch(arg)
+        elif kind == "cplane":
+            self.action_sketch_on_plane(arg)
         elif kind == "sketch":
             self._feature_activated(self.doc.features[arg])
 
@@ -661,6 +671,62 @@ class MainWindow(QMainWindow):
         self.sketch.set_model(model)
         self._show_page(self._sketch_page)
         self._pick_tool("rect")     # most sketches start with a rectangle
+
+    def action_construction_plane(self):
+        """Fusion's Construct ▸ Plane: an offset copy of an origin plane,
+        ready to sketch on."""
+        if self.doc is None:
+            return
+        base, ok = QInputDialog.getItem(self, "Construction Plane",
+                                        "Offset from", ["XY", "XZ", "YZ"],
+                                        0, False)
+        if not ok:
+            return
+        dist, ok = QInputDialog.getDouble(
+            self, "Construction Plane", f"Distance from {base} (mm)",
+            10.0, -1e5, 1e5, 2)
+        if not ok:
+            return
+        p = self.doc.add_plane(base, dist)
+        self._unsaved = True
+        self.rail.tree.reload()
+        self.viewport.refresh()
+        self.status.showMessage(
+            f"{p['name']} at {dist:+g} mm from {base} — double-click it in "
+            "the browser to sketch on it", 6000)
+
+    def action_sketch_on_plane(self, name: str):
+        """Sketch on a construction plane: a FACE-frame sketch carrying
+        the plane's origin+basis, so X extrudes along the plane normal."""
+        if self.doc is None or not self._discard_guard():
+            return
+        p = next((q for q in self.doc.planes if q["name"] == name), None)
+        if p is None:
+            return
+        model = SketchModel(plane="FACE")
+        model.axes = [list(p["u"]), list(p["v"])]
+        model.origin = tuple(float(t) for t in p["origin"])
+        model.name = self._next_sketch_name()
+        self._begin_sketch(model)
+        self.status.showMessage(
+            f"Sketching on {p['name']} — draw, then X extrudes along its "
+            "normal")
+
+    def _cplane_menu(self, name, pos):
+        menu = QMenu(self)
+        menu.addAction("Sketch on plane",
+                       lambda: self.action_sketch_on_plane(name))
+        menu.addSeparator()
+        menu.addAction("Delete construction plane",
+                       lambda: self._delete_plane(name))
+        menu.exec_(pos)
+
+    def _delete_plane(self, name):
+        if self.doc and self.doc.remove_plane(name):
+            self._unsaved = True
+            self.rail.tree.reload()
+            self.viewport.refresh()
+            self.status.showMessage(f"Deleted {name}", 3000)
 
     def action_new_sketch(self, plane: str = "XY"):
         if self.doc is None or not self._discard_guard():

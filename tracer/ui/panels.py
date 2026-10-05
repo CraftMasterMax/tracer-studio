@@ -20,6 +20,7 @@ _OP_GLYPH = {"union": "+", "subtract": "−", "intersect": "∩"}
 
 class FeatureTree(QTreeWidget):
     feature_menu = Signal(object, object)   # Feature, global QPoint
+    cplane_menu = Signal(str, object)       # plane name, global QPoint
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -40,6 +41,8 @@ class FeatureTree(QTreeWidget):
             if idx < len(self._doc.features):
                 self.feature_menu.emit(self._doc.features[idx],
                                        self.viewport().mapToGlobal(pos))
+        elif role and role[0] == "cplane":
+            self.cplane_menu.emit(role[1], self.viewport().mapToGlobal(pos))
 
     def set_document(self, doc: Document):
         self._doc = doc
@@ -59,7 +62,11 @@ class FeatureTree(QTreeWidget):
             it = QTreeWidgetItem([pl])
             it.setData(0, Qt.UserRole, ("plane", pl[:2]))
             origin.addChild(it)
-        origin.setExpanded(False)
+        for pl in getattr(self._doc, "planes", []):   # ▭ construction planes
+            it = QTreeWidgetItem(["\u25ad " + pl["name"]])
+            it.setData(0, Qt.UserRole, ("cplane", pl["name"]))
+            origin.addChild(it)
+        origin.setExpanded(bool(getattr(self._doc, "planes", [])))
         for i, f in enumerate(self._doc.features):
             fillet = isinstance(f, BodyFilletFeature)
             glyph = ("\u25cb" if f.suppressed else            # suppressed wins

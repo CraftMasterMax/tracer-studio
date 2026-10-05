@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M38**
+**Status: M40**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -39,6 +39,10 @@ independent project with no Autodesk assets or affiliation.)
   offsets are the classic flow); square→square is an exact frustum,
   square→circle a watertight maker-grade blend; coplanar pairs refused
   with advice**,
+  **Construction Plane (Ctrl+Shift+P / ribbon Construct group): an offset
+  copy of an origin plane you can sketch on — double-click its ▭ browser
+  node under Origin and the solid lands exactly at the plane (basis rule
+  u×v = n; translucent-blue quad in the viewport)**,
   **Shell (Modify menu): pick the face to remove, type a wall
   thickness — the body hollows into an open case (moulded-style rounded
   inner corners, taller features on the deck never perforated)**,
@@ -69,7 +73,7 @@ independent project with no Autodesk assets or affiliation.)
   a playhead timeline of icon chips, and a blue-grey horizon viewport —
   plus first-launch shortcut tour and a persistent Shortcuts tab driven by
   one canonical key table
-- 478 headless tests (EGL rendering + Qt pixel assertions)
+- 488 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -94,7 +98,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 478 tests, fully headless
+./.venv/bin/python -m pytest -q          # 488 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

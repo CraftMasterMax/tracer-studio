@@ -340,12 +340,43 @@ class LoftFeature(Feature):
 
 
 class Document:
+    # Origin-plane normals with in-plane bases chosen so u × v = n:
+    # a sketch drawn on such a plane extrudes along its own normal.
+    _PLANE_BASES = {
+        "XY": ((0.0, 0.0, 1.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),
+        "XZ": ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0)),
+        "YZ": ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+    }
+
     def __init__(self, title: str = "Untitled"):
         self.title = title
         self.units = "mm"
         self.features: list[Feature] = []
+        self.planes: list[dict] = []      # construction planes (Construct ▸)
         self._result: Solid | None = None
         self.dirty = False
+
+    # ---- construction planes --------------------------------------------------
+    def add_plane(self, base: str, offset: float) -> dict:
+        """Offset copy of an origin plane (Fusion's Construct ▸ Plane)."""
+        n, u, v = self._PLANE_BASES[base]
+        k, taken = 1, {p["name"] for p in self.planes}
+        while f"Plane {k}" in taken:
+            k += 1
+        p = {"name": f"Plane {k}", "base": base, "offset": float(offset),
+             "origin": [c * float(offset) for c in n],
+             "u": list(u), "v": list(v), "n": list(n)}
+        self.planes.append(p)
+        self.dirty = True
+        return p
+
+    def remove_plane(self, name: str) -> bool:
+        before = len(self.planes)
+        self.planes = [p for p in self.planes if p["name"] != name]
+        if len(self.planes) != before:
+            self.dirty = True
+            return True
+        return False
 
     # ---- editing -------------------------------------------------------
     def add(self, feature: Feature) -> Feature:
@@ -540,7 +571,8 @@ class Document:
             return d
         return {"format": "tracer/document", "version": 2,
                 "title": self.title, "units": self.units,
-                "features": [_feat(f) for f in self.features]}
+                "features": [_feat(f) for f in self.features],
+                "planes": [dict(p) for p in self.planes]}
 
     @classmethod
     def from_dict(cls, data: dict) -> "Document":
@@ -643,5 +675,10 @@ class Document:
                     res_faces=fd.get("res_faces", []), **base))
             else:
                 raise ValueError(f"unknown feature type {t!r}")
+        for p in data.get("planes", []):          # pre-M40 files have none
+            if p.get("name") and p.get("origin"):
+                doc.planes.append({k: p[k] for k in
+                                   ("name", "base", "offset", "origin",
+                                    "u", "v", "n") if k in p})
         doc.dirty = True
         return doc
