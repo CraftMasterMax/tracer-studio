@@ -219,6 +219,8 @@ class LeftRail(QTabWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setMinimumWidth(220)          # values like "6,899.6 mm³"
+        self.setMaximumWidth(480)          # must not wrap word-per-line
         from .shortcuts import ShortcutsPage
         model = QWidget()
         lay = QVBoxLayout(model)

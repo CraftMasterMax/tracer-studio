@@ -11,7 +11,7 @@ import math
 
 import numpy as np
 import trimesh
-from PySide6.QtCore import Qt, QPoint, QRect, QSize, Signal
+from PySide6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, QSize, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QCursor
 from PySide6.QtWidgets import QWidget
 
@@ -20,6 +20,32 @@ from ..core.geometry import Solid
 from .camera import Camera
 from .renderer import SceneRenderer
 from .viewcube import ViewCube
+
+
+def draw_triad(p: QPainter, cam, w: float, h: float, palette: dict):
+    """Fusion's bottom-left RGB axis triad: world X/Y/Z as screen vectors
+    from a docked origin; the axis leading away from the viewer dims."""
+    ox, oy, L = 36.0, h - 32.0, 26.0
+    f = p.font()
+    f.setPointSize(8)
+    f.setBold(True)
+    p.setFont(f)
+    for lab, (dx, dyu), visible in cam.screen_axes():
+        r, g, b = palette["axis_" + lab.lower()]
+        col = QColor(int(r * 255), int(g * 255), int(b * 255))
+        if not visible:
+            col.setAlpha(88)
+        ex, ey = ox + dx * L, oy - dyu * L
+        pen = QPen(col, 2.2 if visible else 1.4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.drawLine(QPointF(ox, oy), QPointF(ex, ey))
+        p.setBrush(col)
+        p.setPen(QPen(col))
+        rr = 2.6 if visible else 1.7
+        p.drawEllipse(QPointF(ex, ey), rr, rr)
+        p.drawText(QRectF(ox + dx * (L + 12) - 8, oy - dyu * (L + 12) - 8,
+                          16, 16), Qt.AlignCenter, lab)
 
 
 class Viewport(QWidget):
@@ -111,6 +137,7 @@ class Viewport(QWidget):
             p.setPen(QPen(QColor(255, 255, 255, 220), 1, Qt.DashLine))
             p.setBrush(QColor(120, 170, 255, 24))
             p.drawRect(QRect(self._box[0], self._box[1]).normalized())
+        draw_triad(p, self._cam, self.width(), self.height(), self._r.palette)
         self._cube.place(self.width(), self.height())
         self._cube.draw(p, self._cam)
         p.end()

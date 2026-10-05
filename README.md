@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M37**
+**Status: M38**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -61,14 +61,14 @@ independent project with no Autodesk assets or affiliation.)
 - UX: Fusion mouse grammar — MMB pans, Shift+MMB/RMB orbit, wheel zooms
   toward the cursor, left-drag on empty space rubber-bands a selection
   (window/crossing) — ViewCube, **hover/whole-face selection tinting in
-  Fusion orange**
-  with live cursor coordinates, **measure-on-pick — click one face for its
-  area, two faces for their gap and angle (perpendicular/parallel detected);
-  the inspector always shows the body's volume & surface area**, an icon
-  quick-toolbar, a playhead timeline of icon chips, and a blue-grey horizon
-  viewport — plus first-launch shortcut tour and a persistent Shortcuts tab
-  driven by one canonical key table
-- 462 headless tests (EGL rendering + Qt pixel assertions)
+  Fusion orange**, **RGB axis triad docked bottom-left** (far axis
+  dimmed), live cursor coordinates, **measure-on-pick — one face for its
+  area, two for their gap & angle (perpendicular/parallel detected), body
+  volume & surface area always in the inspector**, an icon quick-toolbar,
+  a playhead timeline of icon chips, and a blue-grey horizon viewport —
+  plus first-launch shortcut tour and a persistent Shortcuts tab driven by
+  one canonical key table
+- 469 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -93,7 +93,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 462 tests, fully headless
+./.venv/bin/python -m pytest -q          # 469 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

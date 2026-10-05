@@ -25,6 +25,7 @@ DARK = {
     "grid_major": (0.46, 0.50, 0.56),
     "axis_x": (0.87, 0.42, 0.44),
     "axis_y": (0.55, 0.80, 0.52),
+    "axis_z": (0.44, 0.62, 0.95),
     "solid_base": (0.70, 0.73, 0.78),
     "solid_edge": (0.16, 0.18, 0.21),
     "hi_hover": (1.0, 0.78, 0.42),   # face under the cursor: pale orange

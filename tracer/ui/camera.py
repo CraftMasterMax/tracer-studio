@@ -74,6 +74,21 @@ class Camera:
                            radius * 20.0)
 
     # ---- interaction -------------------------------------------------------
+    def screen_axes(self):
+        """World X/Y/Z drawn as 2D vectors for the corner triad:
+        [(label, (dx_right, dy_up), visible)] — 'visible' is False when
+        the axis points away from the camera (the dimmed one)."""
+        v = self.view_matrix()
+        s, u = v[0, :3], v[1, :3]          # view basis right / up
+        f = -v[2, :3]                      # look_at stores −forward
+        out = []
+        for i, lab in enumerate("XYZ"):
+            e = np.zeros(3)
+            e[i] = 1.0
+            out.append((lab, (float(e @ s), float(e @ u)),
+                        bool(float(e @ f) < 0.15)))
+        return out
+
     def orbit(self, dx_px: float, dy_px: float, view_h_px: float):
         self.yaw += math.radians(dx_px * 0.4)
         self.pitch += math.radians(dy_px * 0.4)
