@@ -8,7 +8,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QScrollArea, QToolTip, QWidget
 
-from ..core.document import (BodyFilletFeature, Document,
+from ..core.document import (BodyFilletFeature, Document, LoftFeature,
                              ShellFeature, SweepFeature)
 
 OP_COLOR = {"union": "#4ea1ff", "subtract": "#e06c75", "intersect": "#a9b1bb"}
@@ -61,6 +61,8 @@ class TimelineBar(QWidget):
             return "\u25cb"
         if isinstance(f, SweepFeature):
             return "\u2933"
+        if isinstance(f, LoftFeature):
+            return "\u25b3"
         if isinstance(f, ShellFeature):
             return "\u25a4"
         if isinstance(f, BodyFilletFeature):

@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M35**
+**Status: M36**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -33,7 +33,12 @@ independent project with no Autodesk assets or affiliation.)
   lines and arcs, open or a closed ring (true torus): tubes, handles,
   rods; corners round over like bent tubing, volumes track Pappus'
   theorem; rides a new loft engine that threads resampled, seam-aligned
-  cross-sections into watertight solids — the base M36's loft builds on**,
+  cross-sections into watertight solids)**,
+  **Loft (Ctrl+L): pick two sketches — the closed profile of one blends
+  smoothly into the other's, any distance, any planes (sketch-on-face
+  offsets are the classic flow); square→square is an exact frustum,
+  square→circle a watertight maker-grade blend; coplanar pairs refused
+  with advice**,
   **Shell (Modify menu): pick the face to remove, type a wall
   thickness — the body hollows into an open case (moulded-style rounded
   inner corners, taller features on the deck never perforated)**,
@@ -60,7 +65,7 @@ independent project with no Autodesk assets or affiliation.)
   quick-toolbar, a playhead timeline of icon chips, and a blue-grey horizon
   viewport — plus first-launch shortcut tour and a persistent Shortcuts tab
   driven by one canonical key table
-- 434 headless tests (EGL rendering + Qt pixel assertions)
+- 448 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -83,7 +88,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 434 tests, fully headless
+./.venv/bin/python -m pytest -q          # 448 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

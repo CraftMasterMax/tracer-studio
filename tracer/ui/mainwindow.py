@@ -17,13 +17,14 @@ from ..core import step
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
-                             MirrorFeature, PrimitiveFeature, RevolveFeature,
-                             ShellFeature, SweepFeature)
+                             LoftFeature, MirrorFeature, PrimitiveFeature,
+                             RevolveFeature, ShellFeature, SweepFeature)
 from ..core.measure import describe, face_stats
 from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
                                  model_to_dict, plane_uv)
 from . import icons
 from .hole import HoleDialog
+from .loft import LoftDialog
 from .renderer import SceneRenderer
 from .panels import LeftRail
 from .shortcuts import TourDialog
@@ -268,6 +269,7 @@ class MainWindow(QMainWindow):
         m_create.addAction("&Revolve profile… (⇧R)", self._tb_revolve)
         m_create.addAction("&Hole… (Ctrl+H)", self.action_hole)
         m_create.addAction("S&weep… (W)", self.action_sweep)
+        m_create.addAction("&Loft… (Ctrl+L)", self.action_loft)
         btn("extrude", "Extrude — sweep a sketch profile into a solid",
             menu=m_create)
         m_pat = QMenu(tb)
@@ -346,8 +348,11 @@ class MainWindow(QMainWindow):
                                 triggered=lambda checked=False: self.action_hole())
         self.act_sweep = QAction("S&weep…", self, shortcut="W",
                                  triggered=lambda checked=False: self.action_sweep())
+        self.act_loft = QAction("&Loft…", self, shortcut="Ctrl+L",
+                                triggered=lambda checked=False: self.action_loft())
         m_sk.addActions([self.act_new_sketch, self.act_extrude,
-                         self.act_revolve, self.act_hole, self.act_sweep])
+                         self.act_revolve, self.act_hole, self.act_sweep,
+                         self.act_loft])
 
         m_cr = self.menuBar().addMenu("C&reate")
         self.act_linpat = QAction("&Linear pattern…", self,
@@ -669,13 +674,18 @@ class MainWindow(QMainWindow):
                             for f in self.doc.features)
             sweep_owns = any(isinstance(f, SweepFeature) and f.sid == sid
                              for f in self.doc.features)
-            owns = hole_owns or sweep_owns
+            loft_owns = any(isinstance(f, LoftFeature)
+                            and any(s.get("sid") == sid for s in f.sections)
+                            for f in self.doc.features)
+            owns = hole_owns or sweep_owns or loft_owns
             if owns:
                 self._capture()
             if hole_owns:
                 self._sync_holes(sid, payload)
             if sweep_owns:
                 self._sync_sweeps(sid, payload)
+            if loft_owns:
+                self._sync_lofts(sid, payload)
             self._update_sketch_features(sid, profiles, payload,
                                          capture=not owns)
             self.sketch.set_model(SketchModel())     # committed: clear editor
@@ -995,6 +1005,77 @@ class MainWindow(QMainWindow):
         keep.name = f"Sweep Ø{2 * r:g}"
         keep.sketch = dict(payload)
         return True
+
+    def _loft_candidates(self):
+        """Every sketch in the document with exactly one closed outline,
+        as [(sid, label, section-dict)] in feature order."""
+        from ..core.loft import section_from_payload
+        cands, seen = [], set()
+        for f in self.doc.features:
+            sid = getattr(f, "sid", None)
+            if sid is None or not getattr(f, "sketch", None) or sid in seen:
+                continue
+            try:
+                sec = section_from_payload(sid, f.sketch)
+            except ValueError:
+                continue          # this sketch has no single closed profile
+            seen.add(sid)
+            cands.append((sid, f.sketch.get("name") or f.name, sec))
+        return cands
+
+    def action_loft(self):
+        """Fusion Loft (v1): smoothly blend the closed profile of one
+        sketch into another's — base to top, any distance or plane."""
+        if self.doc is None:
+            return
+        cands = self._loft_candidates()
+        sids = LoftDialog.ask(self, [(s, label) for s, label, _ in cands])
+        if sids is None:
+            return
+        a, b = sids
+        if a == b:
+            QMessageBox.information(self, "Loft",
+                                    "Pick two DIFFERENT sketches to blend.")
+            return
+        by_sid = {s: sec for s, _label, sec in cands}
+        secs = [dict(by_sid[a]), dict(by_sid[b])]
+        name_a = next(l for s, l, _ in cands if s == a)
+        name_b = next(l for s, l, _ in cands if s == b)
+        try:                            # validate before touching history
+            LoftFeature(name="loft", sections=secs).build()
+        except ValueError as e:
+            QMessageBox.warning(
+                self, "Loft",
+                str(e) + " — the two profiles must sit on different planes "
+                         "(sketch-on-face gives the second one an offset).")
+            return
+        self._capture()
+        self.doc.add(LoftFeature(name=f"Loft {name_a} to {name_b}",
+                                 sections=secs))
+        self.recompute()
+        self.viewport.refresh(fit=True)
+        self.status.showMessage(f"Lofted {name_a} into {name_b}", 5000)
+
+    def _sync_lofts(self, sid, payload):
+        """A source sketch was re-edited: rebuild the loft's section for
+        it; drop lofts whose profile stopped being loftable."""
+        from ..core.loft import section_from_payload
+        changed = False
+        for f in list(self.doc.features):
+            if not isinstance(f, LoftFeature):
+                continue
+            if not any(s.get("sid") == sid for s in f.sections):
+                continue
+            try:
+                new = section_from_payload(sid, payload)
+            except ValueError:
+                self.doc.features.remove(f)      # its profile is gone
+                changed = True
+                continue
+            f.sections = [dict(new) if s.get("sid") == sid else s
+                          for s in f.sections]
+            changed = True
+        return changed
 
     def _update_sketch_features(self, sid, profiles, payload, capture=True):
         """Re-edit: swap profiles in the features born from this sketch,

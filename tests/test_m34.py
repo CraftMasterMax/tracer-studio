@@ -163,9 +163,28 @@ def _rect_sketch(win, qapp):
     win.new_document()
     win.action_new_sketch()                     # starts on the rect tool
     qapp.processEvents()
+    QTest.qWaitForWindowExposed(win)
+    QTest.qWait(25)                             # let the page settle its fit
     cv = win.sketch
-    _click(cv, qapp, 0, 0)
-    _click(cv, qapp, 40, 30)
+    for attempt in (0, 1):
+        _click(cv, qapp, 0, 0)
+        _click(cv, qapp, 40, 30)
+        qapp.processEvents()
+        lines = cv.model.sketch.lines
+        xs = [v for l in lines for v in (l.a.x, l.b.x)]
+        ys = [v for l in lines for v in (l.a.y, l.b.y)]
+        exact = (len(lines) == 4
+                 and round(min(xs or [0]), 6) == 0.0
+                 and round(max(xs or [0]), 6) == 40.0
+                 and round(min(ys or [0]), 6) == 0.0
+                 and round(max(ys or [0]), 6) == 30.0)
+        if exact or attempt:
+            return cv
+        # The view refit mid-click and knocked the corners off integers:
+        # redraw from a clean canvas now that the transform has settled.
+        cv.set_model(SketchModel())
+        cv.set_tool("rect")
+        qapp.processEvents()
     return cv
 
 

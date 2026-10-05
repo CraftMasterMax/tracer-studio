@@ -52,6 +52,8 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
          True),
         ("W", "Sweep — pipe the sketch's circle along its line/arc path",
          True),
+        ("Ctrl + L", "Loft — blend one sketch's profile into another's",
+         True),
         ("Ctrl + Z", "Undo last sketch step", True),
         ("Ctrl + Shift + Z", "Redo (or Ctrl + Y)", True),
         ("Double-click a badge", "Type a new dimension value", False),

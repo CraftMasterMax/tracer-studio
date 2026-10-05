@@ -13,7 +13,7 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
                              MirrorFeature, PrimitiveFeature, RevolveFeature,
-                             ShellFeature, SweepFeature)
+                             ShellFeature, SweepFeature, LoftFeature)
 
 _OP_GLYPH = {"union": "+", "subtract": "−", "intersect": "∩"}
 
@@ -69,6 +69,7 @@ class FeatureTree(QTreeWidget):
                     else "\u2300" if isinstance(f, HoleFeature)
                     else "\u25a4" if isinstance(f, ShellFeature)
                     else "\u223f" if isinstance(f, SweepFeature)
+                    else "\u25b3" if isinstance(f, LoftFeature)
                     else "\u25c8" if isinstance(f, ImportedFeature)
                     else "\u25e7" if isinstance(f, MirrorFeature)
                     else "\u2312" if fillet                    # arc = fillet/chamfer
@@ -159,6 +160,18 @@ class PropertiesPanel(QWidget):
             if feature.cs_radius > feature.radius:
                 lines.append(f"countersink: Ø{2 * feature.cs_radius:g} at "
                              f"{feature.cs_angle:g}°")
+        elif isinstance(feature, LoftFeature):
+            lines.append(f"loft through {len(feature.sections)} profile(s)")
+            for i, sec in enumerate(feature.sections):
+                pts = sec["outer"]
+                a = 0.5 * sum(
+                    pts[k][0] * pts[(k + 1) % len(pts)][1]
+                    - pts[(k + 1) % len(pts)][0] * pts[k][1]
+                    for k in range(len(pts)))
+                lines.append(f"profile {i + 1}: {len(pts)} pts, "
+                             f"area {abs(a):,.0f} mm\u00b2")
+            if feature.closed:
+                lines.append("ring loft (closed loop)")
         elif isinstance(feature, SweepFeature):
             import math as _m
             pts = feature.path

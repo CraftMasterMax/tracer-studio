@@ -92,3 +92,23 @@ def loft(sections: list[np.ndarray], n: int = 64, caps: bool = True,
         raise ValueError("these cross-sections do not form a valid solid "
                          "(try simpler convex profiles or more spacing)")
     return Solid(m)
+
+
+def section_from_payload(sid, payload) -> dict:
+    """The single closed outer loop of a sketch payload with its world
+    placement — the section record a LoftFeature blends through."""
+    from .sketch.model import model_from_dict
+    from .sketch.profile import regions
+    m = model_from_dict(payload)
+    name = payload.get("name", "this sketch")
+    loops, _w = m.to_loops()
+    if not loops:
+        raise ValueError(f"{name}: no closed profile — a loft section needs "
+                         "one closed outline")
+    regs = regions(list(loops))
+    if len(regs) != 1 or regs[0].get("holes"):
+        raise ValueError(f"{name}: a loft section needs exactly one closed "
+                         "outline with nothing inside it")
+    return dict(sid=sid, plane=m.plane,
+                placement=[float(x) for x in m.origin], axes=m.axes,
+                outer=np.asarray(regs[0]["points"], float).tolist())

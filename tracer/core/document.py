@@ -315,6 +315,30 @@ class SweepFeature(Feature):
                                           self.axes))
 
 
+@dataclass
+class LoftFeature(Feature):
+    """Blend between closed profiles drawn in two sketches — Fusion Loft.
+    Each section carries its own sketch placement (origin planes or
+    sketch-on-face) plus its single closed outer loop; the blend runs
+    through the resampled, seam-aligned loft engine. v1: two sections,
+    no holes inside either profile."""
+    sections: list = field(default_factory=list)
+    closed: bool = False       # ring loft: last section blends back to first
+
+    def build(self) -> Solid:
+        from .loft import loft
+        if len(self.sections) < 2:
+            raise ValueError(f"{self.name}: a loft needs at least two "
+                             "profiles")
+        secs = []
+        for s in self.sections:
+            m4 = plane_matrix(s["plane"], s["placement"], s.get("axes"))
+            pts = np.asarray(s["outer"], float)
+            h = np.column_stack([pts, np.zeros(len(pts))])
+            secs.append(h @ m4[:3, :3].T + m4[:3, 3])
+        return loft(secs, n=96, caps=not self.closed, loop=self.closed)
+
+
 class Document:
     def __init__(self, title: str = "Untitled"):
         self.title = title
@@ -482,6 +506,15 @@ class Document:
                 d.update(radius=float(f.radius), chamfer=bool(f.chamfer),
                          n_rims=int(f.n_rims), src_key=f.src_key,
                          res_verts=f.res_verts, res_faces=f.res_faces)
+            elif isinstance(f, LoftFeature):
+                d.update(closed=bool(f.closed),
+                         sections=[{"sid": s.get("sid"), "plane": s["plane"],
+                                    "placement": list(map(float,
+                                                          s["placement"])),
+                                    "axes": s.get("axes"),
+                                    "outer": [[float(x), float(y)]
+                                              for x, y in s["outer"]]}
+                                   for s in f.sections])
             elif isinstance(f, SweepFeature):
                 d.update(radius=float(f.radius),
                          path=[[float(x), float(y)] for x, y in f.path],
@@ -562,6 +595,17 @@ class Document:
                 doc.features.append(MirrorFeature(
                     name=fd["name"], source_uid=fd["source_uid"],
                     plane=fd["plane"], offset=float(fd["offset"]), **base))
+            elif t == "LoftFeature":
+                doc.features.append(LoftFeature(
+                    name=fd["name"], closed=bool(fd.get("closed", False)),
+                    sections=[{"sid": s.get("sid"),
+                               "plane": s.get("plane", "XY"),
+                               "placement": list(map(
+                                   float, s.get("placement", (0., 0., 0.)))),
+                               "axes": s.get("axes"),
+                               "outer": [list(map(float, p))
+                                         for p in s["outer"]]}
+                              for s in fd["sections"]], **base))
             elif t == "SweepFeature":
                 doc.features.append(SweepFeature(
                     name=fd["name"], radius=float(fd["radius"]),
