@@ -156,6 +156,63 @@ def test_empty_click_cancels_without_history(win, qapp):
     assert "cancelled" in win.status.currentMessage()
 
 
+def _block_copy(win, qapp):
+    win.new_document()
+    win.doc.add(PrimitiveFeature(name="cube", kind="box",
+                                 dims={"dx": 20, "dy": 20, "dz": 20}))
+    win.recompute()
+    win.viewport.refresh(fit=True)
+    qapp.processEvents()
+
+
+def test_move_copy_feature_unions_the_twin():
+    d = Document("dup")
+    d.add(PrimitiveFeature(name="cube", kind="box",
+                           dims={"dx": 20, "dy": 20, "dz": 20}))
+    d.add(MoveFeature(name="Copy", vec=(50.0, 0.0, 0.0), copy=True))
+    s = d.recompute()
+    assert s.volume == pytest.approx(2 * 8000, rel=1e-6)
+    assert s.to_trimesh().is_watertight
+
+
+def test_move_copy_flag_json_round_trip():
+    d = Document("dup")
+    d.add(PrimitiveFeature(name="cube", kind="box",
+                           dims={"dx": 10, "dy": 10, "dz": 10}))
+    d.add(MoveFeature(name="Copy", vec=(25.0, 0.0, 0.0), copy=True))
+    d.recompute()
+    d2 = Document.from_dict(d.to_dict())
+    mf = [f for f in d2.features if isinstance(f, MoveFeature)][0]
+    assert mf.copy and mf.name == "Copy"
+    assert d2.recompute().volume == pytest.approx(2000, rel=1e-3)
+
+
+def test_ctrl_drag_copies(win, qapp):
+    """Ctrl held when grabbing the arrow — Fusion's copy gesture."""
+    _block_copy(win, qapp)
+    v0 = win.doc.result.volume
+    win.action_move_body()
+    vp = win.viewport
+    cam = vp.camera()
+    o = vp._mv["origin"]
+    p0 = cam.project(o + np.array([vp._mv["length"] * 0.8, 0, 0]),
+                     vp.width(), vp.height())
+    p1 = cam.project(o + np.array([60.0, 0, 0]),
+                     vp.width(), vp.height())
+    QTest.mousePress(vp, Qt.LeftButton, Qt.ControlModifier,
+                     QPoint(int(p0[0]), int(p0[1])), 10)
+    qapp.processEvents()
+    QTest.mouseMove(vp, QPoint(int(p1[0]), int(p1[1])))
+    qapp.processEvents()
+    QTest.mouseRelease(vp, Qt.LeftButton, Qt.NoModifier,
+                       QPoint(int(p1[0]), int(p1[1])), 10)
+    qapp.processEvents()
+    mf = [f for f in win.doc.features if isinstance(f, MoveFeature)]
+    assert len(mf) == 1 and mf[0].copy and mf[0].name == "Copy"
+    assert win.doc.result.volume == pytest.approx(2 * v0, rel=1e-3)
+    assert "copied" in win.status.currentMessage()
+
+
 def test_move_warning_without_body(win, qapp):
     from PySide6.QtWidgets import QMessageBox
     win.new_document()

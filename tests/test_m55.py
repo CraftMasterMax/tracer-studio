@@ -61,6 +61,22 @@ def test_rotate_feature_json_round_trip():
     assert d2.recompute().volume == pytest.approx(vol, abs=1)
 
 
+def test_rotate_copy_unions_crossed_twins():
+    """A +90° copy of the plate joins into a cross: 8000 + 8000 −
+    4000 overlap = 12000, watertight."""
+    d = Document("cross")
+    d.add(PrimitiveFeature(name="plate", kind="box",
+                           dims={"dx": 40, "dy": 20, "dz": 10}))
+    d.add(RotateFeature(name="Copy z +90.0", center=(20, 10, 5),
+                        axis=(0, 0, 1), angle_deg=90.0, copy=True))
+    s = d.recompute()
+    assert s.volume == pytest.approx(12000, rel=1e-3)
+    assert s.to_trimesh().is_watertight
+    d2 = Document.from_dict(d.to_dict())
+    rf = [f for f in d2.features if isinstance(f, RotateFeature)][0]
+    assert rf.copy and rf.name.startswith("Copy")
+
+
 # ---- UI ----------------------------------------------------------------------------
 
 from tracer.ui.mainwindow import MainWindow                        # noqa: E402

@@ -368,11 +368,14 @@ class MoveFeature(Feature):
     """Move Body (M53): shift the whole accumulated body by a vector —
     what dragging the triad commits.  A body op like Shell: it REPLACES
     the body, so `op` is unused; being a feature, the shift stays
-    parametric — edit the vector and the body slides."""
+    parametric — edit the vector and the body slides.  copy=True is
+    Fusion's Copy (Ctrl-drag): the shifted twin JOINS the body."""
     vec: tuple = (0.0, 0.0, 0.0)
+    copy: bool = False
 
     def apply(self, src: Solid) -> Solid:
-        return src.translated(tuple(float(v) for v in self.vec))
+        moved = src.translated(tuple(float(v) for v in self.vec))
+        return moved.union(src) if self.copy else moved
 
 
 @dataclass
@@ -384,11 +387,13 @@ class RotateFeature(Feature):
     center: tuple = (0.0, 0.0, 0.0)
     axis: tuple = (0.0, 0.0, 1.0)
     angle_deg: float = 0.0
+    copy: bool = False
 
     def apply(self, src: Solid) -> Solid:
         from .geometry import rotation_about
-        return src.transformed(rotation_about(
+        turned = src.transformed(rotation_about(
             self.center, self.axis, np.deg2rad(float(self.angle_deg))))
+        return turned.union(src) if self.copy else turned
 
 
 @dataclass
@@ -683,11 +688,13 @@ class Document:
                          normal=list(map(float, f.normal)),
                          flip=bool(f.flip))
             elif isinstance(f, MoveFeature):
-                d.update(vec=list(map(float, f.vec)))
+                d.update(vec=list(map(float, f.vec)),
+                         copy=bool(f.copy))
             elif isinstance(f, RotateFeature):
                 d.update(center=list(map(float, f.center)),
                          axis=list(map(float, f.axis)),
-                         angle_deg=float(f.angle_deg))
+                         angle_deg=float(f.angle_deg),
+                         copy=bool(f.copy))
             elif isinstance(f, HoleFeature):
                 d.update(center=list(map(float, f.center)),
                          normal=list(map(float, f.normal)),
@@ -807,12 +814,14 @@ class Document:
                     flip=bool(fd.get("flip", False)), **base))
             elif t == "MoveFeature":
                 doc.features.append(MoveFeature(
-                    name=fd["name"], vec=tuple(fd["vec"]), **base))
+                    name=fd["name"], vec=tuple(fd["vec"]),
+                    copy=bool(fd.get("copy", False)), **base))
             elif t == "RotateFeature":
                 doc.features.append(RotateFeature(
                     name=fd["name"], center=tuple(fd["center"]),
                     axis=tuple(fd["axis"]),
-                    angle_deg=float(fd["angle_deg"]), **base))
+                    angle_deg=float(fd["angle_deg"]),
+                    copy=bool(fd.get("copy", False)), **base))
             elif t == "HoleFeature":
                 doc.features.append(HoleFeature(
                     name=fd["name"],

@@ -299,6 +299,8 @@ class PropertiesPanel(QWidget):
         elif isinstance(feature, MoveFeature):
             x, y, z = (float(v) for v in feature.vec)
             lines.append(f"translate \u2725 x {x:+g}, y {y:+g}, z {z:+g} mm")
+            if feature.copy:
+                lines.append("copy: twin joined")
         elif isinstance(feature, RotateFeature):
             ax = "xyz"[int(np.argmax(np.abs(np.asarray(
                 feature.axis, float))))]
@@ -306,6 +308,8 @@ class PropertiesPanel(QWidget):
                          f"about {ax.upper()} through "
                          f"({feature.center[0]:g}, {feature.center[1]:g}, "
                          f"{feature.center[2]:g})")
+            if feature.copy:
+                lines.append("copy: twin joined")
         placement = getattr(feature, "placement", None)
         if placement is not None:                    # patterns have none
             px, py, pz = placement

@@ -298,9 +298,9 @@ class MainWindow(QMainWindow):
           lambda checked=False: self.action_thread())
         d("split", "Split body — trim the solid flush with a plane",
           lambda checked=False: self.action_split_body())
-        d("move", "Move body — drag the triad to slide it",
+        d("move", "Move body — drag the triad to slide it (Ctrl = copy)",
           lambda checked=False: self.action_move_body())
-        d("rotate", "Rotate body — drag a ring to spin it",
+        d("rotate", "Rotate body — drag a ring to spin it (Ctrl = copy)",
           lambda checked=False: self.action_rotate_body())
         r.design_sep()
         d("plane", "Construction plane — offset work plane (Ctrl+Shift+P)",
@@ -1361,12 +1361,16 @@ class MainWindow(QMainWindow):
             self.status.showMessage("Move cancelled", 2500)
             return
         self._capture()
-        self.doc.add(MoveFeature(name="Move", vec=off_v))
+        is_copy = bool(payload.get("copy", False))
+        self.doc.add(MoveFeature(name="Copy" if is_copy else "Move",
+                                 vec=off_v, copy=is_copy))
         self.recompute()
         self.viewport.refresh()
         self.status.showMessage(
-            f"Body moved — x {off_v[0]:+g}, y {off_v[1]:+g}, "
-            f"z {off_v[2]:+g} mm", 5000)
+            ("Body copied — twin joined at x " if is_copy else
+             "Body moved — x ")
+            + f"{off_v[0]:+g}, y {off_v[1]:+g}, z {off_v[2]:+g} mm",
+            5000)
 
     def action_rotate_body(self):
         """Fusion Move/Copy's other half (M55): RGB rings appear around
@@ -1409,16 +1413,21 @@ class MainWindow(QMainWindow):
             self.status.showMessage("Rotate cancelled", 2500)
             return
         deg = float(np.rad2deg(rad))
+        is_copy = bool(payload.get("copy", False))
         self._capture()
         self.doc.add(RotateFeature(
-            name=f"Rotate {'xyz'[axis_i]} {deg:+.1f}\u00b0",
+            name=f"{'Copy' if is_copy else 'Rotate'} "
+                 f"{'xyz'[axis_i]} {deg:+.1f}\u00b0",
             center=tuple(float(v) for v in c),
-            axis=tuple(float(v) for v in e), angle_deg=deg))
+            axis=tuple(float(v) for v in e), angle_deg=deg,
+            copy=is_copy))
         self.recompute()
         self.viewport.refresh()
         self.status.showMessage(
-            f"Body rotated {deg:+.1f}\u00b0 about "
-            f"{'XYZ'[axis_i]} through its centre", 5000)
+            (f"Copied & rotated {deg:+.1f}\u00b0 about "
+             f"{'XYZ'[axis_i]} — twins joined" if is_copy else
+             f"Body rotated {deg:+.1f}\u00b0 about "
+             f"{'XYZ'[axis_i]} through its centre"), 5000)
 
     def _sync_holes(self, sid, payload):
         """Sketch re-edit through the extrude path: holes stay glued to

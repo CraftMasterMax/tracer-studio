@@ -185,6 +185,13 @@ selection, the four standard views, the Visual Styles submenu, grid and
 edge toggles — every entry drives the real command.  A right-DRAG
 still orbits, exactly like Fusion telling the two gestures apart.
 
+**M57 — Copy (Ctrl-drag).** ✓ SHIPPED.  Hold Ctrl when grabbing a
+triad arrow or ring and the gesture becomes Fusion's Copy: release
+JOINS a shifted/spun twin to the body as one parametric feature
+(the +90° copy of a 40×20 plate unions to a cross at exactly 12000 mm³,
+watertight — boolean truth, not a mesh merge).  Copy rides undo, the
+JSON file, the inspector's "twin joined" line, suppress.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, Combine/multi-browser-bodies,
 configurations, assemblies/joints, sheet metal, drawings.

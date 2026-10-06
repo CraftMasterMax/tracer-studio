@@ -332,7 +332,10 @@ class Viewport(QWidget):
         self._box = None
         self._box_drag = False
         if (self._rot is not None and ev.button() == Qt.LeftButton
-                and Qt.KeyboardModifier(0) == ev.modifiers()):
+                and ev.modifiers() in (Qt.KeyboardModifier(0),
+                                       Qt.ControlModifier)):
+            self._rot["copy"] = bool(
+                ev.modifiers() & Qt.ControlModifier)
             px, py = ev.position().x(), ev.position().y()
             ax = self._ring_hit(px, py)
             if ax is not None:
@@ -346,7 +349,9 @@ class Viewport(QWidget):
                 ev.accept()
                 return
         if (self._mv is not None and ev.button() == Qt.LeftButton
-                and Qt.KeyboardModifier(0) == ev.modifiers()):
+                and ev.modifiers() in (Qt.KeyboardModifier(0),
+                                       Qt.ControlModifier)):
+            self._mv["copy"] = bool(ev.modifiers() & Qt.ControlModifier)
             px, py = ev.position().x(), ev.position().y()
             ax = self._triad_hit(px, py)
             if ax is not None:
@@ -453,7 +458,8 @@ class Viewport(QWidget):
             if self._rot["axis"] is not None:
                 pay = dict(center=self._rot["center"],
                            axis=self._rot["axis"],
-                           rad=self._rot["ang"], live=False)
+                           rad=self._rot["ang"], live=False,
+                           copy=bool(self._rot.get("copy", False)))
                 self._rot = None
                 self._r.set_triad(None)
                 self.unsetCursor()
@@ -466,10 +472,12 @@ class Viewport(QWidget):
         if ev.button() == Qt.LeftButton and self._mv is not None:
             if self._mv["axis"] is not None:      # drag ends: commit gesture
                 off = self._mv["off"]
+                was_copy = bool(self._mv.get("copy", False))
                 self._mv = None
                 self._r.set_triad(None)
                 self.unsetCursor()
-                self.move_drag.emit(dict(offset=off, live=False))
+                self.move_drag.emit(dict(offset=off, live=False,
+                                         copy=was_copy))
             else:                                  # click off the arrows
                 self._cancel_move()
             self.update()
