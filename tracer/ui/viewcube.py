@@ -56,7 +56,7 @@ class ViewCube:
         return QPointF(rect.left() + (ndc[0] * 0.5 + 0.5) * rect.width(),
                        rect.top() + (0.5 - ndc[1] * 0.5) * rect.height())
 
-    def draw(self, p: QPainter, camera: Camera):
+    def draw(self, p: QPainter, camera: Camera, hover: str | None = None):
         p.setRenderHint(QPainter.Antialiasing)
         ndc, view, eye = self.project(camera)
         Rv = view[:3, :3]
@@ -81,8 +81,13 @@ class ViewCube:
             to_eye_v = eye - face_center
             cos_view = float(wn @ to_eye_v / max(np.linalg.norm(to_eye_v), 1e-9))
             front = cos_view > 0.75
-            p.setBrush(QColor("#3a3f48" if front else "#2a2e35"))
-            p.setPen(QPen(QColor("#565d68"), 1))
+            hot = hover == kind               # hit() hands back the kind
+            if hot:
+                p.setBrush(QColor("#4a5a72"))    # Fusion-style hover
+                p.setPen(QPen(QColor("#8db4e8"), 1))
+            else:
+                p.setBrush(QColor("#3a3f48" if front else "#2a2e35"))
+                p.setPen(QPen(QColor("#565d68"), 1))
             p.drawPath(path)
             f = QFont(p.font())
             f.setPointSize(8)

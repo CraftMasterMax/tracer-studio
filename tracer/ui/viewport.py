@@ -79,6 +79,7 @@ class Viewport(QWidget):
         self._mv = None                    # Move gesture state (M53)
         self._rot = None                   # Rotate gesture state (M55)
         self._zoom_win = None              # Zoom-window arming (M62)
+        self._cube_hover = None            # ViewCube face under cursor (M63)
         self.setMinimumSize(QSize(320, 240))
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -177,15 +178,28 @@ class Viewport(QWidget):
         p = QPainter(self)
         p.drawImage(0, 0, qimg)
         if self._box_drag and self._box is not None:
-            p.setPen(QPen(QColor(255, 255, 255, 220), 1, Qt.DashLine))
-            p.setBrush(QColor(120, 170, 255, 24))
+            pen_c, br_c = self.rubber_style(self._box_is_window())
+            p.setPen(QPen(pen_c, 1, Qt.DashLine))
+            p.setBrush(br_c)
             p.drawRect(QRect(self._box[0], self._box[1]).normalized())
         draw_triad(p, self._cam, self.width(), self.height(), self._r.palette)
         self._cube.place(self.width(), self.height())
-        self._cube.draw(p, self._cam)
+        self._cube.draw(p, self._cam, self._cube_hover)
         self._nav.place(self.width(), self._cube.rect.bottom() + 8)
         self._nav.draw(p)
         p.end()
+
+    @staticmethod
+    def rubber_style(window: bool):
+        """Fusion's two rubber voices: left→right WINDOW (blue, must
+        contain) vs right→left CROSSING (green, just touches)."""
+        if window:
+            return QColor(120, 170, 255), QColor(120, 170, 255, 24)
+        return QColor(120, 220, 150), QColor(120, 220, 150, 24)
+
+    def _box_is_window(self) -> bool:
+        return self._box is not None and \
+            self._box[1].x() >= self._box[0].x()
 
     # ---- mouse (Fusion scheme) ----------------------------------------------
     # LMB: pick a face · LMB drag on empty: rubber-band select ·
@@ -446,7 +460,16 @@ class Viewport(QWidget):
     def mouseMoveEvent(self, ev):
         if not self._buttons:
             self._hover_update(ev.position())
-            if self._nav.set_hover(ev.position()):
+            hk = self._cube.hit(ev.position())
+            nav_changed = self._nav.set_hover(ev.position())
+            if hk != self._cube_hover:
+                self._cube_hover = hk
+                if hk is not None:
+                    self.setCursor(QCursor(Qt.PointingHandCursor))
+                elif not self._nav.hover:
+                    self.unsetCursor()
+                self.update()
+            elif nav_changed:
                 self.setCursor(
                     Qt.CursorShape.PointingHandCursor
                     if self._nav.hover else Qt.CursorShape.ArrowCursor)

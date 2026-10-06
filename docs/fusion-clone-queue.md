@@ -230,6 +230,12 @@ window, rubber-band a rectangle, and the camera refits onto the world
 bbox of the mesh that fell inside it.  A plain click or Esc aborts with
 the camera untouched.
 
+**M63 — Cube hover & rubber voices.** ✓ SHIPPED.  The ViewCube lights
+the face under the cursor (hit-testing the very polygons it painted)
+and offers the hand cursor, Fusion-style; and the selection rubber
+band now speaks Fusion's two colours — blue WINDOW left→right (must
+contain) versus green CROSSING right→left (just touches).
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, Combine/multi-browser-bodies,
 configurations, assemblies/joints, sheet metal, drawings.
