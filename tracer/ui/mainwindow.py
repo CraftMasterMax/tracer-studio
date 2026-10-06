@@ -424,8 +424,10 @@ class MainWindow(QMainWindow):
                                 triggered=self.action_open)
         self.act_import = QAction("&Import body…", self,
                                   triggered=self.action_import)
-        m_file.addActions([self.act_new, self.act_open, self.act_save,
-                           self.act_save_as])
+        m_file.addActions([self.act_new, self.act_open])
+        self.m_recent = m_file.addMenu("Recent Files")
+        self._rebuild_recents()
+        m_file.addActions([self.act_save, self.act_save_as])
         m_file.addSeparator()
         m_file.addAction(self.act_import)
         # export actions are members: the ribbon launcher menu shares them
@@ -1805,6 +1807,50 @@ class MainWindow(QMainWindow):
         self.doc.dirty = False
         self._unsaved = False
         self._update_title()
+        self._note_recent(self.file_path)
+
+    # ---- recent files (M58) -------------------------------------------------------
+    def _recents(self):
+        v = QSettings().value("files/recent", [])
+        if isinstance(v, str):
+            v = [v] if v else []
+        return [Path(p) for p in v]
+
+    def _note_recent(self, path):
+        p = Path(path)
+        items = [q for q in self._recents() if q != p]
+        items.insert(0, p)
+        QSettings().setValue("files/recent",
+                             [str(q) for q in items[:8]])
+        self._rebuild_recents()
+
+    def _rebuild_recents(self):
+        self.m_recent.clear()
+        items = [p for p in self._recents() if p.exists()]
+        if not items:
+            self.m_recent.addAction("(empty)").setEnabled(False)
+            return
+        for p in items:
+            act = self.m_recent.addAction(
+                p.name, lambda checked=False, q=p: self._open_path(q))
+            act.setToolTip(str(p))
+        self.m_recent.addSeparator()
+        self.m_recent.addAction(
+            "Clear", lambda checked=False: (
+                QSettings().setValue("files/recent", []),
+                self._rebuild_recents()))
+
+    def _open_path(self, path):
+        try:
+            doc = fio.load_document(path)
+        except Exception as e:
+            QMessageBox.critical(self, "Open failed", str(e))
+            return
+        self.new_document(doc)
+        self.file_path = Path(path)
+        self._note_recent(path)
+        self._update_title()
+        self.status.showMessage(f"Opened {Path(path).name}", 5000)
 
     def action_open(self):
         start = str(self.file_path.parent if self.file_path else Path.home())
@@ -1813,15 +1859,7 @@ class MainWindow(QMainWindow):
             "Tracer Studio document (*.tracer);;Legacy Forma document (*.forma)")
         if not path:
             return
-        try:
-            doc = fio.load_document(path)
-        except Exception as e:
-            QMessageBox.critical(self, "Open failed", str(e))
-            return
-        self.new_document(doc)
-        self.file_path = Path(path)
-        self._update_title()
-        self.status.showMessage(f"Opened {Path(path).name}", 5000)
+        self._open_path(path)
 
     def recompute(self):
         try:

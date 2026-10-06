@@ -104,9 +104,11 @@ def test_keyboard_shortcuts_item_jumps_the_rail(win):
 
 
 def test_file_menu_unchanged_for_old_contracts(win):
-    """The M15 File-menu contract survives the refactor untouched."""
+    """The M15 File-menu contract survives the refactor untouched —
+    M58 only added the Recent Files submenu after Open (Fusion order)."""
     texts = _top_texts(win.menuBar().actions()[0].menu())
-    assert texts[:4] == ["New", "Open…", "Save", "Save As…"]
+    assert texts[:5] == ["New", "Open…", "Recent Files", "Save",
+                         "Save As…"]
     assert "Export mesh" in texts and "Exit" in texts
 
 

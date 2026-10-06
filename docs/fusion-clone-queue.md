@@ -192,6 +192,12 @@ JOINS a shifted/spun twin to the body as one parametric feature
 watertight — boolean truth, not a mesh merge).  Copy rides undo, the
 JSON file, the inspector's "twin joined" line, suppress.
 
+**M58 — Recent Files.** ✓ SHIPPED.  File ▸ Recent Files, Fusion-style:
+every open and save pushes the path to the front (dedup, last eight,
+QSettings-backed), the submenu lists only files that still exist with
+full paths as tooltips, and Clear forgets everything.  Menu order now
+matches Fusion: New · Open · Open Recent · Save · Save As.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, Combine/multi-browser-bodies,
 configurations, assemblies/joints, sheet metal, drawings.

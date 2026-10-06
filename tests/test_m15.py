@@ -210,11 +210,12 @@ def test_export_step_without_occt(monkeypatch, qapp):
 
 
 def test_file_menu_layout(win):
-    """New/Open/Save/Save As come first; then Import, mesh export, STEP."""
+    """New/Open/Recent first; then Save, Import, mesh export, STEP."""
     m_file = win.menuBar().actions()[0].menu()
     labels = [a.text().replace("&", "").rstrip("…")
               for a in m_file.actions() if not a.isSeparator()]
-    order = ["New", "Open", "Save", "Save As", "Import body",
+    order = ["New", "Open", "Recent Files", "Save", "Save As",
+             "Import body",
              "Export mesh", "Export STEP (.step)", "Export render (PNG)",
              "Exit"]
     assert labels == order
