@@ -496,6 +496,16 @@ kernel's FillRule composition — stays a CANDIDATE: it's invisible
 robustness with heavy blast radius on 300+ feature tests; it returns
 only when a concrete profile failure demands it.)
 
+**M86 — 3D Print dialog.** ✓ SHIPPED.  Utilities ▸ 3D Print, honest
+clone: the part is INSPECTED (triangles, watertightness, island count,
+bed-size and hair-thickness warnings), WEIGHED against the same
+material table Mass Properties uses (PLA defaults, remembered in
+QSettings), and exported as a print-ready STL that — via Drop to Bed —
+lands on z=0 while the DOCUMENT never moves.  Changing material
+re-weighs the report right in the dialog.  No fake printer drivers, no
+cloud: the report is computed from the real mesh in
+tracer/core/printcheck.py, which the tests pin directly.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout,
 from ..core import import2d
 from ..core import io as fio
 from ..core import params
+from ..core import printcheck
 from ..core import step
 from ..core.thread import ISO_COARSE
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
@@ -566,6 +567,8 @@ class MainWindow(QMainWindow):
         m_tools.addAction("Mass properties…",
                           lambda checked=False:
                           self.action_mass_properties())
+        m_tools.addAction("3D Print…",
+                          lambda checked=False: self.action_3d_print())
 
         m_help = self.menuBar().addMenu("&Help")
         self.act_tour = QAction("&Welcome tour", self,
@@ -1599,6 +1602,63 @@ class MainWindow(QMainWindow):
         u = self.doc.units if self.doc and self.doc.units in units.LABEL \
             else "mm"
         self.rail.props.set_unit(u)
+
+    # ---- 3D Print (M86) ------------------------------------------------------
+    def action_3d_print(self):
+        """Fusion's Utilities ▸ 3D Print: inspect print readiness, weigh
+        the part at the chosen material, then export an STL ready for
+        the bed (dropped onto z=0 by default).  Kernel-built parts are
+        watertight by construction — the report says so honestly."""
+        if self.doc is None or self.doc.result is None:
+            QMessageBox.information(self, "3D Print",
+                                    "Nothing to print yet — model "
+                                    "something first.")
+            return
+        s = QSettings()
+        last = str(s.value("materials/density", "PLA (1.24)"))
+        while True:
+            dens = (last if last in self._MATERIAL_DENSITIES
+                    else "PLA (1.24)")
+            rho = float(dens.rsplit("(", 1)[1].rstrip(")"))
+            rep = printcheck.print_report(self.doc.result, rho)
+            x, y, z = rep["size_mm"]
+            lines = [f"Triangles:  {rep['triangles']:,}",
+                     f"Watertight: {'yes' if rep['watertight'] else 'NO'}",
+                     f"Volume:     {rep['volume_mm3']:,.1f} mm³",
+                     f"Mass @ {dens}: {rep['mass_g']:.1f} g",
+                     f"Size:       {x:.1f} × {y:.1f} × {z:.1f} mm",
+                     f"Islands:    {rep['islands']}"]
+            lines += ["! " + w for w in rep["warnings"]]
+            v = cmddialog.ask(self, "3D Print", [
+                dict(key="report", kind="multiline", label="Report",
+                     default="\n".join(lines)),
+                dict(key="m", kind="combo", label="Material",
+                     choices=self._MATERIAL_DENSITIES, default=dens),
+                dict(key="drop", kind="check",
+                     label="Drop to bed (rest on z=0 in the STL)",
+                     default=True)])
+            if v is None:
+                return
+            if v["m"] != dens:            # material changed: re-weigh
+                last = v["m"]
+                s.setValue("materials/density", last)
+                continue
+            break
+        path, _f = QFileDialog.getSaveFileName(
+            self, "Export STL for printing",
+            str(Path(self.doc.title + ".stl")), "STL (*.stl)")
+        if not path:
+            return
+        self._print_export(path, drop=bool(v["drop"]))
+        self.status.showMessage(
+            f"Print-ready STL written to {Path(path).name}", 5000)
+
+    def _print_export(self, path, drop: bool = True):
+        """Export the current solid as an STL, optionally resting it on
+        the build plate — the document itself is never moved."""
+        tm = (printcheck.drop_to_bed(self.doc.result) if drop
+              else self.doc.result.to_trimesh())
+        tm.export(str(path))
 
     def action_mass_properties(self):
         """Fusion's Inspect ▸ Mass Properties (M71): volume, surface
