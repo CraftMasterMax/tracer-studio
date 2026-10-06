@@ -192,6 +192,19 @@ class Solid:
     def union(self, other: "Solid") -> "Solid":
         return Solid(self._m + other._m)
 
+    @classmethod
+    def batch_union(cls, solids) -> "Solid":
+        """Fuse a list of solids in ONE parallel kernel pass (M85):
+        patterns fold their copies at once instead of N-1 serial
+        pairwise unions that each re-process the whole growing solid."""
+        parts = list(solids)
+        if not parts:
+            raise ValueError("batch_union needs at least one solid")
+        if len(parts) == 1:
+            return parts[0]
+        return Solid(m3.Manifold.batch_boolean([p._m for p in parts],
+                                               m3.OpType.Add))
+
     def subtract(self, other: "Solid") -> "Solid":
         return Solid(self._m - other._m)
 

@@ -484,6 +484,18 @@ Round-join areas verified against Steiner's formula (A + Pd + πd²).
 The M34 refusal tests were rewritten into capability tests (curves
 and holes now offset); its UI tests rewired to the richer dialog.
 
+**M85 — Batched pattern booleans.** ✓ SHIPPED.  Linear, circular and
+path patterns used to weld their copies one pair at a time — N-1
+serial manifold calls, each re-processing the growing solid.  They now
+fold through `Manifold.batch_boolean` in a single parallel kernel pass
+(`Solid.batch_union`): a 60-copy pattern recomputes in ~1 ms, all 57
+legacy pattern tests pass with byte-comparable volumes, and the fold
+short-circuits count-1 patterns outright.  (The sibling idea from the
+sweep — replacing the shapely winding-ranking in regions() with the
+kernel's FillRule composition — stays a CANDIDATE: it's invisible
+robustness with heavy blast radius on 300+ feature tests; it returns
+only when a concrete profile failure demands it.)
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

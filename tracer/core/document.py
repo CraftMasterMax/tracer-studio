@@ -685,10 +685,9 @@ class Document:
                 src = by_uid.get(f.source_uid)
                 if src is None:          # source deleted/suppressed: no-op
                     continue
-                solid = None
-                for k in range(max(1, int(f.count))):
-                    c = src.translated(tuple(v * k for v in f.vector))
-                    solid = c if solid is None else solid.union(c)
+                solid = Solid.batch_union(
+                    [src.translated(tuple(v * k for v in f.vector))
+                     for k in range(max(1, int(f.count)))])
             elif isinstance(f, PathPatternFeature):
                 src = by_uid.get(f.source_uid)
                 if src is None:
@@ -697,10 +696,8 @@ class Document:
                 M = plane_matrix(f.plane, f.placement, f.axes)
                 ws = [M[:3, :3] @ np.array([x, y, 0.0]) + M[:3, 3]
                       for x, y in sample_polyline(f.path, f.count)]
-                solid = None
-                for w in ws:
-                    c = src.translated(tuple(w - ws[0]))
-                    solid = c if solid is None else solid.union(c)
+                solid = Solid.batch_union(
+                    [src.translated(tuple(w - ws[0])) for w in ws])
             elif isinstance(f, CircularPatternFeature):
                 src = by_uid.get(f.source_uid)
                 if src is None:
@@ -709,12 +706,11 @@ class Document:
                 ang = float(f.angle)
                 full = abs(abs(ang) - 360.0) < 1e-9
                 step = ang / (n if full else max(n - 1, 1))
-                solid = None
-                for k in range(n):
-                    m = self._rotz_about(f.center[0], f.center[1],
-                                         math.radians(step * k))
-                    c = src.transformed(m)
-                    solid = c if solid is None else solid.union(c)
+                solid = Solid.batch_union(
+                    [src.transformed(self._rotz_about(f.center[0],
+                                                      f.center[1],
+                                                      math.radians(step * k)))
+                     for k in range(n)])
             elif isinstance(f, MirrorFeature):
                 src = by_uid.get(f.source_uid)
                 if src is None:
