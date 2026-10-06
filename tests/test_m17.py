@@ -11,6 +11,7 @@ from PySide6.QtTest import QTest                                # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog        # noqa: E402
 
 from tracer.core.sketch.constraints import Coincident, Radius    # noqa: E402
+from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.sketch.entities import Arc, curve_radius        # noqa: E402
 from tracer.core.sketch.model import (SketchModel,               # noqa: E402
                                      model_from_dict, model_to_dict)
@@ -29,7 +30,7 @@ def win(qapp, monkeypatch):
         r = SceneRenderer()
     except Exception as e:
         pytest.skip(f"no headless GL: {e}")
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (10.0, True)))
     w = MainWindow(renderer=r)
     w.resize(1100, 720)
@@ -133,7 +134,7 @@ def test_canvas_dimension_tool_on_arc(win, qapp, monkeypatch):
     ar = cv.model.sketch.arcs[0]
     cv.set_tool("select")
     cv._sel = [ar]
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (7.5, True)))
     cv.act_dim()
     qapp.processEvents()
@@ -151,12 +152,12 @@ def test_canvas_badge_edit_and_arc_anchor(win, qapp, monkeypatch):
     qapp.processEvents()
     ar = cv.model.sketch.arcs[0]
     cv._sel = [ar]
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (12.0, True)))
     cv.act_dim()
     con = cv.model.sketch.constraints[-1]
     # double-click editing path (badge hit already covered in m8)
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (9.0, True)))
     cv._edit_dim(con)
     qapp.processEvents()

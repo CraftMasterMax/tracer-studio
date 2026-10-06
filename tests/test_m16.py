@@ -11,6 +11,7 @@ from tracer.core.document import (CircularPatternFeature,                    # n
                                  MirrorFeature, PrimitiveFeature)
 from tracer.core.geometry import Solid                                        # noqa: E402
 from conftest import tree_texts, script_cmd, script_cmd_cancel          # noqa: E402
+from tracer.ui.cmddialog import Shell                    # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -26,7 +27,7 @@ def win(qapp, monkeypatch):
         r = SceneRenderer()
     except Exception as e:
         pytest.skip(f"no headless GL: {e}")
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (10.0, True)))
     w = MainWindow(renderer=r)
     w.resize(1100, 720)

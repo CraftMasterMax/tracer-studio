@@ -11,6 +11,7 @@ from PySide6.QtCore import QPointF, QPoint, Qt  # noqa: E402
 from PySide6.QtTest import QSignalSpy, QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox  # noqa: E402
 from conftest import feature_rows, tree_texts  # noqa: E402
+from tracer.ui.cmddialog import Shell                    # noqa: E402
 
 from tracer.core.document import ExtrudeFeature  # noqa: E402
 from tracer.core.geometry import Solid  # noqa: E402
@@ -117,7 +118,7 @@ def test_line_tool_snaps_horizontal_and_records_constraint(win, qapp):
 
 # ---- associative edit: the Fusion moment -------------------------------------
 def test_edit_sketch_updates_solid(win, qapp, monkeypatch):
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (4.0, True)))
     win.new_document()                     # empty doc: clean volume baseline
     win.action_new_sketch()
@@ -152,7 +153,7 @@ def test_edit_sketch_updates_solid(win, qapp, monkeypatch):
 def test_sketch_reedit_removes_and_adds_region_features(win, qapp, monkeypatch):
     """Multi-region sketches must stay in sync both ways: fewer regions
     than features drops the stale ones, more regions appends new ones."""
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (6.0, True)))
     win.new_document()
     win.action_new_sketch()
@@ -220,12 +221,12 @@ def test_set_distance_and_rename(qapp, monkeypatch):
     outer = np.array([[0, 0], [10, 0], [10, 10], [0, 10]], float)
     win.doc.add(ExtrudeFeature(name="sq", outer=outer, height=2))
     win.recompute()
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (5.0, True)))
     win._set_distance(win.doc.features[0])
     assert win.doc.features[0].height == 5.0
     assert win.doc.result.volume == pytest.approx(500)
-    monkeypatch.setattr(QInputDialog, "getText",
+    monkeypatch.setattr(Shell, "getText",
                         staticmethod(lambda *a, **k: ("bearing block", True)))
     win._rename_feature(win.doc.features[0])
     assert win.doc.features[0].name == "bearing block"

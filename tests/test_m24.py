@@ -11,6 +11,7 @@ import pytest
 from tracer.core.sketch.constraints import (Angle, AngleBetween, Distance,
                                             Fixed, make_angle,
                                             make_angle_between, snapped)
+from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.sketch.model import (SketchModel, model_from_dict,
                                       model_to_dict)
 from tracer.core.sketch.solver import Sketch
@@ -168,7 +169,7 @@ def test_key_I_angles_a_line_and_edits_it(win, qapp, monkeypatch):
     b = m.point(10 * math.cos(math.radians(5)), 10 * math.sin(math.radians(5)))
     ln = m.add_line(a, b)
     m.constrain(Fixed(a, x=0, y=0), Distance(a, b, 10.0))
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *A, **K: (40.0, True)))
     cv._sel = [ln]
     QTest.keyClick(cv, Qt.Key_I)
@@ -177,7 +178,7 @@ def test_key_I_angles_a_line_and_edits_it(win, qapp, monkeypatch):
     assert len(angs) == 1
     assert _deg(math.atan2(b.y - a.y, b.x - a.x)) == pytest.approx(40, abs=1e-6)
     # re-run with a different value: replaces, never stacks
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *A, **K: (55.0, True)))
     QTest.keyClick(cv, Qt.Key_I)
     qapp.processEvents()
@@ -201,7 +202,7 @@ def test_angle_badge_is_editable_via_doubleclick_path(win, qapp, monkeypatch):
     assert len(badge) == 1                     # label rendered & hittable
     assert b.x == pytest.approx(0, abs=1e-4)   # solved up to vertical
     assert b.y == pytest.approx(8, abs=1e-4)
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *A, **K: (30.0, True)))
     cv._edit_dim(angs[0])                      # the double-click target
     qapp.processEvents()
@@ -221,7 +222,7 @@ def test_angle_edit_resnaps_and_does_not_flip(win, qapp, monkeypatch):
     ln = m.add_line(a, b)
     m.constrain(Fixed(a, x=0, y=0), Distance(a, b, 10.0), make_angle(ln, 20))
     m.solve()
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *A, **K: (25.0, True)))
     angs = [c for c in m.sketch.constraints if isinstance(c, Angle)]
     cv._edit_dim(angs[0])
@@ -239,7 +240,7 @@ def test_two_lines_angle_between_via_menu_action(win, qapp, monkeypatch):
     m.constrain(Fixed(o, x=0, y=0), Fixed(e1, x=10, y=0))
     # rotate L2 to 30° while keeping its length
     e2.x, e2.y = 10 * math.cos(math.radians(120)), 10 * math.sin(math.radians(120))
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *A, **K: (45.0, True)))
     cv._sel = [L1, L2]
     cv.act_angle()

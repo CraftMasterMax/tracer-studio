@@ -116,6 +116,31 @@ class Viewport(QWidget):
         self._r.show_solid = bool(on)
         self.update()
 
+    # ---- Section Analysis ----------------------------------------------------
+    def set_section(self, spec):
+        """spec: 'XY'|'XZ'|'YZ' | {'name','normal','origin'} | None (off).
+        The clipped-away side is the one the normal points to; flip()
+        sends it through to the other side, like Fusion's flip arrow."""
+        if spec is None:
+            self._r.clip = None
+        elif isinstance(spec, str):
+            n = {"XY": (0, 0, 1), "XZ": (0, 1, 0), "YZ": (1, 0, 0)}[spec]
+            self._r.clip = {"normal": n, "origin": (0.0, 0.0, 0.0),
+                            "label": spec}
+        else:
+            self._r.clip = {"normal": tuple(spec["normal"]),
+                            "origin": tuple(spec["origin"]),
+                            "label": spec.get("name", "Plane")}
+        self.update()
+
+    def flip_section(self):
+        c = self._r.clip
+        if c:
+            c["normal"] = tuple(-float(t) for t in c["normal"])
+            self.update()
+
+    section = property(lambda self: self._r.clip)
+
     def attach(self, doc: Document):
         """Track a swapped-in document without refitting the camera."""
         self._doc = doc

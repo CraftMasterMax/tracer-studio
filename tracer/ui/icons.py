@@ -249,6 +249,16 @@ def _launcher(p: QPainter):
         p.drawEllipse(QPointF(x, y), 2.3, 2.3)
 
 
+def _section(p: QPainter):
+    """A block sliced by a dashed clip plane."""
+    p.drawRect(QRectF(7, 9, 18, 16))
+    pen = QPen(_COL)
+    pen.setWidthF(1.5)
+    pen.setStyle(Qt.PenStyle.DashLine)
+    p.setPen(pen)
+    p.drawLine(QPointF(5, 17), QPointF(27, 17))
+
+
 def _dimension(p: QPainter):
     """Measured span: ticks, arrowheads, baseline."""
     p.drawLine(QPointF(5, 16), QPointF(27, 16))
@@ -267,7 +277,7 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "arc": _arc, "trim": _trim, "offset": _offset,
               "construction": _construction, "plane": _plane,
               "constrain": _constrain, "dimension": _dimension,
-              "launcher": _launcher})
+              "launcher": _launcher, "section": _section})
 
 
 def icon(name: str) -> QIcon:

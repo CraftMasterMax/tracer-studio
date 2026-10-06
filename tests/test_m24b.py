@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from tracer.core.sketch.fillet import corner_fillet, corner_chamfer
+from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.sketch.model import SketchModel, model_from_dict, model_to_dict
 from tracer.core.sketch.constraints import (Fixed, Radius, Tangent, ArcMiddle,
                                             _unit_normal)
@@ -242,7 +243,7 @@ def test_f_key_fillets_two_lines_undoable(win, qapp, monkeypatch):
     m = cv.model
     a = m.point(0, 0)
     lines = m.add_rect(a, m.point(40, 20))
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *A, **K: (5.0, True)))
     cv._sel = [lines[1], lines[2]]
     QTest.keyClick(cv, Qt.Key_F)
@@ -272,7 +273,7 @@ def test_canvas_fillet_rejection_shows_warning_not_exception(win, qapp,
     m = cv.model
     a = m.point(0, 0)
     lines = m.add_rect(a, m.point(10, 8))
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *A, **K: (50.0, True)))
     cv._sel = [lines[1], lines[2]]
     cv.act_fillet()                       # radius way too big for 8mm leg
@@ -285,7 +286,7 @@ def test_G_key_chamfers_a_corner_and_undoes(win, qapp, monkeypatch):
     cv = _canvas(win, qapp)
     m = cv.model
     lines = m.add_rect(m.point(0, 0), m.point(40, 20))
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *A, **K: (5.0, True)))
     cv._sel = [lines[1], lines[2]]
     QTest.keyClick(cv, Qt.Key_G)

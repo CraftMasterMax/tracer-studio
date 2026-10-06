@@ -12,6 +12,7 @@ from PySide6.QtTest import QTest                             # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog     # noqa: E402
 
 from tracer.core.sketch.entities import Arc, Point            # noqa: E402
+from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.sketch.model import (SketchModel,            # noqa: E402
                                      model_to_dict,
                                      model_from_dict)
@@ -31,7 +32,7 @@ def win(qapp, monkeypatch):
         r = SceneRenderer()
     except Exception as e:
         pytest.skip(f"no headless GL: {e}")
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (10.0, True)))
     w = MainWindow(renderer=r)
     w.resize(1100, 720)

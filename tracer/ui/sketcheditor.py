@@ -14,7 +14,7 @@ import numpy as np
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (QColor, QFont, QKeyEvent, QMouseEvent, QPainter,
                            QPen, QWheelEvent)
-from PySide6.QtWidgets import QInputDialog, QWidget
+from PySide6.QtWidgets import QWidget
 
 from ..core.sketch.constraints import (Angle, AngleBetween, Collinear,
                                        Concentric, Distance, Equal, Fixed,
@@ -28,6 +28,7 @@ from ..core.sketch.entities import (Arc, Circle, Line, Point, curve_center,
 from ..core.sketch.model import (SketchModel, math_dist, model_from_dict,
                                  model_to_dict)
 from ..core.sketch.profile import regions
+from .cmddialog import Shell
 
 ACCENT = QColor("#4ea1ff")
 FG = QColor("#e6e9ec")
@@ -500,11 +501,10 @@ class SketchCanvas(QWidget):
             self._solve(); self.update()
 
     def act_dim(self):
-        from PySide6.QtWidgets import QInputDialog
         if len(self._sel) == 2 and all(isinstance(e, Point) for e in self._sel):
             p, q = self._sel
             cur = math_dist(p, q)
-            val, ok = QInputDialog.getDouble(self, "Dimension",
+            val, ok = Shell.getDouble(self, "Dimension",
                                              "Distance (mm):",
                                              round(cur, 3), 0.001, 1e6, 3)
             if ok:
@@ -518,7 +518,7 @@ class SketchCanvas(QWidget):
         e = self._sel[0]
         if isinstance(e, Line):
             cur = math_dist(e.a, e.b)
-            val, ok = QInputDialog.getDouble(self, "Dimension", "Length (mm):",
+            val, ok = Shell.getDouble(self, "Dimension", "Length (mm):",
                                              round(cur, 3), 0.001, 1e6, 3)
             if ok:
                 self._push_hist()
@@ -527,7 +527,7 @@ class SketchCanvas(QWidget):
                 self._solve(); self.update()
         elif isinstance(e, (Circle, Arc)):
             cur = curve_radius(e)
-            val, ok = QInputDialog.getDouble(self, "Dimension", "Radius (mm):",
+            val, ok = Shell.getDouble(self, "Dimension", "Radius (mm):",
                                              round(cur, 3), 0.001, 1e6, 3)
             if ok:
                 self._push_hist()
@@ -707,10 +707,9 @@ class SketchCanvas(QWidget):
         Offset Entities): a mitred twin loop at signed distance, outward
         positive — walls, ribs and clearance rings from any closed
         straight-edge outline."""
-        from PySide6.QtWidgets import QInputDialog
         if self.model is None:
             return
-        v, ok = QInputDialog.getDouble(self, "Offset",
+        v, ok = Shell.getDouble(self, "Offset",
                                        "Distance (mm, negative = inward):",
                                        3.0, -10000.0, 10000.0, 2)
         if not ok:
@@ -731,7 +730,6 @@ class SketchCanvas(QWidget):
         """Shared plumbing for fillet/chamfer: two selected lines sharing a
         corner, a size dialog defaulted from the shorter leg, and refusals
         surfaced as canvas warnings (never a half-cut sketch)."""
-        from PySide6.QtWidgets import QInputDialog
         if len(self._sel) != 2 or not all(isinstance(e, Line)
                                           for e in self._sel):
             return
@@ -744,7 +742,7 @@ class SketchCanvas(QWidget):
                  [p for p in (l2.a, l2.b) if p is not shared]
         leg = min(math.dist((shared.x, shared.y), (p.x, p.y)) for p in others)
         default = max(0.5, round(min(5.0, leg / 4.0), 1))
-        v, ok = QInputDialog.getDouble(self, title, label, default, 0.01,
+        v, ok = Shell.getDouble(self, title, label, default, 0.01,
                                        max(0.02, leg / 2.0 - 0.01), 2)
         if not ok:
             return
@@ -765,7 +763,7 @@ class SketchCanvas(QWidget):
         if len(sel) == 1 and isinstance(sel[0], Line):
             ln = sel[0]
             deg = math.degrees(math.atan2(ln.b.y - ln.a.y, ln.b.x - ln.a.x)) % 180
-            val, ok = QInputDialog.getDouble(self, "Angular dimension",
+            val, ok = Shell.getDouble(self, "Angular dimension",
                                              "Angle from +X (deg):",
                                              round(deg, 2), 0.0, 179.99, 2)
             if not ok:
@@ -779,7 +777,7 @@ class SketchCanvas(QWidget):
             t1 = math.atan2(l1.b.y - l1.a.y, l1.b.x - l1.a.x)
             t2 = math.atan2(l2.b.y - l2.a.y, l2.b.x - l2.a.x)
             deg = math.degrees(t2 - t1) % 180
-            val, ok = QInputDialog.getDouble(self, "Angular dimension",
+            val, ok = Shell.getDouble(self, "Angular dimension",
                                              "Angle between (deg):",
                                              round(deg, 2), 0.0, 179.99, 2)
             if not ok:
@@ -1065,7 +1063,7 @@ class SketchCanvas(QWidget):
     def _edit_dim(self, c):
         if isinstance(c, (Angle, AngleBetween)):
             deg = math.degrees(c.value) % 180
-            val, ok = QInputDialog.getDouble(self, "Edit angle",
+            val, ok = Shell.getDouble(self, "Edit angle",
                                              "Angle (deg):", round(deg, 2),
                                              0.0, 179.99, 2)
             if not ok:
@@ -1075,7 +1073,7 @@ class SketchCanvas(QWidget):
             # editing never flips the line through 180°
             c.value = snapped(c.measured(), math.radians(val))
         else:
-            val, ok = QInputDialog.getDouble(self, "Edit dimension",
+            val, ok = Shell.getDouble(self, "Edit dimension",
                                              "Value (mm):", float(c.value),
                                              0.001, 1e6, 3)
             if not ok:

@@ -12,6 +12,7 @@ from PySide6.QtTest import QTest                           # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog   # noqa: E402
 
 from tracer.core import step                               # noqa: E402
+from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.document import (BodyFilletFeature,       # noqa: E402
                                   PrimitiveFeature)
 from tracer.ui import icons                                # noqa: E402
@@ -260,7 +261,7 @@ def test_toolbar_extrude_from_model_prompts_for_profile(win, qapp):
 def test_toolbar_fillet_needs_no_occt(win, qapp, monkeypatch):
     from tracer.ui.mainwindow import demo_document
     monkeypatch.setattr(step, "available", lambda: False)
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (1.0, True)))
     win.new_document(demo_document())
     qapp.processEvents()

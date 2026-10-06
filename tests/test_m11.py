@@ -10,6 +10,7 @@ from PySide6.QtTest import QTest                             # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog     # noqa: E402
 
 from tracer.core.document import ExtrudeFeature, PrimitiveFeature  # noqa: E402
+from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.document import Document                     # noqa: E402
 
 
@@ -26,7 +27,7 @@ def win(qapp, monkeypatch):
         r = SceneRenderer()
     except Exception as e:
         pytest.skip(f"no headless GL: {e}")
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (10.0, True)))
     w = MainWindow(renderer=r)
     w.resize(1100, 720)

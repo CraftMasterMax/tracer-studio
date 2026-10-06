@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 # Hard isolation for the desktop session (user's Hyprland must never see a
 # test window or XWayland wake-up): force Qt offscreen, drop the gtk3
 # platform theme (it reaches for X settings/XWayland from inside Qt
@@ -61,3 +63,23 @@ def script_cmd_cancel(monkeypatch):
     """Every command dialog answers Cancel."""
     from tracer.ui import cmddialog
     monkeypatch.setattr(cmddialog, "ask", lambda *a, **k: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_command_dialogs(monkeypatch):
+    """Hangs happen silently when an unpatched flow reaches a real modal
+    dialog (exec_ blocks forever headless). Fail loudly instead — the
+    title names the culprit command. Tests that legitimately drive the
+    dialog monkeypatch exec_ themselves and override this."""
+    try:
+        from tracer.ui.cmddialog import CommandDialog
+    except Exception:
+        return
+    import pytest as _pt
+
+    def _boom(self, *a, **k):
+        raise _pt.fail(
+            f"real command dialog reached in headless test: "
+            f"{self.windowTitle()!r} — script it via conftest.script_cmd "
+            f"or patch Shell")
+    monkeypatch.setattr(CommandDialog, "exec_", _boom)

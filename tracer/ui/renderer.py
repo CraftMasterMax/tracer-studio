@@ -52,6 +52,9 @@ uniform vec3 u_hi_hover;
 uniform vec3 u_hi_sel;
 uniform float u_edge_width;
 uniform int u_show_edges;
+uniform int u_clip_on;
+uniform vec3 u_clip_n;
+uniform vec3 u_clip_o;
 out vec4 frag;
 
 float edge_amount() {
@@ -62,6 +65,8 @@ float edge_amount() {
 }
 
 void main() {
+    if (u_clip_on == 1 && dot(v_world - u_clip_o, u_clip_n) > 0.0)
+        discard;                                    // Section Analysis clip
     vec3 N = normalize(v_nrm);
     vec3 V = normalize(u_eye - v_world);
     // Blender solid-mode studio: the lights are viewport-fixed, so the
@@ -169,6 +174,7 @@ class SceneRenderer:
         self.show_grid = True
         self.show_solid = True       # browser bulb: hide/show the body
         self.show_edges = True
+        self.clip = None             # Section Analysis: {normal, origin}
         self._grid_extent = 100.0
         self._size = (2, 2)
         self._fbo = None
@@ -446,6 +452,14 @@ class SceneRenderer:
             u["u_hi_sel"].value = p["hi_sel"]
             u["u_edge_width"].value = 1.2
             u["u_show_edges"].value = 1 if self.show_edges else 0
+            if self.clip:
+                u["u_clip_on"].value = 1
+                u["u_clip_n"].value = tuple(
+                    float(t) for t in self.clip["normal"])
+                u["u_clip_o"].value = tuple(
+                    float(t) for t in self.clip["origin"])
+            else:
+                u["u_clip_on"].value = 0
             self._solid_vao.render(moderngl.TRIANGLES, vertices=self._solid_count)
 
         if self._msaa:

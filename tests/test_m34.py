@@ -191,7 +191,7 @@ def _rect_sketch(win, qapp):
 def test_U_key_offsets_the_rect_through_the_canvas(win, qapp, monkeypatch):
     cv = _rect_sketch(win, qapp)
     assert len(cv.model.sketch.lines) == 4
-    monkeypatch.setattr("PySide6.QtWidgets.QInputDialog.getDouble",
+    monkeypatch.setattr("tracer.ui.cmddialog.Shell.getDouble",
                         staticmethod(lambda *a, **k: (-5.0, True)))
     QTest.keyClick(cv, Qt.Key_U)
     qapp.processEvents()
@@ -203,7 +203,7 @@ def test_U_key_offsets_the_rect_through_the_canvas(win, qapp, monkeypatch):
 
 def test_collapse_warning_leaves_the_sketch_alone(win, qapp, monkeypatch):
     cv = _rect_sketch(win, qapp)
-    monkeypatch.setattr("PySide6.QtWidgets.QInputDialog.getDouble",
+    monkeypatch.setattr("tracer.ui.cmddialog.Shell.getDouble",
                         staticmethod(lambda *a, **k: (-20.0, True)))
     QTest.keyClick(cv, Qt.Key_U)
     qapp.processEvents()
@@ -219,7 +219,7 @@ def test_collapse_warning_leaves_the_sketch_alone(win, qapp, monkeypatch):
 
 def test_cancel_in_the_dialog_changes_nothing(win, qapp, monkeypatch):
     cv = _rect_sketch(win, qapp)
-    monkeypatch.setattr("PySide6.QtWidgets.QInputDialog.getDouble",
+    monkeypatch.setattr("tracer.ui.cmddialog.Shell.getDouble",
                         staticmethod(lambda *a, **k: (0.0, False)))
     QTest.keyClick(cv, Qt.Key_U)
     qapp.processEvents()
@@ -236,7 +236,7 @@ def test_context_menu_offers_offset_with_nothing_selected(win, qapp):
 def test_screenshot_proof(win, qapp, monkeypatch):
     import os
     cv = _rect_sketch(win, qapp)
-    monkeypatch.setattr("PySide6.QtWidgets.QInputDialog.getDouble",
+    monkeypatch.setattr("tracer.ui.cmddialog.Shell.getDouble",
                         staticmethod(lambda *a, **k: (-4.0, True)))
     QTest.keyClick(cv, Qt.Key_U)
     qapp.processEvents()

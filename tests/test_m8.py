@@ -9,6 +9,7 @@ from PySide6.QtTest import QTest                        # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog  # noqa: E402
 
 from tracer.core.document import Document, ExtrudeFeature  # noqa: E402
+from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.sketch.model import face_basis, frame_matrix  # noqa: E402
 
 
@@ -96,7 +97,7 @@ def test_curved_faces_are_rejected(win, qapp):
 # ---- end-to-end: double-click -> sketch -> extrude --------------------------
 def test_sketch_on_face_flow_and_volume(win, qapp, monkeypatch):
     _plate_win(win)
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (3.0, True)))
     qapp.processEvents()
     vp = win.viewport
@@ -121,7 +122,7 @@ def test_sketch_on_face_flow_and_volume(win, qapp, monkeypatch):
 
 
 def test_face_feature_serializes_and_reedits(win, qapp, monkeypatch):
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (3.0, True)))
     test_sketch_on_face_flow_and_volume(win, qapp, monkeypatch)
     doc2 = Document.from_dict(win.doc.to_dict())

@@ -16,6 +16,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox  # noqa: E402
 
 from tracer.core import step                                   # noqa: E402
+from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.document import (BodyFilletFeature,           # noqa: E402
                                   Document, PrimitiveFeature)
 from tracer.core.geometry import Solid                         # noqa: E402
@@ -219,7 +220,7 @@ def win(qapp, monkeypatch):
 
 def test_fillet_cmd_works_without_occt(win, qapp, monkeypatch):
     monkeypatch.setattr(step, "available", lambda: False)
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (2.0, True)))
     win.new_document()
     win.doc.add_plate("Plate1", 40, 40, 10, holes=[(20, 20, 5.0)])
@@ -234,7 +235,7 @@ def test_fillet_cmd_works_without_occt(win, qapp, monkeypatch):
 
 def test_fillet_cmd_without_occt_or_rims_rolls_back(win, qapp, monkeypatch):
     monkeypatch.setattr(step, "available", lambda: False)
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (2.0, True)))
     warned = []
     monkeypatch.setattr(QMessageBox, "warning",

@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt                                # noqa: E402
 from PySide6.QtTest import QTest                             # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog     # noqa: E402
 from conftest import tree_texts                              # noqa: E402
+from tracer.ui.cmddialog import Shell                    # noqa: E402
 
 from tracer.core.document import (Document, ExtrudeFeature,      # noqa: E402
                                  RevolveFeature)
@@ -32,7 +33,7 @@ def win(qapp, monkeypatch):
     def fake_getdouble(parent, title, label, *a, **k):
         return (360.0, True) if "Revolve" in title else (10.0, True)
 
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(fake_getdouble))
     w = MainWindow(renderer=r)
     w.resize(1100, 720)
@@ -174,7 +175,7 @@ def test_set_angle_updates_solid(win, qapp, monkeypatch):
     _drag_rect(win.sketch, 5, 0, 10, 4)
     QTest.keyPress(win.sketch, Qt.Key_R, Qt.ShiftModifier)
     qapp.processEvents()
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (90.0, True)))
     win._set_angle(win.doc.features[0])
     assert win.doc.features[0].angle == 90

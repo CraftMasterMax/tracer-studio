@@ -324,7 +324,7 @@ def test_extrude_edit_path_keeps_holes_glued(win, qapp, monkeypatch):
     win.edit_sketch(hole)
     from tracer.core.sketch.entities import Point
     win.sketch.model.add_rect(Point(30, 30), Point(38, 38))
-    monkeypatch.setattr("PySide6.QtWidgets.QInputDialog.getDouble",
+    monkeypatch.setattr("tracer.ui.cmddialog.Shell.getDouble",
                         staticmethod(lambda *a, **k: (3.0, True)))
     win.sketch.finish()
     qapp.processEvents()

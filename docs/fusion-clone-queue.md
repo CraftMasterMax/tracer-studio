@@ -92,10 +92,12 @@ Pattern (five chained prompts → one grouped dialog), Mirror (feature +
 plane + offset together; the feature-menu flow asks only the offset it
 doesn't know), Construction Plane (base + distance).
 
-**M47b — Finish the dialog sweep.**  Single-field QInputDialogs
-(Extrude height, Revolve angle, Shell, Fillet/Chamfer, Sweep, Loft,
-press-pull) onto the same shell for consistent chrome + Remember
-Values; retargets the ~20 test files that patch QInputDialog.
+**✓ M47b — Dialog sweep finished.**  Shell (drop-in QInputDialog
+signature mirror, Fusion chrome + per-prompt Remember Values) now
+serves every remaining single-field prompt: extrude distance, press-
+pull, revolve angle, rename, shell thickness, fillet/chamfer sizes,
+sketcher dimension/offset/angle prompts.  Zero QInputDialog references
+left in the app; 18 prompt sites + 39 test patches moved mechanically.
 
 **M48 — Section Analysis.**  Clip-plane toggle in the viewport (discard
 in fragment shader beyond the plane), plane = chosen face or origin

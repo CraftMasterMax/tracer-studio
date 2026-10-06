@@ -187,7 +187,7 @@ def test_action_shell_hollows_with_the_dialog(win, qapp, monkeypatch):
     monkeypatch.setattr(win.viewport, "selected_face",
                         lambda: dict(point=np.array([20, 20, 10.0]),
                                      normal=np.array([0, 0, 1.0])))
-    monkeypatch.setattr("PySide6.QtWidgets.QInputDialog.getDouble",
+    monkeypatch.setattr("tracer.ui.cmddialog.Shell.getDouble",
                         staticmethod(lambda *a, **k: (2.0, True)))
     win.action_shell()
     qapp.processEvents()
@@ -207,7 +207,7 @@ def test_action_shell_refuses_impossible_wall_without_adding(
     monkeypatch.setattr(win.viewport, "selected_face",
                         lambda: dict(point=np.array([20, 20, 10.0]),
                                      normal=np.array([0, 0, 1.0])))
-    monkeypatch.setattr("PySide6.QtWidgets.QInputDialog.getDouble",
+    monkeypatch.setattr("tracer.ui.cmddialog.Shell.getDouble",
                         staticmethod(lambda *a, **k: (6.0, True)))
     win.action_shell()
     assert warned and not any(isinstance(f, ShellFeature)
@@ -222,7 +222,7 @@ def test_action_shell_twice_is_refused(win, qapp, monkeypatch):
     monkeypatch.setattr(win.viewport, "selected_face",
                         lambda: dict(point=np.array([20, 20, 10.0]),
                                      normal=np.array([0, 0, 1.0])))
-    monkeypatch.setattr("PySide6.QtWidgets.QInputDialog.getDouble",
+    monkeypatch.setattr("tracer.ui.cmddialog.Shell.getDouble",
                         staticmethod(lambda *a, **k: (2.0, True)))
     win.action_shell()
     win.action_shell()                       # already shelled
@@ -236,7 +236,7 @@ def test_shell_undo_restores_the_solid(win, qapp, monkeypatch):
     monkeypatch.setattr(win.viewport, "selected_face",
                         lambda: dict(point=np.array([20, 20, 10.0]),
                                      normal=np.array([0, 0, 1.0])))
-    monkeypatch.setattr("PySide6.QtWidgets.QInputDialog.getDouble",
+    monkeypatch.setattr("tracer.ui.cmddialog.Shell.getDouble",
                         staticmethod(lambda *a, **k: (2.0, True)))
     win.action_shell()
     assert win.doc.result.volume < before
@@ -258,7 +258,7 @@ def test_screenshot_proof(win, qapp, monkeypatch):
     monkeypatch.setattr(win.viewport, "selected_face",
                         lambda: dict(point=np.array([20, 20, 10.0]),
                                      normal=np.array([0, 0, 1.0])))
-    monkeypatch.setattr("PySide6.QtWidgets.QInputDialog.getDouble",
+    monkeypatch.setattr("tracer.ui.cmddialog.Shell.getDouble",
                         staticmethod(lambda *a, **k: (2.0, True)))
     win.action_shell()
     qapp.processEvents()

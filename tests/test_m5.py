@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QApplication,        # noqa: E402
                                QInputDialog)
 
 from tracer.core.sketch.constraints import Distance, Fixed, Radius  # noqa: E402
+from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.document import ExtrudeFeature      # noqa: E402
 
 
@@ -58,7 +59,7 @@ def _rect_with_dims(win, with_circle=True):
 def test_dimension_labels_appear_and_edit_drives_solid(win, qapp, monkeypatch):
     _rect_with_dims(win, with_circle=False)
     answers = [5.0]                       # extrude height on first finish
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (answers.pop(0), True)))
     win.sketch.finish()
     qapp.processEvents()
@@ -90,7 +91,7 @@ def test_dimension_labels_appear_and_edit_drives_solid(win, qapp, monkeypatch):
 
 def test_radius_label_edit(win, qapp, monkeypatch):
     _rect_with_dims(win)
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (5.0, True)))
     win.sketch.finish()
     qapp.processEvents()
@@ -102,7 +103,7 @@ def test_radius_label_edit(win, qapp, monkeypatch):
     rect, rad = next((r, c) for r, c in cv._dim_hits
                      if isinstance(c, Radius))
     vals = iter([9.0])
-    monkeypatch.setattr(QInputDialog, "getDouble",
+    monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (next(vals), True)))
     QTest.mouseDClick(cv, Qt.LeftButton, Qt.NoModifier,
                       rect.center().toPoint(), 10)

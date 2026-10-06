@@ -7,7 +7,7 @@ import numpy as np
 import trimesh
 from PySide6.QtCore import QSize, Qt, QSettings
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog,
+from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, 
                                QLabel, QMainWindow, QMenu, QMessageBox,
                                QPushButton, QSplitter, QStackedWidget,
                                QToolBar, QToolButton, QVBoxLayout, QWidget)
@@ -34,6 +34,7 @@ from .sketcheditor import SketchCanvas
 from .theme import DARK
 from .timeline import TimelineHost
 from .viewport import Viewport
+from .cmddialog import Shell
 
 
 def demo_document() -> Document:
@@ -281,6 +282,17 @@ class MainWindow(QMainWindow):
         r.design_sep()
         d("plane", "Construction plane — offset work plane (Ctrl+Shift+P)",
           lambda checked=False: self.action_construction_plane())
+        d("section", "Section analysis — clip the body on a plane",
+          menu_actions=[
+              ("Section on XY plane",
+               lambda checked=False: self.action_section("XY")),
+              ("Section on XZ plane",
+               lambda checked=False: self.action_section("XZ")),
+              ("Section on YZ plane",
+               lambda checked=False: self.action_section("YZ")),
+              ("Flip clipped side", self.action_flip_section),
+              ("Turn section off",
+               lambda checked=False: self.action_section(None))])
 
         s = r.sketch_tool
         for glyph, tip, tool in (
@@ -627,7 +639,7 @@ class MainWindow(QMainWindow):
         self.status.showMessage(f"{verb} {feature.name}", 4000)
 
     def _set_distance(self, feature):
-        val, ok = QInputDialog.getDouble(self, "Extrude distance",
+        val, ok = Shell.getDouble(self, "Extrude distance",
                                          "Height (mm):", feature.height,
                                          0.01, 1e5, 3)
         if not ok or abs(val - feature.height) < 1e-12:
@@ -644,7 +656,7 @@ class MainWindow(QMainWindow):
         cur = getattr(feature, kind)
         title = "Fillet vertical edges" if kind == "fillet" \
             else "Chamfer vertical edges"
-        val, ok = QInputDialog.getDouble(self, title, "Size (mm, 0 = none):",
+        val, ok = Shell.getDouble(self, title, "Size (mm, 0 = none):",
                                          cur, 0.0, 5000.0, 3)
         if not ok:
             return
@@ -659,7 +671,7 @@ class MainWindow(QMainWindow):
             else f"{feature.name}: sharp edges restored", 4000)
 
     def _set_angle(self, feature):
-        val, ok = QInputDialog.getDouble(self, "Revolve angle",
+        val, ok = Shell.getDouble(self, "Revolve angle",
                                          "Angle (°):", feature.angle,
                                          1.0, 360.0, 1)
         if not ok or abs(val - feature.angle) < 1e-9:
@@ -671,7 +683,7 @@ class MainWindow(QMainWindow):
         self.status.showMessage(f"{feature.name}: {val:g}° revolve", 4000)
 
     def _rename_feature(self, feature):
-        name, ok = QInputDialog.getText(self, "Rename feature", "Name:",
+        name, ok = Shell.getText(self, "Rename feature", "Name:",
                                         text=feature.name)
         if not ok or not name.strip():
             return
@@ -849,12 +861,12 @@ class MainWindow(QMainWindow):
                         "u=0 line through the origin) — Fusion revolves "
                         "profiles about it, so keep each one on a side.")
                     return
-            angle, ok = QInputDialog.getDouble(
+            angle, ok = Shell.getDouble(
                 self, "Revolve", "Angle (degrees):", 360.0, 1.0, 360.0, 1)
             if not ok:
                 return
         else:
-            height, ok = QInputDialog.getDouble(
+            height, ok = Shell.getDouble(
                 self, "Extrude", "Height (mm):", 5.0, 0.01, 1e5, 2)
             if not ok:
                 return
@@ -1004,7 +1016,7 @@ class MainWindow(QMainWindow):
                 "Click the face to REMOVE first — the body hollows with "
                 "that face open, exactly like Fusion's Shell.")
             return
-        t, ok = QInputDialog.getDouble(self, "Shell",
+        t, ok = Shell.getDouble(self, "Shell",
                                        "Wall thickness (mm):", 2.0,
                                        0.05, 1e4, 2)
         if not ok:
@@ -1648,7 +1660,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, f"No body to {kind.lower()}",
                                     "Create a feature first.")
             return
-        size, ok = QInputDialog.getDouble(
+        size, ok = Shell.getDouble(
             self, f"{kind} body edges",
             f"{'Distance' if chamfer else 'Radius'} (mm):",
             2.0, 0.05, 1e4, 2)
@@ -1688,7 +1700,7 @@ class MainWindow(QMainWindow):
     def _set_fillet_size(self, feature):
         kind = "Chamfer" if feature.chamfer else "Fillet"
         old = feature.radius
-        val, ok = QInputDialog.getDouble(self, kind, "Size (mm):",
+        val, ok = Shell.getDouble(self, kind, "Size (mm):",
                                          old, 0.05, 1e4, 2)
         if not ok or val == old:
             return

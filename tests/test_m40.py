@@ -62,6 +62,7 @@ from PySide6.QtWidgets import (QApplication, QInputDialog, QToolButton)  # noqa:
 from tracer.ui.mainwindow import MainWindow                             # noqa: E402
 from tracer.ui.renderer import SceneRenderer                            # noqa: E402
 from conftest import script_cmd                                         # noqa: E402
+from tracer.ui.cmddialog import Shell                    # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -95,7 +96,7 @@ def dialogs(monkeypatch):
     def install(base="XY", *distances):
         dist = distances[0] if distances else 12.0
         script_cmd(monkeypatch, {"base": base, "dist": dist})
-        monkeypatch.setattr(QInputDialog, "getDouble",
+        monkeypatch.setattr(Shell, "getDouble",
                             staticmethod(lambda *a, **k: (12.0, True)))
     return install
 

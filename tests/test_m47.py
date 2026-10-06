@@ -90,7 +90,9 @@ def test_remember_values_round_trip(qapp):
 
 
 def test_ask_returns_none_on_cancel(qapp, monkeypatch):
-    monkeypatch.setattr(QDialog, "exec_", lambda self: QDialog.Rejected)
+    from tracer.ui.cmddialog import CommandDialog
+    monkeypatch.setattr(CommandDialog, "exec_",
+                        lambda self: QDialog.Rejected)
     assert cmddialog.ask(None, "X", [dict(key="a", label="A",
                                           kind="double", default=1.0)]) is None
 
