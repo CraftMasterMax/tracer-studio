@@ -215,6 +215,15 @@ metadata, so an inch document is the same math with a different
 accent.  mm output is byte-identical to the pre-M60 voice the suite
 pins.
 
+**M61 — Change Parameters.** ✓ SHIPPED.  Fusion's Modify ▸ Change
+Parameters: right-click any parametric feature (or the Modify menu) and
+its real levers open in a unit-aware dialog — box dims, extrude height,
+hole depth, pattern counts, split position, move vectors, rotate
+axis+angle, copy flags.  OK re-runs the kernel and the body follows
+(undo-safe); cancel changes nothing; captured geometry (loft/sweep)
+honestly reports it has no plain numbers.  In an inch document the
+dialog takes inches.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, Combine/multi-browser-bodies,
 configurations, assemblies/joints, sheet metal, drawings.

@@ -492,6 +492,8 @@ class MainWindow(QMainWindow):
                                  triggered=lambda checked=False: self.action_shell())
         m_mo.addActions([self.act_fillet, self.act_chamfer, self.act_shell])
         m_mo.addSeparator()
+        m_mo.addAction("Change Parameters…",
+                       lambda checked=False: self.action_change_params())
         m_mo.addAction("Move body…",
                        lambda checked=False: self.action_move_body())
         m_mo.addAction("Rotate body…",
@@ -641,6 +643,9 @@ class MainWindow(QMainWindow):
                 mir_menu.addAction(f"across {pl} ({hint})",
                                    lambda checked=False, p=pl:
                                    self._mirror_feature(feature, p))
+        if self._feature_params(feature):
+            menu.addAction("Change Parameters…",
+                           lambda: self.action_change_params(feature))
         menu.addAction("Rename…", lambda: self._rename_feature(feature))
         menu.addSeparator()
         menu.addAction("Unsuppress" if feature.suppressed else "Suppress",
@@ -693,6 +698,187 @@ class MainWindow(QMainWindow):
         self.doc.dirty = True
         self.recompute()
         self.status.showMessage(f"{feature.name}: height {val:g} mm", 4000)
+
+    # ---- Change Parameters (M61) ---------------------------------------------
+    def _feature_params(self, feature):
+        """Fusion's Change Parameters (M61): the numeric levers a feature
+        is built from, expressed in document measures (mm stays the
+        stored truth).  Returns cmddialog field specs — empty for
+        features whose geometry is captured data (loft/sweep/sketch)."""
+        u = self.doc.units if self.doc else "mm"
+        sc = units.PER_MM[u]
+        lab = units.LABEL[u]
+        fld = []
+
+        def dbl(key, label, mm, dec=2, mn=0.0, ang=False):
+            spec = dict(key=key, kind="double", decimals=dec,
+                        label=f"{label} ({'\u00b0' if ang else lab})")
+            spec["default"] = float(mm) if ang else round(mm / sc, 6)
+            if mn is not None:
+                spec["min"] = mn if ang else mn / sc
+            fld.append(spec)
+
+        def ints(key, label, val, mn=2):
+            fld.append(dict(key=key, label=label, kind="int",
+                            default=int(val), min=mn))
+
+        def combo(key, label, choices, cur):
+            fld.append(dict(key=key, label=label, kind="combo",
+                            choices=list(choices), default=cur))
+
+        def check(key, label, val):
+            fld.append(dict(key=key, label=label, kind="check",
+                            default=bool(val)))
+
+        if isinstance(feature, PrimitiveFeature):
+            d = feature.dims
+            if feature.kind == "box":
+                dbl("dx", "length X", d["dx"])
+                dbl("dy", "length Y", d["dy"])
+                dbl("dz", "length Z", d["dz"])
+            elif feature.kind == "cylinder":
+                dbl("radius", "radius", d["radius"])
+                dbl("height", "height", d["height"])
+            elif feature.kind == "sphere":
+                dbl("radius", "radius", d["radius"])
+        elif isinstance(feature, ExtrudeFeature):
+            dbl("height", "height", feature.height)
+            dbl("fillet", "fillet", feature.fillet, mn=0.0)
+            dbl("chamfer", "chamfer", feature.chamfer, mn=0.0)
+        elif isinstance(feature, RevolveFeature):
+            dbl("angle", "angle", feature.angle, dec=1, ang=True)
+        elif isinstance(feature, HoleFeature):
+            dbl("radius", "radius", feature.radius, dec=3, mn=0.05)
+            check("through", "through all", feature.through)
+            dbl("depth", "depth", feature.depth, mn=0.05)
+        elif isinstance(feature, BodyFilletFeature):
+            dbl("radius", "radius", feature.radius)
+            check("chamfer", "chamfer, not fillet", feature.chamfer)
+        elif isinstance(feature, ShellFeature):
+            dbl("thickness", "wall thickness", feature.thickness, mn=0.05)
+        elif isinstance(feature, ThreadFeature):
+            dbl("pitch", "pitch", feature.pitch, dec=3)
+            dbl("length", "length", feature.length)
+        elif isinstance(feature, LinearPatternFeature):
+            ints("count", "occurrences", feature.count)
+            for i, k in enumerate("xyz"):
+                dbl(f"v{i}", f"offset {k}", feature.vector[i], mn=None)
+        elif isinstance(feature, CircularPatternFeature):
+            ints("count", "occurrences", feature.count)
+            dbl("angle", "angle", feature.angle, dec=1, mn=1.0, ang=True)
+        elif isinstance(feature, PathPatternFeature):
+            ints("count", "occurrences", feature.count)
+        elif isinstance(feature, MirrorFeature):
+            combo("plane", "mirror plane", ("YZ", "XZ", "XY"),
+                  feature.plane)
+            dbl("offset", "offset", feature.offset, mn=None)
+        elif isinstance(feature, SplitFeature):
+            n = np.abs(np.asarray(feature.normal, float))
+            i = int(n.argmax())
+            dbl("dist", f"plane at {'XYZ'[i]}", feature.origin[i], mn=None)
+            check("flip", "keep other side", feature.flip)
+        elif isinstance(feature, MoveFeature):
+            for i, k in enumerate("xyz"):
+                dbl(f"v{i}", f"translate {k}", feature.vec[i], mn=None)
+            check("copy", "copy (join the twin)", feature.copy)
+        elif isinstance(feature, RotateFeature):
+            ax = int(np.abs(np.asarray(feature.axis, float)).argmax())
+            combo("axis", "axis", ("X", "Y", "Z"), "xyz"[ax].upper())
+            dbl("angle", "angle", feature.angle_deg, dec=1, mn=None,
+                ang=True)
+            check("copy", "copy (join the twin)", feature.copy)
+        return fld
+
+    def _apply_feature_params(self, feature, v):
+        """Write the dialog's (unit-spoken) values back into the
+        feature — millimetres stay the stored truth."""
+        u = self.doc.units if self.doc else "mm"
+        sc = units.PER_MM[u]
+
+        def mm(key):
+            return float(v[key]) * sc
+
+        if isinstance(feature, PrimitiveFeature):
+            d = feature.dims
+            if feature.kind == "box":
+                for k in ("dx", "dy", "dz"):
+                    d[k] = mm(k)
+            elif feature.kind == "cylinder":
+                d["radius"] = mm("radius")
+                d["height"] = mm("height")
+            elif feature.kind == "sphere":
+                d["radius"] = mm("radius")
+        elif isinstance(feature, ExtrudeFeature):
+            feature.height = mm("height")
+            feature.fillet = mm("fillet")
+            feature.chamfer = mm("chamfer")
+        elif isinstance(feature, RevolveFeature):
+            feature.angle = float(v["angle"])
+        elif isinstance(feature, HoleFeature):
+            feature.radius = mm("radius")
+            feature.through = bool(v["through"])
+            feature.depth = mm("depth")
+        elif isinstance(feature, BodyFilletFeature):
+            feature.radius = mm("radius")
+            feature.chamfer = bool(v["chamfer"])
+        elif isinstance(feature, ShellFeature):
+            feature.thickness = mm("thickness")
+        elif isinstance(feature, ThreadFeature):
+            feature.pitch = mm("pitch")
+            feature.length = mm("length")
+        elif isinstance(feature, LinearPatternFeature):
+            feature.count = int(v["count"])
+            feature.vector = tuple(mm(f"v{i}") for i in range(3))
+        elif isinstance(feature, CircularPatternFeature):
+            feature.count = int(v["count"])
+            feature.angle = float(v["angle"])
+        elif isinstance(feature, PathPatternFeature):
+            feature.count = int(v["count"])
+        elif isinstance(feature, MirrorFeature):
+            feature.plane = str(v["plane"])
+            feature.offset = mm("offset")
+        elif isinstance(feature, SplitFeature):
+            n = np.abs(np.asarray(feature.normal, float))
+            i = int(n.argmax())
+            org = [float(x) for x in feature.origin]
+            org[i] = mm("dist")
+            feature.origin = tuple(org)
+            feature.flip = bool(v["flip"])
+        elif isinstance(feature, MoveFeature):
+            feature.vec = tuple(mm(f"v{i}") for i in range(3))
+            feature.copy = bool(v["copy"])
+        elif isinstance(feature, RotateFeature):
+            feature.axis = tuple(float(x) for x in
+                                 np.eye(3)["XYZ".index(str(v["axis"]))])
+            feature.angle_deg = float(v["angle"])
+            feature.copy = bool(v["copy"])
+        self.doc.dirty = True
+
+    def action_change_params(self, feature=None):
+        """Fusion's Modify ▸ Change Parameters: edit the numbers that
+        define a feature.  Undo-safe; honours document measures."""
+        if self.doc is None:
+            return
+        feat = feature if feature is not None \
+            else self.rail.tree.current_feature()
+        if feat is None:
+            self.status.showMessage("Select a feature, then change its "
+                                    "parameters", 3500)
+            return
+        fld = self._feature_params(feat)
+        if not fld:
+            self.status.showMessage(
+                f"{feat.name}: captured geometry — no plain numbers to "
+                "change", 3500)
+            return
+        v = cmddialog.ask(self, f"Change Parameters \u2014 {feat.name}",
+                          fld)
+        if v is None:
+            return
+        self._capture()
+        self._apply_feature_params(feat, v)
+        self.recompute()
+        self.status.showMessage(f"Parameters changed on {feat.name}", 4000)
 
     def _set_corner(self, feature, kind: str):
         """Round (fillet) or cut (chamfer) the extrusion's vertical edges.
