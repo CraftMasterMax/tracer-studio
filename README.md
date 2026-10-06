@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M99**
+**Status: M100**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -90,7 +90,9 @@ independent project with no Autodesk assets or affiliation.)
   the sheet by clicking (two endpoints = linear bubble, one tap on a
   circle = Ø), and the numbers can't lie: bubbles re-measure from the
   model on every repaint, follow a stretch or a redrill, and travel
-  when you drag a view; sheets live in the browser tree and export as
+  when you drag a view; double-click a view for its **scale picker**
+  (Fit, 1:1, 1:2, …) — bubbles keep measuring the model while the ink
+  follows the ratio; sheets live in the browser tree and export as
   PNG+DXF
 - **Configurations**: multiple design variants in one file — a text
   table per config (`Small: width = 18, height = 10`) overrides
@@ -109,7 +111,7 @@ independent project with no Autodesk assets or affiliation.)
   a playhead timeline of icon chips, and a blue-grey horizon viewport —
   plus first-launch shortcut tour and a persistent Shortcuts tab driven by
   one canonical key table
-- 972 headless tests (EGL rendering + Qt pixel assertions)
+- 981 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -139,7 +141,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 972 tests, fully headless
+./.venv/bin/python -m pytest -q          # 981 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

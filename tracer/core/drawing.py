@@ -251,8 +251,35 @@ def fit_circle(chain):
     return (float(c[0]), float(c[1])), r
 
 
+def parse_scale(text: str):
+    """M100: the Scale dialog's wording → a factor. "Fit (auto)"
+    (anything starting with fit) means the layout assistant decides
+    (None); "1:2" is 0.5, "2:1" is 2, and a bare number is itself.
+    Garbage raises with the draughtsman's examples."""
+    t = str(text).strip().lower()
+    if not t or t.startswith("fit"):
+        return None
+    if ":" in t:
+        try:
+            a, b = t.split(":", 1)
+            a, b = float(a), float(b)
+        except ValueError:
+            raise ValueError(f"scale {text!r} is not a ratio")
+        if b == 0:
+            raise ValueError("scale ratios need a non-zero second term")
+        return a / b
+    try:
+        f = float(t)
+    except ValueError:
+        raise ValueError(f"scale {text!r} — try Fit, 1:2, 2:1 or 0.5")
+    if f <= 0:
+        raise ValueError("scales are positive")
+    return f
+
+
 def place(views: dict, page: str = "A3", margin: float = 10.0,
-          moves: dict | None = None) -> dict:
+          moves: dict | None = None,
+          scales: dict | None = None) -> dict:
     """M94: the placement math the sheet and the dim tool share.
     Scale every view once and centre it in its slot; return per view
     {\"sc\", \"off\", \"min\", \"max\", \"chains\"} where a model point
@@ -266,12 +293,13 @@ def place(views: dict, page: str = "A3", margin: float = 10.0,
         ------+------
         front | right
     """
-    sc = fit_scale(views, page, margin)
+    base = fit_scale(views, page, margin)
     W, H = PAGES.get(page, PAGES["A3"])
     out: dict = {}
     for name, chains in views.items():
         if not chains:
             continue
+        sc = float((scales or {}).get(name) or base)   # M100 override
         P = np.vstack([np.asarray(c, float) * sc for c in chains])
         lo = P.min(axis=0)
         hi = P.max(axis=0)

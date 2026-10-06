@@ -1054,6 +1054,8 @@ class MainWindow(QMainWindow):
         self.drawing.dim_added.connect(self._add_dim)     # M94 bubbles
         self.drawing.view_drag_begin.connect(            # M96 undo capture
             self._capture)
+        self.drawing.view_scale_requested.connect(       # M100 scales
+            self._on_view_scale)
         lay.addWidget(self.drawing, 1)
         return page
 
@@ -1089,6 +1091,37 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             f"{name} created \u2014 top \u00b7 front \u00b7 right \u00b7 iso"
             " \u00b7 live off the model", 6000)
+
+    def _on_view_scale(self, view: str):
+        """M100: the Scale dialog landed on a view — Fit hands it back
+        to the layout assistant; a ratio rides on the drawing entry."""
+        from ..core.drawing import parse_scale
+        g = self.drawing.sheet()
+        if not g:
+            return
+        cur = (g.get("vscale") or {}).get(view)
+        choice = self.drawing._scale_dialog(cur)
+        if choice is None:
+            return
+        try:
+            factor = parse_scale(choice)
+        except ValueError as e:
+            self.status.showMessage(f"Scale no good: {e}", 4000)
+            return
+        self._capture()
+        vs = g.setdefault("vscale", {})
+        if factor is None:
+            vs.pop(view, None)
+            if not vs:
+                del g["vscale"]
+            label = "Fit (layout assistant)"
+        else:
+            vs[view] = float(factor)
+            from .drawingview import scale_label
+            label = scale_label(float(factor))
+        self.doc.dirty = True
+        self.drawing.update()
+        self.status.showMessage(f"{view} view scale: {label}", 4000)
 
     def _add_dim(self, view: str, a: tuple, b: tuple, opts: dict = None):
         """A finished bubble (M94/M95): undo-captured, stored in MODEL

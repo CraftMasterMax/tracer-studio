@@ -737,6 +737,24 @@ sliver it should. Honest scope: XY-style plane transforms like sweep
 (one plane per wall); frozen sketch re-edit shares sweep's dormant
 path; no variable thickness (that's loft's language).
 
+**M100 — Per-view scale: the draughtsman's 1:2.** ✓ SHIPPED.  Every
+maker who has squeezed a part onto A4 knows the need: one sheet, but
+the detail view must be HALF size. Double-click a view on the sheet
+and Fusion's scale picker appears — Fit (back to the layout
+assistant's auto), 1:1, 1:2, 1:5, 1:10, 2:1, 5:1. The override rides
+on the drawing entry ({view: factor}) exactly like M96 moves do, so
+views still re-derive LIVE: scaling never re-projects anything, it
+just changes the frame every chain, bubble and dashed hidden line
+already rides through. That is the promise this milestone makes
+visible: a 1:2 view's bubble still reads 40.00 — the number measures
+the MODEL, never the paper (the ink halves, the truth doesn't). A
+scaled view wears its ratio as a caption the way drawings say it
+("1:2", not "0.5"), DXF export carries the scaled geometry, undo
+takes it back to auto, and nonsense input changes nothing and says
+why. Honest scope: scale only (no rotation); an explicit scale is the
+draughtsman's responsibility — like Fusion, a 5:1 detail may hang off
+the sheet, and the auto-fit only balances the NON-overridden views.
+
 **Later candidates (researched, deferred):** Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),
 configurations, assemblies/joints, sheet metal, drawings.

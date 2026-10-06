@@ -17,9 +17,20 @@ from PySide6.QtWidgets import QWidget
 from ..core import drawing
 
 
+def scale_label(factor: float) -> str:
+    """The caption under a scaled view, drawn the way drawings say it:
+    0.5 -> "1:2", 2 -> "2:1", 1 -> "1:1"."""
+    if abs(factor - 1.0) < 1e-9:
+        return "1:1"
+    if factor < 1.0:
+        return f"1:{1.0 / factor:.6g}"
+    return f"{factor:.6g}:1"
+
+
 class DrawingCanvas(QWidget):
     dim_added = Signal(str, tuple, tuple, dict)  # view, a, b, opts (M94/95)
     view_drag_begin = Signal()                   # M96: undo capture hook
+    view_scale_requested = Signal(str)           # M100: Scale dialog ask
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -95,7 +106,8 @@ class DrawingCanvas(QWidget):
         Pass `views` to reuse a fresh projection instead of redoing it."""
         views = self.views() if views is None else views
         return drawing.place(views, page=self.page,
-                             moves=self.sheet().get("move"))
+                             moves=self.sheet().get("move"),
+                             scales=self.sheet().get("vscale"))
 
     def layout(self) -> dict:
         """Page-coordinate chains (mm, y-up, origin lower-left)."""
@@ -328,6 +340,24 @@ class DrawingCanvas(QWidget):
                            for p2 in c]
                     for i in range(len(pts) - 1):
                         p.drawLine(pts[i], pts[i + 1])
+        # M100: a view on an explicit scale wears its ratio as a caption
+        vs = self.sheet().get("vscale") or {}
+        if vs:
+            f2 = p.font()
+            f2.setPointSizeF(max(5.5, 7 * min(self._zoom, 2.0)))
+            p.setFont(f2)
+            for name, fr in placed.items():
+                fac = vs.get(name)
+                if not fac:
+                    continue
+                c0 = self.s2p(
+                    fr["off"][0] + 0.5 * (fr["min"][0] + fr["max"][0]),
+                    fr["off"][1] + fr["min"][1] - 3.0)
+                p.setPen(QPen(QColor(90, 94, 100)))
+                p.drawText(QRectF(c0.x() - 40, c0.y(), 80,
+                                  14 * self._zoom),
+                           Qt.AlignHCenter | Qt.AlignTop,
+                           scale_label(float(fac)))
         self._draw_dims(p, placed)
 
     def _draw_dims(self, p: QPainter, placed: dict):
@@ -526,3 +556,24 @@ class DrawingCanvas(QWidget):
     def mouseReleaseEvent(self, ev):
         self._drag = None
         self._view_drag = None
+
+    def mouseDoubleClickEvent(self, ev):
+        # M100: double-click a view -> its Scale dialog
+        if self._dim_mode or ev.button() != Qt.LeftButton:
+            return
+        placed = self.placed()
+        if not placed:
+            return
+        view = self._view_at(self.p2s(ev.position()), placed, slack=0.0)
+        if view is not None:
+            self.view_scale_requested.emit(view)
+
+    def _scale_dialog(self, cur):
+        """Fusion's scale picker: Fit plus the standard ratios. Returns
+        the chosen wording (None = cancelled)."""
+        from . import cmddialog
+        v = cmddialog.ask(self, "View scale", [
+            dict(key="scale", kind="combo", label="Scale",
+                 choices=["Fit (auto)", "1:1", "1:2", "1:5", "1:10",
+                          "2:1", "5:1"])])
+        return None if v is None else str(v["scale"])
