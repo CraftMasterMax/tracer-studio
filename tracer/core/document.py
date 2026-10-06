@@ -596,6 +596,7 @@ class Document:
         self.planes: list[dict] = []      # construction planes (Construct ▸)
         self.appearance: dict | None = None   # Appearance ▸ material paint
         self.params: dict = {}                # user parameters (M81)
+        self.rollback_to: int | None = None   # M88 rubber band (view state)
         self._result: Solid | None = None
         self.dirty = False
 
@@ -678,7 +679,9 @@ class Document:
                     f.apply_bindings(vals, sc)
         acc: Solid | None = None
         by_uid: dict[str, Solid] = {}
-        for f in self.features:
+        for pos, f in enumerate(self.features):
+            if self.rollback_to is not None and pos >= self.rollback_to:
+                continue                      # M88: past the rubber band
             if f.suppressed:
                 continue
             if isinstance(f, LinearPatternFeature):

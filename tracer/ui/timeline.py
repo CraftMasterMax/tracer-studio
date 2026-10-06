@@ -20,12 +20,14 @@ class TimelineBar(QWidget):
     feature_menu = Signal(object, object)   # Feature, global QPoint
     feature_delete = Signal(object)         # Delete key on selected chip
     home_clicked = Signal()                 # playhead: view home
+    rollback_changed = Signal(object)       # M88: index or None (end)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.doc: Document | None = None
         self._chips: list[tuple[int, int, object]] = []   # x, w, feature
         self._home = QRectF(6, 7, 22, 22)
+        self._marker: QRectF | None = None   # M88 rubber band hit rect
         self._sel: int = -1
         self.setMinimumHeight(38)
         self.setMouseTracking(True)
@@ -93,9 +95,16 @@ class TimelineBar(QWidget):
                 return        # safe now: context manager closes painter
             x = 34
             last = len(self.doc.features) - 1
+            rb = getattr(self.doc, "rollback_to", None)   # M88 rubber band
+            self._marker = None
+            if rb == 0:
+                self._marker = QRectF(31, 5, 6, h + 4)
+                p.setPen(QPen(QColor("#4ea1ff"), 2.2))
+                p.drawLine(34, 6, 34, 6 + int(h))
             for i, f in enumerate(self.doc.features):
                 r = QRectF(x, 7, 30, h)
-                dim = getattr(f, "suppressed", False)
+                dim = (getattr(f, "suppressed", False)
+                       or (rb is not None and i >= rb))    # hidden by band
                 sel = i == self._sel
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(QColor("#33373d" if dim
@@ -112,6 +121,11 @@ class TimelineBar(QWidget):
                 p.setPen(QColor("#767e8a") if dim else QColor("#e6e9ec"))
                 p.drawText(r, Qt.AlignCenter, self._glyph(f))
                 self._chips.append((x, 30, f))
+                if rb is not None and i + 1 == rb:
+                    mx = x + 32                # rubber band after this chip
+                    self._marker = QRectF(mx - 3, 5, 7, h + 4)
+                    p.setPen(QPen(QColor("#4ea1ff"), 2.2))
+                    p.drawLine(int(mx), 6, int(mx), 6 + int(h))
                 x += 34
 
     # ---- hit tests ---------------------------------------------------------
@@ -129,6 +143,10 @@ class TimelineBar(QWidget):
             QToolTip.hideText()
 
     def mousePressEvent(self, ev):
+        if (self._marker is not None
+                and self._marker.contains(ev.position())):
+            self.rollback_changed.emit(None)          # M88: end rollback
+            return
         if self._home.contains(ev.position()):
             self.home_clicked.emit()
             return

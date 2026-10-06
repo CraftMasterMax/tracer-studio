@@ -107,6 +107,7 @@ class MainWindow(QMainWindow):
         self.timeline = TimelineHost()
         self.timeline.bar.feature_activated.connect(self._feature_activated)
         self.timeline.bar.feature_menu.connect(self._feature_menu)
+        self.timeline.bar.rollback_changed.connect(self._apply_rollback)
         self.timeline.bar.feature_delete.connect(self._delete_feature)
         self.timeline.bar.home_clicked.connect(self.viewport.home)
         self.viewport.face_picked.connect(self._start_sketch_on_face)
@@ -686,6 +687,11 @@ class MainWindow(QMainWindow):
         menu.addSeparator()
         menu.addAction("Unsuppress" if feature.suppressed else "Suppress",
                        lambda: self._toggle_suppress(feature))
+        menu.addAction("Rollback to here",
+                       lambda: self._rollback_to(feature))
+        if self.doc is not None and self.doc.rollback_to is not None:
+            menu.addAction("End rollback",
+                           lambda: self._apply_rollback(None))
         menu.addAction("Delete feature", lambda: self._delete_feature(feature))
         menu.exec(pos)
 
@@ -714,6 +720,31 @@ class MainWindow(QMainWindow):
         label = {"union": "Join", "subtract": "Cut",
                  "intersect": "Intersect"}[op]
         self.status.showMessage(f"{feature.name}: {label}", 4000)
+
+    def _rollback_to(self, feature):
+        """Fusion's rollback rubber band: the band lands right AFTER
+        this feature — everything downstream hides; on the last chip
+        rolling back means ending it."""
+        if self.doc is None or feature not in self.doc.features:
+            return
+        idx = self.doc.features.index(feature)
+        self._apply_rollback(idx + 1)
+
+    def _apply_rollback(self, n):
+        """Move (or end, for None / past-the-end) the rubber band and
+        show the partial history.  View state: never serialized."""
+        if self.doc is None:
+            return
+        total = len(self.doc.features)
+        if n is None or n >= total:
+            self.doc.rollback_to = None
+            msg = (f"Rollback ended — showing all {total} feature"
+                   + ("" if total == 1 else "s"))
+        else:
+            self.doc.rollback_to = max(0, int(n))
+            msg = f"Rollback: showing {self.doc.rollback_to} of {total}"
+        self.recompute()
+        self.status.showMessage(msg, 4000)
 
     def _toggle_suppress(self, feature):
         self._capture()

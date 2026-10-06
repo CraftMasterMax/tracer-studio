@@ -523,6 +523,17 @@ tests document: LM's least-squares COMPROMISE under conflict drifts
 nearby pins, so the blame set can ripple beyond the single fighter —
 exactly how Fusion cascades red too.
 
+**M88 — The rollback bar (rubber band).** ✓ SHIPPED.  Fusion's most
+iconic timeline verb: a band that sits BETWEEN chips and hides
+everything downstream, so you edit inside history. Feature context menu
+▸ "Rollback to here" moves the band (on the last chip it ends
+rollback); clicking the band itself ends it; downstream chips dim and
+`Document.recompute` simply stops at the marker — pattern sources
+under the band drop out gracefully. Honest scope: the position is VIEW
+state, never serialized, exactly like Fusion not baking your rubber
+band into the file.  Suppress (which already existed) hides one
+feature; the band rewinds time.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),
