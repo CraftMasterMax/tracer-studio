@@ -95,6 +95,23 @@ def round_corners(pts, radius: float = 0.0, chamfer: float = 0.0) -> np.ndarray:
     return np.asarray(out, float)
 
 
+def rotation_about(center, axis, rad: float) -> np.ndarray:
+    """4x4 rigid rotation of `rad` radians around the axis through
+    `center` (right-hand rule) — Rodrigues' formula, no dependencies."""
+    e = np.asarray(axis, float)
+    e = e / np.linalg.norm(e)
+    c = np.asarray(center, float)
+    K = np.array([[0.0, -e[2], e[1]],
+                  [e[2], 0.0, -e[0]],
+                  [-e[1], e[0], 0.0]])
+    R = np.eye(3) + np.sin(rad) * K \
+        + (1.0 - np.cos(rad)) * (K @ K)
+    m = np.eye(4)
+    m[:3, :3] = R
+    m[:3, 3] = c - R @ c
+    return m
+
+
 class Solid:
     """An immutable watertight solid. Booleans return new Solids."""
 

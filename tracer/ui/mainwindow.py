@@ -19,7 +19,7 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
                              LoftFeature, MirrorFeature, MoveFeature,
-                             PathPatternFeature,
+                             PathPatternFeature, RotateFeature,
                              PrimitiveFeature,
                              RevolveFeature, ShellFeature, SplitFeature,
                              SweepFeature,
@@ -97,8 +97,11 @@ class MainWindow(QMainWindow):
         self.viewport.coords.connect(self._show_coords)
         self.viewport.press_pull.connect(self._press_pull)
         self.viewport.move_drag.connect(self._on_move_drag)
+        self.viewport.rotate_drag.connect(self._on_rotate_drag)
         self._move_origin = None             # armed Move gesture (M53)
         self._move_len = 40.0
+        self._rotate_center = None           # armed Rotate (M55)
+        self._rotate_radius = 40.0
         self.viewport.selection_changed.connect(self._on_face_selection)
         cl.addWidget(self.timeline)
         self.setCentralWidget(center)
@@ -295,6 +298,8 @@ class MainWindow(QMainWindow):
           lambda checked=False: self.action_split_body())
         d("move", "Move body — drag the triad to slide it",
           lambda checked=False: self.action_move_body())
+        d("rotate", "Rotate body — drag a ring to spin it",
+          lambda checked=False: self.action_rotate_body())
         r.design_sep()
         d("plane", "Construction plane — offset work plane (Ctrl+Shift+P)",
           lambda checked=False: self.action_construction_plane())
@@ -484,6 +489,8 @@ class MainWindow(QMainWindow):
         m_mo.addSeparator()
         m_mo.addAction("Move body…",
                        lambda checked=False: self.action_move_body())
+        m_mo.addAction("Rotate body…",
+                       lambda checked=False: self.action_rotate_body())
 
         m_edit = self.menuBar().addMenu("&Edit")
         self.act_undo = QAction("&Undo", self, shortcut=QKeySequence.Undo,
@@ -1318,6 +1325,58 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             f"Body moved — x {off_v[0]:+g}, y {off_v[1]:+g}, "
             f"z {off_v[2]:+g} mm", 5000)
+
+    def action_rotate_body(self):
+        """Fusion Move/Copy's other half (M55): RGB rings appear around
+        the body — drag one and the solid spins about that axis, live;
+        release commits a parametric rotate feature."""
+        if self.doc is None or self.doc.result is None:
+            QMessageBox.warning(self, "Rotate",
+                                "Nothing to rotate yet — extrude or "
+                                "import a solid first.")
+            return
+        lo = np.asarray(self.doc.result.bounding_box[0], float)
+        hi = np.asarray(self.doc.result.bounding_box[1], float)
+        self._rotate_center = (lo + hi) / 2.0
+        self._rotate_radius = 0.6 * float(np.max(hi - lo))
+        self.viewport.begin_rotate(self._rotate_center,
+                                   self._rotate_radius)
+        self.status.showMessage(
+            "Drag a coloured ring to spin the body — release commits, "
+            "Esc cancels", 6000)
+
+    def _on_rotate_drag(self, payload):
+        """Live preview through the renderer's rotation matrix; the
+        release commits a RotateFeature."""
+        if payload.get("cancel") or "rad" not in payload:
+            self._renderer.set_preview_rot(None)
+            self.viewport.update()
+            self.status.showMessage("Rotate cancelled", 2500)
+            return
+        axis_i = int(payload["axis"])
+        e = np.eye(3)[axis_i]
+        c = np.asarray(payload["center"], float)
+        rad = float(payload["rad"])
+        if payload.get("live"):
+            self._renderer.set_preview_rot((c, e, rad))
+            self.viewport.update()
+            return
+        self._renderer.set_preview_rot(None)
+        if abs(rad) < np.deg2rad(0.1):
+            self.viewport.update()
+            self.status.showMessage("Rotate cancelled", 2500)
+            return
+        deg = float(np.rad2deg(rad))
+        self._capture()
+        self.doc.add(RotateFeature(
+            name=f"Rotate {'xyz'[axis_i]} {deg:+.1f}\u00b0",
+            center=tuple(float(v) for v in c),
+            axis=tuple(float(v) for v in e), angle_deg=deg))
+        self.recompute()
+        self.viewport.refresh()
+        self.status.showMessage(
+            f"Body rotated {deg:+.1f}\u00b0 about "
+            f"{'XYZ'[axis_i]} through its centre", 5000)
 
     def _sync_holes(self, sid, payload):
         """Sketch re-edit through the extrude path: holes stay glued to

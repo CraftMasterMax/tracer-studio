@@ -23,13 +23,14 @@ in float in_hi;
 uniform mat4 u_view;
 uniform mat4 u_proj;
 uniform vec3 u_off;              // live Move preview: slide the body
+uniform mat4 u_xform;            // live Rotate preview: spin the body
 out vec3 v_nrm;
 out vec3 v_world;
 out vec3 v_bary;
 out vec3 v_mask;
 out float v_hi;
 void main() {
-    vec3 wp = in_pos + u_off;
+    vec3 wp = (u_xform * vec4(in_pos, 1.0)).xyz + u_off;
     v_world = wp;
     v_nrm = in_nrm;
     v_bary = in_bary;
@@ -183,6 +184,7 @@ class SceneRenderer:
         self._base_override = None   # Appearance: painted body colour
         self._base_alpha = 1.0       # Appearance: body opacity
         self._mesh_off = (0.0, 0.0, 0.0)   # live Move preview offset
+        self._preview_rot = None           # live Rotate preview mat4
         self._style = "shaded with edges"  # Fusion visual style (M54)
         self._triad = None           # Move triad: (origin, length)
         self._triad_vao = None
@@ -231,6 +233,7 @@ class SceneRenderer:
         suppressed so flat faces render clean.
         """
         self._mesh_off = (0.0, 0.0, 0.0)   # fresh mesh: preview offset spent
+        self._preview_rot = None
         import trimesh
         CREASE_DEG = 25.0
         cos_lim = math.cos(math.radians(CREASE_DEG))
@@ -318,6 +321,13 @@ class SceneRenderer:
         set_mesh() resets it — the recompute bakes the truth."""
         self._mesh_off = tuple(float(v) for v in off)
 
+    def set_preview_rot(self, spec):
+        """Live Rotate preview (M55): spec (center, axis, rad) or None;
+        a 4x4 rotation about the axis through the centre."""
+        from ..core.geometry import rotation_about
+        self._preview_rot = None if spec is None else rotation_about(
+            spec[0], spec[1], spec[2])
+
     def set_visual_style(self, name: str):
         """Fusion View ▸ Visual Styles (M54): wireframe / ghosted /
         shaded / shaded with edges (the default) / xray."""
@@ -328,11 +338,14 @@ class SceneRenderer:
             raise ValueError(f"unknown visual style {name!r}")
         self._style = st
 
-    def set_triad(self, origin, length: float = 40.0):
+    def set_triad(self, origin, length: float = 40.0, rings=None):
         """Move triad (M53): RGB arrows at `origin`, Fusion-style, drawn
-        over everything while a Move gesture is live. None hides it."""
+        over everything while a Move gesture is live. None hides it.
+        `rings` (M55) adds an RGB rotation circle per axis at that
+        radius — the Rotate gesture's grab handles."""
         self._triad = None if origin is None else (
-            np.asarray(origin, float), float(length))
+            np.asarray(origin, float), float(length),
+            None if rings is None else float(rings))
         self._rebuild_triad()
 
     def _rebuild_triad(self):
@@ -342,7 +355,7 @@ class SceneRenderer:
             self._triad_count = 0
         if self._triad is None:
             return
-        o, L = self._triad
+        o, L, R = self._triad
         cols = [(0.85, 0.25, 0.20), (0.30, 0.70, 0.32),
                 (0.25, 0.45, 0.90)]           # Fusion's arrow RGB
         lines: list = []
@@ -360,6 +373,17 @@ class SceneRenderer:
             base = tip - e * L * 0.14
             for w in (u, -u, v, -v):
                 add(base + w, tip, rgb)
+        if R is not None:                    # rotate rings, one per axis
+            for i, rgb in enumerate(cols):
+                u = np.eye(3)[(i + 1) % 3]
+                v = np.eye(3)[(i + 2) % 3]
+                prev = None
+                for k in range(49):
+                    a = 2.0 * np.pi * k / 48.0
+                    p = o + (np.cos(a) * u + np.sin(a) * v) * R
+                    if prev is not None:
+                        add(prev, p, rgb)
+                    prev = p
         arr = np.array(lines, np.float32)
         buf = self.ctx.buffer(arr.tobytes())
         self._triad_vao = self.ctx.vertex_array(
@@ -550,6 +574,9 @@ class SceneRenderer:
                 u["u_clip_on"].value = 0
             u["u_alpha"].value = alpha
             u["u_off"].value = tuple(float(v) for v in self._mesh_off)
+            u["u_xform"].write(np.ascontiguousarray(
+                (self._preview_rot if self._preview_rot is not None
+                 else np.eye(4)).T, "f4"))
             if alpha < 1.0:                   # ghosted / xray / painted
                 c.enable(moderngl.BLEND)
             self._solid_vao.render(moderngl.TRIANGLES, vertices=self._solid_count)

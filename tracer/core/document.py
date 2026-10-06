@@ -376,6 +376,22 @@ class MoveFeature(Feature):
 
 
 @dataclass
+class RotateFeature(Feature):
+    """Rotate Body (M55): spin the whole accumulated body `angle_deg`
+    around the axis (through `center`, direction `axis`) — what dragging
+    a triad ring commits.  Body op like Move; right-hand rule, z-up
+    like every other Tracer angle."""
+    center: tuple = (0.0, 0.0, 0.0)
+    axis: tuple = (0.0, 0.0, 1.0)
+    angle_deg: float = 0.0
+
+    def apply(self, src: Solid) -> Solid:
+        from .geometry import rotation_about
+        return src.transformed(rotation_about(
+            self.center, self.axis, np.deg2rad(float(self.angle_deg))))
+
+
+@dataclass
 class SweepFeature(Feature):
     """Sweep a circular profile along a drawn path (v1 profile: circle).
     `path` stores the sampled 2D polyline in sketch coordinates, `closed`
@@ -559,12 +575,13 @@ class Document:
                 solid = src.translated((-shift[0], -shift[1], -shift[2])) \
                             .mirror(n).translated(shift)
             elif isinstance(f, (BodyFilletFeature, ShellFeature,
-                                SplitFeature, MoveFeature)):
+                                SplitFeature, MoveFeature, RotateFeature)):
                 if acc is None:
                     verb = ("fillet" if isinstance(f, BodyFilletFeature)
                             else "shell" if isinstance(f, ShellFeature)
                             else "split" if isinstance(f, SplitFeature)
-                            else "move")
+                            else "move" if isinstance(f, MoveFeature)
+                            else "rotate")
                     raise ValueError(f"{f.name!r} has no body to {verb} yet")
                 acc = f.apply(acc)
                 by_uid[f.uid] = acc
@@ -667,6 +684,10 @@ class Document:
                          flip=bool(f.flip))
             elif isinstance(f, MoveFeature):
                 d.update(vec=list(map(float, f.vec)))
+            elif isinstance(f, RotateFeature):
+                d.update(center=list(map(float, f.center)),
+                         axis=list(map(float, f.axis)),
+                         angle_deg=float(f.angle_deg))
             elif isinstance(f, HoleFeature):
                 d.update(center=list(map(float, f.center)),
                          normal=list(map(float, f.normal)),
@@ -787,6 +808,11 @@ class Document:
             elif t == "MoveFeature":
                 doc.features.append(MoveFeature(
                     name=fd["name"], vec=tuple(fd["vec"]), **base))
+            elif t == "RotateFeature":
+                doc.features.append(RotateFeature(
+                    name=fd["name"], center=tuple(fd["center"]),
+                    axis=tuple(fd["axis"]),
+                    angle_deg=float(fd["angle_deg"]), **base))
             elif t == "HoleFeature":
                 doc.features.append(HoleFeature(
                     name=fd["name"],

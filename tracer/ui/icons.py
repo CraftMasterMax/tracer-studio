@@ -277,6 +277,17 @@ def _section(p: QPainter):
     p.drawLine(QPointF(5, 17), QPointF(27, 17))
 
 
+def _rotate(p: QPainter):
+    """A circular arrow — spin in one glyph."""
+    pen = QPen(_COL)
+    pen.setWidthF(2.0)
+    p.setPen(pen)
+    p.drawArc(QRectF(7, 7, 18, 18), 40 * 16, 280 * 16)
+    p.setBrush(_COL)
+    tri = QPolygonF([QPointF(23, 4), QPointF(26, 12), QPointF(17, 9)])
+    p.drawPolygon(tri)
+
+
 def _move(p: QPainter):
     """A ghost outline pushed into a solid arrow — the move sticker."""
     p.drawRect(QRectF(5, 17, 10, 10))
@@ -340,7 +351,8 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "constrain": _constrain, "dimension": _dimension,
               "launcher": _launcher, "section": _section,
               "thread": _thread, "split": _split,
-              "appearance": _appearance, "move": _move})
+              "appearance": _appearance, "move": _move,
+              "rotate": _rotate})
 
 
 def icon(name: str) -> QIcon:

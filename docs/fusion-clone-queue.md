@@ -170,6 +170,15 @@ default — restoring it restores every pixel), and **X-ray** (blue-grey
 at 35%).  Each style is shader-uniform state, pixel-tested per style;
 paints from Appearance still tint through Ghosted and X-ray.
 
+**M55 — Rotate Body.** ✓ SHIPPED.  Modify ▸ Rotate body: three RGB
+rings appear around the solid — drag one and the body spins about that
+axis following the cursor's polar angle in the ring plane (right-hand
+rule, the same convention as every Tracer angle); the preview is one
+4x4 matrix uniform, release commits a parametric ⟳ RotateFeature named
+for its axis and degrees, Esc/empty-click cancels.  Together with
+Press-Pull (M35) and Move (M53), the body now answers to Fusion's full
+direct-manipulation mouse grammar.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, Combine/multi-browser-bodies,
 configurations, assemblies/joints, sheet metal, drawings.

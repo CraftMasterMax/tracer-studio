@@ -53,6 +53,7 @@ class Viewport(QWidget):
     coords = Signal(object)                # world point under cursor | None
     press_pull = Signal(object)            # Press-Pull drag payload dict
     move_drag = Signal(object)             # Move (M53) drag payload dict
+    rotate_drag = Signal(object)           # Rotate (M55) drag payload dict
     selection_changed = Signal(int)        # live measure: faces now selected
 
     def __init__(self, renderer: SceneRenderer, parent=None):
@@ -74,6 +75,7 @@ class Viewport(QWidget):
         self._box: list | None = None      # rubber-band select [p0, p1]
         self._box_drag = False
         self._mv = None                    # Move gesture state (M53)
+        self._rot = None                   # Rotate gesture state (M55)
         self.setMinimumSize(QSize(320, 240))
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -91,6 +93,7 @@ class Viewport(QWidget):
         self._pp, self._pp_drag = None, False
         self._box, self._box_drag = None, False
         self._mv = None                    # Move gesture state (M53)
+        self._rot = None                   # Rotate gesture state (M55)
         self._r.set_triad(None)
         if had_sel:
             self.selection_changed.emit(0)
@@ -244,6 +247,63 @@ class Viewport(QWidget):
             return None
         return (float(e @ a) - b * float(d0 @ a)) / det
 
+    # ---- Rotate gesture (M55) ---------------------------------------------------
+    def begin_rotate(self, center, radius: float):
+        """Arm the Rotate gesture: RGB rings at `radius`; drag a ring
+        and the body spins about that axis, release commits, Esc or an
+        empty click cancels — Fusion's rotate-by-arc mouse grammar."""
+        self._rot = dict(center=np.asarray(center, float),
+                         radius=float(radius), axis=None, th0=0.0,
+                         ang=0.0)
+        self._r.set_triad(center, radius * 0.82, radius)
+        self.update()
+
+    def _cancel_rotate(self):
+        if self._rot is None:
+            return
+        self._rot = None
+        self._r.set_triad(None)
+        self.unsetCursor()
+        self.rotate_drag.emit(dict(cancel=True))
+        self.update()
+
+    def _ring_hit(self, px: float, py: float):
+        """Which rotation ring (axis 0/1/2) is under the cursor."""
+        if self._rot is None:
+            return None
+        c, R = self._rot["center"], self._rot["radius"]
+        best, bd = None, 14.0
+        for i in range(3):
+            u, v = np.eye(3)[(i + 1) % 3], np.eye(3)[(i + 2) % 3]
+            for k in range(48):
+                a = 2.0 * np.pi * k / 48.0
+                sp = self._cam.project(
+                    c + (np.cos(a) * u + np.sin(a) * v) * R,
+                    self.width(), self.height())
+                if sp is None:
+                    continue
+                d = ((px - sp[0]) ** 2 + (py - sp[1]) ** 2) ** 0.5
+                if d < bd:
+                    best, bd = i, d
+        return best
+
+    def _ring_param(self, rot, px: float, py: float):
+        """Polar angle (radians) where the cursor ray meets the grabbed
+        ring's plane — dragging this is what turns the body."""
+        o0, d0 = self._cam.ray(px, py, self.width(), self.height())
+        o0 = np.asarray(o0, float)
+        d0 = np.asarray(d0, float) / max(
+            float(np.linalg.norm(d0)), 1e-12)
+        e = np.eye(3)[rot["axis"]]
+        de = float(d0 @ e)
+        if abs(de) < 1e-6:
+            return None
+        t = float((rot["center"] - o0) @ e) / de
+        p = o0 + d0 * t - rot["center"]
+        u, v = np.eye(3)[(rot["axis"] + 1) % 3], \
+            np.eye(3)[(rot["axis"] + 2) % 3]
+        return float(np.arctan2(p @ v, p @ u))
+
     def mousePressEvent(self, ev):
         hit = self._cube.hit(ev.position())
         if hit:
@@ -270,6 +330,20 @@ class Viewport(QWidget):
         self._pp_drag = False
         self._box = None
         self._box_drag = False
+        if (self._rot is not None and ev.button() == Qt.LeftButton
+                and Qt.KeyboardModifier(0) == ev.modifiers()):
+            px, py = ev.position().x(), ev.position().y()
+            ax = self._ring_hit(px, py)
+            if ax is not None:
+                self._rot["axis"] = ax
+                th = self._ring_param(self._rot, px, py)
+                self._rot["th0"] = th if th is not None else 0.0
+                self.setCursor(QCursor(Qt.CrossCursor))
+                if self._hover:
+                    self._hover = None
+                    self._apply_hi()
+                ev.accept()
+                return
         if (self._mv is not None and ev.button() == Qt.LeftButton
                 and Qt.KeyboardModifier(0) == ev.modifiers()):
             px, py = ev.position().x(), ev.position().y()
@@ -286,7 +360,7 @@ class Viewport(QWidget):
                 return
         if ev.button() == Qt.LeftButton and self._tm is not None \
                 and Qt.KeyboardModifier(0) == ev.modifiers() \
-                and self._mv is None:
+                and self._mv is None and self._rot is None:
             px, py = ev.position().x(), ev.position().y()
             hit = self._shoot(self._tm, px, py)
             if hit is not None:
@@ -322,6 +396,17 @@ class Viewport(QWidget):
         if d.manhattanLength() > 2:
             self._dragged = True
         self._last = ev.position().toPoint()
+        if (self._rot is not None and self._rot["axis"] is not None
+                and Qt.LeftButton in self._buttons):
+            th = self._ring_param(self._rot, ev.position().x(),
+                                  ev.position().y())
+            if th is not None:
+                self._rot["ang"] = th - self._rot["th0"]
+                self.rotate_drag.emit(dict(
+                    center=self._rot["center"], axis=self._rot["axis"],
+                    rad=self._rot["ang"], live=True))
+            self.update()
+            return
         if (self._mv is not None and self._mv["axis"] is not None
                 and Qt.LeftButton in self._buttons):
             s = self._axis_param(self._mv, ev.position().x(),
@@ -363,6 +448,20 @@ class Viewport(QWidget):
 
     def mouseReleaseEvent(self, ev):
         self._buttons &= ~ev.button()
+        if ev.button() == Qt.LeftButton and self._rot is not None:
+            if self._rot["axis"] is not None:
+                pay = dict(center=self._rot["center"],
+                           axis=self._rot["axis"],
+                           rad=self._rot["ang"], live=False)
+                self._rot = None
+                self._r.set_triad(None)
+                self.unsetCursor()
+                self.rotate_drag.emit(pay)
+            else:
+                self._cancel_rotate()
+            self.update()
+            ev.accept()
+            return
         if ev.button() == Qt.LeftButton and self._mv is not None:
             if self._mv["axis"] is not None:      # drag ends: commit gesture
                 off = self._mv["off"]
@@ -617,6 +716,9 @@ class Viewport(QWidget):
     def keyPressEvent(self, ev):
         k = ev.key()
         if k == Qt.Key_Escape:
+            if self._rot is not None:             # abort a rotate gesture
+                self._cancel_rotate()
+                return
             if self._mv is not None:               # abort a move gesture
                 self._cancel_move()
                 return

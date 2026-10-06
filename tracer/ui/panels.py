@@ -13,7 +13,7 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
                              MoveFeature,
-                             PathPatternFeature, SplitFeature,
+                             PathPatternFeature, RotateFeature, SplitFeature,
                              MirrorFeature, PrimitiveFeature, RevolveFeature,
                              ShellFeature, SweepFeature, LoftFeature,
                              ThreadFeature)
@@ -105,6 +105,7 @@ class FeatureTree(QTreeWidget):
                     else "\u25a4" if isinstance(f, ShellFeature)
                     else "\u2702" if isinstance(f, SplitFeature)  # trim
                     else "\u2725" if isinstance(f, MoveFeature)   # move
+                    else "\u27f3" if isinstance(f, RotateFeature)  # spin
                     else "\u223f" if isinstance(f, SweepFeature)
                     else "\u25b3" if isinstance(f, LoftFeature)
                     else "\u25c8" if isinstance(f, ImportedFeature)
@@ -298,6 +299,13 @@ class PropertiesPanel(QWidget):
         elif isinstance(feature, MoveFeature):
             x, y, z = (float(v) for v in feature.vec)
             lines.append(f"translate \u2725 x {x:+g}, y {y:+g}, z {z:+g} mm")
+        elif isinstance(feature, RotateFeature):
+            ax = "xyz"[int(np.argmax(np.abs(np.asarray(
+                feature.axis, float))))]
+            lines.append(f"rotate \u27f3 {feature.angle_deg:+.1f}\u00b0 "
+                         f"about {ax.upper()} through "
+                         f"({feature.center[0]:g}, {feature.center[1]:g}, "
+                         f"{feature.center[2]:g})")
         placement = getattr(feature, "placement", None)
         if placement is not None:                    # patterns have none
             px, py, pz = placement
