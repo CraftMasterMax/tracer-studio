@@ -277,6 +277,22 @@ def _section(p: QPainter):
     p.drawLine(QPointF(5, 17), QPointF(27, 17))
 
 
+def _primitive(p: QPainter):
+    """An iso cube — the primitive family."""
+    pen = QPen(_COL)
+    pen.setWidthF(1.6)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    front = QPolygonF([QPointF(5, 12), QPointF(16, 12), QPointF(16, 23),
+                       QPointF(5, 23)])
+    p.drawPolygon(front)
+    p.drawLine(QPointF(5, 12), QPointF(11, 6))
+    p.drawLine(QPointF(16, 12), QPointF(22, 6))
+    p.drawLine(QPointF(16, 23), QPointF(22, 17))
+    p.drawLine(QPointF(11, 6), QPointF(22, 6))
+    p.drawLine(QPointF(22, 6), QPointF(22, 17))
+
+
 def _combine(p: QPainter):
     """Two overlapping circles — one boolean."""
     pen = QPen(_COL)
@@ -365,7 +381,8 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "launcher": _launcher, "section": _section,
               "thread": _thread, "split": _split,
               "appearance": _appearance, "move": _move,
-              "rotate": _rotate, "combine": _combine})
+              "rotate": _rotate, "combine": _combine,
+              "primitive": _primitive})
 
 
 def icon(name: str) -> QIcon:

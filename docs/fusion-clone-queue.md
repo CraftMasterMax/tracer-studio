@@ -245,6 +245,13 @@ undoes.  Volumes are kernel truth to three decimals (8000 + πr²·20 for
 a pushed-through boss, corner cut exact, intersection exact), watertight
 every time.
 
+**M65 — Primitive.** ✓ SHIPPED.  Create ▸ Primitive, the fastest
+start a maker wants: Box / Cylinder / Sphere dialled in document
+measures with a boolean operation and a placement (box corner, cylinder
+base centre, sphere centre), dropped as a parametric PrimitiveFeature —
+the first one IS the body, later ones Join / Cut / Intersect into it
+with exact volumes and per-kind names (Box 1, Box 2…).
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, Combine/multi-browser-bodies,
 configurations, assemblies/joints, sheet metal, drawings.

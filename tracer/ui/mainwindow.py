@@ -281,6 +281,8 @@ class MainWindow(QMainWindow):
           lambda checked=False: self.action_sweep())
         d("loft", "Loft — blend one sketch's profile into another's (Ctrl+L)",
           lambda checked=False: self.action_loft())
+        d("primitive", "Primitive — drop a box, cylinder or sphere",
+          lambda checked=False: self.action_primitive())
         d("hole", "Hole — drill every sketch circle (Ctrl+H)",
           lambda checked=False: self.action_hole())
         r.design_sep()
@@ -1707,6 +1709,61 @@ class MainWindow(QMainWindow):
              f"{'XYZ'[axis_i]} — twins joined" if is_copy else
              f"Body rotated {deg:+.1f}\u00b0 about "
              f"{'XYZ'[axis_i]} through its centre"), 5000)
+
+    def action_primitive(self):
+        """Fusion Create ▸ Primitive (M65): box, cylinder or sphere,
+        dialled in document measures and dropped as its own parametric
+        contribution — the fastest way to start (or grow) a part."""
+        if self.doc is None:
+            return
+        u = self.doc.units if self.doc.units in units.LABEL else "mm"
+        f = units.PER_MM[u]
+        lab = units.LABEL[u]
+
+        def num(key, label, mm, dec=2):
+            return dict(key=key, label=f"{label} ({lab})", kind="double",
+                        default=round(mm / f, 6), decimals=dec, min=0.01)
+
+        def freenum(key, label, mm):
+            return dict(key=key, label=f"{label} ({lab})", kind="double",
+                        default=round(mm / f, 6), decimals=2)
+        v = cmddialog.ask(self, "Primitive", [
+            dict(key="kind", label="Shape", kind="combo",
+                 choices=["Box", "Cylinder", "Sphere"], default="Box",
+                 group=f"Size ({lab})"),
+            num("dx", "length X", 40.0), num("dy", "length Y", 30.0),
+            num("dz", "length Z", 15.0),
+            num("radius", "radius", 10.0, 3),
+            num("height", "height", 30.0),
+            dict(key="op", label="Operation", kind="combo",
+                 choices=["Join", "Cut", "Intersect"], default="Join",
+                 group="Boolean"),
+            freenum("x", "place X", 0.0),
+            freenum("y", "place Y", 0.0),
+            freenum("z", "place Z", 0.0),
+        ], remember_key="primitive")
+        if v is None:
+            return
+        kind = {"Box": "box", "Cylinder": "cylinder",
+                "Sphere": "sphere"}[str(v["kind"])]
+        dims = ({"radius": float(v["radius"]) * f} if kind == "sphere"
+                else {"radius": float(v["radius"]) * f,
+                      "height": float(v["height"]) * f}
+                if kind == "cylinder"
+                else {"dx": float(v["dx"]) * f, "dy": float(v["dy"]) * f,
+                      "dz": float(v["dz"]) * f})
+        n = sum(1 for g in self.doc.features
+                if isinstance(g, PrimitiveFeature) and g.kind == kind) + 1
+        self._capture()
+        self.doc.add(PrimitiveFeature(
+            name=f"{str(v['kind'])} {n}", kind=kind, dims=dims,
+            op={"Join": "union", "Cut": "subtract",
+                "Intersect": "intersect"}[str(v["op"])],
+            placement=tuple(float(v[k]) * f for k in ("x", "y", "z"))))
+        self.recompute()
+        self.status.showMessage(
+            f"Added {str(v['kind']).lower()} — placement is the box "
+            "corner / cylinder base / sphere centre", 5000)
 
     def action_combine(self):
         """Fusion's Combine (M64): Join / Cut / Intersect the body with
