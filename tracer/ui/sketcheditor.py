@@ -63,6 +63,9 @@ def _line_pivot(l1, l2):
 
 class SketchCanvas(QWidget):
     profiles_ready = Signal(list, str, bool)   # profiles, name, revolve?
+    state_changed = Signal(object)             # SolveResult after each
+                                               # solve — the constraint
+                                               # voice (M73)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -104,6 +107,7 @@ class SketchCanvas(QWidget):
         self._fut = []
         self._drag_pushed = False
         self.set_tool("select")
+        self._solve()           # state of the loaded sketch, spoken now
         self.fit_view()
         self.update()
 
@@ -963,6 +967,7 @@ class SketchCanvas(QWidget):
 
     def _solve(self, pins=()):
         self._last_result = self.model.solve(pins=pins)
+        self.state_changed.emit(self._last_result)
 
     # ---- finish -----------------------------------------------------------
     def finish(self, revolve: bool = False):

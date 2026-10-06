@@ -2188,6 +2188,10 @@ class MainWindow(QMainWindow):
             b.setProperty("tb", True)
             bl.addWidget(b)
             self._tool_btns[tool] = b
+        # Fusion's constraint voice on the toolbar (M73): fully / dof
+        self._sketch_state = QLabel("")
+        self._sketch_state.setStyleSheet("color:#9ab0c8; padding:0 8px;")
+        bl.addWidget(self._sketch_state)
         bl.addStretch(1)
         back = QPushButton("← Back")
         back.setProperty("tb", True)
@@ -2216,9 +2220,26 @@ class MainWindow(QMainWindow):
         bl.addWidget(sweep)
         self.sketch = SketchCanvas()
         self.sketch.profiles_ready.connect(self._on_profiles)
+        self.sketch.state_changed.connect(self._on_sketch_state)
         lay.addWidget(bar)
         lay.addWidget(self.sketch, 1)
         return page
+
+    def _on_sketch_state(self, res):
+        """Toolbar constraint voice (M73): Fusion says when a sketch is
+        done being tamed; so do we."""
+        s = getattr(self.sketch.model, "sketch", None)
+        empty = s is None or not (s.points or s.lines or s.circles
+                                  or s.arcs)
+        if res is None or empty:
+            self._sketch_state.setText("")
+        elif not res.converged:
+            self._sketch_state.setText("\u26a0 conflicting constraints")
+        elif res.dof == 0:
+            self._sketch_state.setText("Sketch fully constrained")
+        else:
+            self._sketch_state.setText(f"Sketch under-constrained "
+                                       f"\u00b7 {res.dof} dof free")
 
     def _pick_tool(self, tool: str):
         self.sketch.set_tool(tool)

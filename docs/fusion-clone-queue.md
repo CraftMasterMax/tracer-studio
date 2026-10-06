@@ -317,6 +317,16 @@ inside the key handler since selection went multi-face.  It now flattens
 the corners — pinned by a shape-exact test — and an end face fits at half
 the distance.
 
+**M73 — The constraint voice.** ✓ SHIPPED.  Fusion never leaves you
+guessing whether a sketch is tamed, and now neither do we: the sketch
+toolbar reads fully / under-constrained (with the free-dof count)
+straight off the LM solver after every edit — and answers immediately on
+load — while the browser appends the same verdict to every sketch node,
+in both the body nest and the Sketches folder.  Constraints that fight
+("fix" the same point twice, elsewhere) get an honest ⚠.  Empty sketches
+stay silent; the role data under the renamed text still double-clicks
+into the editor.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

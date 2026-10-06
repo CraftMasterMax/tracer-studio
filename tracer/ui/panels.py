@@ -24,6 +24,30 @@ from .theme import DARK
 _OP_GLYPH = {"union": "+", "subtract": "−", "intersect": "∩"}
 
 
+def _sketch_label(sk: dict) -> str:
+    """'✎ Sketch1 (fully constrained)' — Fusion appends the constraint
+    state to browser sketches (M73), and we can honestly say it: the
+    same LM solver the editor speaks with answers from the stored
+    payload.  Tiny sketches, tiny solves."""
+    name = sk.get("name", "Sketch")
+    try:
+        from tracer.core.sketch.model import model_from_dict
+        m = model_from_dict(sk)
+        s = m.sketch
+        if not (s.points or s.lines or s.circles or s.arcs):
+            return f"\u270e {name}"
+        r = m.solve()
+    except Exception:
+        return f"\u270e {name}"
+    if not r.converged:
+        state = " (\u26a0 conflicting constraints)"
+    elif r.dof == 0:
+        state = " (fully constrained)"
+    else:
+        state = " (under-constrained)"
+    return f"\u270e {name}{state}"
+
+
 class FeatureTree(QTreeWidget):
     feature_menu = Signal(object, object)   # Feature, global QPoint
     cplane_menu = Signal(str, object)       # plane name, global QPoint
@@ -130,7 +154,7 @@ class FeatureTree(QTreeWidget):
             parent.addChild(item)
             if (isinstance(f, (ExtrudeFeature, RevolveFeature, HoleFeature))
                     and f.sketch):
-                sk = QTreeWidgetItem([f"\u270e {f.sketch.get('name', 'Sketch')}"])
+                sk = QTreeWidgetItem([_sketch_label(f.sketch)])
                 sk.setData(0, Qt.UserRole, ("sketch", i))
                 item.addChild(sk)
                 item.setExpanded(True)
@@ -143,7 +167,7 @@ class FeatureTree(QTreeWidget):
         sketches.setData(0, Qt.UserRole, ("folder", "sketches"))
         root.addChild(sketches)
         for i in sketchers:
-            it = QTreeWidgetItem([f"\u270e {feats[i].sketch.get('name', 'Sketch')}"])
+            it = QTreeWidgetItem([_sketch_label(feats[i].sketch)])
             it.setData(0, Qt.UserRole, ("sketch", i))
             sketches.addChild(it)
 
