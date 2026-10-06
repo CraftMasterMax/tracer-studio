@@ -697,6 +697,25 @@ export. Honest scope: hidden BACK CREASES only — grazing back edges
 (an interior bore's profile lines in a front view) are the refinement
 ahead; one body per sheet.
 
+**M98 — The sketcher speaks diameter (Ø), like Fusion.** ✓ SHIPPED.
+A drawn circle is a hole to be drilled and drill bits are sold by
+DIAMETER — yet every circle dimension read "R" and asked for a
+radius. Now the whole UI translates at once: the chip reads
+`Ø 24.00`, the Dimension dialog asks "Diameter (mm)" showing the
+number the chip shows, the double-click editor and the M89 fx line
+speak diameter, and the M90 type-in after drawing a circle takes the
+number as a diameter. Arcs keep their R — that IS what a fillet
+gauge measures. Underneath, nothing moved: the solver's native
+Radius constraint is untouched (only the label halves/doubles),
+serialized files stay byte-honest with radius values, and inch
+documents scale diameters like any length (the fx layer halves
+AFTER unit scaling). Migration is loud, never silent: an fx binding
+stamped under the old radius meaning ("R" on a circle) idles with
+"type changed" instead of quietly doubling the hole — re-bind once
+and it drives the diameter from then on. Honest scope: closed
+circles only; the sketcher's chip is text, not GD&T (tolerance
+stacking is a world away).
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

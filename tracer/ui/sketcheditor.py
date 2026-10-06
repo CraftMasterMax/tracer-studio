@@ -475,7 +475,7 @@ class SketchCanvas(QWidget):
                     self._push_hist()
                     cc = self.model.add_circle(a, r)
                     self._solve()
-                    self._pending = ("circle", cc)    # M90: type a radius
+                    self._pending = ("circle", cc)  # M90: type a diameter
                     self._pending_stage = 0
                     self._num_buf = ""
             self.update()
@@ -673,7 +673,7 @@ class SketchCanvas(QWidget):
                 c = self.model.add_circle(c0, r)
                 self._solve()
                 committed = True
-                self._pending = ("circle", c)   # M90: type a radius
+                self._pending = ("circle", c)   # M90: type a diameter
                 self._pending_stage = 0
                 self._num_buf = ""
         elif kind == "ellipse":
@@ -754,13 +754,16 @@ class SketchCanvas(QWidget):
                 self.model.constrain(Distance(e.a, e.b, val))
                 self._solve(); self.update()
         elif isinstance(e, (Circle, Arc)):
+            dia = isinstance(e, Circle)               # M98: Ø for circles
             cur = curve_radius(e)
-            val, ok = Shell.getDouble(self, "Dimension", "Radius (mm):",
-                                             round(cur, 3), 0.001, 1e6, 3)
+            val, ok = Shell.getDouble(
+                self, "Dimension",
+                "Diameter (mm):" if dia else "Radius (mm):",
+                round(cur * 2 if dia else cur, 3), 0.001, 1e6, 3)
             if ok:
                 self._push_hist()
                 self.model.remove_last(Radius, (e,))
-                self.model.constrain(Radius(e, val))
+                self.model.constrain(Radius(e, val / 2 if dia else val))
                 self._solve(); self.update()
 
     def act_perp(self):
@@ -1284,6 +1287,18 @@ class SketchCanvas(QWidget):
         p.end()
 
     # ---- dimension labels (double-click editable, Fusion-style) ------------
+    def _dim_text(self, c) -> str:
+        """The chip's wording (M98): circles speak DIAMETER like Fusion
+        (the constraint underneath stays a radius — only the UI
+        translates); arcs keep R, what a fillet gauge measures."""
+        if isinstance(c, Radius):
+            return (f"\u00d8 {2 * c.value:.2f}"
+                    if isinstance(c.curve, Circle)
+                    else f"R {c.value:.2f}")
+        if isinstance(c, Distance):
+            return f"{c.value:.2f}"
+        return ""
+
     def _draw_dimensions(self, p: QPainter):
         self._dim_hits = []
         sk = self.model.sketch
@@ -1304,7 +1319,7 @@ class SketchCanvas(QWidget):
                 text = f"{c.value:.2f}"
             elif isinstance(c, Radius):
                 pos = self._radius_pos(c.curve)
-                text = f"R {c.value:.2f}"
+                text = self._dim_text(c)          # Ø on circles (M98)
             elif isinstance(c, (Angle, AngleBetween)):
                 arc = None
                 pv = self._angle_pivot(c)
@@ -1367,9 +1382,13 @@ class SketchCanvas(QWidget):
                       enumerate(self.model.sketch.constraints)
                       if cc is c), None)
             rec = self.model.dim_exprs.get(i) if i is not None else None
+            dia = isinstance(c, Radius) and isinstance(c.curve, Circle)
             v = cmddialog.ask(self, "Edit dimension", [
-                dict(key="val", kind="double", label="Value (mm)",
-                     default=round(float(c.value), 3), min=0.001,
+                dict(key="val", kind="double",
+                     label="Diameter (mm)" if dia else "Value (mm)",
+                     default=round(2 * float(c.value) if dia
+                                   else float(c.value), 3),
+                     min=0.001,
                      max=1e6, decimals=3),
                 dict(key="fx", kind="text",
                      label="fx  (blank = plain number)",
@@ -1388,12 +1407,13 @@ class SketchCanvas(QWidget):
                 self._push_hist()
                 if i is not None:
                     self.model.dim_exprs[i] = {"e": expr, "t": _dim_tag(c)}
-                c.value = newv
+                c.value = newv * 0.5 if dia else newv   # M98: fx speaks Ø
             else:
                 self._push_hist()
                 if i is not None:
                     self.model.dim_exprs.pop(i, None)
-                c.value = float(v["val"])
+                c.value = (float(v["val"]) * 0.5 if dia
+                           else float(v["val"]))
         self._solve()
         self.update()
 
@@ -1415,7 +1435,10 @@ class SketchCanvas(QWidget):
             self._pending = None
         elif kind in ("circle", "arc"):
             self.model.remove_last(Radius, (ent,))
-            self.model.constrain(Radius(ent, v))
+            # M98: after a CIRCLE the typed number is the DIAMETER
+            # (what the chip will read); an arc still speaks radius.
+            self.model.constrain(Radius(ent, v / 2 if kind == "circle"
+                                        else v))
             self._pending = None
         elif kind == "rect":
             ln = ent[0] if self._pending_stage == 0 else ent[1]

@@ -107,9 +107,10 @@ def test_radius_label_edit(win, qapp, monkeypatch):
     cv.grab()
     rect, rad = next((r, c) for r, c in cv._dim_hits
                      if isinstance(c, Radius))
-    # M89: radius labels edit through the fx dialog too; blank fx = plain
+    # M89: radius labels edit through the fx dialog too; blank fx = plain.
+    # M98: a circle's field speaks DIAMETER — Ø 18 is r 9, a bigger hole.
     monkeypatch.setattr(cmddialog, "ask",
-                        staticmethod(lambda *a, **k: {"val": 9.0,
+                        staticmethod(lambda *a, **k: {"val": 18.0,
                                                       "fx": ""}))
     QTest.mouseDClick(cv, Qt.LeftButton, Qt.NoModifier,
                       rect.center().toPoint(), 10)

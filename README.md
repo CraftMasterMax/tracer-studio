@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M97**
+**Status: M98**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -15,7 +15,8 @@ independent project with no Autodesk assets or affiliation.)
   geometry), click-drag geometry,
   coincident/H/V/parallel/perp/equal(len **or radius**)/point-on-line/
   **on-curve: point on line/circle/arc (point + curve, .)**/
-  distance/**radius (arc & circle)**/**tangent (line↔curve, curve↔curve)**/
+  distance/**radius (arcs) & diameter (circles — badge, dialog and the
+  M90 type-in all speak Ø; the solver keeps its radius underneath)**/**tangent (line↔curve, curve↔curve)**/
   **concentric (curves)**/**symmetric points about a line (M)**/**midpoint —
   pin a point to a segment's centre (J)** /**collinear — two segments on one
   line (L with two lines selected)**/**angular dimensions
@@ -104,7 +105,7 @@ independent project with no Autodesk assets or affiliation.)
   a playhead timeline of icon chips, and a blue-grey horizon viewport —
   plus first-launch shortcut tour and a persistent Shortcuts tab driven by
   one canonical key table
-- 952 headless tests (EGL rendering + Qt pixel assertions)
+- 961 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -134,7 +135,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 952 tests, fully headless
+./.venv/bin/python -m pytest -q          # 961 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

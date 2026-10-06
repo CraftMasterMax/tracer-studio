@@ -90,6 +90,8 @@ def _dim_tag(c) -> str:
     """Type fingerprint for a dimension binding (M89): a binding only
     drives a constraint whose serialized type still matches."""
     return ("D" if isinstance(c, Distance) else
+            "DIA" if isinstance(c, Radius) and isinstance(c.curve, Circle)
+            else                       # M98: circles speak diameter
             "R" if isinstance(c, Radius) else
             "ang" if isinstance(c, Angle) else
             "angb" if isinstance(c, AngleBetween) else "?")
@@ -484,7 +486,9 @@ class SketchModel:
             v = float(eval_expr(rec["e"], values))
             if not isinstance(c, (Angle, AngleBetween)):
                 v *= float(scale)
-            c.value = v
+            if rec.get("t") == "DIA":
+                v *= 0.5        # M98: the fx speaks diameter; the
+            c.value = v         # constraint stays a radius
         return warns
 
     # ---- profile extraction ----------------------------------------------------

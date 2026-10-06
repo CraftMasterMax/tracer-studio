@@ -106,10 +106,11 @@ def test_line_gets_its_length_from_the_keyboard(sketch, qapp):
 
 
 def test_circle_radius_typed(sketch, qapp):
+    # M98 migration: after a circle the typed number is the DIAMETER
     sketch.set_tool("circle")
     _click(sketch, qapp, 0, 0)
     _click(sketch, qapp, 5, 0)                  # rim click mints r=5
-    _type(sketch, qapp, "12")
+    _type(sketch, qapp, "24")
     cons = [c for c in sketch.model.sketch.constraints
             if isinstance(c, Radius)]
     assert len(cons) == 1 and cons[0].value == pytest.approx(12.0)
