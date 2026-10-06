@@ -2263,6 +2263,13 @@ class MainWindow(QMainWindow):
             b.setProperty("tb", True)
             bl.addWidget(b)
             self._tool_btns[tool] = b
+        self._snap_btn = QPushButton("Snap to grid", checkable=True,
+                                     clicked=lambda c: self.sketch
+                                     .set_grid_snap(c))
+        self._snap_btn.setProperty("tb", True)
+        self._snap_btn.setToolTip("Snap drawing clicks to grid "
+                                  "intersections")
+        bl.addWidget(self._snap_btn)
         # Fusion's constraint voice on the toolbar (M73): fully / dof
         self._sketch_state = QLabel("")
         self._sketch_state.setStyleSheet("color:#9ab0c8; padding:0 8px;")
@@ -2296,6 +2303,7 @@ class MainWindow(QMainWindow):
         self.sketch = SketchCanvas()
         self.sketch.profiles_ready.connect(self._on_profiles)
         self.sketch.state_changed.connect(self._on_sketch_state)
+        self._snap_btn.setChecked(self.sketch._snap_grid)
         lay.addWidget(bar)
         lay.addWidget(self.sketch, 1)
         return page

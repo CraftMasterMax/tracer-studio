@@ -109,9 +109,9 @@ class SketchModel:
         if abs(x1 - x0) < 1e-9 or abs(y1 - y0) < 1e-9:
             return []
         c = self.sketch
-        a = c.point(x0, y0)
-        b = c.point(x1, y0)
-        d = c.point(x1, y1)
+        a = p0                                  # the given corners are USED,
+        b = c.point(x1, y0)                     # so a snapped corner shares
+        d = p1                                  # the point it snapped to
         e = c.point(x0, y1)
         lines = [c.line(a, b), c.line(b, d), c.line(d, e), c.line(e, a)]
         self.constrain(Horizontal(lines[0]), Horizontal(lines[2]),

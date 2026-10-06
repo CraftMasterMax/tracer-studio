@@ -11,7 +11,7 @@ import json
 import math
 
 import numpy as np
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QSettings, QRectF, Qt, Signal
 from PySide6.QtGui import (QColor, QFont, QKeyEvent, QMouseEvent, QPainter,
                            QPen, QWheelEvent)
 from PySide6.QtWidgets import QWidget
@@ -82,7 +82,9 @@ class SketchCanvas(QWidget):
         self._rect_corner: np.ndarray | None = None
         self._arc_pts: list[Point] = []       # 3-pt tool: start, end, bulge
         self._preview: tuple | None = None  # tool drag preview
-        self._snap_hint: Point | None = None
+        self._snap_hint: Point | tuple | None = None
+        self._snap_grid = bool(QSettings().value("sketch/grid_snap",
+                                                 False, type=bool))
         self._last_result = None
         self._dim_hits: list = []
         self.setFocusPolicy(Qt.StrongFocus)
@@ -156,6 +158,14 @@ class SketchCanvas(QWidget):
         self._slot: list = []                  # slot tool: c1, c2, width
         self._poly: list = []                  # polygon tool: centre, vertex
         self._preview = None
+        self._snap_hint = None
+        self.setCursor(Qt.ArrowCursor if tool == "select"
+                       else Qt.CrossCursor)    # Fusion's drafting cursor
+        self.update()
+
+    def set_grid_snap(self, on: bool):
+        self._snap_grid = bool(on)
+        QSettings().setValue("sketch/grid_snap", self._snap_grid)
         self.update()
 
     # ---- view transform -------------------------------------------------
@@ -189,6 +199,32 @@ class SketchCanvas(QWidget):
             if d <= bd:
                 best, bd = p, d
         return best
+
+    def _snap_target(self, q: QPointF):
+        """Fusion's drawing magnet: an existing point first, the sketch
+        origin next, then (when the toggle is on) grid intersections.
+        Returns the existing Point, an (x, y) candidate that would have
+        to be minted, or None for free space."""
+        p = self._snap_point(q)
+        if p is not None:
+            return p
+        wp = self._world(q)
+        if math.hypot(wp[0], wp[1]) * self._scale <= _HIT_PX:
+            return (0.0, 0.0)                      # the sketch origin
+        if self._snap_grid:
+            s = self._grid_step()
+            gx, gy = round(wp[0] / s) * s, round(wp[1] / s) * s
+            if math.hypot(gx - wp[0], gy - wp[1]) * self._scale <= _HIT_PX:
+                return (gx, gy)
+        return None
+
+    def _place_point(self, q: QPointF) -> Point:
+        """_snap_target made real: reuse the existing Point, or mint it
+        at the origin/grid candidate / free-world position."""
+        t = self._snap_target(q)
+        if isinstance(t, Point):
+            return t
+        return self.model.point(*(t if t is not None else self._world(q)))
 
     def _all_points(self):
         sk = self.model.sketch
@@ -283,8 +319,7 @@ class SketchCanvas(QWidget):
             return
         wp = self._world(q)
         if self._tool == "line":
-            snap = self._snap_point(q)
-            p = snap if snap is not None else self.model.point(*wp)
+            p = self._place_point(q)              # point/origin/grid magnet
             if self._line_start is None:
                 self._line_start = p
             else:
@@ -298,38 +333,44 @@ class SketchCanvas(QWidget):
                     self._line_start = p
             self.update()
         elif self._tool == "rect":
-            # Fusion parity: supports BOTH corner-drag and click-move-click.
+            # Fusion parity: supports BOTH corner-drag and click-move-click,
+            # and corners SNAPPED TO AN EXISTING POINT share that point —
+            # the corner belongs to both shapes, as in Fusion.
             if self._rect_corner is None:
-                self._rect_corner = wp
-                self._preview = ("rect", wp, wp)     # rubber-band from here
+                a = self._place_point(q)
+                self._rect_corner = a
+                self._preview = ("rect", np.array([a.x, a.y]),
+                                 np.array([a.x, a.y]))
             else:
                 a = self._rect_corner
+                b = self._place_point(q)
                 self._rect_corner = None
                 self._preview = None
-                if np.linalg.norm(wp - a) * self._scale > 6:
+                if math.hypot(b.x - a.x, b.y - a.y) * self._scale > 6:
                     self._push_hist()
-                    self.model.add_rect(self.model.point(*a),
-                                        self.model.point(*wp))
+                    self.model.add_rect(a, b)
                     self._solve()
             self.update()
         elif self._tool == "circle":
             if self._rect_corner is None:
-                self._rect_corner = wp
-                self._preview = ("circle", wp, wp)
+                c = self._place_point(q)
+                self._rect_corner = c
+                self._preview = ("circle", np.array([c.x, c.y]),
+                                 np.array([c.x, c.y]))
             else:
                 a = self._rect_corner
+                p = self._place_point(q)
                 self._rect_corner = None
                 self._preview = None
-                r = float(np.linalg.norm(wp - a))
+                r = math.hypot(p.x - a.x, p.y - a.y)
                 if r * self._scale > 4:
                     self._push_hist()
-                    self.model.add_circle(self.model.point(*a), r)
+                    self.model.add_circle(a, r)
                     self._solve()
             self.update()
         elif self._tool == "arc":
             # 3-point arc: start · end · point-on-arc, chained like a line.
-            snap = self._snap_point(q)
-            p = snap if snap is not None else self.model.point(*wp)
+            p = self._place_point(q)
             if len(self._arc_pts) == 2 and p is self._arc_pts[0]:
                 self._arc_pts = []                   # back-click cancels
                 self.update()
@@ -357,8 +398,9 @@ class SketchCanvas(QWidget):
             # 3 clicks: centre1 · centre2 · width. Snaps are honoured but we
             # snapshot coordinates (the slot owns its tangent-point geometry,
             # like corner_fillet), so no stray points are registered.
-            snap = self._snap_point(q)
-            xy = (snap.x, snap.y) if snap is not None else (wp[0], wp[1])
+            t = self._snap_target(q)
+            xy = ((t.x, t.y) if isinstance(t, Point)
+                  else (t if t is not None else wp))
             self._slot.append(xy)
             self.update()
             if len(self._slot) == 3:
@@ -378,8 +420,9 @@ class SketchCanvas(QWidget):
             # 2 clicks: centre · vertex. The circumradius is the click
             # distance, the rotation the click angle — and the number
             # keys (3..9) set the side count live while drawing.
-            snap = self._snap_point(q)
-            xy = (snap.x, snap.y) if snap is not None else (wp[0], wp[1])
+            t = self._snap_target(q)
+            xy = ((t.x, t.y) if isinstance(t, Point)
+                  else (t if t is not None else wp))
             self._poly.append(xy)
             self.update()
             if len(self._poly) == 2:
@@ -429,12 +472,13 @@ class SketchCanvas(QWidget):
                 self._solve(pins=[self._drag_pt])
                 self.update()
             return
+        if self._tool != "select":
+            # Fusion shows the magnet while you HOVER, not only mid-drag
+            self._snap_hint = self._snap_target(q)
         if self._preview:
             wp = self._world(q)
             kind, start = self._preview[0], self._preview[1]
             self._preview = (kind, start, wp)
-            if self._tool == "line":
-                self._snap_hint = self._snap_point(q)
             self.update()
 
     def mouseReleaseEvent(self, ev: QMouseEvent):
@@ -1167,7 +1211,10 @@ class SketchCanvas(QWidget):
             p.drawRect(QRectF(pos.x() - s, pos.y() - s, 2 * s, 2 * s))
         p.setBrush(Qt.NoBrush)
         if self._snap_hint is not None:
-            pos = self.w2s(self._snap_hint.x, self._snap_hint.y)
+            hx, hy = ((self._snap_hint.x, self._snap_hint.y)
+                      if isinstance(self._snap_hint, Point)
+                      else self._snap_hint)
+            pos = self.w2s(hx, hy)
             p.setPen(QPen(ACCENT, 1.6))
             p.drawEllipse(pos, 7, 7)
 

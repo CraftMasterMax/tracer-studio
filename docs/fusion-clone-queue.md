@@ -357,6 +357,19 @@ Volume truths come from the same tessellator the command uses, so the
 8000→16000±area·d checks are font-portable: Linux DejaVu and Windows
 Arial both pass their own arithmetic.
 
+**M77 — The drawing magnet.** ✓ SHIPPED.  Fusion never lets a drawing
+click land on dead air when something is worth catching, and the magnet
+was a line-tool private: rect, circle, arc drew from wherever the mouse
+happened to be.  Now every tool runs the same grammar — existing point,
+then the sketch origin, then (toolbar "Snap to grid") intersections —
+and a caught corner SHARES the point it caught: add_rect builds from
+the given corners, so a rectangle drawn off an existing point drags
+both shapes together.  The hover ring appears before the click, the
+crosshair wears itself onto every draw tool, and the setting outlives
+the session.  Windows CI also caught M76's first real bug the same day:
+DirectWrite welds a glyph's counter into its outer contour as one
+self-crossing ring — buffer(0) untangles it now.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),
