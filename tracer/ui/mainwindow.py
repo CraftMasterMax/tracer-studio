@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout,
                                QPushButton, QSplitter, QStackedWidget,
                                QToolBar, QToolButton, QVBoxLayout, QWidget)
 
+from ..core import import2d
 from ..core import io as fio
 from ..core import params
 from ..core import step
@@ -454,6 +455,10 @@ class MainWindow(QMainWindow):
         m_file.addActions([self.act_save, self.act_save_as])
         m_file.addSeparator()
         m_file.addAction(self.act_import)
+        self.act_import_profile = QAction(
+            "Import profile (DXF/S&VG)…", self,
+            triggered=lambda checked=False: self.action_import_profile())
+        m_file.addAction(self.act_import_profile)
         # export actions are members: the ribbon launcher menu shares them
         # (menus can't be shared, actions happily can)
         self._export_acts = [
@@ -3023,6 +3028,39 @@ class MainWindow(QMainWindow):
                     return
         self._clear_autosave()      # on disk or discarded: nothing to recover
         ev.accept()
+
+    def action_import_profile(self, path=None):
+        """File ▸ Import profile (M83): a DXF/SVG drawing lands as real
+        sketch entities — welded at the seams so it stitches and
+        extrudes like hand-drawn geometry.  No open sketch? A fresh XY
+        one starts, because that is what the file came here for."""
+        if self.doc is None:
+            return
+        if path is None:
+            from PySide6.QtWidgets import QFileDialog
+            path, _flt = QFileDialog.getOpenFileName(
+                self, "Import profile", "",
+                "Profiles (*.dxf *.svg);;DXF (*.dxf);;SVG (*.svg)")
+            if not path:
+                return
+        try:
+            ops = import2d.read(path)
+        except Exception as e:
+            self.status.showMessage(f"Import refused: {e}", 6000)
+            return
+        cv = self.sketch
+        if cv is None or cv.model is None:
+            self.action_new_sketch("XY")
+            cv = self.sketch
+        cv._push_hist()
+        n = cv.model.import_ops(ops)
+        cv._solve()
+        cv.update()
+        self.doc.dirty = True
+        self.status.showMessage(
+            f"Imported {n} entities from {Path(path).name} "
+            "(document measures)", 6000) if n else \
+            self.status.showMessage("No profile found in that file", 5000)
 
     def action_import(self):
         """Import a body (STEP / STL / OBJ / …) as a real history feature.

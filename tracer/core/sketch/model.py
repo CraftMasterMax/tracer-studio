@@ -174,17 +174,90 @@ class SketchModel:
                        *[Equal(edges[0], e) for e in edges[1:]])
         return edges
 
-    def add_offset(self, dist: float) -> list:
+    def add_offset(self, dist: float, join: str = "mitre") -> list:
+        """Fusion's Offset Entities: a parallel copy of the outline at
+        signed distance `dist` (outward positive).
+
+        A straight-edged single loop with a MITRE join keeps the
+        classic shifted-edge construction — exact corners, no kernel,
+        no approximation.  Everything richer rides the manifold
+        kernel's CrossSection.offset (M84): rounded joins, sketches
+        with arcs/circles/ellipses, outlines with holes and multiple
+        loops at once — all with guaranteed-clean self-intersections.
+        A lone circle offsets to a TRUE circle.  Curved outlines in a
+        crowd offset as their tessellated truth, honestly."""
+        d = float(dist)
+        if abs(d) < 1e-9:
+            return []
+        round_join = str(join).lower() in ("round", "smooth")
+        flat = (not self.sketch.circles and not self.sketch.arcs
+                and not self.sketch.ellipses)
+
+        # ---- the classic exact-mitre path for plain straight loops ----
+        if not round_join and flat:
+            probe, _pw = self.to_loops()
+            if len(probe) == 1 and not probe[0].get("holes"):
+                return self._add_offset_mitre(d)
+
+        # ---- one lone circle stays an exact circle ----
+        if (len(self.sketch.circles) == 1 and not self.sketch.lines
+                and not self.sketch.arcs and not self.sketch.ellipses):
+            c = self.sketch.circles[0]
+            if c.r + d <= 1e-9:
+                raise ValueError("that offset collapses or flips the "
+                                 "circle")
+            return [self.sketch.circle(c.c, c.r + d)]
+
+        # ---- M84: the manifold kernel's robust offset does the rest ----
+        import manifold3d as m3
+        loops, _w = self.to_loops()
+        rings = []
+        for L in loops:
+            pts = np.asarray(L["points"], float)
+            if len(pts) >= 3:
+                sh = 0.5 * float(np.sum(pts[:, 0] * np.roll(pts[:, 1], -1)
+                                        - np.roll(pts[:, 0], -1)
+                                        * pts[:, 1]))
+                if sh < 0:                       # the kernel wants CCW
+                    pts = pts[::-1]
+                rings.append([(float(x), float(y)) for x, y in pts])
+        if not rings:
+            raise ValueError("Offset found no closed outline to copy")
+        try:
+            cs = m3.CrossSection(rings, m3.FillRule.EvenOdd)
+            out = cs.offset(d, m3.JoinType.Round if round_join
+                            else m3.JoinType.Miter, 2.0, 32)
+        except Exception as e:
+            raise ValueError(f"the offset kernel refused: {e}") from e
+        polys = list(out.to_polygons())
+        if not polys or out.area() <= 1e-9:
+            raise ValueError("that offset collapses or flips the outline")
+        made: list = []
+        for ring in polys:
+            pts = [(float(q[0]), float(q[1])) for q in ring]
+            if (len(pts) > 2
+                    and math.hypot(pts[0][0] - pts[-1][0],
+                                   pts[0][1] - pts[-1][1]) < 1e-9):
+                pts = pts[:-1]
+            if len(pts) < 3:
+                continue
+            kp = [self.point(x, y) for x, y in pts]
+            for a, b in zip(kp, kp[1:] + kp[:1]):
+                if a is not b:
+                    made.append(self.add_line(a, b))
+        if not made:
+            raise ValueError("that offset collapses or flips the outline")
+        return made
+
+    def _add_offset_mitre(self, dist: float) -> list:
         """Fusion's Offset Entities (mitre variant): a parallel copy of
         the sketch's single closed line loop at signed distance `dist`
         (outward positive).  Each edge shifts along its own outward
         normal; neighbours meet where the shifted edges cross, so convex
         corners stretch and concave corners close in exactly like the
         original.  Guarded against offsets that collapse or flip the
-        outline; refuses arc/circle geometry (v1) and holed outlines."""
-        if self.sketch.circles or self.sketch.arcs:
-            raise ValueError("Offset works on straight-edge sketches "
-                             "for now")
+        outline."""
+        d = float(dist)
         loops, warns = self.to_loops()
         if len(loops) != 1:
             raise ValueError("Offset needs exactly one closed outline "
@@ -194,7 +267,6 @@ class SketchModel:
                              "supported yet")
         pts = np.asarray(loops[0]["points"], float)
         n = len(pts)
-        d = float(dist)
         if n < 3 or abs(d) < 1e-9:
             return []
 
@@ -418,6 +490,52 @@ class SketchModel:
                 self.refs = rings
                 return len(rings)
         return 0
+
+    def import_ops(self, ops, weld: float = 1e-4) -> int:
+        """M83: land imported DXF/SVG ops (see tracer.core.import2d) as
+        real entities.  Imports arrive with a duplicated vertex at
+        every seam — loops only stitch through IDENTITY, so each
+        coincident point is welded onto one SHARED Point here.
+        Returns the number of entities landed."""
+        cache: dict = {}
+
+        def pt(x, y):
+            k = (round(x / weld), round(y / weld))
+            p = cache.get(k)
+            if p is None:
+                p = self.point(float(x), float(y))
+                cache[k] = p
+            return p
+
+        n = 0
+        for op in ops:
+            t = op[0]
+            try:
+                if t == "line":
+                    self.add_line(pt(*op[1]), pt(*op[2]))
+                    n += 1
+                elif t == "circle":
+                    self.add_circle(pt(*op[1]), float(op[2]))
+                    n += 1
+                elif t == "arc":
+                    self.sketch.arc(pt(*op[1]), pt(*op[2]), pt(*op[3]))
+                    n += 1
+                elif t == "ellipse":
+                    self.sketch.ellipse(pt(*op[1]), float(op[2]),
+                                        float(op[3]))
+                    n += 1
+                elif t == "poly":
+                    pts = [pt(x, y) for x, y in op[1]]
+                    if op[2] and len(pts) >= 2:
+                        if pts[0] is not pts[-1]:
+                            pts.append(pts[0])
+                    for a, b in zip(pts, pts[1:]):
+                        if a is not b:
+                            self.add_line(a, b)
+                            n += 1
+            except Exception:
+                continue
+        return n
 
     def to_loops(self):
         """Return [(outer Nx2 array, area, ccw), ...] from closed loops.

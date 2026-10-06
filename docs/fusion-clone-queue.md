@@ -455,6 +455,35 @@ a plane slid along its normal honestly projects nothing.  Sketch
 placement offsets of the consuming feature are not yet honoured (the
 projection rides the sketch's own frame) — logged with M81b.
 
+**M83 — DXF / SVG profile import.** ✓ SHIPPED.  Insert ▸ Import
+body's little sibling for the panel-and-art crowd: File ▸ Import
+profile (DXF/SVG) lands a 2D drawing as REAL sketch entities — lines,
+true circles, true circular arcs — with every seam vertex WELDED onto
+a shared Point, so imported outlines close, stitch (verified: bracket
+outline 2800 mm² + two hole rings) and extrude like hand-drawn
+geometry.  Splines, elliptical arcs and SVG beziers flatten to honest
+polylines; TEXT/HATCH/paper junk is skipped by design; SVG's y-down
+world flips to sketch y-up.  Readers live in tracer.core.import2d
+(ezdxf + svgelements, both MIT) speaking one tiny op-tuple IR; the
+import lands undoably in the open sketch, or auto-starts an XY one.
+Assumed scale is the document's measures, and the status says so.
+
+**M84 — Robust offsets from the manifold kernel.** ✓ SHIPPED.  Offset
+Entities grew from straight-single-loop-only into the real tool: the
+dialog now carries a join choice (mitre/round), and everything beyond
+the classic case — rounded joins with TRUE arc corners, sketches with
+circles/arcs/ellipses, outlines WITH HOLES, and several loops at once
+— rides `manifold3d.CrossSection.offset` (the bundled kernel, zero new
+deps, FillRule.EvenOdd composition, CCW normalised).  Self-intersections
+are cleaned by the kernel's robust predicates; collapses are refused
+and leave the sketch untouched.  Two exactness promises kept: a plain
+straight loop with a mitre join still uses the classic shifted-edge
+construction (byte-identical to M34 — the old pinned tests did not
+move), and a LONE circle offsets to a TRUE circle, not a 64-gon.
+Round-join areas verified against Steiner's formula (A + Pd + πd²).
+The M34 refusal tests were rewritten into capability tests (curves
+and holes now offset); its UI tests rewired to the richer dialog.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

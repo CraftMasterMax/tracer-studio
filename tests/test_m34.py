@@ -86,16 +86,19 @@ def test_collapse_and_pinch_are_refused_cleanly():
     assert len(m.sketch.lines) == 4            # original untouched
 
 
-def test_arcs_circles_holes_and_ambiguity_are_refused():
+def test_curves_and_holes_offset_through_the_kernel_now():
+    # M84 lifted both v1 refusals: a lone circle lands as a TRUE
+    # circle, and a nested loop is a hole that offsets with the outer.
     m = SketchModel()
     m.add_circle(m.point(0, 0), 5.0)
-    with pytest.raises(ValueError, match="straight-edge"):
-        m.add_offset(1.0)
+    twin = m.add_offset(1.0)
+    assert len(twin) == 1 and twin[0].r == pytest.approx(6.0)
+    assert len(m.sketch.circles) == 2
     m2 = SketchModel()
     _rect(m2)
-    m2.add_rect(Point(5, 5), Point(10, 10))    # second loop: ambiguous
-    with pytest.raises(ValueError, match="exactly one closed"):
-        m2.add_offset(1.0)
+    m2.add_rect(Point(5, 5), Point(10, 10))     # nested loop = hole
+    twin2 = m2.add_offset(1.0)
+    assert len(twin2) == 8                       # both contours moved
 
 
 def test_nested_offset_extrudes_as_a_frame():
@@ -191,8 +194,8 @@ def _rect_sketch(win, qapp):
 def test_U_key_offsets_the_rect_through_the_canvas(win, qapp, monkeypatch):
     cv = _rect_sketch(win, qapp)
     assert len(cv.model.sketch.lines) == 4
-    monkeypatch.setattr("tracer.ui.cmddialog.Shell.getDouble",
-                        staticmethod(lambda *a, **k: (-5.0, True)))
+    monkeypatch.setattr("tracer.ui.cmddialog.ask",
+                        lambda *a, **k: {"d": -5.0, "j": "mitre"})
     QTest.keyClick(cv, Qt.Key_U)
     qapp.processEvents()
     lines = cv.model.sketch.lines
@@ -203,8 +206,8 @@ def test_U_key_offsets_the_rect_through_the_canvas(win, qapp, monkeypatch):
 
 def test_collapse_warning_leaves_the_sketch_alone(win, qapp, monkeypatch):
     cv = _rect_sketch(win, qapp)
-    monkeypatch.setattr("tracer.ui.cmddialog.Shell.getDouble",
-                        staticmethod(lambda *a, **k: (-20.0, True)))
+    monkeypatch.setattr("tracer.ui.cmddialog.ask",
+                        lambda *a, **k: {"d": -20.0, "j": "mitre"})
     QTest.keyClick(cv, Qt.Key_U)
     qapp.processEvents()
     assert len(cv.model.sketch.lines) == 4      # original untouched
@@ -219,8 +222,7 @@ def test_collapse_warning_leaves_the_sketch_alone(win, qapp, monkeypatch):
 
 def test_cancel_in_the_dialog_changes_nothing(win, qapp, monkeypatch):
     cv = _rect_sketch(win, qapp)
-    monkeypatch.setattr("tracer.ui.cmddialog.Shell.getDouble",
-                        staticmethod(lambda *a, **k: (0.0, False)))
+    monkeypatch.setattr("tracer.ui.cmddialog.ask", lambda *a, **k: None)
     QTest.keyClick(cv, Qt.Key_U)
     qapp.processEvents()
     assert len(cv.model.sketch.lines) == 4
@@ -236,8 +238,8 @@ def test_context_menu_offers_offset_with_nothing_selected(win, qapp):
 def test_screenshot_proof(win, qapp, monkeypatch):
     import os
     cv = _rect_sketch(win, qapp)
-    monkeypatch.setattr("tracer.ui.cmddialog.Shell.getDouble",
-                        staticmethod(lambda *a, **k: (-4.0, True)))
+    monkeypatch.setattr("tracer.ui.cmddialog.ask",
+                        lambda *a, **k: {"d": -4.0, "j": "mitre"})
     QTest.keyClick(cv, Qt.Key_U)
     qapp.processEvents()
     out = "/tmp/opencode/shots"

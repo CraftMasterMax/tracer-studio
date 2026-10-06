@@ -898,20 +898,25 @@ class SketchCanvas(QWidget):
         self._solve(); self.update()
 
     def act_offset(self):
-        """Copy the whole outline with a parallel offset (Fusion's
-        Offset Entities): a mitred twin loop at signed distance, outward
-        positive — walls, ribs and clearance rings from any closed
-        straight-edge outline."""
+        """Copy the outline with a parallel offset (Fusion's Offset
+        Entities): a twin loop at signed distance, outward positive —
+        walls, ribs and clearance rings.  Mitre joins on plain straight
+        loops stay exact; rounded joins, arcs, circles and holed
+        outlines ride the manifold kernel's robust offset (M84)."""
         if self.model is None:
             return
-        v, ok = Shell.getDouble(self, "Offset",
-                                       "Distance (mm, negative = inward):",
-                                       3.0, -10000.0, 10000.0, 2)
-        if not ok:
+        from . import cmddialog
+        v = cmddialog.ask(self, "Offset Entities", [
+            dict(key="d", kind="double",
+                 label="Distance (mm, negative = inward)",
+                 default=3.0, min=-10000.0, max=10000.0, decimals=2),
+            dict(key="j", kind="combo", label="Join",
+                 choices=["mitre", "round"], default="mitre")])
+        if v is None:
             return
         self._push_hist()
         try:
-            self.model.add_offset(v)
+            self.model.add_offset(v["d"], join=v["j"])
         except ValueError as e:
             self._hist.pop()                      # nothing was mutated
             self._warn(str(e))
