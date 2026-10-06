@@ -100,6 +100,8 @@ class SketchCanvas(QWidget):
         self._center = np.array([0.0, 0.0])  # world point at widget center
         self._tool = "select"
         self._sel: list = []
+        self._redundant: set = set()          # M87 diagnosis (ids)
+        self._conflicting: set = set()        # M87 diagnosis (ids)
         self._drag_pt: Point | None = None
         self._pan_from: QPointF | None = None
         self._line_start: Point | None = None
@@ -1189,6 +1191,9 @@ class SketchCanvas(QWidget):
 
     def _solve(self, pins=()):
         self._last_result = self.model.solve(pins=pins)
+        res = self._last_result
+        self._redundant = {id(c) for c in getattr(res, "redundant", [])}
+        self._conflicting = {id(c) for c in getattr(res, "conflicting", [])}
         self.state_changed.emit(self._last_result)
 
     # ---- finish -----------------------------------------------------------
@@ -1429,19 +1434,19 @@ class SketchCanvas(QWidget):
             if isinstance(c, Horizontal) and isinstance(c.line, Line):
                 m = self.w2s((c.line.a.x + c.line.b.x) / 2,
                              (c.line.a.y + c.line.b.y) / 2)
-                self._badge(p, m, "H")
+                self._badge(p, m, "H", c=c)
             elif isinstance(c, Vertical) and isinstance(c.line, Line):
                 m = self.w2s((c.line.a.x + c.line.b.x) / 2,
                              (c.line.a.y + c.line.b.y) / 2)
-                self._badge(p, m, "V")
+                self._badge(p, m, "V", c=c)
             elif isinstance(c, Fixed):
                 m = self.w2s(c.p.x, c.p.y)
-                self._badge(p, m, "\u25a0")   # ■
+                self._badge(p, m, "\u25a0", c=c)   # ■
             elif isinstance(c, Symmetry):
                 m = self.w2s((c.p1.x + c.p2.x) / 2, (c.p1.y + c.p2.y) / 2)
-                self._badge(p, m, "S")
+                self._badge(p, m, "S", c=c)
             elif isinstance(c, Midpoint):
-                self._badge(p, self.w2s(c.p.x, c.p.y), "\u25c7")   # ◇
+                self._badge(p, self.w2s(c.p.x, c.p.y), "\u25c7", c=c)   # ◇
             elif isinstance(c, Tangent):
                 pt = self._tangent_point(c)
                 if pt is not None:
@@ -1538,11 +1543,18 @@ class SketchCanvas(QWidget):
         for a, b in zip(pts, pts[1:]):
             p.drawLine(a, b)
 
-    def _badge(self, p: QPainter, at: QPointF, text: str, wide=False):
+    def _badge(self, p: QPainter, at: QPointF, text: str, wide=False,
+               c=None):
         w = 20 if wide else 13
         rect = QRectF(at.x() - w / 2, at.y() - 8, w, 15)
+        fill = QColor(27, 29, 34, 200)
+        if c is not None:                 # M87: diagnosed constraints glow
+            if id(c) in self._conflicting:
+                fill = QColor(224, 82, 82, 210)      # Fusion's conflict red
+            elif id(c) in self._redundant:
+                fill = QColor(230, 180, 60, 210)     # amber for redundant
         p.setPen(QPen(DIM, 1))
-        p.setBrush(QColor(27, 29, 34, 200))
+        p.setBrush(fill)
         p.drawRoundedRect(rect, 3, 3)
         p.setPen(FG)
         p.drawText(rect, Qt.AlignCenter, text)

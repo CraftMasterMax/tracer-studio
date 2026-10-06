@@ -506,6 +506,23 @@ re-weighs the report right in the dialog.  No fake printer drivers, no
 cloud: the report is computed from the real mesh in
 tracer/core/printcheck.py, which the tests pin directly.
 
+**M87 — Redundant & conflicting constraint diagnosis.** ✓ SHIPPED.
+The solver always knew a sketch was bad ("⚠ conflicting constraints");
+now it knows WHICH constraint. After every solve, the residual
+Jacobian's rows are swept with Gram-Schmidt in constraint order — a row
+in the span of its predecessors adds no information and is REDUNDANT
+(the LATER duplicate carries the amber badge, FreeCAD-style); a row
+whose residual refuses to close is CONFLICTING (red badge, and never
+blamed twice — dependent-but-failing rows count only as conflicting).
+Rows map back through expand() to the user constraint that minted
+them. The status bar counts both ("⚠ N conflicting constraints ·
+M redundant"), the classic pinned grammar survives byte-exact for
+clean sketches, badges paint red/amber accordingly, and DOF math is
+untouched — this names what the rank already knew. Honest quirk the
+tests document: LM's least-squares COMPROMISE under conflict drifts
+nearby pins, so the blame set can ripple beyond the single fighter —
+exactly how Fusion cascades red too.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

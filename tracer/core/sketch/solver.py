@@ -22,6 +22,8 @@ class SolveResult:
     dof: int
     iterations: int
     failed: list = field(default_factory=list)
+    redundant: list = field(default_factory=list)    # M87: add-nothing
+    conflicting: list = field(default_factory=list)  # M87: won't close
 
     def __bool__(self): return self.converged
 
@@ -116,7 +118,12 @@ class Sketch:
 
     # ---- solving -----------------------------------------------------------
     def solve(self, tol: float = 1e-9, max_iter: int = 100) -> SolveResult:
-        rows = expand(self.constraints)
+        rows = []                                   # M87: tag each row
+        for c in self.constraints:                  # with its origin so
+            sub = expand([c])                       # diagnosis can name
+            for rw in sub:                          # the user constraint
+                rw.origin = c                       # behind it
+            rows.extend(sub)
         pts, circles, ells, x0 = self._pack()
         x = x0.copy()
         n = x.size
@@ -168,7 +175,38 @@ class Sketch:
         rank = int(np.linalg.matrix_rank(J, tol=1e-7)) if m else 0
         dof = max(n - rank, 0)
         failed = [rows[i] for i in range(m) if abs(r[i]) > 1e-6 * _TOL_SCALE]
-        return SolveResult(converged and rn < tol, rn, dof, it, failed)
+        # ---- M87 diagnosis: name the culprits -------------------------------
+        # Conflicting: rows whose residual refuses to close.  Redundant:
+        # rows living in the span of their PREDECESSORS on the solved
+        # Jacobian (Gram-Schmidt in constraint order — the later of two
+        # duplicates carries the badge, FreeCAD-style).  A dependent row
+        # that ALSO fails is conflicting, never redundantly so.
+        bad = {i for i in range(m) if abs(r[i]) > 1e-6 * _TOL_SCALE}
+        red = set()
+        if m:
+            basis = []
+            for i in range(m):
+                vec = J[i].astype(float, copy=True)
+                for q in basis:
+                    vec -= (vec @ q) * q
+                nv = float(np.linalg.norm(vec))
+                if nv > 1e-7:
+                    basis.append(vec / nv)
+                else:
+                    red.add(i)
+        red -= bad
+
+        def _origins(idxs):
+            seen, out = set(), []
+            for i in sorted(idxs):
+                o = getattr(rows[i], "origin", rows[i])
+                if id(o) not in seen:
+                    seen.add(id(o))
+                    out.append(o)
+            return out
+        return SolveResult(converged and rn < tol, rn, dof, it, failed,
+                           redundant=_origins(red),
+                           conflicting=_origins(bad))
 
 
 _TOL_SCALE = 100.0

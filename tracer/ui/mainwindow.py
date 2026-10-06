@@ -2474,13 +2474,26 @@ class MainWindow(QMainWindow):
                                   or s.arcs)
         if res is None or empty:
             self._sketch_state.setText("")
-        elif not res.converged:
-            self._sketch_state.setText("\u26a0 conflicting constraints")
+        elif not res.converged or getattr(res, "conflicting", []):
+            n = len(getattr(res, "conflicting", []))
+            txt = (f"\u26a0 {n} conflicting constraint"
+                   + ("" if n == 1 else "s")
+                   if n else "\u26a0 conflicting constraints")
+            if getattr(res, "redundant", []):
+                txt += f" \u00b7 {len(res.redundant)} redundant"
+            self._sketch_state.setText(txt)
         elif res.dof == 0:
-            self._sketch_state.setText("Sketch fully constrained")
+            self._sketch_state.setText(
+                "Sketch fully constrained"
+                + (f" \u00b7 {len(res.redundant)} redundant"
+                   if getattr(res, "redundant", []) else ""))
         else:
             self._sketch_state.setText(f"Sketch under-constrained "
-                                       f"\u00b7 {res.dof} dof free")
+                                       f"\u00b7 {res.dof} dof free"
+                                       + (f" \u00b7 {len(res.redundant)} "
+                                          f"redundant"
+                                          if getattr(res, "redundant", [])
+                                          else ""))
 
     def _pick_tool(self, tool: str):
         self.sketch.set_tool(tool)
