@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .entities import Entity, Point, Line, Circle
+from .entities import Entity, Point, Line, Circle, Ellipse
 from .constraints import Constraint, expand
 
 
@@ -32,6 +32,7 @@ class Sketch:
         self.lines: list[Line] = []
         self.circles: list[Circle] = []
         self.arcs: list["Arc"] = []
+        self.ellipses: list[Ellipse] = []
         self.constraints: list[Constraint] = []
 
     # ---- construction ---------------------------------------------------
@@ -58,18 +59,27 @@ class Sketch:
         self.arcs.append(ar)
         return ar
 
+    def ellipse(self, center: Point, rx: float, ry: float,
+                construction: bool = False) -> Ellipse:
+        e = Ellipse(center, rx, ry, construction)
+        self.ellipses.append(e)
+        return e
+
     def constrain(self, *c: Constraint):
         self.constraints.extend(c)
 
     # ---- internals --------------------------------------------------------
     def _free_points(self) -> list[Point]:
-        """Points are the only value-carrying free entities; circle radius is extra."""
+        """Points are the only value-carrying free entities; circle and
+        ellipse radii are extra scalars on the same vector."""
         seen: dict[int, Point] = {}
         for ln in self.lines:
             for p in (ln.a, ln.b):
                 seen.setdefault(p.id, p)
         for c in self.circles:
             seen.setdefault(c.c.id, c.c)
+        for e in self.ellipses:
+            seen.setdefault(e.c.id, e.c)
         for a in self.arcs:
             for p in (a.a, a.m, a.b):
                 seen.setdefault(p.id, p)
@@ -80,26 +90,34 @@ class Sketch:
     def _pack(self):
         pts = self._free_points()
         circles = self.circles
+        ells = self.ellipses
         x = np.concatenate(
             [np.array([[p.x, p.y] for p in pts], dtype=float).ravel()]
-            + ([np.array([c.r for c in circles], dtype=float)] if circles else []))
-        return pts, circles, x
+            + ([np.array([c.r for c in circles], dtype=float)]
+               if circles else [])
+            + ([np.array([v for e in ells for v in (e.rx, e.ry)],
+                         dtype=float)] if ells else []))
+        return pts, circles, ells, x
 
-    def _unpack(self, pts, circles, x):
+    def _unpack(self, pts, circles, ells, x):
         for i, p in enumerate(pts):
             p.x, p.y = float(x[2 * i]), float(x[2 * i + 1])
         base = 2 * len(pts)
         for j, c in enumerate(circles):
             c.r = float(x[base + j])
+        base += len(circles)
+        for k, e in enumerate(ells):
+            e.rx, e.ry = (float(x[base + 2 * k]),
+                          float(x[base + 2 * k + 1]))
 
     def _residuals(self, constraints, x):
-        self._unpack(*self._pack()[:2], x)
+        self._unpack(*self._pack()[:3], x)
         return np.array([c.residual({}) for c in constraints], dtype=float)
 
     # ---- solving -----------------------------------------------------------
     def solve(self, tol: float = 1e-9, max_iter: int = 100) -> SolveResult:
         rows = expand(self.constraints)
-        pts, circles, x0 = self._pack()
+        pts, circles, ells, x0 = self._pack()
         x = x0.copy()
         n = x.size
         m = len(rows)
@@ -107,7 +125,7 @@ class Sketch:
             return SolveResult(True, 0.0, n, 0)
 
         def res(vec):
-            self._unpack(pts, circles, vec)
+            self._unpack(pts, circles, ells, vec)
             return np.array([c.residual({}) for c in rows], float)
 
         lam = 1e-3  # Levenberg-Marquardt damping
@@ -145,7 +163,7 @@ class Sketch:
                 lam = min(lam * 4.0, 1e6)
                 if lam >= 1e5:  # stuck
                     break
-        self._unpack(pts, circles, x)
+        self._unpack(pts, circles, ells, x)
         rn = float(np.linalg.norm(res(x)))
         rank = int(np.linalg.matrix_rank(J, tol=1e-7)) if m else 0
         dof = max(n - rank, 0)

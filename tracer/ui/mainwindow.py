@@ -2257,6 +2257,7 @@ class MainWindow(QMainWindow):
         self._tool_btns = {}
         for tool, label in (("select", "Select"), ("line", "Line"),
                             ("rect", "Rect"), ("circle", "Circle"),
+                            ("ellipse", "Ellipse"),
                             ("slot", "Slot"), ("poly", "Poly"), ("arc", "Arc")):
             b = QPushButton(label, checkable=True,
                             clicked=lambda checked, t=tool: self._pick_tool(t))

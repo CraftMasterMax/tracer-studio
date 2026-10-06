@@ -368,12 +368,17 @@ both shapes together.  The hover ring appears before the click, the
 crosshair wears itself onto every draw tool, and the setting outlives
 the session.  Windows CI also spent the day teaching M76 humility:
 a first guess (welded counters, fixed with buffer(0) untangling) was
-wrong, and an always-failing probe commit forced Windows to print the
-truth — QFont("Sans") there is a family that doesn't exist, and before
-the font database populates every glyph tessellates as one .notdef
-rectangle.  glyph_regions now warms the database and picks a family
-that actually exists on the machine; a cold-engine test pins that a T
-is a T, not a box.
+half right — the untangling stays, it costs nothing — but an
+always-failing probe commit forced Windows to print the truth: before
+the platform font engine is fully awake, QFont resolves to .notdef and
+EVERY letter tessellates as one 4-point tofu rectangle, validly and
+silently.  So Tracer now SHIPS its lettering: Liberation Sans (SIL OFL,
+in resources/fonts, registered via addApplicationFont) is the first
+tessellation candidate on every platform, and any candidate whose rings
+are all square-and-full boxes is vetoed — a cold engine can no longer
+emboss squares, it falls through or the command warns.  Two tests pin
+the lesson: a cold-engine T must be taller than wide, and the tofu
+guard must recognise a box.
 
 **M78 — Marquee select + drag magnet in the sketcher.** ✓ SHIPPED.
 The viewport has box-selected since M62; the sketch editor made you
@@ -386,6 +391,30 @@ makes real selections, not paint.  Dragged points likewise CLICK onto
 the origin, grid crossings and other points (the magnet skips the
 dragged point itself — it must not eat its own cursor), and the release
 lands EXACT: (0,0) is the origin, not 0.0007 off it.
+
+**M79 — The ellipse: the sketcher's last basic shape.** ✓ SHIPPED.
+Line, rect, circle, slot, polygon, arc — and the shape Fusion's sketch
+palette still had that we lacked.  An Ellipse is now a first-class
+entity: a shared centre Point (so the magnet, snapping, Fixed and
+dragging all work on it for free) plus rx and ry as REAL solver
+variables — a bare ellipse counts four DOF and the toolbar's constraint
+voice says so.  Centre-first UX, drag or two clicks, and the E key.
+It profiles as a 96-gon loop, so an elliptical prism's volume is
+π·rx·ry·h, and JSON round-trips carry it whole.  The proof shot also
+caught a sibling bug the marquee script never hit: click-mode rubber
+bands rearmed themselves around the M77 Point object and silently
+crashed the paint (Qt swallows paint exceptions — tests never saw it);
+and radius clicks MINTED stray points, two phantom DOF per circle.
+Both fixed where they lived — tools consume their aim clicks now, and
+drags reuse the armed centre.
+
+**Queued next — M80 Mirror entities** (spec written, tests drafted at
+tests/test_m80.py, untracked): Shift+M / Mirror button / context menu
+with the FIRST selected line as axis; model.mirror_about reflects lines,
+circles, arcs (sweep swapped) and axis-parallel ellipses, SKIPS
+self-mirroring geometry (an edge on the axis must not double), and
+points ON the axis are SHARED so the two halves stitch as one profile.
+K grows to toggle construction on circles/ellipses too.
 
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds

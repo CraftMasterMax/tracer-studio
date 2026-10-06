@@ -54,7 +54,7 @@ def _point_in_poly(pt, poly: np.ndarray) -> bool:
     return inside
 
 
-def loops_from_lines_and_circles(lines, circles, arcs=()):
+def loops_from_lines_and_circles(lines, circles, arcs=(), ellipses=()):
     """Returns (loops, warnings).
 
     loops: list of dicts {points: Nx2 float64 ccw, area: float}
@@ -189,6 +189,14 @@ def loops_from_lines_and_circles(lines, circles, arcs=()):
             continue
         p = circle_contour(c.r, (c.c.x, c.c.y), segments=96)
         loops.append({"points": p, "area": math.pi * c.r * c.r})
+
+    # ellipses: independent CCW loops (same 96-gon treatment)
+    for e in ellipses:
+        if e.rx <= _EPS or e.ry <= _EPS:
+            warnings.append("degenerate ellipse skipped")
+            continue
+        p = e.sample(96)
+        loops.append({"points": p, "area": math.pi * e.rx * e.ry})
 
     return loops, warnings
 

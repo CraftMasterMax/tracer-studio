@@ -11,7 +11,8 @@ from typing import Iterable
 import math
 import numpy as np
 
-from .entities import Point, Line, Circle, Arc, curve_radius, curve_center
+from .entities import (Point, Line, Circle, Arc, Ellipse, curve_radius,
+                       curve_center)
 from .constraints import (Angle, AngleBetween, ArcMiddle, Coincident,
                           Collinear, Concentric, Distance, Equal, Fixed,
                           Horizontal, Midpoint, Perpendicular,
@@ -304,6 +305,8 @@ class SketchModel:
             sk.lines.remove(ent)
         elif isinstance(ent, Circle):
             sk.circles.remove(ent)
+        elif isinstance(ent, Ellipse):
+            sk.ellipses.remove(ent)
         elif sk.arcs and any(ent is a for a in sk.arcs):
             sk.arcs = [a for a in sk.arcs if a is not ent]
         elif isinstance(ent, Point):
@@ -337,7 +340,9 @@ class SketchModel:
             [l for l in self.sketch.lines if not l.construction],
             [c for c in self.sketch.circles
              if not getattr(c, "construction", False)],
-            [a for a in self.sketch.arcs if not a.construction])
+            [a for a in self.sketch.arcs if not a.construction],
+            [e for e in self.sketch.ellipses
+             if not getattr(e, "construction", False)])
 
 
 def math_dist(a: Point, b: Point) -> float:
@@ -359,6 +364,8 @@ def _point_index(model: SketchModel):
         touch(c.c)
     for a in model.sketch.arcs:
         touch(a.a); touch(a.m); touch(a.b)
+    for e in model.sketch.ellipses:
+        touch(e.c)
     for p in model.sketch.points:
         touch(p)
     return pts, index
@@ -441,6 +448,8 @@ def model_to_dict(m: SketchModel) -> dict:
                      for c in m.sketch.circles],
          "arcs": [[idx[a.a.id], idx[a.m.id], idx[a.b.id], int(a.construction)]
                   for a in m.sketch.arcs],
+         "ellipses": [[idx[e.c.id], e.rx, e.ry, int(e.construction)]
+                      for e in m.sketch.ellipses],
          "constraints": cons}
     if m.plane == "FACE":
         d["axes"] = [[float(t) for t in a] for a in m.axes]
@@ -490,6 +499,9 @@ def model_from_dict(d: dict) -> SketchModel:
     for e in d.get("arcs", []):
         ar = m.sketch.arc(pts[e[0]], pts[e[1]], pts[e[2]])
         ar.construction = bool(e[3]) if len(e) > 3 else False
+    for e in d.get("ellipses", []):
+        el = m.sketch.ellipse(pts[e[0]], e[1], e[2])
+        el.construction = bool(e[3]) if len(e) > 3 else False
     for c in d.get("constraints", []):
         t = c["t"]
         if t == "H":

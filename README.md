@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M78**
+**Status: M79**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -90,7 +90,7 @@ independent project with no Autodesk assets or affiliation.)
   a playhead timeline of icon chips, and a blue-grey horizon viewport —
   plus first-launch shortcut tour and a persistent Shortcuts tab driven by
   one canonical key table
-- 762 headless tests (EGL rendering + Qt pixel assertions)
+- 777 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -120,7 +120,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 762 tests, fully headless
+./.venv/bin/python -m pytest -q          # 777 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
@@ -147,3 +147,6 @@ Full list: **?** / the Shortcuts tab.
   pixels on screen, in tests, and in CI.
 - **Z-up, millimetres** everywhere inside the app.
 - **No paid anything**: GPL-3 stack, no telemetry, no accounts, no cloud.
+- **Assets ship with the app**: Liberation Sans (SIL OFL) is bundled for
+  text emboss — the same letters on every machine, and no dependence on
+  an OS font chain that Windows CI proved can hand back tofu.

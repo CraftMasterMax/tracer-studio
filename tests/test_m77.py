@@ -132,6 +132,15 @@ def test_circle_centre_snaps_to_existing_point(win, qapp):
     assert cv.model.sketch.circles[0].c is c0       # same Point object
 
 
+def test_circle_radius_click_leaves_no_stray_point(win, qapp):
+    cv = _cv(win, qapp)
+    cv.set_tool("circle")
+    _click(cv, qapp, 0, 0, dx=2, dy=2)              # magnet centre
+    _click(cv, qapp, 0, 10)
+    assert len(cv.model.sketch.points) == 1         # only the centre
+    assert cv.model.sketch.solve().dof == 3         # 2 + r, no phantom 2
+
+
 # ---- grid snap ---------------------------------------------------------------
 
 def test_grid_snap_lands_clicks_on_intersections(win, qapp):
@@ -196,3 +205,22 @@ def test_draw_tools_wear_the_crosshair(win, qapp):
     assert cv.cursor().shape() == Qt.CrossCursor
     cv.set_tool("select")
     assert cv.cursor().shape() == Qt.ArrowCursor
+
+
+def test_click_mode_preview_still_paints(win, qapp):
+    # M77 turned the armed corner into a Point; the rubber band wants
+    # coordinates.  Qt swallows paintEvent exceptions, so call the
+    # drawer directly — it used to raise 'Point' object not subscriptable.
+    from PySide6.QtGui import QPainter, QPixmap
+    for tool, x, y in (("rect", 10, 10), ("circle", 5, 5),
+                       ("ellipse", 0, 0)):
+        cv = _cv(win, qapp)
+        cv.set_tool(tool)
+        _click(cv, qapp, x, y)                  # click arms; release rearms
+        assert cv._preview is not None
+        pm = QPixmap(400, 300)
+        p = QPainter(pm)
+        try:
+            cv._draw_preview(p)                 # must NOT raise
+        finally:
+            p.end()

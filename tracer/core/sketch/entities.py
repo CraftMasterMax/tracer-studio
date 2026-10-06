@@ -78,6 +78,36 @@ class Circle(Entity):
     def __repr__(self): return f"Circle(c={self.c!r}, r={self.r:.4g})"
 
 
+class Ellipse(Entity):
+    """Axis-aligned ellipse: a shared centre Point plus two radii along
+    the sketch's own axes — Fusion's ellipse, drawn centre-first exactly
+    like the circle, rx and ry set by where the second click lands."""
+
+    def __init__(self, center: Point, rx: float, ry: float,
+                 construction: bool = False):
+        super().__init__()
+        self.c, self.rx, self.ry = center, float(rx), float(ry)
+        self.construction = bool(construction)
+
+    def get_params(self):
+        return np.array([self.c.x, self.c.y, self.rx, self.ry])
+
+    def set_params(self, p):
+        self.c.set_params(p[:2])
+        self.rx, self.ry = float(p[2]), float(p[3])
+
+    @staticmethod
+    def n_params(): return 4
+
+    def sample(self, n: int = 96) -> np.ndarray:
+        t = np.linspace(0.0, 2.0 * math.pi, n, endpoint=False)
+        return np.column_stack([self.c.x + self.rx * np.cos(t),
+                                self.c.y + self.ry * np.sin(t)])
+
+    def __repr__(self):
+        return f"Ellipse(c={self.c!r}, rx={self.rx:.4g}, ry={self.ry:.4g})"
+
+
 class Arc(Entity):
     """Circular arc through three shared points: start, end and a bulge
     point 'mid' on the curve.  Reusing Point objects means its endpoints

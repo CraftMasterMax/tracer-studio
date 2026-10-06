@@ -23,8 +23,8 @@ from ..core.sketch.constraints import (Angle, AngleBetween, Collinear,
                                        Symmetry, Tangent, Vertical,
                                        make_angle, make_angle_between,
                                        make_tangent, snapped)
-from ..core.sketch.entities import (Arc, Circle, Line, Point, curve_center,
-                                     curve_radius)
+from ..core.sketch.entities import (Arc, Circle, Ellipse, Line, Point,
+                                     curve_center, curve_radius)
 from ..core.sketch.model import (SketchModel, math_dist, model_from_dict,
                                  model_to_dict)
 from ..core.sketch.profile import regions
@@ -311,6 +311,8 @@ class SketchCanvas(QWidget):
         for a in sk.arcs:
             for p in (a.a, a.b, a.m):
                 seen[p.id] = p
+        for e in sk.ellipses:
+            seen[e.c.id] = e.c
         for p in sk.points:
             seen[p.id] = p
         return [(p, None) for p in seen.values()]
@@ -328,6 +330,9 @@ class SketchCanvas(QWidget):
         for ar in sk.arcs:
             if self._arc_hit(ar, q):
                 return ("arc", ar)
+        for e in sk.ellipses:               # same polyline grammar
+            if self._arc_hit(e, q):
+                return ("ellipse", e)
         for l in sk.lines:
             if self._pt_seg_px(q, l.a, l.b) <= _HIT_PX:
                 return ("line", l)
@@ -435,13 +440,37 @@ class SketchCanvas(QWidget):
                                  np.array([c.x, c.y]))
             else:
                 a = self._rect_corner
-                p = self._place_point(q)
+                t = self._snap_target(q)       # aim, but mint NO point:
+                xy = ((t.x, t.y) if isinstance(t, Point)      # a stray
+                      else (t if t is not None else wp))      # free point
                 self._rect_corner = None
                 self._preview = None
-                r = math.hypot(p.x - a.x, p.y - a.y)
-                if r * self._scale > 4:
+                r = math.hypot(xy[0] - a.x, xy[1] - a.y)      # would add 2
+                if r * self._scale > 4:                       # phantom dof
                     self._push_hist()
                     self.model.add_circle(a, r)
+                    self._solve()
+            self.update()
+        elif self._tool == "ellipse":
+            # centre-first, exactly like the circle: the second click's
+            # offsets from the centre ARE the two radii — and, like the
+            # circle, the radius click must NOT mint a stray point.
+            if self._rect_corner is None:
+                c = self._place_point(q)
+                self._rect_corner = c
+                self._preview = ("ellipse", np.array([c.x, c.y]),
+                                 np.array([c.x, c.y]))
+            else:
+                a = self._rect_corner
+                t = self._snap_target(q)
+                xy = ((t.x, t.y) if isinstance(t, Point)
+                      else (t if t is not None else wp))
+                self._rect_corner = None
+                self._preview = None
+                rx, ry = abs(xy[0] - a.x), abs(xy[1] - a.y)
+                if rx * self._scale > 4 and ry * self._scale > 4:
+                    self._push_hist()
+                    self.model.sketch.ellipse(a, rx, ry)
                     self._solve()
             self.update()
         elif self._tool == "arc":
@@ -588,10 +617,14 @@ class SketchCanvas(QWidget):
         kind, a, b = self._preview
         self._preview = None
         committed = False
+        # The armed corner IS a real Point since M77 — the drag must
+        # REUSE it, not mint a second centre and orphan the first.
+        rc = self._rect_corner if isinstance(self._rect_corner, Point) \
+            else None
         if kind == "rect" and np.linalg.norm(b - a) * self._scale > 6:
             self._rect_corner = None            # drag wins; disarm click-mode
             self._push_hist()
-            p0 = self.model.point(*a)
+            p0 = rc if rc is not None else self.model.point(*a)
             p1 = self.model.point(*b)
             self.model.add_rect(p0, p1)
             self._solve()
@@ -601,13 +634,27 @@ class SketchCanvas(QWidget):
             if r * self._scale > 4:
                 self._rect_corner = None
                 self._push_hist()
-                c = self.model.add_circle(self.model.point(*a), r)
+                c0 = rc if rc is not None else self.model.point(*a)
+                c = self.model.add_circle(c0, r)
+                self._solve()
+                committed = True
+        elif kind == "ellipse":
+            rx, ry = abs(float(b[0] - a[0])), abs(float(b[1] - a[1]))
+            if rx * self._scale > 4 and ry * self._scale > 4:
+                self._rect_corner = None
+                self._push_hist()
+                c0 = rc if rc is not None else self.model.point(*a)
+                self.model.sketch.ellipse(c0, rx, ry)
                 self._solve()
                 committed = True
         # click-move-click: a plain click leaves the first corner armed;
         # re-show the rubber band so moving the mouse previews the shape.
+        # (Since M77 the armed corner is a Point — the preview wants
+        # plain coordinates, or _draw_preview's subscripts crash.)
         if not committed and self._rect_corner is not None:
-            self._preview = (kind, self._rect_corner, self._rect_corner)
+            rc = self._rect_corner
+            xy = np.array([rc.x, rc.y]) if isinstance(rc, Point) else rc
+            self._preview = (kind, xy, xy)
         self.update()
 
     def wheelEvent(self, ev: QWheelEvent):
@@ -1048,6 +1095,8 @@ class SketchCanvas(QWidget):
             self.set_tool("rect")
         elif k == Qt.Key_C and not sel:
             self.set_tool("circle")
+        elif k == Qt.Key_E and not sel:
+            self.set_tool("ellipse")
         elif k == Qt.Key_A and not sel:
             self.set_tool("arc")
         elif k == Qt.Key_O and not sel:
@@ -1282,6 +1331,11 @@ class SketchCanvas(QWidget):
             cen = self.w2s(c.c.x, c.c.y)
             r = c.r * self._scale
             p.drawEllipse(cen, r, r)
+        for e in sk.ellipses:
+            p.setPen(constr_pen if getattr(e, "construction", False)
+                     else solid_pen)
+            cen = self.w2s(e.c.x, e.c.y)
+            p.drawEllipse(cen, e.rx * self._scale, e.ry * self._scale)
         # selected
         p.setPen(QPen(ACCENT, 2.4))
         for e in self._sel:
@@ -1290,6 +1344,9 @@ class SketchCanvas(QWidget):
             elif isinstance(e, Circle):
                 cen = self.w2s(e.c.x, e.c.y)
                 p.drawEllipse(cen, e.r * self._scale, e.r * self._scale)
+            elif isinstance(e, Ellipse):
+                cen = self.w2s(e.c.x, e.c.y)
+                p.drawEllipse(cen, e.rx * self._scale, e.ry * self._scale)
             elif isinstance(e, Arc):
                 smp = e.sample(64)
                 q_prev = self.w2s(float(smp[0][0]), float(smp[0][1]))
@@ -1509,6 +1566,10 @@ class SketchCanvas(QWidget):
         if kind == "rect":
             p.drawRect(min(a[0], b[0]), max(a[1], b[1]),
                        abs(b[0] - a[0]), abs(b[1] - a[1]))
+        elif kind == "ellipse":
+            cen = self.w2s(a[0], a[1])
+            p.drawEllipse(cen, abs(b[0] - a[0]) * self._scale,
+                          abs(b[1] - a[1]) * self._scale)
         else:
             r = float(np.linalg.norm(b - a))
             cen = self.w2s(a[0], a[1])
@@ -1522,11 +1583,13 @@ class SketchCanvas(QWidget):
         if self._cursor is not None:
             cx, cy = self._cursor
             lines.append((f"X {cx:.2f}   Y {cy:.2f} mm", DIM))
-        tool = {"select": ("Select (S/L/R/C/O/Y/A) · H/V/F/D/Q/T/I/J/M "
+        tool = {"select": ("Select (S/L/R/C/E/O/Y/A) · H/V/F/D/Q/T/I/J/M "
                            "constraints · / trim · . on-curve · X extrude"),
                 "line": "Line — click points, Enter/Esc stops",
                 "rect": "Rectangle — drag corners or click · move · click",
                 "circle": "Circle — drag from center or click · move · click",
+                "ellipse": "Ellipse — drag from centre or click · move · "
+                           "click (radii follow the cursor)",
                 "arc": "Arc — 3 clicks: start · end · bulge (chains)",
                 "slot": "Slot — 3 clicks: centre · centre · width",
                 "poly": "Polygon — click centre · click vertex · "
