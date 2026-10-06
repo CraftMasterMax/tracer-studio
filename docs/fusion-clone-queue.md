@@ -366,9 +366,26 @@ and a caught corner SHARES the point it caught: add_rect builds from
 the given corners, so a rectangle drawn off an existing point drags
 both shapes together.  The hover ring appears before the click, the
 crosshair wears itself onto every draw tool, and the setting outlives
-the session.  Windows CI also caught M76's first real bug the same day:
-DirectWrite welds a glyph's counter into its outer contour as one
-self-crossing ring — buffer(0) untangles it now.
+the session.  Windows CI also spent the day teaching M76 humility:
+a first guess (welded counters, fixed with buffer(0) untangling) was
+wrong, and an always-failing probe commit forced Windows to print the
+truth — QFont("Sans") there is a family that doesn't exist, and before
+the font database populates every glyph tessellates as one .notdef
+rectangle.  glyph_regions now warms the database and picks a family
+that actually exists on the machine; a cold-engine test pins that a T
+is a T, not a box.
+
+**M78 — Marquee select + drag magnet in the sketcher.** ✓ SHIPPED.
+The viewport has box-selected since M62; the sketch editor made you
+click entity by entity.  Dragging from empty space now throws a dotted
+marquee whose interior tints, and everything it TOUCHES — window AND
+crossing at once, lines passing clean through included — lands in the
+selection; plain empty-click clears, Ctrl+band adds (the M59 grammar,
+kept).  A caught line feeds act_H exactly like a clicked one — the band
+makes real selections, not paint.  Dragged points likewise CLICK onto
+the origin, grid crossings and other points (the magnet skips the
+dragged point itself — it must not eat its own cursor), and the release
+lands EXACT: (0,0) is the origin, not 0.0007 off it.
 
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds

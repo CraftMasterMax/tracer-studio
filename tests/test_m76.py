@@ -48,37 +48,19 @@ def test_a_counter_is_a_hole(qapp):
     assert len(regs) == 1 and len(regs[0]["holes"]) == 1
 
 
-def test_zz_platform_probe(qapp):
-    # TEMP diagnostic (always asserts): dump raw tessellation facts so
-    # the Windows counter mystery can be settled from CI logs, not
-    # guesses.  Remove in the follow-up fix.
-    from PySide6.QtGui import QFont, QPainterPath
-    from shapely.geometry import Polygon as SP
-    f = QFont("Sans")
-    f.setPixelSize(100)
-    info = []
-    for h in (10.0, 20.0):
-        p = QPainterPath()
-        p.addText(0, 0, f, "0")
-        subs = p.toSubpathPolygons()
-        desc = []
-        for sp in subs:
-            pts = np.array([(pt.x(), -pt.y()) for pt in sp], float)
-            g = SP(pts)
-            b = g.buffer(0)
-            parts = ([] if b.is_empty else
-                     list(getattr(b, "geoms", [b])))
-            desc.append(dict(n=len(pts),
-                             valid=bool(g.is_valid),
-                             area=round(float(abs(SP(pts).area))),
-                             parts=[(type(x).__name__, len(x.interiors))
-                                    for x in parts]))
-        regs = glyph_regions("0", h)
-        info.append(dict(h=h, nsub=len(subs), subs=desc,
-                         holes=[len(r["holes"]) for r in regs]))
-    import platform
-    assert False, dict(sys=platform.system(), qt=__import__(
-        "PySide6").__version__, info=info)
+def test_cold_font_engine_still_draws_letters(qapp):
+    # Windows CI caught the cold-start failure mode: before the font
+    # database populated, every glyph tessellated as one .notdef box —
+    # one 5-point subpath, area ~100².  Letters must be letters even
+    # when the database has never been touched.
+    regs = glyph_regions("T", 12.0)
+    assert len(regs) == 1
+    outer = np.asarray(regs[0]["outer"])
+    assert len(outer) > 6                      # a T, not a 4-corner box
+    w = float(np.ptp(outer[:, 0]))
+    h = float(np.ptp(outer[:, 1]))
+    assert h == pytest.approx(12.0, abs=1e-6)  # scaled as asked
+    assert w < h                               # a T is taller than wide
 
 
 def test_words_split_into_islands_left_to_right(qapp):

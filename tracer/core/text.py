@@ -27,11 +27,23 @@ def glyph_regions(text: str, height_mm: float,
     Returns [] for whitespace-only text or a font that drew nothing."""
     if not text or not text.strip():
         return []
-    from PySide6.QtGui import QFont, QPainterPath
+    from PySide6.QtGui import QFont, QFontDatabase, QPainterPath
     from PySide6.QtWidgets import QApplication
     if QApplication.instance() is None:
         raise RuntimeError("glyph_regions needs a running QApplication")
-    font = QFont(family or "Sans")
+    # Asking the database FIRST populates it — before that, Windows
+    # resolves unknown families (like the alias "Sans") to .notdef and
+    # every glyph tessellates as one tofu rectangle.  Then we pick a
+    # family that actually EXISTS on this machine.
+    fams = {f.lower(): f for f in QFontDatabase.families()}
+    exact = None
+    for cand in ([family] if family else
+                 ["DejaVu Sans", "Liberation Sans", "Arial", "Segoe UI",
+                  "Verdana", "Helvetica Neue", "Helvetica", "Noto Sans"]):
+        if cand.lower() in fams:
+            exact = fams[cand.lower()]
+            break
+    font = QFont(exact or family or "Sans")
     font.setPixelSize(100)
     path = QPainterPath()
     path.addText(0, 0, font, text)
