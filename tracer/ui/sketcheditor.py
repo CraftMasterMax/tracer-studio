@@ -61,6 +61,30 @@ def _line_pivot(l1, l2):
     return l1.a.x + d1[0] * t, l1.a.y + d1[1] * t
 
 
+def _in_box(pt, lo, hi) -> bool:
+    return lo[0] <= pt.x <= hi[0] and lo[1] <= pt.y <= hi[1]
+
+
+def _segs_cross(p1, p2, p3, p4) -> bool:
+    def cr(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    d1, d2 = cr(p3, p4, p1), cr(p3, p4, p2)
+    d3, d4 = cr(p1, p2, p3), cr(p1, p2, p4)
+    return ((d1 > 0) != (d2 > 0)) and ((d3 > 0) != (d4 > 0))
+
+
+def _seg_hits_box(p1, p2, lo, hi) -> bool:
+    """Segment touches the box: an end inside, OR it crosses an edge —
+    a line passing clean through with both ends outside still hits,
+    exactly like Fusion's marquee."""
+    def inside(p):
+        return lo[0] <= p[0] <= hi[0] and lo[1] <= p[1] <= hi[1]
+    if inside(p1) or inside(p2):
+        return True
+    c = [(lo[0], lo[1]), (hi[0], lo[1]), (hi[0], hi[1]), (lo[0], hi[1])]
+    return any(_segs_cross(p1, p2, c[i], c[(i + 1) % 4]) for i in range(4))
+
+
 class SketchCanvas(QWidget):
     profiles_ready = Signal(list, str, bool)   # profiles, name, revolve?
     state_changed = Signal(object)             # SolveResult after each
@@ -82,6 +106,7 @@ class SketchCanvas(QWidget):
         self._rect_corner: np.ndarray | None = None
         self._arc_pts: list[Point] = []       # 3-pt tool: start, end, bulge
         self._preview: tuple | None = None  # tool drag preview
+        self._band: list | None = None      # select marquee (2 QPoints)
         self._snap_hint: Point | tuple | None = None
         self._snap_grid = bool(QSettings().value("sketch/grid_snap",
                                                  False, type=bool))
@@ -104,6 +129,7 @@ class SketchCanvas(QWidget):
         self._poly: list = []                  # polygon tool: centre, vertex
         self._poly_n = 6                       # sides, 3..9 (sticky setting)
         self._preview = None
+        self._band = None
         self._last_result = None
         self._hist = []
         self._fut = []
@@ -158,6 +184,7 @@ class SketchCanvas(QWidget):
         self._slot: list = []                  # slot tool: c1, c2, width
         self._poly: list = []                  # polygon tool: centre, vertex
         self._preview = None
+        self._band = None
         self._snap_hint = None
         self.setCursor(Qt.ArrowCursor if tool == "select"
                        else Qt.CrossCursor)    # Fusion's drafting cursor
@@ -191,21 +218,24 @@ class SketchCanvas(QWidget):
         self._center = (lo + hi) / 2
 
     # ---- hit testing ------------------------------------------------------
-    def _snap_point(self, q: QPointF) -> Point | None:
+    def _snap_point(self, q: QPointF, skip=None) -> Point | None:
         best, bd = None, _HIT_PX
         for p, _ in self._all_points():
+            if p is skip:
+                continue                 # dragged point must not eat itself
             s = self.w2s(p.x, p.y)
             d = math.hypot(s.x() - q.x(), s.y() - q.y())
             if d <= bd:
                 best, bd = p, d
         return best
 
-    def _snap_target(self, q: QPointF):
+    def _snap_target(self, q: QPointF, skip=None):
         """Fusion's drawing magnet: an existing point first, the sketch
         origin next, then (when the toggle is on) grid intersections.
         Returns the existing Point, an (x, y) candidate that would have
-        to be minted, or None for free space."""
-        p = self._snap_point(q)
+        to be minted, or None for free space.  skip= excludes a point
+        (the drag must not snap to its own cursor)."""
+        p = self._snap_point(q, skip=skip)
         if p is not None:
             return p
         wp = self._world(q)
@@ -225,6 +255,50 @@ class SketchCanvas(QWidget):
         if isinstance(t, Point):
             return t
         return self.model.point(*(t if t is not None else self._world(q)))
+
+    def _band_select(self, a: QPointF, b: QPointF, additive: bool):
+        """Everything the marquee TOUCHES (window + crossing at once,
+        the way Fusion's sketch box behaves)."""
+        w0, w1 = self._world(a), self._world(b)
+        lo = np.array([min(w0[0], w1[0]), min(w0[1], w1[1])])
+        hi = np.array([max(w0[0], w1[0]), max(w0[1], w1[1])])
+        sk = self.model.sketch
+        found = []
+        for p in sk.points:
+            if _in_box(p, lo, hi):
+                found.append(p)
+        for ln in sk.lines:
+            if _seg_hits_box((ln.a.x, ln.a.y), (ln.b.x, ln.b.y), lo, hi):
+                found.append(ln)
+        for c in sk.circles:
+            d = np.array([max(lo[0] - c.c.x, 0.0, c.c.x - hi[0]),
+                          max(lo[1] - c.c.y, 0.0, c.c.y - hi[1])])
+            dmin = float(np.hypot(*d))
+            dmax = max(math.hypot(c.c.x - cx, c.c.y - cy)
+                       for cx in (lo[0], hi[0]) for cy in (lo[1], hi[1]))
+            if dmin <= c.r or dmax <= c.r:
+                found.append(c)
+        for ar in sk.arcs:                    # two chords trace the curve
+            if (any(_in_box(pt, lo, hi) for pt in (ar.a, ar.m, ar.b))
+                    or _seg_hits_box((ar.a.x, ar.a.y), (ar.m.x, ar.m.y),
+                                     lo, hi)
+                    or _seg_hits_box((ar.m.x, ar.m.y), (ar.b.x, ar.b.y),
+                                     lo, hi)):
+                found.append(ar)
+        if additive:
+            for e in found:
+                if e not in self._sel:
+                    self._sel.append(e)
+        else:
+            self._sel = found
+
+    def _draw_band(self, p: QPainter):
+        if self._band is None:
+            return
+        p.setPen(QPen(ACCENT, 1.0, Qt.DotLine))
+        p.setBrush(QColor(ACCENT.red(), ACCENT.green(), ACCENT.blue(), 28))
+        p.drawRect(QRectF(self._band[0], self._band[1]).normalized())
+        p.setBrush(Qt.NoBrush)
 
     def _all_points(self):
         sk = self.model.sketch
@@ -304,7 +378,9 @@ class SketchCanvas(QWidget):
         if self._tool == "select":
             hit = self._hit(q)
             if hit is None:
-                self._sel = []
+                if not (ev.modifiers() & Qt.ControlModifier):
+                    self._sel = []          # plain click clears; Ctrl keeps
+                self._band = [QPointF(q), QPointF(q)]   # drag = marquee
             elif ev.modifiers() & Qt.ControlModifier:
                 if hit[1] in self._sel:
                     self._sel.remove(hit[1])
@@ -467,9 +543,20 @@ class SketchCanvas(QWidget):
                 if not self._drag_pushed:
                     self._push_hist()
                     self._drag_pushed = True
-                wp = self._world(q)
+                # dragged points CLICK onto origins, grid and other
+                t = self._snap_target(q, skip=self._drag_pt)
+                if isinstance(t, Point):       # points, Fusion-style
+                    wp = np.array([t.x, t.y])
+                elif t is not None:
+                    wp = np.array(t)
+                else:
+                    wp = self._world(q)
                 self._drag_pt.x, self._drag_pt.y = float(wp[0]), float(wp[1])
                 self._solve(pins=[self._drag_pt])
+                self._snap_hint = t
+                self.update()
+            elif self._band is not None:
+                self._band[1] = q
                 self.update()
             return
         if self._tool != "select":
@@ -487,6 +574,14 @@ class SketchCanvas(QWidget):
             return
         if self._tool == "select":
             self._drag_pt = None
+            if self._band is not None:
+                a, b = self._band
+                self._band = None
+                if (abs(a.x() - b.x()) > 3
+                        or abs(a.y() - b.y()) > 3):
+                    self._band_select(           # real drag: marquee wins
+                        a, b, bool(ev.modifiers() & Qt.ControlModifier))
+                self.update()                    # else it was a click
             return
         if not self._preview:
             return
@@ -1047,6 +1142,7 @@ class SketchCanvas(QWidget):
             self._draw_dimensions(p)
             self._draw_glyphs(p)
             self._draw_preview(p)
+        self._draw_band(p)
         self._draw_hud(p)
         p.end()
 
