@@ -99,10 +99,12 @@ pull, revolve angle, rename, shell thickness, fillet/chamfer sizes,
 sketcher dimension/offset/angle prompts.  Zero QInputDialog references
 left in the app; 18 prompt sites + 39 test patches moved mechanically.
 
-**M48 — Section Analysis.**  Clip-plane toggle in the viewport (discard
-in fragment shader beyond the plane), plane = chosen face or origin
-plane (construction planes from M40 are natural candidates), flips side;
-purely visual, non-destructive — makers live in it.
+**M48 — Section Analysis.** ✓ SHIPPED.  Clip plane in the fragment
+shader (discard past the plane): ribbon ▸ Design ▸ Section flyout picks
+XY/XZ/YZ, Flip swaps the clipped side, the same plane twice (or Turn
+off) restores the body.  Purely visual, non-destructive — the model,
+hits and exports are untouched.  Construction-plane sections land in
+M49's neighbourhood.
 
 **M49 — Thread.**  Fusion's most-used maker feature after holes.
 v1: cosmetic-style real geometry — helical ridge cut (loft engine along

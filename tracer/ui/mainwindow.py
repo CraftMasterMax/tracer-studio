@@ -757,6 +757,25 @@ class MainWindow(QMainWindow):
             f"{p['name']} at {dist:+g} mm from {base} — double-click it in "
             "the browser to sketch on it", 6000)
 
+    def action_section(self, spec):
+        """Fusion Section Analysis: clip the body on a plane, purely
+        visual (nothing is cut in the model).  Same plane twice = off."""
+        cur = self.viewport.section
+        if spec is not None and cur and cur.get("label") == spec:
+            spec = None
+        self.viewport.set_section(spec)
+        if spec is None:
+            self.status.showMessage("Section off — full body restored", 4000)
+        else:
+            self.status.showMessage(
+                f"Section on {spec} — ribbon ▸ Section ▸ Flip to change "
+                "side", 6000)
+
+    def action_flip_section(self):
+        self.viewport.flip_section()
+        if self.viewport.section:
+            self.status.showMessage("Section side flipped", 3000)
+
     def action_sketch_on_plane(self, name: str):
         """Sketch on a construction plane: a FACE-frame sketch carrying
         the plane's origin+basis, so X extrudes along the plane normal."""
