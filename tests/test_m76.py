@@ -63,6 +63,24 @@ def test_cold_font_engine_still_draws_letters(qapp):
     assert w < h                               # a T is taller than wide
 
 
+def test_the_tofu_guard_recognises_a_box():
+    from tracer.core.text import _all_tofu
+    box = np.array([[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]], float)
+    assert _all_tofu([box])                    # square + full = veto
+    stem = np.array([[0, 0], [12, 0], [12, 100], [0, 100]], float)
+    assert not _all_tofu([stem])               # an "I" is a THIN bar
+    assert not _all_tofu([np.asarray(r["outer"])
+                          for r in glyph_regions("OH0", 10.0)])
+
+
+def test_the_shipped_font_is_registered(qapp):
+    # the whole Windows fix rides on this resource shipping with the
+    # package; CI catches it if the TTF is ever left out
+    from tracer.core.text import _BUNDLED_TTF, _bundled_family
+    assert _BUNDLED_TTF.exists()
+    assert _bundled_family()
+
+
 def test_words_split_into_islands_left_to_right(qapp):
     regs = glyph_regions("HI", 12.0)
     assert len(regs) == 2
