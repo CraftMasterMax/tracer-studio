@@ -139,9 +139,38 @@ def fit_scale(views: dict, page: str = "A3", margin: float = 10.0) -> float:
                      (H - 2 * margin) / 2.2 / max(h, 1e-9), 1.0))
 
 
-def layout(views: dict, page: str = "A3", margin: float = 10.0) -> dict:
-    """Scale each view and centre it in its sheet slot (page mm, y up,
-    origin at the sheet's lower-left):
+SLOTS = {"top": (0.28, 0.72), "iso": (0.72, 0.72),
+         "front": (0.28, 0.28), "right": (0.72, 0.28)}
+
+
+def fit_circle(chain):
+    """M95: ((cx, cy), r) when a projected closed chain is (near) a
+    circle — a face-on circular edge under an orthographic view:
+    closed, square-ish bbox, uniform radius. Iso ellipses, rectangles
+    and open chains honestly refuse."""
+    P = np.asarray(chain, float)
+    if P.shape[0] < 5 or not np.allclose(P[0], P[-1], atol=1e-6):
+        return None
+    lo, hi = P.min(axis=0), P.max(axis=0)
+    w, h = hi[0] - lo[0], hi[1] - lo[1]
+    if w <= 1e-9 or h <= 1e-9 or not 0.85 <= w / h <= 1.18:
+        return None
+    c = 0.5 * (lo + hi)
+    rr = np.linalg.norm(P - c, axis=1)
+    r = float(rr.mean())
+    if r <= 1e-9 or float(np.abs(rr - r).max()) > 0.10 * r:
+        return None
+    return (float(c[0]), float(c[1])), r
+
+
+def place(views: dict, page: str = "A3",
+          margin: float = 10.0) -> dict:
+    """M94: the placement math the sheet and the dim tool share.
+    Scale every view once and centre it in its slot; return per view
+    {\"sc\", \"off\", \"min\", \"max\", \"chains\"} where a model point
+    (x, y) lands at page = (x, y) * sc + off — so the canvas can
+    inverse-map a click back to model space (page_to_model), and page
+    coords stay y-up, origin at the sheet's lower-left.
 
         top   | iso
         ------+------
@@ -149,17 +178,29 @@ def layout(views: dict, page: str = "A3", margin: float = 10.0) -> dict:
     """
     sc = fit_scale(views, page, margin)
     W, H = PAGES.get(page, PAGES["A3"])
-    slots = {"top": (0.28 * W, 0.72 * H), "iso": (0.72 * W, 0.72 * H),
-             "front": (0.28 * W, 0.28 * H), "right": (0.72 * W, 0.28 * H)}
     out: dict = {}
     for name, chains in views.items():
         if not chains:
             continue
         P = np.vstack([np.asarray(c, float) * sc for c in chains])
-        cx = 0.5 * (P[:, 0].max() + P[:, 0].min())
-        cy = 0.5 * (P[:, 1].max() + P[:, 1].min())
-        sx, sy = slots.get(name, (0.5 * W, 0.5 * H))
-        out[name] = [[(float(p[0] * sc + sx - cx),
-                       float(p[1] * sc + sy - cy)) for p in c]
-                     for c in chains]
+        lo = P.min(axis=0)
+        hi = P.max(axis=0)
+        cx = 0.5 * (hi[0] + lo[0])
+        cy = 0.5 * (hi[1] + lo[1])
+        fx, fy = SLOTS.get(name, (0.5, 0.5))
+        off = (fx * W - cx, fy * H - cy)
+        out[name] = {"sc": float(sc), "off": (float(off[0]),
+                                              float(off[1])),
+                     "min": (float(lo[0]), float(lo[1])),
+                     "max": (float(hi[0]), float(hi[1])),
+                     "chains": [[(float(p[0] + off[0]),
+                                  float(p[1] + off[1]))
+                                 for p in np.asarray(c, float) * sc]
+                                for c in chains]}
     return out
+
+
+def layout(views: dict, page: str = "A3", margin: float = 10.0) -> dict:
+    """Page-coordinate chains per view (the draughting sheet)."""
+    return {name: p["chains"] for name, p in
+            place(views, page, margin).items()}

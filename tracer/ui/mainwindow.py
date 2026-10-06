@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import math
 
 import numpy as np
 import trimesh
@@ -1032,10 +1033,21 @@ class MainWindow(QMainWindow):
         ex_dxf.clicked.connect(
             lambda: self.export_drawing(ext=".dxf"))
         bl.addWidget(ex_dxf)
+        dimb = QPushButton("Dimension")                  # M94 toggle
+        dimb.setProperty("tb", True)
+        dimb.setCheckable(True)
+        dimb.setToolTip("Click two view endpoints to lay a live "
+                        "millimetre bubble (Esc-free: click again to "
+                        "take it off)")
+        dimb.toggled.connect(
+            lambda on: self.drawing.set_dim_mode(on))
+        bl.addWidget(dimb)
+        self._dim_btn = dimb
         bl.addStretch(1)
         lay.addWidget(bar)
         from .drawingview import DrawingCanvas
         self.drawing = DrawingCanvas()
+        self.drawing.dim_added.connect(self._add_dim)     # M94 bubbles
         lay.addWidget(self.drawing, 1)
         return page
 
@@ -1062,7 +1074,8 @@ class MainWindow(QMainWindow):
         self._capture()
         n = len(self.doc.drawings) + 1
         name = f"Drawing{n}"
-        self.doc.drawings.append({"name": name, "page": "A3"})
+        self.doc.drawings.append({"name": name, "page": "A3",
+                                  "dims": []})            # M94 bubbles
         self.doc.dirty = True
         self.drawing.set_document(self.doc)
         self._show_page(self._drawing_page)
@@ -1070,6 +1083,41 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             f"{name} created \u2014 top \u00b7 front \u00b7 right \u00b7 iso"
             " \u00b7 live off the model", 6000)
+
+    def _add_dim(self, view: str, a: tuple, b: tuple, opts: dict = None):
+        """A finished bubble (M94/M95): undo-captured, stored in MODEL
+        millimetres — linear endpoints PLUS view fractions so they
+        follow a stretch; diameter bubbles remember centre + travel
+        direction and re-find their live circle on every repaint."""
+        if self.doc is None or not self.doc.drawings:
+            return
+        opts = opts or {}
+        self._capture()
+        g = self.doc.drawings[-1]
+        if opts.get("diameter"):
+            r = float(opts["r"])
+            entry = {"view": view, "diameter": True,
+                     "center": [float(x) for x in opts["center"]],
+                     "dir": [float(x) for x in opts["dir"]],
+                     "r": r,
+                     "a": [float(a[0]), float(a[1])],
+                     "b": [float(b[0]), float(b[1])],
+                     "text": "\u00d8 %.2f" % (2 * r)}
+        else:
+            entry = {"view": view, "a": [float(a[0]), float(a[1])],
+                     "b": [float(b[0]), float(b[1])],
+                     "text": f"{math.dist(a, b):.2f}"}
+            ra = self.drawing.rel_anchor(view, a)
+            rb = self.drawing.rel_anchor(view, b)
+            if ra is not None:
+                entry["a_rel"] = [float(ra[0]), float(ra[1])]
+            if rb is not None:
+                entry["b_rel"] = [float(rb[0]), float(rb[1])]
+        g.setdefault("dims", []).append(entry)
+        self.doc.dirty = True
+        self.drawing.update()
+        self.status.showMessage(
+            f"Dimension {entry['text']} \u00b7 {view} view", 4000)
 
     def _open_drawing(self, idx: int):
         if self.doc is None or not (0 <= idx < len(self.doc.drawings)):
@@ -1099,14 +1147,54 @@ class MainWindow(QMainWindow):
                 return
         try:
             if path.lower().endswith(".dxf"):
+                placed = self.drawing.placed()
                 ops = []
-                for chains in lay.values():
-                    for c in chains:
+                for view in placed.values():
+                    for c in view["chains"]:
                         if len(c) > 1:
                             closed = (len(c) > 3
                                       and np.allclose(c[0], c[-1]))
                             ops.append(("poly", [tuple(p) for p in c],
                                         bool(closed)))
+                # M94: the bubbles' ink travels (the paper text is the
+                # PNG's job — DXF line art only)
+                if self.doc.drawings:
+                    g = self.doc.drawings[-1]
+                    for d in g.get("dims", []):
+                        view = placed.get(d["view"])
+                        if view is None:
+                            continue
+                        sc, off = view["sc"], view["off"]
+                        if d.get("diameter"):               # M95: rim to rim
+                            cx0, cy0 = d["a"]
+                            ux0, uy0 = d.get("dir", (1.0, 0.0))
+                            r0 = float(d.get("r", math.dist(d["a"], d["b"])))
+                            pa = (cx0 - ux0 * r0, cy0 - uy0 * r0)
+                            pb = (cx0 + ux0 * r0, cy0 + uy0 * r0)
+                        else:
+                            pa, pb = d["a"], d["b"]
+                        A = (pa[0] * sc + off[0],
+                             pa[1] * sc + off[1])
+                        B = (pb[0] * sc + off[0],
+                             pb[1] * sc + off[1])
+                        vx, vy = B[0] - A[0], B[1] - A[1]
+                        L = math.hypot(vx, vy)
+                        if L < 1e-9:
+                            continue
+                        nx, ny = -vy / L, vx / L
+                        ctr = (off[0] + 0.5 * (view["min"][0]
+                                               + view["max"][0]),
+                               off[1] + 0.5 * (view["min"][1]
+                                               + view["max"][1]))
+                        mx, my = 0.5 * (A[0] + B[0]), 0.5 * (A[1] + B[1])
+                        if (mx - ctr[0]) * nx + (my - ctr[1]) * ny < 0:
+                            nx, ny = -nx, -ny
+                        od = 4.0                            # sheet mm
+                        A2 = (A[0] + nx * od, A[1] + ny * od)
+                        B2 = (B[0] + nx * od, B[1] + ny * od)
+                        ops.append(("line", A, A2))
+                        ops.append(("line", B, B2))
+                        ops.append(("line", A2, B2))
                 n = export2d.write_dxf(ops, path)
             else:
                 from PySide6.QtGui import QPixmap
@@ -2992,7 +3080,8 @@ class MainWindow(QMainWindow):
         self.timeline.bar.update()
         if self._drawing_page is not None and \
                 self.stack.currentWidget() is self._drawing_page:
-            self.drawing.update()             # M93: live views refresh
+            self.drawing.resolve_dims()        # M94: follow the stretch
+            self.drawing.update()              # M93: live views refresh
         self._apply_appearance()
         self._apply_units()
         self._update_status()

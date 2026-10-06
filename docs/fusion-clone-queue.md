@@ -620,8 +620,44 @@ re-derive from the live model every repaint, so it can never be stale
 Create ▸ New drawing…; A3/A4 toggle; zoom/pan; exports as PNG (pixels)
 or DXF — the drawing IS a profile, and the M83 reader proves it
 round-trips. Honest scope: visible lines only (no hidden-line pass),
-views auto-place (dragging and dimension bubbles are M94), one sheet
-per drawing entry.
+views auto-place (view dragging is still ahead; the bubbles promised
+for M94 arrived with M94), one sheet per drawing entry.
+
+**M94 — Dimension bubbles on the sheet.** ✓ SHIPPED.  A drawing
+without bubbles is a picture. Two endpoint clicks in any view lay a
+draughtsman-standard callout: extension lines, an arrowed dimension
+line offset AWAY from the view centre, and the millimetre value
+knocked out of the line in a paper-coloured gap. The engineering is
+in the anchor: endpoints store model millimetres PLUS their fraction
+of the view's silhouette bbox, and every repaint re-solves them
+against the LIVE model — stretch dx 40→80 and the width bubble's
+arrows slide to the new corners and its text re-reads 80.00 by
+itself (a raw stored number couldn't know it was the right corner;
+the fraction can). Clicks snap to projected chain endpoints (3 mm
+slack). Numbers can't lie: the text is re-measured, never typed.
+Bubbles serialize with the drawing, each is undo-captured, and DXF
+export carries the dimension ink — the paper text is the PNG's job.
+The Dimension toggle sits on the sheet toolbar; in bubble mode
+left-click dims instead of panning. Honest scope: linear only (the Ø
+bubbles came in M95), two-click commit, bubbles ride the sheet's
+last drawing entry.
+
+**M95 — Diameter bubbles: the hole finally says Ø.** ✓ SHIPPED.  A
+maker's drawing is mostly holes, and one click on a projected circle
+now lays the diameter: circles are FITTED from their silhouette
+chains (closed, square bbox, uniform radius — the fit honestly
+refuses rectangles, open chains and iso ellipses), the bubble spans
+rim-to-rim through the centre with arrowheads at both ends and the
+value knocked out mid-line. Following is the clever part: linear
+bubbles anchor by view fractions, but a bore's size isn't part of the
+sheet's extent — so a Ø bubble re-FINDS the live circle nearest its
+centre each repaint and adopts its true radius: redrill 4→7 and the
+bubble reads Ø 14.00 by itself. The match is proximity, not
+named-entity attachment: delete the bore and the bubble keeps its
+last honest measurement rather than drifting silently. Ø text is
+paper ink; DXF export carries the span geometry. Honest scope: full
+circles on orthographic views only (arc R-bubbles are ahead), one
+click lays it, linear keeps its two.
 
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
