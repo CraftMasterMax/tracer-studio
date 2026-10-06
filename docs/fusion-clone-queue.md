@@ -252,6 +252,13 @@ base centre, sphere centre), dropped as a parametric PrimitiveFeature —
 the first one IS the body, later ones Join / Cut / Intersect into it
 with exact volumes and per-kind names (Box 1, Box 2…).
 
+**M66 — Cone.** ✓ SHIPPED.  The kernel's cylinder was always a
+two-radius secret, so now Box / Cylinder / **Cone** / Sphere all speak
+from the Create dialog and as Combine tools: truncated cones at
+πh/3(r1²+r1r2+r2²) exactly, sharp cones (top radius 0) watertight, cone
+cutters carving chamfer-like corner nicks, all three radii plus height
+editable in Change Parameters.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, Combine/multi-browser-bodies,
 configurations, assemblies/joints, sheet metal, drawings.

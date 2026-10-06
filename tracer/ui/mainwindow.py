@@ -745,6 +745,10 @@ class MainWindow(QMainWindow):
             elif feature.kind == "cylinder":
                 dbl("radius", "radius", d["radius"])
                 dbl("height", "height", d["height"])
+            elif feature.kind == "cone":
+                dbl("r1", "bottom radius", d["radius_bottom"])
+                dbl("r2", "top radius", d["radius_top"], mn=0.0)
+                dbl("height", "height", d["height"])
             elif feature.kind == "sphere":
                 dbl("radius", "radius", d["radius"])
         elif isinstance(feature, ExtrudeFeature):
@@ -794,8 +798,9 @@ class MainWindow(QMainWindow):
                 ang=True)
             check("copy", "copy (join the twin)", feature.copy)
         elif isinstance(feature, CombineFeature):
-            combo("tool", "tool shape", ("Box", "Cylinder", "Sphere"),
-                  {"box": "Box", "cylinder": "Cylinder",
+            combo("tool", "tool shape", ("Box", "Cylinder", "Cone",
+                                         "Sphere"),
+                  {"box": "Box", "cylinder": "Cylinder", "cone": "Cone",
                    "sphere": "Sphere"}.get(feature.tool, "Box"))
             combo("op", "operation", ("Join", "Cut", "Intersect"),
                   {"union": "Join", "subtract": "Cut",
@@ -805,6 +810,10 @@ class MainWindow(QMainWindow):
             dbl("dz", "length Z", feature.dims.get("dz", 20.0))
             dbl("radius", "radius", feature.dims.get("radius", 8.0),
                 dec=3)
+            dbl("r1", "bottom radius",
+                feature.dims.get("radius_bottom", 12.0), dec=3)
+            dbl("r2", "top radius", feature.dims.get("radius_top", 4.0),
+                dec=3, mn=0.0)
             dbl("height", "height", feature.dims.get("height", 30.0))
             for i, k in enumerate("xyz"):
                 dbl(f"c{i}", f"centre {k}", feature.center[i], mn=None)
@@ -826,6 +835,10 @@ class MainWindow(QMainWindow):
                     d[k] = mm(k)
             elif feature.kind == "cylinder":
                 d["radius"] = mm("radius")
+                d["height"] = mm("height")
+            elif feature.kind == "cone":
+                d["radius_bottom"] = mm("r1")
+                d["radius_top"] = mm("r2")
                 d["height"] = mm("height")
             elif feature.kind == "sphere":
                 d["radius"] = mm("radius")
@@ -875,6 +888,7 @@ class MainWindow(QMainWindow):
             feature.copy = bool(v["copy"])
         elif isinstance(feature, CombineFeature):
             feature.tool = {"Box": "box", "Cylinder": "cylinder",
+                            "Cone": "cone",
                             "Sphere": "sphere"}[str(v["tool"])]
             feature.op = {"Join": "union", "Cut": "subtract",
                           "Intersect": "intersect"}[str(v["op"])]
@@ -883,6 +897,10 @@ class MainWindow(QMainWindow):
                                 "dz": mm("dz")}
             elif feature.tool == "cylinder":
                 feature.dims = {"radius": mm("radius"),
+                                "height": mm("height")}
+            elif feature.tool == "cone":
+                feature.dims = {"radius_bottom": mm("r1"),
+                                "radius_top": mm("r2"),
                                 "height": mm("height")}
             else:
                 feature.dims = {"radius": mm("radius")}
@@ -1729,11 +1747,13 @@ class MainWindow(QMainWindow):
                         default=round(mm / f, 6), decimals=2)
         v = cmddialog.ask(self, "Primitive", [
             dict(key="kind", label="Shape", kind="combo",
-                 choices=["Box", "Cylinder", "Sphere"], default="Box",
-                 group=f"Size ({lab})"),
+                 choices=["Box", "Cylinder", "Cone", "Sphere"],
+                 default="Box", group=f"Size ({lab})"),
             num("dx", "length X", 40.0), num("dy", "length Y", 30.0),
             num("dz", "length Z", 15.0),
             num("radius", "radius", 10.0, 3),
+            num("r1", "bottom radius", 12.0, 3),
+            num("r2", "top radius", 4.0, 3),
             num("height", "height", 30.0),
             dict(key="op", label="Operation", kind="combo",
                  choices=["Join", "Cut", "Intersect"], default="Join",
@@ -1744,12 +1764,16 @@ class MainWindow(QMainWindow):
         ], remember_key="primitive")
         if v is None:
             return
-        kind = {"Box": "box", "Cylinder": "cylinder",
+        kind = {"Box": "box", "Cylinder": "cylinder", "Cone": "cone",
                 "Sphere": "sphere"}[str(v["kind"])]
         dims = ({"radius": float(v["radius"]) * f} if kind == "sphere"
                 else {"radius": float(v["radius"]) * f,
                       "height": float(v["height"]) * f}
                 if kind == "cylinder"
+                else {"radius_bottom": float(v["r1"]) * f,
+                      "radius_top": float(v["r2"]) * f,
+                      "height": float(v["height"]) * f}
+                if kind == "cone"
                 else {"dx": float(v["dx"]) * f, "dy": float(v["dy"]) * f,
                       "dz": float(v["dz"]) * f})
         n = sum(1 for g in self.doc.features
@@ -1763,7 +1787,7 @@ class MainWindow(QMainWindow):
         self.recompute()
         self.status.showMessage(
             f"Added {str(v['kind']).lower()} — placement is the box "
-            "corner / cylinder base / sphere centre", 5000)
+            "corner / cylinder-cone base / sphere centre", 5000)
 
     def action_combine(self):
         """Fusion's Combine (M64): Join / Cut / Intersect the body with
@@ -1786,11 +1810,14 @@ class MainWindow(QMainWindow):
                         default=round(mm / f, 6), decimals=dec)
         v = cmddialog.ask(self, "Combine", [
             dict(key="tool", label="Tool shape", kind="combo",
-                 choices=["Box", "Cylinder", "Sphere"], default="Box",
-                 group=f"Tool ({lab})"),
+                 choices=["Box", "Cylinder", "Cone", "Sphere"],
+                 default="Box", group=f"Tool ({lab})"),
             num("dx", "length X", 20.0), num("dy", "length Y", 20.0),
             num("dz", "length Z", 20.0),
-            num("radius", "radius", 8.0, 3), num("height", "height", 30.0),
+            num("radius", "radius", 8.0, 3),
+            num("r1", "bottom radius", 12.0, 3),
+            num("r2", "top radius", 4.0, 3),
+            num("height", "height", 30.0),
             dict(key="op", label="Operation", kind="combo",
                  choices=["Join", "Cut", "Intersect"], default="Join",
                  group="Boolean"),
@@ -1800,12 +1827,16 @@ class MainWindow(QMainWindow):
         ], remember_key="combine")
         if v is None:
             return
-        tool = {"Box": "box", "Cylinder": "cylinder",
+        tool = {"Box": "box", "Cylinder": "cylinder", "Cone": "cone",
                 "Sphere": "sphere"}[str(v["tool"])]
         dims = ({"radius": float(v["radius"]) * f} if tool == "sphere"
                 else {"radius": float(v["radius"]) * f,
                       "height": float(v["height"]) * f}
                 if tool == "cylinder"
+                else {"radius_bottom": float(v["r1"]) * f,
+                      "radius_top": float(v["r2"]) * f,
+                      "height": float(v["height"]) * f}
+                if tool == "cone"
                 else {"dx": float(v["dx"]) * f, "dy": float(v["dy"]) * f,
                       "dz": float(v["dz"]) * f})
         op = {"Join": "union", "Cut": "subtract",

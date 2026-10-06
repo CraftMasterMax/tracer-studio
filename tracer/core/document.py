@@ -236,6 +236,9 @@ class PrimitiveFeature(Feature):
             s = Solid.box(self.dims["dx"], self.dims["dy"], self.dims["dz"])
         elif self.kind == "cylinder":
             s = Solid.cylinder(self.dims["radius"], self.dims["height"])
+        elif self.kind == "cone":
+            s = Solid.cone(self.dims["radius_bottom"],
+                           self.dims["radius_top"], self.dims["height"])
         elif self.kind == "sphere":
             s = Solid.sphere(self.dims["radius"])
         else:
@@ -411,6 +414,10 @@ class CombineFeature(Feature):
         if self.tool == "cylinder":
             s = Solid.cylinder(float(d.get("radius", 5.0)),
                                float(d.get("height", 10.0)))
+        elif self.tool == "cone":
+            s = Solid.cone(float(d.get("radius_bottom", 8.0)),
+                           float(d.get("radius_top", 3.0)),
+                           float(d.get("height", 15.0)))
         elif self.tool == "sphere":
             s = Solid.sphere(float(d.get("radius", 5.0)))
         else:

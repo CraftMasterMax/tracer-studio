@@ -133,6 +133,15 @@ class Solid:
         return cls(m)
 
     @classmethod
+    def cone(cls, radius_bottom: float, radius_top: float,
+             height: float,
+             center: tuple[float, float] = (0.0, 0.0)) -> "Solid":
+        m = m3.Manifold.cylinder(height, max(float(radius_bottom), 1e-6),
+                                 max(float(radius_top), 1e-6))
+        m = m.translate(np.array([center[0], center[1], 0.0], np.float32))
+        return cls(m)
+
+    @classmethod
     def sphere(cls, radius: float) -> "Solid":
         return cls(m3.Manifold.sphere(radius))
 
