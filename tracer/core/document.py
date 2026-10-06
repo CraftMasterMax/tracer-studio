@@ -234,7 +234,10 @@ class HoleFeature(Feature):
     Composed entirely of kernel primitives, subtracted as one tool:
     the main cylinder, an optional counterbore cylinder, and an optional
     countersink ring (a triangular wedge revolved 360 degrees about the
-    hole axis).  `normal` points INTO the material — the command layer
+    hole axis).  When `thread_pitch` is set the tool also carries a
+    helical groove (M49): the drilled cylinder is the tap-drill core and
+    the groove opens outward to the ISO crest, giving a real internal
+    thread.  `normal` points INTO the material — the command layer
     probes both sides at creation so the cut always bites.  `cidx` is the
     index of the source circle in the sketch so re-editing the sketch
     relocates the hole."""
@@ -248,6 +251,8 @@ class HoleFeature(Feature):
     cb_depth: float = 0.0
     cs_radius: float = 0.0        # countersink outer radius (0 = none)
     cs_angle: float = 90.0        # cone included angle, degrees
+    thread_pitch: float = 0.0     # ISO pitch (0 = plain drilled hole)
+    thread_len: float = 0.0       # threaded length from the opening
     sketch: dict | None = None
     sid: int | None = None
     cidx: int = 0
@@ -271,6 +276,11 @@ class HoleFeature(Feature):
                 parts.append(Solid.revolve(np.array([
                     [self.radius, 0.0], [self.cs_radius, 0.0],
                     [self.radius, k]])))
+        if self.thread_pitch > 0 and self.thread_len > 1.2 * self.thread_pitch:
+            from .thread import helix_groove
+            tl = min(self.thread_len, L)
+            if tl > 1.2 * self.thread_pitch:
+                parts.append(helix_groove(self.radius, self.thread_pitch, tl))
         tool = parts[0]
         for p in parts[1:]:
             tool = tool.union(p)
@@ -567,6 +577,8 @@ class Document:
                          cb_depth=float(f.cb_depth),
                          cs_radius=float(f.cs_radius),
                          cs_angle=float(f.cs_angle),
+                         thread_pitch=float(f.thread_pitch),
+                         thread_len=float(f.thread_len),
                          sketch=f.sketch, sid=f.sid, cidx=int(f.cidx))
             return d
         return {"format": "tracer/document", "version": 2,
@@ -663,6 +675,8 @@ class Document:
                     cb_depth=float(fd.get("cb_depth", 0.0)),
                     cs_radius=float(fd.get("cs_radius", 0.0)),
                     cs_angle=float(fd.get("cs_angle", 90.0)),
+                    thread_pitch=float(fd.get("thread_pitch", 0.0)),
+                    thread_len=float(fd.get("thread_len", 0.0)),
                     sketch=fd.get("sketch"), sid=fd.get("sid"),
                     cidx=int(fd.get("cidx", 0)), **base))
             elif t == "BodyFilletFeature":

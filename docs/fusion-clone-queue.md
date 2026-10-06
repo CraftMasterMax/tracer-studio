@@ -106,10 +106,21 @@ off) restores the body.  Purely visual, non-destructive — the model,
 hits and exports are untouched.  Construction-plane sections land in
 M49's neighbourhood.
 
-**M49 — Thread.**  Fusion's most-used maker feature after holes.
-v1: cosmetic-style real geometry — helical ridge cut (loft engine along
-a helix: rings on a rising circle path), or hole option "tapped Ø" with
-ISO pitch table.  Test: helix ring count, min wall, export watertight.
+**M49 — Thread.** ✓ SHIPPED.  The Hole dialog gains a **Thread** row
+(None + ISO metric coarse M3–M12).  Choosing a size drills at the tap-
+drill Ø (major − pitch, the maker rule) and lofts a helical wire groove
+out to the ISO major radius — real, watertight thread geometry, not a
+decal.  The helix ring frame is analytic (constant lead ⇒ roll-free), so
+it stitches through the same loft engine as sweeps.  Thread pitch/length
+persist in the `.tracer` JSON and re-drill updates in place.  Bonus fix:
+the Hole dialog's bore-row show/hide (untested since M31 because every
+test patched `.ask`) was silently broken — now on the version-stable
+LabelRole/FieldRole API and pinned by a real-dialog test.
+
+**M49b — External thread (next).**  Apply the same helix to a cylindrical
+*boss* (convex face) to model a bolt/screw.  Needs cylindrical-face
+detection from the pick map (radius + axis + z-extent) and a command that
+reads it; cosmetic-only option deferred.
 
 **M50 — Pattern on path.**  Third pattern Fusion offers; reuses the
 M35 path chain: place N instances of a body/feature along a sketch

@@ -11,7 +11,10 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog,
                                QDialogButtonBox, QDoubleSpinBox, QFormLayout,
                                QLabel, QVBoxLayout)
 
+from ..core.thread import ISO_COARSE
+
 TYPES = ("Simple", "Counterbore", "Countersink")
+THREADS = ("None",) + tuple(ISO_COARSE)      # None + ISO metric coarse
 
 
 def _spin(value: float, lo: float = 0.01, hi: float = 1e5,
@@ -30,8 +33,11 @@ class HoleDialog(QDialog):
         self.setWindowTitle("Hole")
         lay = QVBoxLayout(self)
         di = ", ".join(f"{d:g}" for d in diameters)
-        head = QLabel(f"{len(diameters)} circle(s) — hole Ø {di}")
+        self._diam = list(diameters)
+        self._head0 = f"{len(diameters)} circle(s) — hole Ø {di}"
+        head = QLabel(self._head0)
         head.setObjectName("dim")
+        self.head = head
         lay.addWidget(head)
 
         form = QFormLayout()
@@ -39,6 +45,8 @@ class HoleDialog(QDialog):
         self._form = form
         self.type = QComboBox()
         self.type.addItems(TYPES)
+        self.thread = QComboBox()
+        self.thread.addItems(THREADS)
         self.depth = _spin(5.0)
         self.through = QCheckBox("Through all")
         self.cb_dia = _spin(max(diameters) + 4.0)
@@ -50,6 +58,7 @@ class HoleDialog(QDialog):
             self.cs_angle.addItem(f"{a:g}°", a)
         self.cs_angle.setCurrentIndex(1)          # 90° default
         form.addRow("Type", self.type)
+        form.addRow("Thread", self.thread)
         form.addRow("Depth", self.depth)
         form.addRow(" ", self.through)
         r = form.rowCount()
@@ -69,13 +78,30 @@ class HoleDialog(QDialog):
 
         self.type.currentIndexChanged.connect(self._sync_rows)
         self.through.toggled.connect(self.depth.setDisabled)
+        self.thread.currentIndexChanged.connect(self._sync_head)
         self._sync_rows()
 
+    def _sync_head(self):
+        """Show what a tapped hole will actually drill: tap-drill Ø and
+        pitch, so the sketch circle is understood as placement only."""
+        t = self.thread.currentText()
+        if t == "None":
+            self.head.setText(self._head0)
+        else:
+            pitch, tap = ISO_COARSE[t]
+            self.head.setText(f"{len(self._diam)} circle(s) — {t}: tap-drill "
+                              f"Ø {tap:g}, pitch {pitch:g} mm")
+
     def _set_row(self, index, visible):
-        lab = self._form.itemAt(index * 2).label()
-        wid = self._form.itemAt(index * 2 + 1).widget()
-        lab.setVisible(visible)
-        wid.setVisible(visible)
+        """Toggle a form row's label + field.  Uses QFormLayout's
+        (row, role) lookup — robust across PySide versions, unlike flat
+        itemAt() arithmetic which depends on how labels are stored."""
+        lab = self._form.itemAt(index, QFormLayout.LabelRole)
+        fld = self._form.itemAt(index, QFormLayout.FieldRole)
+        if lab is not None and lab.widget() is not None:
+            lab.widget().setVisible(visible)
+        if fld is not None and fld.widget() is not None:
+            fld.widget().setVisible(visible)
 
     def _sync_rows(self):
         t = self.type.currentText()
@@ -92,6 +118,7 @@ class HoleDialog(QDialog):
             except ValueError:
                 ang = 90.0
         return {"type": self.type.currentText().lower(),
+                "thread": self.thread.currentText(),
                 "depth": float(self.depth.value()),
                 "through": bool(self.through.isChecked()),
                 "cb_dia": float(self.cb_dia.value()),

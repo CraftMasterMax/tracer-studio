@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout,
 
 from ..core import io as fio
 from ..core import step
+from ..core.thread import ISO_COARSE
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
@@ -950,36 +951,44 @@ class MainWindow(QMainWindow):
         depth = float(opts["depth"])
         cb_r = float(opts["cb_dia"]) / 2 if opts["type"] == "counterbore" else 0.0
         cs_r = float(opts["cs_dia"]) / 2 if opts["type"] == "countersink" else 0.0
+        thread = opts.get("thread", "None")
+        tap_pitch, tap_dia = ((0.0, 0.0) if thread == "None"
+                              else ISO_COARSE[thread])
         payload = model_to_dict(m)
         owned = [f for f in self.doc.features
                  if isinstance(f, HoleFeature) and f.sid == m.sid]
         for i, c in enumerate(circles):
             w = origin + u * float(c.c.x) + v * float(c.c.y)
-            L = (diag + 4 * max(c.r, cb_r, cs_r)) if through else depth
-            kind = (" counterbore" if cb_r > c.r else
-                    " countersink" if cs_r > c.r else "")
+            rad = tap_dia / 2 if tap_pitch else float(c.r)   # tapped: tap-drill core
+            L = (diag + 4 * max(rad, cb_r, cs_r)) if through else depth
+            tlen = L if tap_pitch else 0.0                   # thread the full depth
+            kind = (" counterbore" if cb_r > rad else
+                    " countersink" if cs_r > rad else "")
+            nm = f"Hole {thread}" if tap_pitch else f"Hole Ø{2 * rad:g}"
             if i < len(owned):                # re-drill: update in place
                 f = owned[i]
-                f.center, f.radius = tuple(w), float(c.r)
+                f.center, f.radius = tuple(w), rad
                 f.depth, f.through, f.cut_length = depth, through, float(L)
                 f.cb_radius, f.cb_depth = cb_r, float(opts["cb_depth"])
                 f.cs_radius, f.cs_angle = cs_r, float(opts["cs_angle"])
-                f.name = f"Hole Ø{2 * c.r:g}" + kind
+                f.thread_pitch, f.thread_len = tap_pitch, tlen
+                f.name = nm + kind
                 f.sketch = dict(payload)
                 continue
             # new hole: probe which side of the sketch plane has material
             inward = -n
             probe = HoleFeature(name="probe", center=tuple(w),
-                                normal=tuple(inward), radius=float(c.r),
-                                cut_length=diag + 4 * c.r, through=True)
+                                normal=tuple(inward), radius=rad,
+                                cut_length=diag + 4 * rad, through=True)
             if base.intersect(probe.build()).volume <= 1e-6:
                 inward = n
             self.doc.add(HoleFeature(
-                name=f"Hole Ø{2 * c.r:g}" + kind, op="subtract",
-                center=tuple(w), normal=tuple(inward), radius=float(c.r),
+                name=nm + kind, op="subtract",
+                center=tuple(w), normal=tuple(inward), radius=rad,
                 depth=depth, through=through, cut_length=float(L),
                 cb_radius=cb_r, cb_depth=float(opts["cb_depth"]),
                 cs_radius=cs_r, cs_angle=float(opts["cs_angle"]),
+                thread_pitch=tap_pitch, thread_len=tlen,
                 sketch=dict(payload), sid=m.sid, cidx=i))
         for f in owned[len(circles):]:        # circles deleted while editing
             self.doc.features.remove(f)

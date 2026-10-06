@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M48**
+**Status: M49**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -49,7 +49,9 @@ independent project with no Autodesk assets or affiliation.)
   thickness — the body hollows into an open case (moulded-style rounded
   inner corners, taller features on the deck never perforated)**,
   **Hole (Ctrl+H): every sketch circle drills a real hole —
-  simple, counterbore, or countersink (82°/90°/120°), blind or through-all;
+  simple, counterbore, or countersink (82°/90°/120°), blind or through-all,
+  and now **tapped ISO M3–M12** (drills at the tap-drill Ø and cuts real
+  helical thread geometry out to the major radius);
   the cut direction is probed into the material and re-editing the sketch
   moves the holes with their circles**, linear & circular patterns,
   **mirror**, sketch-on-face,
@@ -66,7 +68,9 @@ independent project with no Autodesk assets or affiliation.)
   still gets rim fillets)
 - UX: Fusion mouse grammar — MMB pans, Shift+MMB/RMB orbit, wheel zooms
   toward the cursor, left-drag on empty space rubber-bands a selection
-  (window/crossing) — ViewCube, **hover/whole-face selection tinting in
+  (window/crossing) — ViewCube, **Section Analysis (ribbon ▸ Section: clip
+  the body open on XY/XZ/YZ, flip the cut side — purely visual, the model
+  and exports stay whole)**, **hover/whole-face selection tinting in
   Fusion orange**, **RGB axis triad docked bottom-left** (far axis
   dimmed), live cursor coordinates, **measure-on-pick — one face for its
   area, two for their gap & angle (perpendicular/parallel detected), body
@@ -75,7 +79,7 @@ independent project with no Autodesk assets or affiliation.)
   a playhead timeline of icon chips, and a blue-grey horizon viewport —
   plus first-launch shortcut tour and a persistent Shortcuts tab driven by
   one canonical key table
-- 534 headless tests (EGL rendering + Qt pixel assertions)
+- 570 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -100,7 +104,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 488 tests, fully headless
+./.venv/bin/python -m pytest -q          # 570 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
