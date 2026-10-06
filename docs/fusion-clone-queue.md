@@ -659,6 +659,26 @@ paper ink; DXF export carries the span geometry. Honest scope: full
 circles on orthographic views only (arc R-bubbles are ahead), one
 click lays it, linear keeps its two.
 
+**M96 — Sheet management: the browser tree, real multi-sheet,
+draggable views.** ✓ SHIPPED.  Sheets graduate to first-class
+citizens: a `Sheets (n)` folder sits in the browser beside Bodies and
+Sketches, every drawing is a node, and double-click puts THAT sheet
+on the table (the newest still wins on creation). Views are no longer
+nailed to the layout assistant's slots — grab one and drag; the move
+is stored per view, IN SHEET MILLIMETRES, on the drawing entry
+itself, so the assistant's placement still computes underneath and
+the draughtsman's nudge simply rides on top (views keep re-deriving
+live: drag a view, then change the solid — both work at once).
+Bubbles travel with their view automatically: they anchor to model
+geometry, not paper pixels. A drag captures undo on first movement
+(not on press, so a fat-finger click leaves no dead undo step),
+serialises with the file, and dragging the empty desk still pans as
+before. Fixing a genuine stale-paper bug along the way: undo/redo now
+rebinds the sheet canvas to the resurrected document instead of
+painting a dead one. Honest scope: one body per sheet (the model
+result), moves are translation only — rotation and per-view scale are
+ahead.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

@@ -163,14 +163,16 @@ def fit_circle(chain):
     return (float(c[0]), float(c[1])), r
 
 
-def place(views: dict, page: str = "A3",
-          margin: float = 10.0) -> dict:
+def place(views: dict, page: str = "A3", margin: float = 10.0,
+          moves: dict | None = None) -> dict:
     """M94: the placement math the sheet and the dim tool share.
     Scale every view once and centre it in its slot; return per view
     {\"sc\", \"off\", \"min\", \"max\", \"chains\"} where a model point
     (x, y) lands at page = (x, y) * sc + off — so the canvas can
     inverse-map a click back to model space (page_to_model), and page
-    coords stay y-up, origin at the sheet's lower-left.
+    coords stay y-up, origin at the sheet's lower-left. M96: `moves`
+    ({view: [dx, dy]} sheet mm) rides on top of the assistant's slots —
+    the draughtsman's nudge, stored per view on the drawing.
 
         top   | iso
         ------+------
@@ -188,7 +190,8 @@ def place(views: dict, page: str = "A3",
         cx = 0.5 * (hi[0] + lo[0])
         cy = 0.5 * (hi[1] + lo[1])
         fx, fy = SLOTS.get(name, (0.5, 0.5))
-        off = (fx * W - cx, fy * H - cy)
+        mx, my = (moves or {}).get(name, (0.0, 0.0))
+        off = (fx * W - cx + mx, fy * H - cy + my)
         out[name] = {"sc": float(sc), "off": (float(off[0]),
                                               float(off[1])),
                      "min": (float(lo[0]), float(lo[1])),

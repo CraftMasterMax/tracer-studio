@@ -19,27 +19,45 @@ from ..core import drawing
 
 class DrawingCanvas(QWidget):
     dim_added = Signal(str, tuple, tuple, dict)  # view, a, b, opts (M94/95)
+    view_drag_begin = Signal()                   # M96: undo capture hook
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.doc = None
         self.page = "A3"
+        self.sheet_idx = -1                      # M96: which sheet shows
         self._zoom = 1.6                       # screen px per sheet mm
         self._center = QPointF(0.0, 0.0)       # sheet mm coords at centre
         self._drag = None
         self._dim_mode = False                 # M94: bubble tool armed?
         self._dim_first = None                 # first endpoint (view, xy)
+        self._view_drag = None                 # M96: (view, start, base)
         self.setMinimumSize(320, 240)
         self.setMouseTracking(True)
 
-    def set_document(self, doc):
+    def set_document(self, doc, idx: int | None = None):
+        """Show a sheet (M96: idx picks it; default = newest)."""
         self.doc = doc
         if doc is not None and doc.drawings:
-            self.page = doc.drawings[-1].get("page", "A3")
+            self.sheet_idx = (idx if idx is not None
+                              else len(doc.drawings) - 1)
+            self.sheet_idx = max(0, min(self.sheet_idx,
+                                        len(doc.drawings) - 1))
+            self.page = self.sheet().get("page", "A3")
+        else:
+            self.sheet_idx = -1
         self._center = QPointF(*[v / 2 for v in drawing.PAGES.get(
             self.page, drawing.PAGES["A3"])])
         self._dim_first = None
+        self._view_drag = None
         self.update()
+
+    def sheet(self) -> dict:
+        """The sheet on the table right now (empty dict if none)."""
+        if self.doc is None or not self.doc.drawings:
+            return {}
+        return self.doc.drawings[max(
+            0, min(self.sheet_idx, len(self.doc.drawings) - 1))]
 
     # ---- data -----------------------------------------------------------
     def views(self) -> dict:
@@ -54,8 +72,10 @@ class DrawingCanvas(QWidget):
 
     def placed(self) -> dict:
         """Per view: {sc, off, min, max, chains} — the shared M94
-        placement (page = model * sc + off, y-up sheet mm)."""
-        return drawing.place(self.views(), page=self.page)
+        placement (page = model * sc + off, y-up sheet mm). M96: the
+        draughtsman's per-view moves ride on the assistant's slots."""
+        return drawing.place(self.views(), page=self.page,
+                             moves=self.sheet().get("move"))
 
     def layout(self) -> dict:
         """Page-coordinate chains (mm, y-up, origin lower-left)."""
@@ -253,9 +273,7 @@ class DrawingCanvas(QWidget):
                     150 * self._zoom, 24 * self._zoom)
         p.setPen(QPen(QColor(90, 94, 100), 1))
         p.drawRect(tb)
-        name = ""
-        if self.doc is not None and self.doc.drawings:
-            name = self.doc.drawings[-1].get("name", "")
+        name = self.sheet().get("name", "")
         p.setPen(QPen(QColor(40, 42, 46)))
         f = p.font()
         f.setPointSizeF(max(6.0, 9 * min(self._zoom, 2.0)))
@@ -283,7 +301,7 @@ class DrawingCanvas(QWidget):
         moving carries the dimension with it (M94)."""
         if self.doc is None or not self.doc.drawings:
             return
-        g = self.doc.drawings[-1]
+        g = self.sheet()                           # M96: this sheet only
         dims = g.get("dims", [])
         self.resolve_dims(placed)
         ink = QPen(QColor(195, 60, 60), max(1.0, 0.5 * self._zoom))
@@ -430,10 +448,39 @@ class DrawingCanvas(QWidget):
         if self._dim_mode and ev.button() == Qt.LeftButton:
             self._dim_click(ev)          # M94: bubbles, not panning
             return
+        if ev.button() == Qt.LeftButton:
+            # M96: a press ON a view grabs the view; the desk still pans
+            placed = self.placed()
+            view = self._view_at(self.p2s(ev.position()), placed,
+                                 slack=0.0) if placed else None
+            if view is not None:
+                base = self.sheet().get("move", {}).get(view, (0.0, 0.0))
+                self._view_drag = [view, self.p2s(ev.position()),
+                                   (float(base[0]), float(base[1])),
+                                   False]
+                return
         if ev.button() in (Qt.MiddleButton, Qt.LeftButton):
             self._drag = ev.position()
 
     def mouseMoveEvent(self, ev):
+        if self._view_drag is not None:                  # M96: move a view
+            view, start, base, moved = self._view_drag
+            sp = self.s2p(start[0], start[1])
+            pdx = (ev.position().x() - sp.x()) / self._zoom
+            pdy = -(ev.position().y() - sp.y()) / self._zoom
+            if not moved and abs(ev.position().x() - sp.x()) + \
+                    abs(ev.position().y() - sp.y()) <= 2.0:
+                return
+            if not moved:
+                self._view_drag[3] = moved = True
+                self.view_drag_begin.emit()              # undo capture
+            g = self.sheet()
+            g.setdefault("move", {})[view] = [base[0] + pdx,
+                                              base[1] + pdy]
+            if self.doc is not None:
+                self.doc.dirty = True
+            self.update()
+            return
         if self._drag is not None:
             d = ev.position() - self._drag
             self._center += QPointF(-d.x() / self._zoom, d.y() / self._zoom)
@@ -442,3 +489,4 @@ class DrawingCanvas(QWidget):
 
     def mouseReleaseEvent(self, ev):
         self._drag = None
+        self._view_drag = None

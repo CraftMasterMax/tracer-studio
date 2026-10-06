@@ -181,6 +181,19 @@ class FeatureTree(QTreeWidget):
             it.setData(0, Qt.UserRole, ("cplane", pl["name"]))
             constr.addChild(it)
         constr.setExpanded(bool(planes))
+
+        # ---- Sheets (n): M96 drawings ride the tree like everything else --
+        # (Fusion only shows the folder once drawings exist)
+        sheets = getattr(self._doc, "drawings", [])
+        if sheets:
+            sh = QTreeWidgetItem([f"Sheets ({len(sheets)})"])
+            sh.setData(0, Qt.UserRole, ("folder", "sheets"))
+            root.addChild(sh)
+            for i, g in enumerate(sheets):
+                it = QTreeWidgetItem([g.get("name", f"Drawing{i + 1}")])
+                it.setData(0, Qt.UserRole, ("sheet", i))
+                sh.addChild(it)
+            sh.setExpanded(True)
         root.setExpanded(True)
         self.setCurrentItem(None)
 

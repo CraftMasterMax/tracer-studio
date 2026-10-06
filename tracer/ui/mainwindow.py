@@ -638,6 +638,8 @@ class MainWindow(QMainWindow):
             self.action_sketch_on_plane(arg)
         elif kind == "sketch":
             self._feature_activated(self.doc.features[arg])
+        elif kind == "sheet":                 # M96: double-click a sheet
+            self._open_drawing(arg)
 
     def _feature_activated(self, feature):
         if (isinstance(feature, (ExtrudeFeature, RevolveFeature, HoleFeature))
@@ -1048,6 +1050,8 @@ class MainWindow(QMainWindow):
         from .drawingview import DrawingCanvas
         self.drawing = DrawingCanvas()
         self.drawing.dim_added.connect(self._add_dim)     # M94 bubbles
+        self.drawing.view_drag_begin.connect(            # M96 undo capture
+            self._capture)
         lay.addWidget(self.drawing, 1)
         return page
 
@@ -1122,7 +1126,7 @@ class MainWindow(QMainWindow):
     def _open_drawing(self, idx: int):
         if self.doc is None or not (0 <= idx < len(self.doc.drawings)):
             return
-        self.drawing.set_document(self.doc)
+        self.drawing.set_document(self.doc, idx=idx)
         self._show_page(self._drawing_page)
 
     def export_drawing(self, path=None, ext=".png"):
@@ -2873,6 +2877,10 @@ class MainWindow(QMainWindow):
         self.timeline.set_document(self.doc)
         self.viewport.set_document(self.doc)
         self.viewport.refresh(fit=False)
+        if self._drawing_page is not None:            # M96: sheets too
+            idx = self.drawing.sheet_idx              # keep the same sheet
+            self.drawing.set_document(self.doc,
+                                      idx=None if idx < 0 else idx)
         self._update_status()
         self._apply_appearance()
         self._apply_units()
