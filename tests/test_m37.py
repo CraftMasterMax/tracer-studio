@@ -143,18 +143,18 @@ def _pixel_of(cam, cv, pt):
 
 # ---- mouse roles: Fusion's scheme --------------------------------------------
 
-def test_mmb_drags_pans_and_shift_orbits(win, qapp):
+def test_mmb_orbits_and_shift_pans(win, qapp):
     cv = _two_boxes(win, qapp)
     cam = cv._cam
     yaw0, t0 = cam.yaw, cam.target.copy()
     _drag(cv, qapp, Qt.MiddleButton, (500, 350), (530, 365))
-    assert cam.yaw == pytest.approx(yaw0)           # plain MMB: no orbit
-    assert np.linalg.norm(cam.target - t0) > 1.0    # ...it panned
+    assert cam.yaw != pytest.approx(yaw0)           # MMB: orbits (Fusion)
+    assert np.linalg.norm(cam.target - t0) < 1e-6   # ...no panning
     yaw1, t1 = cam.yaw, cam.target.copy()
     _drag(cv, qapp, Qt.MiddleButton, (500, 350), (535, 365),
           Qt.ShiftModifier)
-    assert cam.yaw != pytest.approx(yaw1)           # Shift+MMB: orbits
-    assert np.linalg.norm(cam.target - t1) < 1e-6   # ...no panning
+    assert cam.yaw == pytest.approx(yaw1)           # Shift+MMB: pans
+    assert np.linalg.norm(cam.target - t1) > 1.0    # ...no orbiting
     yaw2 = cam.yaw
     _drag(cv, qapp, Qt.RightButton, (500, 350), (465, 340))
     assert cam.yaw != pytest.approx(yaw2)           # RMB orbits too

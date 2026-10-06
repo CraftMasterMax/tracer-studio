@@ -364,6 +364,18 @@ class SplitFeature(Feature):
 
 
 @dataclass
+class MoveFeature(Feature):
+    """Move Body (M53): shift the whole accumulated body by a vector —
+    what dragging the triad commits.  A body op like Shell: it REPLACES
+    the body, so `op` is unused; being a feature, the shift stays
+    parametric — edit the vector and the body slides."""
+    vec: tuple = (0.0, 0.0, 0.0)
+
+    def apply(self, src: Solid) -> Solid:
+        return src.translated(tuple(float(v) for v in self.vec))
+
+
+@dataclass
 class SweepFeature(Feature):
     """Sweep a circular profile along a drawn path (v1 profile: circle).
     `path` stores the sampled 2D polyline in sketch coordinates, `closed`
@@ -547,11 +559,12 @@ class Document:
                 solid = src.translated((-shift[0], -shift[1], -shift[2])) \
                             .mirror(n).translated(shift)
             elif isinstance(f, (BodyFilletFeature, ShellFeature,
-                                SplitFeature)):
+                                SplitFeature, MoveFeature)):
                 if acc is None:
                     verb = ("fillet" if isinstance(f, BodyFilletFeature)
                             else "shell" if isinstance(f, ShellFeature)
-                            else "split")
+                            else "split" if isinstance(f, SplitFeature)
+                            else "move")
                     raise ValueError(f"{f.name!r} has no body to {verb} yet")
                 acc = f.apply(acc)
                 by_uid[f.uid] = acc
@@ -652,6 +665,8 @@ class Document:
                 d.update(origin=list(map(float, f.origin)),
                          normal=list(map(float, f.normal)),
                          flip=bool(f.flip))
+            elif isinstance(f, MoveFeature):
+                d.update(vec=list(map(float, f.vec)))
             elif isinstance(f, HoleFeature):
                 d.update(center=list(map(float, f.center)),
                          normal=list(map(float, f.normal)),
@@ -769,6 +784,9 @@ class Document:
                     name=fd["name"],
                     origin=tuple(fd["origin"]), normal=tuple(fd["normal"]),
                     flip=bool(fd.get("flip", False)), **base))
+            elif t == "MoveFeature":
+                doc.features.append(MoveFeature(
+                    name=fd["name"], vec=tuple(fd["vec"]), **base))
             elif t == "HoleFeature":
                 doc.features.append(HoleFeature(
                     name=fd["name"],

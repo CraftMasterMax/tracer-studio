@@ -151,6 +151,17 @@ lighting model), rides the document JSON, re-syncs on open/new/undo,
 and the exact colour returns when the paint is cleared.  Per-body
 appearances arrive with multi-body.
 
+**M53 — Move Body.** ✓ SHIPPED.  Modify ▸ Move body (ribbon button too):
+the RGB triad appears at the body centre exactly like Fusion — press an
+arrow, and the solid slides along that axis 1:1 with the mouse (the
+cursor ray's closest-approach parameter along the grabbed axis IS the
+distance); the live preview is a shader offset, so dragging is free of
+kernel calls; release commits a parametric ✥ MoveFeature (edit the
+vector, the body slides), Esc or an empty click cancels without leaving
+a trace.  While at it the mouse grammar was corrected to Fusion's
+real defaults: **MMB drags orbit, Shift+MMB pans** (it had been
+inverted).  Rotate-by-triad and copy-on-move deferred.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, Combine/multi-browser-bodies,
 configurations, assemblies/joints, sheet metal, drawings.

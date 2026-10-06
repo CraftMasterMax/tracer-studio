@@ -52,6 +52,7 @@ class Viewport(QWidget):
     face_picked = Signal(object, object)   # world point, outward normal (planar)
     coords = Signal(object)                # world point under cursor | None
     press_pull = Signal(object)            # Press-Pull drag payload dict
+    move_drag = Signal(object)             # Move (M53) drag payload dict
     selection_changed = Signal(int)        # live measure: faces now selected
 
     def __init__(self, renderer: SceneRenderer, parent=None):
@@ -72,6 +73,7 @@ class Viewport(QWidget):
         self._pp_drag = False
         self._box: list | None = None      # rubber-band select [p0, p1]
         self._box_drag = False
+        self._mv = None                    # Move gesture state (M53)
         self.setMinimumSize(QSize(320, 240))
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -88,6 +90,8 @@ class Viewport(QWidget):
         self._hover, self._sel = None, []
         self._pp, self._pp_drag = None, False
         self._box, self._box_drag = None, False
+        self._mv = None                    # Move gesture state (M53)
+        self._r.set_triad(None)
         if had_sel:
             self.selection_changed.emit(0)
         if solid is None:
@@ -181,6 +185,65 @@ class Viewport(QWidget):
     #      LMB drag on a face: Press-Pull
     # MMB drag: pan                      Shift+MMB / RMB drag: orbit
     # MMB click (no drag): return home   wheel: zoom toward the cursor
+    # ---- Move gesture (M53) ---------------------------------------------------
+    def begin_move(self, origin, length: float):
+        """Arm the Move gesture: RGB triad at `origin`; drag an arrow to
+        slide the body along that axis, release commits, Esc/empty-click
+        cancels — Fusion's Move mouse grammar on one grab."""
+        self._mv = dict(origin=np.asarray(origin, float),
+                        length=float(length), axis=None, s0=0.0,
+                        off=np.zeros(3))
+        self._r.set_triad(origin, length)
+        self.update()
+
+    def _cancel_move(self):
+        if self._mv is None:
+            return
+        self._mv = None
+        self._r.set_triad(None)
+        self.unsetCursor()
+        self.move_drag.emit(dict(cancel=True))
+        self.update()
+
+    def _triad_hit(self, px: float, py: float):
+        """Which triad arrow (0/1/2) sits under the cursor, or None."""
+        if self._mv is None:
+            return None
+        o, L = self._mv["origin"], self._mv["length"]
+        best, bd = None, 14.0
+        for i in range(3):
+            p0 = self._cam.project(o, self.width(), self.height())
+            p1 = self._cam.project(o + np.eye(3)[i] * L * 1.15,
+                                   self.width(), self.height())
+            if p0 is None or p1 is None:
+                continue
+            ax_, ay_ = p0
+            bx, by = p1
+            vx, vy = bx - ax_, by - ay_
+            ln = vx * vx + vy * vy
+            t = 0.0 if ln == 0 else max(
+                0.0, min(1.0, ((px - ax_) * vx + (py - ay_) * vy) / ln))
+            dx, dy = px - (ax_ + t * vx), py - (ay_ + t * vy)
+            d = (dx * dx + dy * dy) ** 0.5
+            if d < bd:
+                best, bd = i, d
+        return best
+
+    def _axis_param(self, mv, px: float, py: float):
+        """Where the cursor ray passes closest along the grabbed axis —
+        dragging this value is what slides the body."""
+        o0, d0 = self._cam.ray(px, py, self.width(), self.height())
+        o0 = np.asarray(o0, float)
+        d0 = np.asarray(d0, float) / max(
+            float(np.linalg.norm(d0)), 1e-12)
+        e = np.eye(3)[mv["axis"]]
+        a = o0 - mv["origin"]
+        b = float(d0 @ e)
+        det = 1.0 - b * b
+        if abs(det) < 1e-6:                # ray runs along the axis
+            return None
+        return (float(e @ a) - b * float(d0 @ a)) / det
+
     def mousePressEvent(self, ev):
         hit = self._cube.hit(ev.position())
         if hit:
@@ -207,8 +270,23 @@ class Viewport(QWidget):
         self._pp_drag = False
         self._box = None
         self._box_drag = False
+        if (self._mv is not None and ev.button() == Qt.LeftButton
+                and Qt.KeyboardModifier(0) == ev.modifiers()):
+            px, py = ev.position().x(), ev.position().y()
+            ax = self._triad_hit(px, py)
+            if ax is not None:
+                self._mv["axis"] = ax
+                s = self._axis_param(self._mv, px, py)
+                self._mv["s0"] = s if s is not None else 0.0
+                self.setCursor(QCursor(Qt.SizeAllCursor))
+                if self._hover:
+                    self._hover = None
+                    self._apply_hi()
+                ev.accept()
+                return
         if ev.button() == Qt.LeftButton and self._tm is not None \
-                and Qt.KeyboardModifier(0) == ev.modifiers():
+                and Qt.KeyboardModifier(0) == ev.modifiers() \
+                and self._mv is None:
             px, py = ev.position().x(), ev.position().y()
             hit = self._shoot(self._tm, px, py)
             if hit is not None:
@@ -244,6 +322,17 @@ class Viewport(QWidget):
         if d.manhattanLength() > 2:
             self._dragged = True
         self._last = ev.position().toPoint()
+        if (self._mv is not None and self._mv["axis"] is not None
+                and Qt.LeftButton in self._buttons):
+            s = self._axis_param(self._mv, ev.position().x(),
+                                 ev.position().y())
+            if s is not None:
+                self._mv["off"] = (s - self._mv["s0"]) \
+                    * np.eye(3)[self._mv["axis"]]
+                self.move_drag.emit(dict(offset=self._mv["off"],
+                                         live=True))
+            self.update()
+            return
         if self._pp is not None and Qt.LeftButton in self._buttons \
                 and not (self._buttons & (Qt.MiddleButton | Qt.RightButton)):
             pos = ev.position().toPoint()
@@ -264,9 +353,9 @@ class Viewport(QWidget):
             return
         if Qt.MiddleButton in self._buttons:
             if ev.modifiers() & Qt.ShiftModifier:
-                self._cam.orbit(d.x(), d.y(), self.height())
+                self._cam.pan(d.x(), d.y(), self.height())   # Fusion: Shift+MMB pans
             else:
-                self._cam.pan(d.x(), d.y(), self.height())
+                self._cam.orbit(d.x(), d.y(), self.height()) # Fusion: MMB orbits
             self.update()
         elif Qt.RightButton in self._buttons:
             self._cam.orbit(d.x(), d.y(), self.height())
@@ -274,6 +363,18 @@ class Viewport(QWidget):
 
     def mouseReleaseEvent(self, ev):
         self._buttons &= ~ev.button()
+        if ev.button() == Qt.LeftButton and self._mv is not None:
+            if self._mv["axis"] is not None:      # drag ends: commit gesture
+                off = self._mv["off"]
+                self._mv = None
+                self._r.set_triad(None)
+                self.unsetCursor()
+                self.move_drag.emit(dict(offset=off, live=False))
+            else:                                  # click off the arrows
+                self._cancel_move()
+            self.update()
+            ev.accept()
+            return
         if (ev.button() == Qt.LeftButton
                 and not getattr(self, "_dragged", True)):
             self._click_select(ev.position())       # Fusion: pick a face
@@ -516,6 +617,9 @@ class Viewport(QWidget):
     def keyPressEvent(self, ev):
         k = ev.key()
         if k == Qt.Key_Escape:
+            if self._mv is not None:               # abort a move gesture
+                self._cancel_move()
+                return
             if self._pp is not None:                 # abort a press-pull
                 self._pp, self._pp_drag = None, False
                 self.unsetCursor()

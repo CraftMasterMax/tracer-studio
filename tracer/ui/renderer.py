@@ -22,18 +22,20 @@ in vec3 in_mask;
 in float in_hi;
 uniform mat4 u_view;
 uniform mat4 u_proj;
+uniform vec3 u_off;              // live Move preview: slide the body
 out vec3 v_nrm;
 out vec3 v_world;
 out vec3 v_bary;
 out vec3 v_mask;
 out float v_hi;
 void main() {
-    v_world = in_pos;
+    vec3 wp = in_pos + u_off;
+    v_world = wp;
     v_nrm = in_nrm;
     v_bary = in_bary;
     v_mask = in_mask;
     v_hi = in_hi;
-    gl_Position = u_proj * u_view * vec4(in_pos, 1.0);
+    gl_Position = u_proj * u_view * vec4(wp, 1.0);
 }
 """
 
@@ -178,6 +180,10 @@ class SceneRenderer:
         self.clip = None             # Section Analysis: {normal, origin}
         self._base_override = None   # Appearance: painted body colour
         self._base_alpha = 1.0       # Appearance: body opacity
+        self._mesh_off = (0.0, 0.0, 0.0)   # live Move preview offset
+        self._triad = None           # Move triad: (origin, length)
+        self._triad_vao = None
+        self._triad_count = 0
         self._grid_extent = 100.0
         self._size = (2, 2)
         self._fbo = None
@@ -221,6 +227,7 @@ class SceneRenderer:
         (boundary) edges get an edge mask; coplanar triangulation seams are
         suppressed so flat faces render clean.
         """
+        self._mesh_off = (0.0, 0.0, 0.0)   # fresh mesh: preview offset spent
         import trimesh
         CREASE_DEG = 25.0
         cos_lim = math.cos(math.radians(CREASE_DEG))
@@ -302,6 +309,49 @@ class SceneRenderer:
             tuple(float(c) for c in rgb)
         self._base_alpha = 1.0 if rgb is None else \
             max(0.05, min(1.0, float(opacity)))
+
+    def set_mesh_offset(self, off):
+        """Live Move preview (M53): slide the solid this world offset;
+        set_mesh() resets it — the recompute bakes the truth."""
+        self._mesh_off = tuple(float(v) for v in off)
+
+    def set_triad(self, origin, length: float = 40.0):
+        """Move triad (M53): RGB arrows at `origin`, Fusion-style, drawn
+        over everything while a Move gesture is live. None hides it."""
+        self._triad = None if origin is None else (
+            np.asarray(origin, float), float(length))
+        self._rebuild_triad()
+
+    def _rebuild_triad(self):
+        if self._triad_vao is not None:
+            self._triad_vao.release()
+            self._triad_vao = None
+            self._triad_count = 0
+        if self._triad is None:
+            return
+        o, L = self._triad
+        cols = [(0.85, 0.25, 0.20), (0.30, 0.70, 0.32),
+                (0.25, 0.45, 0.90)]           # Fusion's arrow RGB
+        lines: list = []
+
+        def add(p0, p1, rgb):
+            lines.extend([(*p0, *rgb, 1.0), (*p1, *rgb, 1.0)])
+
+        for i, rgb in enumerate(cols):
+            e = np.eye(3)[i]
+            tip = o + e * L
+            add(o, tip, rgb)
+            # open arrowhead: four spokes from a ring behind the tip
+            u = np.eye(3)[(i + 1) % 3] * L * 0.09
+            v = np.eye(3)[(i + 2) % 3] * L * 0.09
+            base = tip - e * L * 0.14
+            for w in (u, -u, v, -v):
+                add(base + w, tip, rgb)
+        arr = np.array(lines, np.float32)
+        buf = self.ctx.buffer(arr.tobytes())
+        self._triad_vao = self.ctx.vertex_array(
+            self._line_prog, [(buf, "3f 4f", "in_pos", "in_color")])
+        self._triad_count = len(arr)
 
     def set_highlight(self, hover_faces=None, sel_faces=()):
         """Tint whole mesh faces: cyan wash under the cursor, blue for
@@ -474,11 +524,25 @@ class SceneRenderer:
             else:
                 u["u_clip_on"].value = 0
             u["u_alpha"].value = self._base_alpha
+            u["u_off"].value = tuple(float(v) for v in self._mesh_off)
             if self._base_alpha < 1.0:          # ghosted appearance
                 c.enable(moderngl.BLEND)
             self._solid_vao.render(moderngl.TRIANGLES, vertices=self._solid_count)
             if self._base_alpha < 1.0:
                 c.disable(moderngl.BLEND)
+
+        # move triad — interaction furniture: on top of the body (M53)
+        if self._triad_vao is not None and self._triad_count:
+            c.disable(moderngl.DEPTH_TEST)
+            c.enable(moderngl.BLEND)
+            self._line_prog["u_view"].write(view.tobytes())
+            self._line_prog["u_proj"].write(proj.tobytes())
+            self._line_prog["u_center"].value = tuple(
+                float(t) for t in camera.target)
+            self._line_prog["u_fade"].value = (1e12, 1e12 + 1.0)
+            self._triad_vao.render(moderngl.LINES,
+                                   vertices=self._triad_count)
+            c.disable(moderngl.BLEND)
 
         if self._msaa:
             c.disable(moderngl.DEPTH_TEST)

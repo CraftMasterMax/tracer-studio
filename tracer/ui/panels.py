@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QTreeWidget, QTreeWidgetItem, QLabel, QVBoxLayout
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
+                             MoveFeature,
                              PathPatternFeature, SplitFeature,
                              MirrorFeature, PrimitiveFeature, RevolveFeature,
                              ShellFeature, SweepFeature, LoftFeature,
@@ -103,6 +104,7 @@ class FeatureTree(QTreeWidget):
                     else "\u2300" if isinstance(f, HoleFeature)
                     else "\u25a4" if isinstance(f, ShellFeature)
                     else "\u2702" if isinstance(f, SplitFeature)  # trim
+                    else "\u2725" if isinstance(f, MoveFeature)   # move
                     else "\u223f" if isinstance(f, SweepFeature)
                     else "\u25b3" if isinstance(f, LoftFeature)
                     else "\u25c8" if isinstance(f, ImportedFeature)
@@ -293,6 +295,9 @@ class PropertiesPanel(QWidget):
                          f"({'xyz'[ax]}={feature.origin[ax]:g} mm)")
             lines.append("kept side: "
                          + ("flipped" if feature.flip else "default"))
+        elif isinstance(feature, MoveFeature):
+            x, y, z = (float(v) for v in feature.vec)
+            lines.append(f"translate \u2725 x {x:+g}, y {y:+g}, z {z:+g} mm")
         placement = getattr(feature, "placement", None)
         if placement is not None:                    # patterns have none
             px, py, pz = placement

@@ -18,7 +18,8 @@ from ..core.thread import ISO_COARSE
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
-                             LoftFeature, MirrorFeature, PathPatternFeature,
+                             LoftFeature, MirrorFeature, MoveFeature,
+                             PathPatternFeature,
                              PrimitiveFeature,
                              RevolveFeature, ShellFeature, SplitFeature,
                              SweepFeature,
@@ -95,6 +96,9 @@ class MainWindow(QMainWindow):
         self.viewport.face_picked.connect(self._start_sketch_on_face)
         self.viewport.coords.connect(self._show_coords)
         self.viewport.press_pull.connect(self._press_pull)
+        self.viewport.move_drag.connect(self._on_move_drag)
+        self._move_origin = None             # armed Move gesture (M53)
+        self._move_len = 40.0
         self.viewport.selection_changed.connect(self._on_face_selection)
         cl.addWidget(self.timeline)
         self.setCentralWidget(center)
@@ -289,6 +293,8 @@ class MainWindow(QMainWindow):
           lambda checked=False: self.action_thread())
         d("split", "Split body — trim the solid flush with a plane",
           lambda checked=False: self.action_split_body())
+        d("move", "Move body — drag the triad to slide it",
+          lambda checked=False: self.action_move_body())
         r.design_sep()
         d("plane", "Construction plane — offset work plane (Ctrl+Shift+P)",
           lambda checked=False: self.action_construction_plane())
@@ -475,6 +481,9 @@ class MainWindow(QMainWindow):
         self.act_shell = QAction("&Shell…", self,
                                  triggered=lambda checked=False: self.action_shell())
         m_mo.addActions([self.act_fillet, self.act_chamfer, self.act_shell])
+        m_mo.addSeparator()
+        m_mo.addAction("Move body…",
+                       lambda checked=False: self.action_move_body())
 
         m_edit = self.menuBar().addMenu("&Edit")
         self.act_undo = QAction("&Undo", self, shortcut=QKeySequence.Undo,
@@ -1244,6 +1253,57 @@ class MainWindow(QMainWindow):
         self._apply_appearance()
         self.viewport.refresh()
         self.status.showMessage(msg, 5000)
+
+    def action_move_body(self):
+        """Fusion Move/Copy (M53): the RGB triad appears at the body's
+        centre — grab an arrow and drag, the body slides along that
+        axis exactly as fast as the mouse, release commits the move as
+        a parametric feature.  Esc or an empty click cancels."""
+        if self.doc is None or self.doc.result is None:
+            QMessageBox.warning(self, "Move",
+                                "Nothing to move yet — extrude or "
+                                "import a solid first.")
+            return
+        lo, hi = self.doc.result.bounding_box
+        self._move_origin = (np.asarray(lo, float)
+                             + np.asarray(hi, float)) / 2.0
+        self._move_len = 0.4 * float(np.linalg.norm(
+            np.asarray(hi, float) - np.asarray(lo, float)))
+        self.viewport.begin_move(self._move_origin, self._move_len)
+        self.status.showMessage(
+            "Drag a triad arrow to slide the body — release commits, "
+            "Esc cancels", 6000)
+
+    def _on_move_drag(self, payload):
+        """Live preview through the renderer's mesh offset (no kernel
+        calls mid-drag); the release commits a MoveFeature."""
+        if payload.get("cancel") or "offset" not in payload:
+            self._renderer.set_mesh_offset((0.0, 0.0, 0.0))
+            self.viewport.update()
+            self.status.showMessage("Move cancelled", 2500)
+            return
+        off = np.asarray(payload["offset"], float)
+        if payload.get("live"):
+            self._renderer.set_mesh_offset(off)
+            if self._move_origin is not None:
+                self._renderer.set_triad(self._move_origin + off,
+                                         self._move_len)
+            self.viewport.update()
+            return
+        off_v = tuple(float(v) for v in off)
+        self._renderer.set_mesh_offset((0.0, 0.0, 0.0))
+        self._renderer.set_triad(None)
+        if float(np.linalg.norm(off)) < 1e-4:
+            self.viewport.update()
+            self.status.showMessage("Move cancelled", 2500)
+            return
+        self._capture()
+        self.doc.add(MoveFeature(name="Move", vec=off_v))
+        self.recompute()
+        self.viewport.refresh()
+        self.status.showMessage(
+            f"Body moved — x {off_v[0]:+g}, y {off_v[1]:+g}, "
+            f"z {off_v[2]:+g} mm", 5000)
 
     def _sync_holes(self, sid, payload):
         """Sketch re-edit through the extrude path: holes stay glued to

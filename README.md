@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M52**
+**Status: M53**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -67,12 +67,15 @@ independent project with no Autodesk assets or affiliation.)
   **Split Body** — trim the solid flush with XY/XZ/YZ at any offset
   from centre, flip the kept side (✂ timeline chip, parametric),
   **Appearance** — paint the body with a material (Brass, Anodized
-  blue…) or custom colour, ghost it with opacity (saved with the file)
+  blue…) or custom colour, ghost it with opacity (saved with the file),
+  **Move body** — grab an RGB triad arrow and slide the solid with the
+  mouse exactly like Fusion's Move; release commits a parametric ✥
+  feature (Esc cancels)
 - I/O: STL/3MF/OBJ/PLY mesh import+export, **STEP import/export** via an
   on-demand OpenCascade bridge (compiled with your system g++, cached;
   degrades gracefully where OCCT is absent — e.g. stock Windows, which
   still gets rim fillets)
-- UX: Fusion mouse grammar — MMB pans, Shift+MMB/RMB orbit, wheel zooms
+- UX: Fusion mouse grammar — MMB orbits, Shift+MMB pans, RMB orbit, wheel zooms
   toward the cursor, left-drag on empty space rubber-bands a selection
   (window/crossing) — ViewCube, **Section Analysis (ribbon ▸ Section: clip
   the body open on XY/XZ/YZ, flip the cut side — purely visual, the model
@@ -85,7 +88,7 @@ independent project with no Autodesk assets or affiliation.)
   a playhead timeline of icon chips, and a blue-grey horizon viewport —
   plus first-launch shortcut tour and a persistent Shortcuts tab driven by
   one canonical key table
-- 606 headless tests (EGL rendering + Qt pixel assertions)
+- 613 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -99,7 +102,7 @@ python3 -m venv .venv
 
 3D: **click a face** to select · **drag a face** to Press-Pull (+Esc to
 cancel, release to commit) · **double-click a face** to sketch on it ·
-**MMB** pan · **Shift+MMB or RMB** orbit · **wheel** zoom toward cursor ·
+**MMB** orbit · **Shift+MMB** pan · **RMB** orbit · **wheel** zoom toward cursor ·
 **drag on empty space** selects (left→right window, right→left crossing) ·
 **F** fit ·
 **G** grid · **E** edges · **0/1/2/3** iso/front/top/right.
@@ -110,7 +113,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 606 tests, fully headless
+./.venv/bin/python -m pytest -q          # 613 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

@@ -277,6 +277,22 @@ def _section(p: QPainter):
     p.drawLine(QPointF(5, 17), QPointF(27, 17))
 
 
+def _move(p: QPainter):
+    """A ghost outline pushed into a solid arrow — the move sticker."""
+    p.drawRect(QRectF(5, 17, 10, 10))
+    pen = QPen(_COL)
+    pen.setStyle(Qt.PenStyle.DashLine)
+    p.setPen(pen)
+    p.drawRect(QRectF(9, 13, 10, 10))
+    pen.setStyle(Qt.PenStyle.SolidLine)
+    pen.setWidthF(2.2)
+    p.setPen(pen)
+    p.drawLine(QPointF(14, 18), QPointF(25, 7))
+    p.setBrush(_COL)
+    tri = QPolygonF([QPointF(26, 4), QPointF(26, 12), QPointF(18, 6)])
+    p.drawPolygon(tri)
+
+
 def _appearance(p: QPainter):
     """A paint drop landing on a brushed band."""
     path = QPainterPath()
@@ -324,7 +340,7 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "constrain": _constrain, "dimension": _dimension,
               "launcher": _launcher, "section": _section,
               "thread": _thread, "split": _split,
-              "appearance": _appearance})
+              "appearance": _appearance, "move": _move})
 
 
 def icon(name: str) -> QIcon:
