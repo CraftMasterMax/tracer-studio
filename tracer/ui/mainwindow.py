@@ -98,6 +98,8 @@ class MainWindow(QMainWindow):
         self.viewport.press_pull.connect(self._press_pull)
         self.viewport.move_drag.connect(self._on_move_drag)
         self.viewport.rotate_drag.connect(self._on_rotate_drag)
+        self.viewport.context_request.connect(self._show_marking_menu)
+        self._mark_menu = None               # open marking menu (M56)
         self._move_origin = None             # armed Move gesture (M53)
         self._move_len = 40.0
         self._rotate_center = None           # armed Rotate (M55)
@@ -1223,6 +1225,46 @@ class MainWindow(QMainWindow):
         self._renderer.set_base_color(
             app["color"] if app else None,
             app.get("opacity", 1.0) if app else 1.0)
+
+    # ---- marking menu (M56) -----------------------------------------------------
+    def _marking_menu(self):
+        """Fusion's right-click quick menu: fit / zoom-to / the four
+        views / visual styles / display toggles."""
+        m = QMenu(self)
+        m.addAction("Fit", lambda checked=False: self.action_view("fit"))
+        m.addAction("Zoom to selection", self._zoom_to_selection)
+        m.addSeparator()
+        for label, view in (("Isometric", "iso"), ("Front", "front"),
+                            ("Top", "top"), ("Right", "right")):
+            m.addAction(label, lambda checked=False, v=view:
+                        self.action_view(v))
+        m.addSeparator()
+        vs = m.addMenu("Visual Styles")
+        for label in ("Wireframe", "Ghosted", "Shaded",
+                      "Shaded with edges", "X-ray"):
+            vs.addAction(label, lambda checked=False, lb=label:
+                         self.action_visual_style(lb))
+        m.addSeparator()
+        m.addAction("Toggle grid", self.action_toggle_grid)
+        m.addAction("Toggle edges", self.action_toggle_edges)
+        return m
+
+    def _show_marking_menu(self, pos):
+        menu = self._marking_menu()
+        self._mark_menu = menu
+        menu.aboutToHide.connect(
+            lambda: setattr(self, "_mark_menu", None))
+        menu.popup(self.viewport.mapToGlobal(pos))
+
+    def _zoom_to_selection(self):
+        bbox = self.viewport.selection_bbox()
+        if bbox is None and self.doc is not None and self.doc.result:
+            bbox = self.doc.result.bounding_box
+        if bbox is not None:
+            self.viewport.camera().fit(np.asarray(
+                [list(bbox[0]), list(bbox[1])], float))
+            self.viewport.update()
+            self.status.showMessage("Zoomed to selection", 2500)
 
     def action_appearance(self):
         """Fusion's Appearance dialog (M52): paint the body with a shop

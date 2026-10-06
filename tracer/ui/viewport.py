@@ -54,6 +54,7 @@ class Viewport(QWidget):
     press_pull = Signal(object)            # Press-Pull drag payload dict
     move_drag = Signal(object)             # Move (M53) drag payload dict
     rotate_drag = Signal(object)           # Rotate (M55) drag payload dict
+    context_request = Signal(object)       # RMB no-drag: marking menu pos
     selection_changed = Signal(int)        # live measure: faces now selected
 
     def __init__(self, renderer: SceneRenderer, parent=None):
@@ -488,6 +489,9 @@ class Viewport(QWidget):
         elif ev.button() == Qt.LeftButton:
             self._pp, self._pp_drag = None, False
             self._box, self._box_drag = None, False
+        if ev.button() == Qt.RightButton \
+                and not getattr(self, "_dragged", False):
+            self.context_request.emit(ev.position().toPoint())
         if ev.button() == Qt.MiddleButton:
             self.unsetCursor()
             if not getattr(self, "_dragged", False):
@@ -713,6 +717,14 @@ class Viewport(QWidget):
         self.update()
 
     # ---- keys (F fit, G grid, 0/1/2/3 views, Esc deselect) ------------------
+    def selection_bbox(self):
+        """bbox of the currently picked faces, or None (M56 zoom-to)."""
+        if self._tm is None or not self._sel:
+            return None
+        pts = np.asarray(self._tm.vertices, float)[
+            np.asarray(self._tm.faces)[self._sel]]
+        return (pts.min(axis=0), pts.max(axis=0))
+
     def keyPressEvent(self, ev):
         k = ev.key()
         if k == Qt.Key_Escape:

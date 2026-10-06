@@ -179,6 +179,12 @@ for its axis and degrees, Esc/empty-click cancels.  Together with
 Press-Pull (M35) and Move (M53), the body now answers to Fusion's full
 direct-manipulation mouse grammar.
 
+**M56 — Marking menu.** ✓ SHIPPED.  A right-CLICK (no drag) anywhere in
+the canvas pops Fusion's veteran shortcut menu: Fit, Zoom to
+selection, the four standard views, the Visual Styles submenu, grid and
+edge toggles — every entry drives the real command.  A right-DRAG
+still orbits, exactly like Fusion telling the two gestures apart.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, Combine/multi-browser-bodies,
 configurations, assemblies/joints, sheet metal, drawings.
