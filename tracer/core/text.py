@@ -36,11 +36,29 @@ def glyph_regions(text: str, height_mm: float,
     path = QPainterPath()
     path.addText(0, 0, font, text)
 
+    from shapely.geometry import Polygon as _Poly
+
     polys: list[np.ndarray] = []
     for sp in path.toSubpathPolygons():
         pts = np.array([(p.x(), -p.y()) for p in sp], float)   # y-up
-        if len(pts) >= 3 and abs(_signed_area(pts)) > 1e-9:
+        if len(pts) < 3 or abs(_signed_area(pts)) < 1e-9:
+            continue
+        g = _Poly(pts)
+        if g.is_valid:
             polys.append(pts)
+            continue
+        # DirectWrite (Windows) hands one glyph's outer AND its counter as
+        # ONE concatenated ring — self-crossing where the jump edge cuts
+        # across.  buffer(0) untangles it back into filled parts; their
+        # exterior rings and interior rings fall out as separate loops,
+        # and the containment tree below does the rest.
+        g = g.buffer(0)
+        for part in getattr(g, "geoms", [g]):
+            if part.is_empty or not isinstance(part, _Poly):
+                continue
+            polys.append(np.asarray(part.exterior.coords[:-1], float))
+            for hole in part.interiors:
+                polys.append(np.asarray(hole.coords[:-1], float))
     if not polys:
         return []
 
