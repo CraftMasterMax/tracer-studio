@@ -1160,6 +1160,11 @@ class MainWindow(QMainWindow):
                                       and np.allclose(c[0], c[-1]))
                             ops.append(("poly", [tuple(p) for p in c],
                                         bool(closed)))
+                for name in placed:            # M97: hidden lines travel
+                    for c in self.drawing.hidden_page(name):
+                        if len(c) > 1:
+                            ops.append(("poly", [tuple(p) for p in c],
+                                        False))
                 # M94: the bubbles' ink travels (the paper text is the
                 # PNG's job — DXF line art only)
                 if self.doc.drawings:

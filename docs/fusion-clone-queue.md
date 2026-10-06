@@ -679,6 +679,24 @@ painting a dead one. Honest scope: one body per sheet (the model
 result), moves are translation only — rotation and per-view scale are
 ahead.
 
+**M97 — Hidden lines: the sheet dashes what the body hides.** ✓
+SHIPPED.  A drawing of only visible edges is a shadow puppet. An edge
+is HIDDEN when neither adjacent face looks at the viewer (both face
+away) AND the fold is sharp (>40° — so a smooth wall never dashes
+into a mesh wireframe and spheres stay clean), AND its midpoint lands
+STRICTLY inside the front-facing silhouette region — the region the
+visible faces actually cover, holes subtracted (a bore is a hole in
+the paper). That clip is what makes it correct where the naive
+version drowns: rim-on-rim coincidences (through holes, a convex
+body's face-on outline) project onto the region's boundary and clip
+away, so the plate's top view stays clean while a block's iso grows
+its three back edges meeting at the hidden corner. Hidden chains are
+projections, never paper: they re-derive on every repaint, ride the
+M96 view drags, follow a squash of the model, and travel into DXF
+export. Honest scope: hidden BACK CREASES only — grazing back edges
+(an interior bore's profile lines in a front view) are the refinement
+ahead; one body per sheet.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

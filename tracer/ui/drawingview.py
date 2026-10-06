@@ -70,11 +70,31 @@ class DrawingCanvas(QWidget):
     def chains(self, view: str = "top") -> list:
         return self.views().get(view, [])
 
-    def placed(self) -> dict:
+    def hidden_views(self) -> dict:
+        """M97: dashed back creases per view (model space, live)."""
+        if self.doc is None or self.doc.result is None:
+            return {}
+        return {v: drawing.project_hidden(self.doc.result, view=v)
+                for v in drawing.STANDARD}
+
+    def hidden_page(self, view: str) -> list:
+        """Hidden chains in sheet-mm page coords — moves included,
+        since the frame they ride on already carries the view's move."""
+        if self.doc is None or self.doc.result is None:
+            return []
+        sc, off = self.frames()[view]
+        return [[(float(p[0] * sc + off[0]), float(p[1] * sc + off[1]))
+                 for p in c]
+                for c in drawing.project_hidden(self.doc.result,
+                                                view=view)]
+
+    def placed(self, views: dict | None = None) -> dict:
         """Per view: {sc, off, min, max, chains} — the shared M94
         placement (page = model * sc + off, y-up sheet mm). M96: the
-        draughtsman's per-view moves ride on the assistant's slots."""
-        return drawing.place(self.views(), page=self.page,
+        draughtsman's per-view moves ride on the assistant's slots.
+        Pass `views` to reuse a fresh projection instead of redoing it."""
+        views = self.views() if views is None else views
+        return drawing.place(views, page=self.page,
                              moves=self.sheet().get("move"))
 
     def layout(self) -> dict:
@@ -282,8 +302,9 @@ class DrawingCanvas(QWidget):
                    Qt.AlignLeft | Qt.AlignVCenter,
                    f"{name}   {self.page}   1:{max(1, round(1 / self.page_scale()))}"
                    if self.views() else name)
-        # views + bubbles (one placement pass for both)
-        placed = self.placed()
+        # views + hidden ink + bubbles (one placement pass for all)
+        views = self.views()
+        placed = self.placed(views)
         p.setPen(QPen(QColor(28, 30, 34), max(1.0, 0.35 * self._zoom)))
         for view in placed.values():
             for c in view["chains"]:
@@ -292,6 +313,21 @@ class DrawingCanvas(QWidget):
                 pts = [self.s2p(x, y) for x, y in c]
                 for i in range(len(pts) - 1):
                     p.drawLine(pts[i], pts[i + 1])
+        if self.doc is not None and self.doc.result is not None:
+            hp = QPen(QColor(140, 144, 150), max(0.8, 0.28 * self._zoom))
+            hp.setStyle(Qt.DashLine)
+            p.setPen(hp)                        # M97: dashed back creases
+            for name in placed:
+                for c in drawing.project_hidden(
+                        self.doc.result, view=name,
+                        visible=views.get(name, [])):
+                    pts = [self.s2p(p2[0] * placed[name]["sc"]
+                                    + placed[name]["off"][0],
+                                    p2[1] * placed[name]["sc"]
+                                    + placed[name]["off"][1])
+                           for p2 in c]
+                    for i in range(len(pts) - 1):
+                        p.drawLine(pts[i], pts[i + 1])
         self._draw_dims(p, placed)
 
     def _draw_dims(self, p: QPainter, placed: dict):

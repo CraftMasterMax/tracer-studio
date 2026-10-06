@@ -143,6 +143,94 @@ SLOTS = {"top": (0.28, 0.72), "iso": (0.72, 0.72),
          "front": (0.28, 0.28), "right": (0.72, 0.28)}
 
 
+def _front_region(chains: list):
+    """The draughting 'paper' the visible faces cover: closed rings
+    unioned, inner rings subtracted (a bore is a hole in the region).
+    None when the view has no closed loop at all."""
+    from shapely.geometry import MultiPoint, Polygon
+    from shapely.ops import unary_union
+    rings = []
+    for c in chains:
+        P = np.asarray(c, float)
+        if len(P) > 3 and np.allclose(P[0], P[-1], atol=1e-6):
+            try:
+                poly = Polygon(P)
+            except Exception:
+                continue
+            if poly.is_valid and poly.area > 1e-9:
+                rings.append(poly)
+    if not rings:
+        # the chain walk can weave creases INTO the silhouette ring
+        # (a box's iso hexagon arrives as open trails): fall back to
+        # the convex hull of everything visible — the safe outer
+        pts = np.vstack([np.asarray(c, float) for c in chains
+                         if len(c) > 1])
+        if len(pts) < 3:
+            return None
+        hull = MultiPoint(pts).convex_hull
+        return hull if hull.area > 1e-9 else None
+    rings.sort(key=lambda q: -q.area)
+    outers, region = [], None
+    for i, p in enumerate(rings):
+        rp = p.representative_point()
+        if any(j != i and q.area > p.area and q.contains(rp)
+               for j, q in enumerate(rings)):
+            continue                       # nested: it's a hole, not an outer
+        holes = [q for q in rings
+                 if q is not p and q.area < p.area
+                 and p.contains(q.representative_point())]
+        piece = p.difference(unary_union(holes)) if holes else p
+        outers.append(piece)
+        region = piece if region is None else region.union(piece)
+    return region
+
+
+def project_hidden(solid, view: str = "top", eps: float = 1e-6,
+                   visible: list | None = None) -> list:
+    """M97: the dashed chains. An edge hides when NEITHER adjacent
+    face looks at the viewer (both face away) AND the fold is sharp
+    (>40° — a smooth wall never dashes into a mesh wireframe) AND the
+    segment midpoint falls strictly INSIDE the front-facing silhouette
+    region, so rim-on-rim coincidences (through holes, convex
+    outlines) clip away exactly as the draughting standard expects.
+    `visible` may carry a precomputed project_view to skip rework."""
+    tm = solid.to_trimesh()
+    if not len(tm.faces) or not len(tm.face_adjacency):
+        return []
+    d, X, Y = _basis(view)
+    facing = tm.face_normals @ d
+    v2 = np.stack([tm.vertices @ X, tm.vertices @ Y], axis=1)
+    s = facing[tm.face_adjacency]
+    a, b = s[:, 0], s[:, 1]
+    n = tm.face_normals[tm.face_adjacency]
+    back = (a <= -eps) & (b <= -eps) & \
+        ((n[:, 0] * n[:, 1]).sum(axis=1) < math.cos(math.radians(40.0)))
+    if not back.any():
+        return []
+    vis = (project_view(solid, view=view, eps=eps)
+           if visible is None else visible)
+    region = _front_region(vis)
+    if region is None:
+        return []
+    from shapely.geometry import Point
+    segs = v2[tm.face_adjacency_edges[back]]
+    keep = [seg for seg in segs
+            if region.contains(Point((seg[0] + seg[1]) * 0.5))]
+    if not keep:
+        return []
+    chains = _chain(np.asarray(keep))
+    # a hidden chain that merely re-traces visible ink is noise
+    vpts = {(round(float(p[0]), 6), round(float(p[1]), 6))
+            for c in vis for p in c}
+    out = []
+    for c in chains:
+        pts = [(round(float(p[0]), 6), round(float(p[1]), 6)) for p in c]
+        if all(p in vpts for p in pts):
+            continue
+        out.append([(float(p[0]), float(p[1])) for p in c])
+    return out
+
+
 def fit_circle(chain):
     """M95: ((cx, cy), r) when a projected closed chain is (near) a
     circle — a face-on circular edge under an orthographic view:
