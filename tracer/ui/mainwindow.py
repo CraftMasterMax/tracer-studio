@@ -2492,10 +2492,26 @@ class MainWindow(QMainWindow):
         self.sketch = SketchCanvas()
         self.sketch.profiles_ready.connect(self._on_profiles)
         self.sketch.state_changed.connect(self._on_sketch_state)
+        self._wire_sketch_params(self.sketch)      # M89 fx sees the sheet
         self._snap_btn.setChecked(self.sketch._snap_grid)
         lay.addWidget(bar)
         lay.addWidget(self.sketch, 1)
         return page
+
+    def _wire_sketch_params(self, cv):
+        """M89: hand the editor a live look at the parameter sheet —
+        fx is validated and applied in the document's measures, so a
+        dimension speaks the same grammar as the rebuild does."""
+        def provide():
+            if self.doc is None or not self.doc.params:
+                return {}, 1.0
+            from ..core import units
+            try:
+                return (params.resolve(self.doc.params),
+                        units.PER_MM[self.doc.units])
+            except Exception:                 # broken sheet: fx declines
+                return {}, 1.0
+        cv._params_provider = provide
 
     def _on_sketch_state(self, res):
         """Toolbar constraint voice (M73): Fusion says when a sketch is

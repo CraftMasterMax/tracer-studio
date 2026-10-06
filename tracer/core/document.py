@@ -669,6 +669,28 @@ class Document:
         return m
 
     # ---- evaluation ------------------------------------------------------
+    def _refresh_sketch_feature(self, f, values, scale):
+        """M89: re-derive an extrude/revolve profile from its sketch
+        payload with parameter-driven dimension formulas applied —
+        a sheet edit moves the solid.  The payload itself is rewritten
+        from the solved model, so reopening the editor sees the truth."""
+        from .sketch.model import model_from_dict, model_to_dict
+        from .sketch.profile import regions
+        m = model_from_dict(f.sketch)
+        m.apply_dim_params(values, scale)
+        m.solve()
+        loops, _w = m.to_loops()
+        regs = regions(loops)
+        if not regs:
+            raise ValueError(f"{f.name}: sketch lost its closed profile "
+                             "after the parameter change")
+        i = min(max(int(getattr(f, "region", 0) or 0), 0), len(regs) - 1)
+        r = regs[i]
+        f.outer = np.asarray(r["points"], float)
+        f.holes = [np.asarray(h["points"], float)
+                   for h in r.get("holes", [])]
+        f.sketch = dict(f.sketch, **model_to_dict(m))
+
     def recompute(self) -> Solid | None:
         if self.params:                   # M81: the sheet drives levers
             from . import units
@@ -677,6 +699,9 @@ class Document:
             for f in self.features:
                 if f.bindings:
                     f.apply_bindings(vals, sc)
+                sk = getattr(f, "sketch", None)
+                if sk and sk.get("dim_exprs"):        # M89 fx dimensions
+                    self._refresh_sketch_feature(f, vals, sc)
         acc: Solid | None = None
         by_uid: dict[str, Solid] = {}
         for pos, f in enumerate(self.features):

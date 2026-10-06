@@ -25,8 +25,8 @@ from ..core.sketch.constraints import (Angle, AngleBetween, Collinear,
                                        make_tangent, snapped)
 from ..core.sketch.entities import (Arc, Circle, Ellipse, Line, Point,
                                      curve_center, curve_radius)
-from ..core.sketch.model import (SketchModel, math_dist, model_from_dict,
-                                 model_to_dict)
+from ..core.sketch.model import (_dim_tag, SketchModel, math_dist,
+                                 model_from_dict, model_to_dict)
 from ..core.sketch.profile import regions
 from .cmddialog import Shell
 
@@ -102,6 +102,10 @@ class SketchCanvas(QWidget):
         self._sel: list = []
         self._redundant: set = set()          # M87 diagnosis (ids)
         self._conflicting: set = set()        # M87 diagnosis (ids)
+        self._params_provider = lambda: ({}, 1.0)   # M89 fx look at sheet
+        self._pending = None                 # M90: ("line"|"circle"|..., e)
+        self._num_buf = ""                   # M90: type-in digits so far
+        self._pending_stage = 0              # M90: rect width then height
         self._drag_pt: Point | None = None
         self._pan_from: QPointF | None = None
         self._line_start: Point | None = None
@@ -167,6 +171,9 @@ class SketchCanvas(QWidget):
         # keep THIS model's identity: sid links features to their sketch
         self.model.sketch = tmp.sketch
         self.model.refs = tmp.refs              # projected edges undo too
+        self.model.dim_exprs = tmp.dim_exprs    # M89 fx bindings undo too
+        self._pending = None                    # M90: type-ins don't survive
+        self._num_buf = ""                      # a history jump
         self._sel = []
         self._drag_pt = None
         self._line_start = None
@@ -376,6 +383,10 @@ class SketchCanvas(QWidget):
 
     # ---- mouse -----------------------------------------------------------
     def mousePressEvent(self, ev: QMouseEvent):
+        if (ev.button() == Qt.LeftButton
+                and self._pending is not None):        # M90: new stroke
+            self._pending = None                       # drops the type-in
+            self._num_buf = ""
         if self.model is None:
             return
         q = ev.position()
@@ -419,6 +430,9 @@ class SketchCanvas(QWidget):
                     self._auto_constraints(ln, q)
                     self._solve()
                     self._line_start = p
+                    self._pending = ("line", ln)      # M90: type a length
+                    self._pending_stage = 0
+                    self._num_buf = ""
             self.update()
         elif self._tool == "rect":
             # Fusion parity: supports BOTH corner-drag and click-move-click,
@@ -436,8 +450,12 @@ class SketchCanvas(QWidget):
                 self._preview = None
                 if math.hypot(b.x - a.x, b.y - a.y) * self._scale > 6:
                     self._push_hist()
-                    self.model.add_rect(a, b)
+                    lines = self.model.add_rect(a, b)
                     self._solve()
+                    if lines:                         # M90: width, height
+                        self._pending = ("rect", lines)
+                        self._pending_stage = 0
+                        self._num_buf = ""
             self.update()
         elif self._tool == "circle":
             if self._rect_corner is None:
@@ -455,8 +473,11 @@ class SketchCanvas(QWidget):
                 r = math.hypot(xy[0] - a.x, xy[1] - a.y)      # would add 2
                 if r * self._scale > 4:                       # phantom dof
                     self._push_hist()
-                    self.model.add_circle(a, r)
+                    cc = self.model.add_circle(a, r)
                     self._solve()
+                    self._pending = ("circle", cc)    # M90: type a radius
+                    self._pending_stage = 0
+                    self._num_buf = ""
             self.update()
         elif self._tool == "ellipse":
             # centre-first, exactly like the circle: the second click's
@@ -503,7 +524,10 @@ class SketchCanvas(QWidget):
                     if flat:
                         self.model.add_line(a, b)    # flat enough -> line
                     else:
-                        self.model.sketch.arc(a, mid, b)
+                        ar = self.model.sketch.arc(a, mid, b)
+                        self._pending = ("arc", ar)  # M90: type a radius
+                        self._pending_stage = 0
+                        self._num_buf = ""
                     self._solve()
             self.update()
         elif self._tool == "slot":
@@ -633,9 +657,13 @@ class SketchCanvas(QWidget):
             self._push_hist()
             p0 = rc if rc is not None else self.model.point(*a)
             p1 = self.model.point(*b)
-            self.model.add_rect(p0, p1)
+            lines = self.model.add_rect(p0, p1)
             self._solve()
             committed = True
+            if lines:                           # M90: width, height
+                self._pending = ("rect", lines)
+                self._pending_stage = 0
+                self._num_buf = ""
         elif kind == "circle":
             r = float(np.linalg.norm(b - a))
             if r * self._scale > 4:
@@ -645,6 +673,9 @@ class SketchCanvas(QWidget):
                 c = self.model.add_circle(c0, r)
                 self._solve()
                 committed = True
+                self._pending = ("circle", c)   # M90: type a radius
+                self._pending_stage = 0
+                self._num_buf = ""
         elif kind == "ellipse":
             rx, ry = abs(float(b[0] - a[0])), abs(float(b[1] - a[1]))
             if rx * self._scale > 4 and ry * self._scale > 4:
@@ -1097,6 +1128,22 @@ class SketchCanvas(QWidget):
         k = ev.key()
         if self.model is None:
             return super().keyPressEvent(ev)
+        if self._pending is not None:               # M90: type-in first
+            txt = ev.text()
+            if txt.isdigit() or txt == ".":
+                if len(self._num_buf) < 12:
+                    self._num_buf += txt
+                self.update()
+                return
+            if k == Qt.Key_Backspace:
+                self._num_buf = self._num_buf[:-1]
+                self.update()
+                return
+            if k in (Qt.Key_Return, Qt.Key_Enter):
+                self._commit_typed()
+                return
+            self._pending = None                    # any other key lets go
+            self._num_buf = ""                      # ...and is still heard
         sel = self._sel
         if k == Qt.Key_Escape:
             self._line_start = None
@@ -1230,6 +1277,7 @@ class SketchCanvas(QWidget):
             self._draw_entities(p)
             self._draw_dimensions(p)
             self._draw_glyphs(p)
+            self._draw_typein(p)              # M90: the live number chip
             self._draw_preview(p)
         self._draw_band(p)
         self._draw_hud(p)
@@ -1242,7 +1290,8 @@ class SketchCanvas(QWidget):
         p.setFont(self._font)
         fm = p.fontMetrics()
         seen_pivots = []                 # screen pts of angle dims so far
-        for c in sk.constraints:
+        for ci, c in enumerate(sk.constraints):
+            bound = ci in self.model.dim_exprs      # M89: fx-driven dims
             text = pos = None
             if isinstance(c, Distance):
                 mid = self.w2s((c.p.x + c.q.x) / 2, (c.p.y + c.q.y) / 2)
@@ -1274,12 +1323,15 @@ class SketchCanvas(QWidget):
                 text = f"{math.degrees(c.value) % 180:.2f}\u00b0"
             if text is None:
                 continue
+            if bound:                       # M89: Fusion shows "=" driven
+                text = f"= {text}"
             br = fm.boundingRect(text)
             rect = QRectF(pos.x() - br.width() / 2 - 5,
                           pos.y() - br.height() / 2 - 2,
                           br.width() + 10, br.height() + 4)
             p.setBrush(QColor("#3f444c"))
-            p.setPen(QPen(QColor("#2c6fb8"), 1))
+            p.setPen(QPen(QColor("#4ea1ff") if bound
+                         else QColor("#2c6fb8"), 1))
             p.drawRoundedRect(rect, 3, 3)
             p.setPen(FG)
             p.drawText(rect, Qt.AlignCenter, text)
@@ -1307,15 +1359,110 @@ class SketchCanvas(QWidget):
             # editing never flips the line through 180°
             c.value = snapped(c.measured(), math.radians(val))
         else:
-            val, ok = Shell.getDouble(self, "Edit dimension",
-                                             "Value (mm):", float(c.value),
-                                             0.001, 1e6, 3)
-            if not ok:
+            # M89: the number field plus an fx line — a formula here
+            # binds the dimension to the parameter sheet, live
+            from . import cmddialog
+            from ..core.params import ParamError, eval_expr
+            i = next((j for j, cc in
+                      enumerate(self.model.sketch.constraints)
+                      if cc is c), None)
+            rec = self.model.dim_exprs.get(i) if i is not None else None
+            v = cmddialog.ask(self, "Edit dimension", [
+                dict(key="val", kind="double", label="Value (mm)",
+                     default=round(float(c.value), 3), min=0.001,
+                     max=1e6, decimals=3),
+                dict(key="fx", kind="text",
+                     label="fx  (blank = plain number)",
+                     default=(rec or {}).get("e", ""))])
+            if v is None:
                 return
-            self._push_hist()
-            c.value = float(val)
+            expr = str(v["fx"]).strip().lstrip("=").strip()
+            if expr:
+                vals, sc = self._params_provider()
+                try:
+                    newv = float(eval_expr(expr, vals)) * sc
+                except ParamError as e:
+                    self._warn(f"Binding refused: {e}")
+                    self.update()
+                    return                       # the number stays honest
+                self._push_hist()
+                if i is not None:
+                    self.model.dim_exprs[i] = {"e": expr, "t": _dim_tag(c)}
+                c.value = newv
+            else:
+                self._push_hist()
+                if i is not None:
+                    self.model.dim_exprs.pop(i, None)
+                c.value = float(v["val"])
         self._solve()
         self.update()
+
+    def _commit_typed(self):
+        """M90: Enter mid-type-in mints exactly the constraint act_dim
+        would — same remove_last habit (re-typing never stacks), same
+        solver — only without the dialog."""
+        try:
+            v = max(float(self._num_buf), 0.001)
+        except ValueError:
+            self._num_buf = ""          # blank or stray ".": Enter is a no-op
+            self.update()
+            return
+        kind, ent = self._pending
+        self._push_hist()
+        if kind == "line":
+            self.model.remove_last(Distance, (ent.a, ent.b))
+            self.model.constrain(Distance(ent.a, ent.b, v))
+            self._pending = None
+        elif kind in ("circle", "arc"):
+            self.model.remove_last(Radius, (ent,))
+            self.model.constrain(Radius(ent, v))
+            self._pending = None
+        elif kind == "rect":
+            ln = ent[0] if self._pending_stage == 0 else ent[1]
+            self.model.remove_last(Distance, (ln.a, ln.b))
+            self.model.constrain(Distance(ln.a, ln.b, v))
+            if self._pending_stage == 0:
+                self._pending_stage = 1     # the next number is the height
+            else:
+                self._pending = None
+        self._num_buf = ""
+        self._solve()
+        self.update()
+
+    def _typein_pos(self):
+        """Where Fusion's little white box lives for the armed entity."""
+        kind, ent = self._pending
+        if kind == "line":
+            return self.w2s((ent.a.x + ent.b.x) / 2, (ent.a.y + ent.b.y) / 2)
+        if kind == "circle":
+            return self.w2s(ent.c.x + ent.r, ent.c.y)
+        if kind == "arc":
+            return self.w2s(ent.m.x, ent.m.y)
+        if kind == "rect":
+            ln = ent[0] if self._pending_stage == 0 else ent[1]
+            return self.w2s((ln.a.x + ln.b.x) / 2, (ln.a.y + ln.b.y) / 2)
+        return None
+
+    def _draw_typein(self, p: QPainter):
+        """The chip itself: same visual family as a dimension label, so
+        it reads as 'this number is about to become that dimension'."""
+        if self._pending is None or not self._num_buf:
+            return
+        at = self._typein_pos()
+        if at is None:
+            return
+        fm = p.fontMetrics()
+        br = fm.boundingRect(self._num_buf)
+        rect = QRectF(at.x() - br.width() / 2 - 6,
+                      at.y() - br.height() / 2 - 3,
+                      br.width() + 12, br.height() + 6)
+        p.setFont(self._font)
+        p.setBrush(QColor("#3f444c"))
+        p.setPen(QPen(QColor("#4ea1ff"), 1.4))
+        p.drawRoundedRect(rect, 3, 3)
+        p.setPen(FG)
+        p.drawText(rect, Qt.AlignCenter, self._num_buf)
+        p.setBrush(Qt.NoBrush)
 
     def _grid_step(self) -> float:
         for s in (0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500):

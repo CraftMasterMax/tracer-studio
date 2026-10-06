@@ -157,8 +157,11 @@ def test_canvas_badge_edit_and_arc_anchor(win, qapp, monkeypatch):
     cv.act_dim()
     con = cv.model.sketch.constraints[-1]
     # double-click editing path (badge hit already covered in m8)
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *a, **k: (9.0, True)))
+    # M89: dimension edits ride the fx dialog now; blank fx = plain number
+    from tracer.ui import cmddialog
+    monkeypatch.setattr(cmddialog, "ask",
+                        staticmethod(lambda *a, **k: {"val": 9.0,
+                                                      "fx": ""}))
     cv._edit_dim(con)
     qapp.processEvents()
     assert con.value == 9.0

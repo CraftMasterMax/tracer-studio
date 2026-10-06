@@ -534,6 +534,42 @@ state, never serialized, exactly like Fusion not baking your rubber
 band into the file.  Suppress (which already existed) hides one
 feature; the band rewinds time.
 
+**M89 — Sketch dimensions carry formulas (M81b, the deeper half).**
+✓ SHIPPED.  M81 put fx on FEATURE levers; this puts fx on the
+DIMENSIONS. Double-clicking a dimension label now opens a dialog with
+a formula line: type `width * 2` and the dimension binds to the
+parameter sheet — validated against the sheet names, refused loudly on
+unknowns, released by blanking the fx field. Bindings are
+{constraint-index: {expr, type-tag}} stored in the sketch payload; the
+type tag refuses to silently re-drive a different dimension if
+geometry was edited underneath (it idles with a warning), so a stale
+fx can never move the wrong edge. The rebuild half is the real work:
+`Document._refresh_sketch_feature` re-derives extrude/revolve profiles
+from the payload (model → apply formulas → solve → regions →
+outer/holes) whenever parameters exist, and rewrites the payload from
+the solved model so reopening the editor sees the truth. Sheet edit ⇒
+solid follows, demonstrated: width 30→50 moves the extrusion
+3000→5000 mm³. Driven dimensions paint Fusion's `= 50.00` chip
+(accent border) on canvas, and two legacy m5 tests now ride the fx
+dialog (blank fx = the old plain-number edit, byte-identical results).
+Honest scope: linear dimensions scale with document measures, angles
+never do; hole/loft/sweep sketches keep frozen geometry for now;
+bindings undo with the sketch (they serialize in the payload, and
+`_restore` copies them like M82's refs — the same trap, twice caught).
+
+**M90 — Type a number right after drawing.** ✓ SHIPPED.  Fusion's
+fastest verb: draw a line, hit 4-0-Enter, the line IS 40 mm. Line,
+circle, arc and rectangle creation leave a type-in armed; digits
+buffer into a small accent-bordered chip at the geometry (Fusion's
+little white box), Enter mints exactly the constraint act_dim would —
+including its remove_last habit, so re-typing never stacks dimensions
+— and Esc, any tool key, or the next stroke lets go cleanly.
+Rectangles take TWO numbers like Fusion: width Enter, height Enter,
+landing on the auto-H/V bottom and side edges the rect tool mints.
+Undo rolls a typed dimension back with the geometry. Honest scope:
+plain numbers (fx formulas stay in the dimension dialog), millimetres,
+ellipses/slots not armed yet.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

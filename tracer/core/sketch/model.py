@@ -86,6 +86,15 @@ def face_basis(normal) -> tuple:
     return u, v
 
 
+def _dim_tag(c) -> str:
+    """Type fingerprint for a dimension binding (M89): a binding only
+    drives a constraint whose serialized type still matches."""
+    return ("D" if isinstance(c, Distance) else
+            "R" if isinstance(c, Radius) else
+            "ang" if isinstance(c, Angle) else
+            "angb" if isinstance(c, AngleBetween) else "?")
+
+
 class SketchModel:
     def __init__(self, plane: str = "XY"):
         self.sketch = Sketch()
@@ -94,6 +103,7 @@ class SketchModel:
         self.axes: list | None = None      # FACE plane: [u, v] as 3-lists
         self.origin: tuple = (0.0, 0.0, 0.0)
         self.refs: list = []         # projected model edges (M82 refs)
+        self.dim_exprs: dict = {}    # M89: constraint idx -> {e, t}
         self.sid = id(self)          # association key while in memory
 
     # ---- entity factory --------------------------------------------------
@@ -451,6 +461,32 @@ class SketchModel:
                                        if id(c) not in temp_ids]
         return res
 
+    def apply_dim_params(self, values: dict, scale: float = 1.0) -> list:
+        """M89: write parameter-driven formulas into bound dimensions.
+        Bindings are {constraint-index: {e: expr, t: type-tag}}; a gone
+        constraint or a type that moved under the binding IDLES it (with
+        a warning) instead of silently driving the wrong dimension.
+        Linear dimensions speak the document's measures and scale to
+        stored millimetres; angles never scale.  Returns warnings."""
+        from ..params import eval_expr
+        warns: list = []
+        cons = self.sketch.constraints
+        for k in sorted(self.dim_exprs, key=int):
+            i = int(k)
+            rec = self.dim_exprs[k]
+            if not (0 <= i < len(cons)):
+                warns.append(f"fx on dimension {i}: constraint is gone")
+                continue
+            c = cons[i]
+            if _dim_tag(c) != rec.get("t"):
+                warns.append(f"fx on dimension {i}: type changed — idle")
+                continue
+            v = float(eval_expr(rec["e"], values))
+            if not isinstance(c, (Angle, AngleBetween)):
+                v *= float(scale)
+            c.value = v
+        return warns
+
     # ---- profile extraction ----------------------------------------------------
     def project(self, verts, faces) -> int:
         """Fusion's Project/Include, honest for a mesh kernel: slice the
@@ -666,6 +702,8 @@ def model_to_dict(m: SketchModel) -> dict:
     d["refs"] = [{"pts": [[float(x), float(y)]
                           for x, y in np.asarray(r["pts"], float)],
                   "closed": bool(r["closed"])} for r in m.refs]
+    d["dim_exprs"] = {str(int(k)): dict(rec)
+                      for k, rec in m.dim_exprs.items()}   # M89 fx
     return d
 
 
@@ -717,6 +755,8 @@ def model_from_dict(d: dict) -> SketchModel:
     m.refs = [{"pts": np.asarray(r["pts"], float),
                "closed": bool(r.get("closed", False))}
               for r in d.get("refs", [])]        # pre-M82 files: none
+    m.dim_exprs = {int(k): dict(rec) for k, rec
+                   in d.get("dim_exprs", {}).items()}   # M89 fx
     for c in d.get("constraints", []):
         t = c["t"]
         if t == "H":

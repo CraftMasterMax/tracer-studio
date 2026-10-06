@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QApplication,        # noqa: E402
                                QInputDialog)
 
 from tracer.core.sketch.constraints import Distance, Fixed, Radius  # noqa: E402
+from tracer.ui import cmddialog                          # noqa: E402
 from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.document import ExtrudeFeature      # noqa: E402
 
@@ -77,7 +78,11 @@ def test_dimension_labels_appear_and_edit_drives_solid(win, qapp, monkeypatch):
 
     rect, dim = next((r, c) for r, c in cv._dim_hits
                      if isinstance(c, Distance))
-    answers.append(60.0)                  # new width via label double-click
+    # M89: the label double-click opens the fx dialog now; a plain
+    # number with a blank fx edits the dimension exactly as before
+    monkeypatch.setattr(cmddialog, "ask",
+                        staticmethod(lambda *a, **k: {"val": 60.0,
+                                                      "fx": ""}))
     QTest.mouseDClick(cv, Qt.LeftButton, Qt.NoModifier,
                       rect.center().toPoint(), 10)
     qapp.processEvents()
@@ -102,9 +107,10 @@ def test_radius_label_edit(win, qapp, monkeypatch):
     cv.grab()
     rect, rad = next((r, c) for r, c in cv._dim_hits
                      if isinstance(c, Radius))
-    vals = iter([9.0])
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *a, **k: (next(vals), True)))
+    # M89: radius labels edit through the fx dialog too; blank fx = plain
+    monkeypatch.setattr(cmddialog, "ask",
+                        staticmethod(lambda *a, **k: {"val": 9.0,
+                                                      "fx": ""}))
     QTest.mouseDClick(cv, Qt.LeftButton, Qt.NoModifier,
                       rect.center().toPoint(), 10)
     qapp.processEvents()
