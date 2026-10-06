@@ -28,6 +28,8 @@ class FeatureTree(QTreeWidget):
     feature_menu = Signal(object, object)   # Feature, global QPoint
     cplane_menu = Signal(str, object)       # plane name, global QPoint
     body_menu = Signal(object)              # global QPoint
+    feature_delete = Signal(object)         # Feature (Del key, M72)
+    feature_rename = Signal(object)         # Feature (F2 key, M72)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -168,6 +170,19 @@ class FeatureTree(QTreeWidget):
             if idx < len(self._doc.features):
                 return self._doc.features[idx]
         return None
+
+    def keyPressEvent(self, ev):
+        """Fusion's browser key grammar (M72): Del removes the selected
+        feature, F2 renames it — same paths as the context menu."""
+        f = self.current_feature()
+        if f is not None and ev.key() in (Qt.Key_Delete,
+                                          Qt.Key_Backspace):
+            self.feature_delete.emit(f)
+            return
+        if f is not None and ev.key() == Qt.Key_F2:
+            self.feature_rename.emit(f)
+            return
+        super().keyPressEvent(ev)
 
 
 class PropertiesPanel(QWidget):

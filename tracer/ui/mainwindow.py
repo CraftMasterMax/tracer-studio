@@ -82,6 +82,9 @@ class MainWindow(QMainWindow):
         self.rail.tree.feature_menu.connect(self._feature_menu)
         self.rail.tree.cplane_menu.connect(self._cplane_menu)
         self.rail.tree.body_menu.connect(self._body_menu)
+        self.rail.tree.feature_delete.connect(self._delete_feature)
+        self.rail.tree.feature_rename.connect(self._rename_feature)
+        self.viewport.zoom_selection.connect(self._zoom_to_selection)
 
         split = QSplitter(Qt.Horizontal)
         split.addWidget(self.rail)

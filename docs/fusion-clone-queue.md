@@ -306,6 +306,17 @@ math is kernel truth: a 20 mm cube is 8 g at density 1.0, and a plate
 plus a post balances its centre of mass to the weighted-millimetres
 arithmetic a physics tutor would sign.
 
+**M72 — Keyboard grammar: Del, F2, Z.** ✓ SHIPPED.  The browser tree
+now speaks Fusion's muscle memory: Delete (or Backspace) on a selected
+feature routes the EXACT context-menu handler — undoable, recompute-
+clean — and F2 opens the rename prompt.  On the canvas, Z frames the
+picked faces.  Chasing why Z appeared inert uncovered a silent M59
+regression: selection_bbox took min/max over the (N,3,3) triangle-corner
+block and handed back matrices, so zoom-to-selection had been throwing
+inside the key handler since selection went multi-face.  It now flattens
+the corners — pinned by a shape-exact test — and an end face fits at half
+the distance.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

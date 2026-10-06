@@ -56,6 +56,7 @@ class Viewport(QWidget):
     rotate_drag = Signal(object)           # Rotate (M55) drag payload dict
     context_request = Signal(object)       # RMB no-drag: marking menu pos
     selection_changed = Signal(int)        # live measure: faces now selected
+    zoom_selection = Signal()              # Z hotkey: zoom to what's picked
     zoom_window = Signal(object)           # Zoom-window (M62) payload dict
 
     def __init__(self, renderer: SceneRenderer, parent=None):
@@ -831,11 +832,13 @@ class Viewport(QWidget):
 
     # ---- keys (F fit, G grid, 0/1/2/3 views, Esc deselect) ------------------
     def selection_bbox(self):
-        """bbox of the currently picked faces, or None (M56 zoom-to)."""
+        """bbox of the currently picked faces, or None (M56 zoom-to).
+        _sel is a list of TRIANGLES, so flatten the corner vertices
+        first — per-triangle mins were a (3,3) lie (M59 regression)."""
         if self._tm is None or not self._sel:
             return None
-        pts = np.asarray(self._tm.vertices, float)[
-            np.asarray(self._tm.faces)[self._sel]]
+        tris = np.asarray(self._tm.faces)[np.asarray(self._sel, int)]
+        pts = np.asarray(self._tm.vertices, float)[tris].reshape(-1, 3)
         return (pts.min(axis=0), pts.max(axis=0))
 
     def keyPressEvent(self, ev):
@@ -865,6 +868,9 @@ class Viewport(QWidget):
         if k == Qt.Key_F:
             if self._bbox is not None:
                 self._cam.fit(self._bbox)
+        elif k == Qt.Key_Z:                     # Fusion: zoom to selection
+            if self._sel and self.selection_bbox() is not None:
+                self.zoom_selection.emit()
         elif k == Qt.Key_G:
             self._r.show_grid = not self._r.show_grid
         elif k == Qt.Key_E:
