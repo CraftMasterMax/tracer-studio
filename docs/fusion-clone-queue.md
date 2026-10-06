@@ -604,6 +604,25 @@ Export STEP and Export render — the m15 layout pin moved with it, the
 documented pattern. Works from the live editor or straight off a
 sketch FEATURE payload (no edit needed).
 
+**M93 — Drawings phase 1: the sheet.** ✓ SHIPPED.  The maker's second
+document. No B-rep edges to harvest, so views are VIEW-DEPENDENT
+SILHOUETTES — an edge draws where one face turns toward the viewer and
+the other doesn't (away or grazing), plus a 40° crease term so the iso
+view keeps its corner Y (coplanar triangulation crumbs stay invisible
+by the same rule). Boolean tessellations scatter Steiner points along
+rims, so segments are endpoint-welded, walked into chains and
+collinear runs merged: a plate-with-hole top view = one rectangle +
+one circle, not 260 crumbs (the number that motivated the welder).
+Standard layout — top/front/right/iso in page slots, auto-fitted,
+title block bottom-right. The sheet stores only NAME + PAPER; views
+re-derive from the live model every repaint, so it can never be stale
+(proved: doubling a dimension between two snapshots doubles the view).
+Create ▸ New drawing…; A3/A4 toggle; zoom/pan; exports as PNG (pixels)
+or DXF — the drawing IS a profile, and the M83 reader proves it
+round-trips. Honest scope: visible lines only (no hidden-line pass),
+views auto-place (dragging and dimension bubbles are M94), one sheet
+per drawing entry.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

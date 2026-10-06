@@ -598,6 +598,7 @@ class Document:
         self.params: dict = {}                # user parameters (M81)
         self.configs: dict = {}               # M91: name -> {param: raw}
         self.active_config: str | None = None # M91: the one overlaying
+        self.drawings: list = []              # M93: [{name, page}]
         self.rollback_to: int | None = None   # M88 rubber band (view state)
         self._result: Solid | None = None
         self.dirty = False
@@ -910,6 +911,7 @@ class Document:
                 "params": dict(self.params),
                 "configs": {k: dict(v) for k, v in self.configs.items()},
                 "active_config": self.active_config,
+                "drawings": [dict(g) for g in self.drawings],   # M93
                 "features": [_feat(f) for f in self.features],
                 "planes": [dict(p) for p in self.planes],
                 "appearance": (dict(self.appearance)
@@ -926,6 +928,7 @@ class Document:
         doc.configs = {k: dict(v) for k, v
                        in (data.get("configs") or {}).items()}  # M91
         doc.active_config = data.get("active_config")
+        doc.drawings = [dict(g) for g in (data.get("drawings") or [])]
         for fd in data.get("features", []):
             t = fd["type"]
             base = dict(op=fd["op"], uid=fd.get("uid") or uuid.uuid4().hex[:8],

@@ -96,6 +96,8 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.viewport)
         self._sketch_page = self._make_sketch_page()
         self.stack.addWidget(self._sketch_page)
+        self._drawing_page = self._make_drawing_page()   # M93 sheet
+        self.stack.addWidget(self._drawing_page)
         split.addWidget(self.stack)
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
@@ -517,6 +519,9 @@ class MainWindow(QMainWindow):
         self.act_mirror = QAction("&Mirror…", self,
                                   triggered=lambda checked=False: self.action_mirror())
         m_cr.addActions([self.act_linpat, self.act_cirpat, self.act_mirror])
+        m_cr.addSeparator()
+        m_cr.addAction("New drawing…",
+                       lambda checked=False: self.action_new_drawing())
 
         m_mo = self.menuBar().addMenu("Mo&dify")
         self.act_fillet = QAction("&Fillet body edges…", self,
@@ -995,6 +1000,132 @@ class MainWindow(QMainWindow):
                 feature.dims = {"radius": mm("radius")}
             feature.center = tuple(mm(f"c{i}") for i in range(3))
         self.doc.dirty = True
+
+    # ---- Drawings (M93) --------------------------------------------------------
+    def _make_drawing_page(self):
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        bar = QWidget()
+        bl = QHBoxLayout(bar)
+        bl.setContentsMargins(6, 4, 6, 4)
+        bl.setSpacing(4)
+        back = QPushButton("\u2190 Back")
+        back.setProperty("tb", True)
+        back.clicked.connect(lambda: self._show_page(self.viewport))
+        bl.addWidget(back)
+        self._drawing_page_btn = back
+        pg = QPushButton("A3")
+        pg.setProperty("tb", True)
+        pg.setToolTip("Sheet size")
+        pg.clicked.connect(self._toggle_sheet)
+        bl.addWidget(pg)
+        self._sheet_btn = pg
+        ex_png = QPushButton("Export PNG\u2026")
+        ex_png.setProperty("tb", True)
+        ex_png.clicked.connect(lambda: self.export_drawing())
+        bl.addWidget(ex_png)
+        ex_dxf = QPushButton("Export DXF\u2026")
+        ex_dxf.setProperty("tb", True)
+        ex_dxf.setToolTip("The whole sheet as one DXF drawing")
+        ex_dxf.clicked.connect(
+            lambda: self.export_drawing(ext=".dxf"))
+        bl.addWidget(ex_dxf)
+        bl.addStretch(1)
+        lay.addWidget(bar)
+        from .drawingview import DrawingCanvas
+        self.drawing = DrawingCanvas()
+        lay.addWidget(self.drawing, 1)
+        return page
+
+    def _toggle_sheet(self):
+        if self.doc is None or not self.doc.drawings:
+            return
+        self._capture()
+        g = self.doc.drawings[-1]
+        g["page"] = "A4" if g.get("page", "A3") == "A3" else "A3"
+        self.drawing.page = g["page"]
+        self.drawing.set_document(self.doc)
+        self.doc.dirty = True
+        self.status.showMessage(f"Sheet: {g['page']}", 3000)
+
+    def action_new_drawing(self):
+        """Create ▸ New drawing: a sheet of live silhouette views of
+        the body — top, front, right, iso, fitted to the page."""
+        if self.doc is None:
+            return
+        if self.doc.result is None:
+            self.status.showMessage("Nothing to draw — build a body "
+                                    "first", 5000)
+            return
+        self._capture()
+        n = len(self.doc.drawings) + 1
+        name = f"Drawing{n}"
+        self.doc.drawings.append({"name": name, "page": "A3"})
+        self.doc.dirty = True
+        self.drawing.set_document(self.doc)
+        self._show_page(self._drawing_page)
+        self.recompute()
+        self.status.showMessage(
+            f"{name} created \u2014 top \u00b7 front \u00b7 right \u00b7 iso"
+            " \u00b7 live off the model", 6000)
+
+    def _open_drawing(self, idx: int):
+        if self.doc is None or not (0 <= idx < len(self.doc.drawings)):
+            return
+        self.drawing.set_document(self.doc)
+        self._show_page(self._drawing_page)
+
+    def export_drawing(self, path=None, ext=".png"):
+        """Sheet out: PNG pixels or one DXF holding every view — the
+        drawing reuses the M92 profile writer."""
+        if self.doc is None or self.drawing is None:
+            return
+        lay = self.drawing.layout()
+        if not lay:
+            self.status.showMessage("The sheet has no views to export",
+                                    5000)
+            return
+        if path is None:
+            from PySide6.QtWidgets import QFileDialog
+            base = self.doc.drawings[-1]["name"] if self.doc.drawings \
+                else "drawing"
+            flt = ("PNG (*.png)" if ext == ".png" else "DXF (*.dxf)")
+            path, _f = QFileDialog.getSaveFileName(
+                self, "Export drawing",
+                str(Path.home() / f"{base}{ext}"), flt)
+            if not path:
+                return
+        try:
+            if path.lower().endswith(".dxf"):
+                ops = []
+                for chains in lay.values():
+                    for c in chains:
+                        if len(c) > 1:
+                            closed = (len(c) > 3
+                                      and np.allclose(c[0], c[-1]))
+                            ops.append(("poly", [tuple(p) for p in c],
+                                        bool(closed)))
+                n = export2d.write_dxf(ops, path)
+            else:
+                from PySide6.QtGui import QPixmap
+                w, h = 1600, int(1600 * (self.drawing.height() /
+                                         max(1, self.drawing.width())))
+                pm = QPixmap(w, max(h, 400))
+                pm.fill()
+                from PySide6.QtGui import QPainter as _QP
+                p = _QP(pm)
+                self.drawing.resize(w, max(h, 400))
+                self.drawing.paintPage(p)
+                p.end()
+                pm.save(path)
+                n = w * h
+        except Exception as e:
+            self.status.showMessage(f"Drawing export refused: {e}", 6000)
+            return
+        self.status.showMessage(f"Drawing exported to {Path(path).name}",
+                                6000)
 
     # ---- User Parameters (M81) ----------------------------------------------
     def action_user_parameters(self):
@@ -2859,6 +2990,9 @@ class MainWindow(QMainWindow):
         self.viewport.refresh()
         self.rail.tree.reload()
         self.timeline.bar.update()
+        if self._drawing_page is not None and \
+                self.stack.currentWidget() is self._drawing_page:
+            self.drawing.update()             # M93: live views refresh
         self._apply_appearance()
         self._apply_units()
         self._update_status()
