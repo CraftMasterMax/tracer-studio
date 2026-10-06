@@ -333,6 +333,16 @@ def _move(p: QPainter):
     p.drawPolygon(tri)
 
 
+def _mass(p: QPainter):
+    """A balance scale: beam on a post, a pan each side."""
+    p.drawLine(QPointF(16, 6), QPointF(16, 24))       # post
+    p.drawLine(QPointF(6, 9), QPointF(26, 9))         # beam
+    p.drawEllipse(QPointF(16, 6), 2.0, 2.0)           # pivot
+    p.drawArc(QRectF(5, 9, 10, 8), 200 * 16, 140 * 16)   # left pan
+    p.drawArc(QRectF(17, 9, 10, 8), 200 * 16, 140 * 16)  # right pan
+    p.drawRect(QRectF(11, 24, 10, 3))                 # foot
+
+
 def _appearance(p: QPainter):
     """A paint drop landing on a brushed band."""
     path = QPainterPath()
@@ -382,7 +392,7 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "thread": _thread, "split": _split,
               "appearance": _appearance, "move": _move,
               "rotate": _rotate, "combine": _combine,
-              "primitive": _primitive})
+              "primitive": _primitive, "mass": _mass})
 
 
 def icon(name: str) -> QIcon:

@@ -59,3 +59,17 @@ def describe(a: dict, b: dict | None, unit: str = "mm") -> str:
         return (f"perpendicular, meeting at "
                 f"{units.D(closest_distance(a, b), unit)}")
     return f"angle {ang:.1f}°, closest {units.D(dist, unit)}"
+
+
+def mass_properties(solid, density_g_cm3: float = 1.0) -> dict:
+    """Fusion's Inspect ▸ Mass Properties (M71): the body's volume and
+    surface area, its mass at a material density (g/cm³ — 1 cm³ =
+    1000 mm³), and the centre of mass, which for a watertight solid is
+    the true volume centroid from the mesh kernel."""
+    vol = float(solid.volume)
+    com = np.asarray(
+        solid.to_trimesh().mass_properties.center_mass, float)
+    return dict(volume_mm3=vol,
+                area_mm2=float(solid.surface_area),
+                mass_g=vol / 1000.0 * float(density_g_cm3),
+                com=com)

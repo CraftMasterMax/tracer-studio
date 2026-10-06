@@ -26,7 +26,7 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              RevolveFeature, ShellFeature, SplitFeature,
                              SweepFeature,
                              ThreadFeature)
-from ..core.measure import describe, face_stats
+from ..core.measure import describe, face_stats, mass_properties
 from ..core import units
 from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
                                  model_to_dict, plane_uv)
@@ -58,6 +58,13 @@ def demo_document() -> Document:
 
 
 class MainWindow(QMainWindow):
+    _MATERIAL_DENSITIES = [        # label carries g/cm³ (parsed back)
+        "PLA (1.24)", "PETG (1.27)", "ABS (1.04)", "Nylon (1.14)",
+        "TPU (1.20)", "Resin (1.10)", "Water (1.00)", "Aluminium (2.70)",
+        "Steel (7.85)", "Stainless (8.00)", "Brass (8.50)",
+        "Titanium (4.50)", "Copper (8.96)",
+    ]
+
     def __init__(self, renderer: SceneRenderer | None = None):
         super().__init__()
         self.setWindowTitle("Tracer Studio")
@@ -326,6 +333,8 @@ class MainWindow(QMainWindow):
                lambda checked=False: self.action_section(None))])
         d("appearance", "Appearance — paint the body with a material",
           lambda checked=False: self.action_appearance())
+        d("mass", "Mass properties — volume, area, mass, centre of mass",
+          lambda checked=False: self.action_mass_properties())
 
         s = r.sketch_tool
         for glyph, tip, tool in (
@@ -541,6 +550,9 @@ class MainWindow(QMainWindow):
         m_tools.addAction("Document Measures…",
                           lambda checked=False:
                           self.action_document_measures())
+        m_tools.addAction("Mass properties…",
+                          lambda checked=False:
+                          self.action_mass_properties())
 
         m_help = self.menuBar().addMenu("&Help")
         self.act_tour = QAction("&Welcome tour", self,
@@ -1499,6 +1511,43 @@ class MainWindow(QMainWindow):
         u = self.doc.units if self.doc and self.doc.units in units.LABEL \
             else "mm"
         self.rail.props.set_unit(u)
+
+    def action_mass_properties(self):
+        """Fusion's Inspect ▸ Mass Properties (M71): volume, surface
+        area, mass at a material density, and the centre of mass —
+        every maker's first question ("how heavy will this print?")."""
+        if self.doc is None or self.doc.result is None:
+            QMessageBox.information(self, "Mass Properties",
+                                    "Nothing to measure yet — add a "
+                                    "feature first.")
+            return
+        s = QSettings()
+        last = str(s.value("materials/density", "PLA (1.24)"))
+        v = cmddialog.ask(self, "Mass Properties — material", [
+            dict(key="material", label="Material density (g/cm³)",
+                 kind="combo", choices=self._MATERIAL_DENSITIES,
+                 default=last if last in self._MATERIAL_DENSITIES
+                 else "PLA (1.24)"),
+        ])
+        if v is None:
+            return
+        mat = str(v["material"])
+        s.setValue("materials/density", mat)
+        dens = float(mat.split("(")[1].rstrip(")"))
+        p = mass_properties(self.doc.result, dens)
+        u = self.doc.units if self.doc.units in units.LABEL else "mm"
+        box = QMessageBox(self)
+        box.setWindowTitle("Mass Properties")
+        box.setText(
+            f"Volume:          {units.V(p['volume_mm3'], u)}\n"
+            f"Surface area:    {units.A(p['area_mm2'], u)}\n"
+            f"Material:        {mat}\n"
+            f"Mass:            {p['mass_g']:,.2f} g\n"
+            f"Centre of mass:  ({units.L(p['com'][0], u)}, "
+            f"{units.L(p['com'][1], u)}, {units.L(p['com'][2], u)})")
+        box.exec()
+        self.status.showMessage(f"Mass {p['mass_g']:,.2f} g — {mat}",
+                                5000)
 
     def action_document_measures(self):
         """Fusion Tools ▸ Document Measures (M60): choose the

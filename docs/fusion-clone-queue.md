@@ -297,6 +297,15 @@ checkbox in Change Parameters, one "extent: symmetric" line on the
 card, JSON-clean, and switching back restores the one-sided box to the
 micron.
 
+**M71 — Mass properties.** ✓ SHIPPED.  Inspect-grade answers to the
+maker's first question: Tools ▸ Mass properties (and the ribbon's balance
+glyph) asks for a material — 13 shop densities from PLA to copper, your
+last choice remembered — and answers with volume, surface area, mass in
+grammes and the true volume centroid, all in document measures.  The
+math is kernel truth: a 20 mm cube is 8 g at density 1.0, and a plate
+plus a post balances its centre of mass to the weighted-millimetres
+arithmetic a physics tutor would sign.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

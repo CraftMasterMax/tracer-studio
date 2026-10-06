@@ -92,7 +92,8 @@ def test_design_panel_groups_follow_fusion_order(win):
             "Pattern on path",
             "Fillet", "Shell", "Thread", "Split body", "Move body",
             "Rotate body", "Combine body",
-            "Construction plane", "Section analysis", "Appearance"]
+            "Construction plane", "Section analysis", "Appearance",
+            "Mass properties"]
     assert tips == want
 
 
