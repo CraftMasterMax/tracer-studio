@@ -2264,6 +2264,13 @@ class MainWindow(QMainWindow):
             b.setProperty("tb", True)
             bl.addWidget(b)
             self._tool_btns[tool] = b
+        self._sketch_mirror_btn = QPushButton(
+            "Mirror", clicked=lambda checked=False: self.sketch.act_mirror())
+        self._sketch_mirror_btn.setProperty("tb", True)
+        self._sketch_mirror_btn.setToolTip(
+            "Mirror — Shift+M: pick a line FIRST plus the geometry, "
+            "and the copies land about it")
+        bl.addWidget(self._sketch_mirror_btn)
         self._snap_btn = QPushButton("Snap to grid", checkable=True,
                                      clicked=lambda c: self.sketch
                                      .set_grid_snap(c))

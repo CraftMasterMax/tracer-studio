@@ -408,13 +408,18 @@ and radius clicks MINTED stray points, two phantom DOF per circle.
 Both fixed where they lived — tools consume their aim clicks now, and
 drags reuse the armed centre.
 
-**Queued next — M80 Mirror entities** (spec written, tests drafted at
-tests/test_m80.py, untracked): Shift+M / Mirror button / context menu
-with the FIRST selected line as axis; model.mirror_about reflects lines,
-circles, arcs (sweep swapped) and axis-parallel ellipses, SKIPS
-self-mirroring geometry (an edge on the axis must not double), and
-points ON the axis are SHARED so the two halves stitch as one profile.
-K grows to toggle construction on circles/ellipses too.
+**M80 — Mirror entities.** ✓ SHIPPED.  Shift+M, the Mirror button, or
+the two-line context menu: the FIRST selected line is the axis and
+every other curve gets a mirrored twin.  Two Fusion-grade behaviours
+make the copies geometry rather than paint: points that lie ON the
+axis are SHARED between original and twin (the halves weld into one
+profile), and geometry that mirrors onto itself is SKIPPED (an edge
+lying on the axis must not double — or the stitcher doubles material).
+Ellipses mirror about axis-parallel lines only — a slanted axis would
+need a rotated ellipse we don't model, and the copy is honestly
+skipped rather than silently wrong.  K (construction toggle) grew
+circles and ellipses in the same pass.  Mirrors are static copies —
+Fusion's parametric mirrored constraints are logged as future work.
 
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds

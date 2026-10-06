@@ -297,6 +297,57 @@ class SketchModel:
             c for c in self.sketch.constraints
             if not (isinstance(c, ctype) and self._same_entities(c, ents))]
 
+    def mirror_about(self, axis, ents) -> list:
+        """Fusion's Mirror entity tool: static mirrored COPIES of the
+        given entities about a line.  Geometry lying ON the axis keeps
+        its point — a mirrored wall butts the original through a shared
+        Point — and geometry that mirrors onto itself is skipped, so the
+        two halves stitch as one profile instead of doubling edges.
+        An Ellipse mirrors only about axis-parallel lines: a slanted
+        axis would need a rotated ellipse we do not model."""
+        ax = np.array([axis.a.x, axis.a.y], dtype=float)
+        dv = np.array([axis.b.x - axis.a.x, axis.b.y - axis.a.y],
+                      dtype=float)
+        L = float(np.hypot(*dv))
+        if L < 1e-9:
+            return []
+        d = dv / L
+        H = 2.0 * np.outer(d, d) - np.eye(2)          # Householder
+
+        def mp(p):                                    # mirrored point
+            v = np.array([p.x, p.y], dtype=float) - ax
+            q = ax + H @ v
+            if float(np.hypot(*(q - np.array([p.x, p.y])))) < 1e-9:
+                return p                              # on the axis: SHARED
+            return self.sketch.point(float(q[0]), float(q[1]))
+
+        c = self.sketch
+        made: list = []
+        for e in ents:
+            if isinstance(e, Line):
+                a2, b2 = mp(e.a), mp(e.b)
+                if a2 is e.a and b2 is e.b:
+                    continue                          # mirrors onto itself
+                made.append(c.line(a2, b2))
+            elif isinstance(e, Circle):
+                cc = mp(e.c)
+                if cc is e.c:
+                    continue
+                made.append(c.circle(cc, e.r))
+            elif isinstance(e, Ellipse):
+                if abs(d[0]) >= 1e-9 and abs(d[1]) >= 1e-9:
+                    continue                          # slanted: unsupported
+                cc = mp(e.c)
+                if cc is e.c:
+                    continue
+                made.append(c.ellipse(cc, e.rx, e.ry))
+            elif any(e is a for a in c.arcs):
+                a2, m2, b2 = mp(e.b), mp(e.m), mp(e.a)  # sweep flips
+                if a2 is e.a and m2 is e.m and b2 is e.b:
+                    continue
+                made.append(c.arc(a2, m2, b2))
+        return made
+
     def delete_entity(self, ent) -> None:
         sk = self.sketch
         sk.constraints = [c for c in sk.constraints

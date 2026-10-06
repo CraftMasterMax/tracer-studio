@@ -978,12 +978,31 @@ class SketchCanvas(QWidget):
             self._solve(); self.update()
 
     def act_construction(self):
-        if not any(isinstance(e, (Line, Arc)) for e in self._sel):
+        curves = (Line, Arc, Circle, Ellipse)
+        if not any(isinstance(e, curves) for e in self._sel):
             return
         self._push_hist()
         for e in self._sel:
-            if isinstance(e, (Line, Arc)):
+            if isinstance(e, curves):
                 e.construction = not e.construction
+        self._solve(); self.update()
+
+    def act_mirror(self):
+        """Mirror (Shift+M): the FIRST selected line is the axis; every
+        other curve in the selection gets a mirrored twin.  Geometry on
+        the axis shares its points, so the halves stay ONE profile."""
+        lines = [e for e in self._sel if isinstance(e, Line)]
+        if not lines:
+            return
+        axis = lines[0]
+        ents = [e for e in self._sel if e is not axis
+                and isinstance(e, (Line, Circle, Arc, Ellipse))]
+        if not ents:
+            return
+        self._push_hist()
+        made = self.model.mirror_about(axis, ents)
+        if made:
+            self._sel = made                 # the twins stay selected
         self._solve(); self.update()
 
     def act_delete(self):
@@ -1024,6 +1043,8 @@ class SketchCanvas(QWidget):
                 menu.addAction("Chamfer corner…", self.act_chamfer)
             else:
                 menu.addAction("Trim / extend to corner", self.act_trim)
+            menu.addSeparator()
+            menu.addAction("Mirror about first line", self.act_mirror)
         elif not sel and self.model and (self.model.sketch.lines
                                          or self.model.sketch.circles):
             menu.addAction("Offset outline\u2026 (U)", self.act_offset)
@@ -1143,6 +1164,9 @@ class SketchCanvas(QWidget):
         elif k == Qt.Key_2 and len(sel) == 2 and \
                 all(isinstance(e, (Circle, Arc)) for e in sel):
             self.act_concentric()
+        elif k == Qt.Key_M and ev.modifiers() & Qt.ShiftModifier \
+                and len(sel) >= 2:
+            self.act_mirror()               # shift+M: mirror entities
         elif k == Qt.Key_M:
             self.act_symmetry()
         elif k == Qt.Key_J:
