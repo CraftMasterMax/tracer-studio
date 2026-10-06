@@ -23,6 +23,7 @@ from ..core.measure import describe, face_stats
 from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
                                  model_to_dict, plane_uv)
 from . import icons
+from . import cmddialog
 from .hole import HoleDialog
 from .loft import LoftDialog
 from .renderer import SceneRenderer
@@ -727,16 +728,15 @@ class MainWindow(QMainWindow):
         ready to sketch on."""
         if self.doc is None:
             return
-        base, ok = QInputDialog.getItem(self, "Construction Plane",
-                                        "Offset from", ["XY", "XZ", "YZ"],
-                                        0, False)
-        if not ok:
+        v = cmddialog.ask(self, "Construction Plane", [
+            dict(key="base", label="Offset from", kind="combo",
+                 choices=["XY", "XZ", "YZ"], group="Plane"),
+            dict(key="dist", label="Distance", kind="double",
+                 default=10.0, min=-1e5, max=1e5, group="Plane"),
+        ], remember_key="construction_plane")
+        if v is None:
             return
-        dist, ok = QInputDialog.getDouble(
-            self, "Construction Plane", f"Distance from {base} (mm)",
-            10.0, -1e5, 1e5, 2)
-        if not ok:
-            return
+        base, dist = v["base"], v["dist"]
         p = self.doc.add_plane(base, dist)
         self._unsaved = True
         self.rail.tree.reload()
@@ -1517,27 +1517,24 @@ class MainWindow(QMainWindow):
                                     "Create a feature first.")
             return
         names = [f.name for f in cands]
-        name, ok = QInputDialog.getItem(self, "Circular pattern",
-                                        "Feature to pattern:", names, 0, False)
-        if not ok:
+        v = cmddialog.ask(self, "Circular Pattern", [
+            dict(key="src", label="Feature to pattern", kind="combo",
+                 choices=names, group="Object"),
+            dict(key="cx", label="Center X", kind="double", default=0.0,
+                 min=-1e5, max=1e5, group="Axis"),
+            dict(key="cy", label="Center Y", kind="double", default=0.0,
+                 min=-1e5, max=1e5, group="Axis"),
+            dict(key="ang", label="Angle", kind="double", default=360.0,
+                 min=-360.0, max=360.0, decimals=1, suffix="°",
+                 group="Pattern"),
+            dict(key="count", label="Occurrences", kind="int", default=6,
+                 min=2, max=500, group="Pattern"),
+        ], remember_key="circular_pattern")
+        if v is None:
             return
-        src = cands[names.index(name)]
-        cx, ok = QInputDialog.getDouble(self, "Circular pattern",
-                                        "Center X (mm):", 0.0, -1e5, 1e5, 2)
-        if not ok:
-            return
-        cy, ok = QInputDialog.getDouble(self, "Circular pattern",
-                                        "Center Y (mm):", 0.0, -1e5, 1e5, 2)
-        if not ok:
-            return
-        ang, ok = QInputDialog.getDouble(self, "Circular pattern",
-                                         "Angle (deg):", 360.0, -360.0, 360.0, 1)
-        if not ok:
-            return
-        count, ok = QInputDialog.getInt(self, "Circular pattern",
-                                        "Occurrences:", 6, 2, 500, 1)
-        if not ok:
-            return
+        src = cands[names.index(v["src"])]
+        cx, cy = v["cx"], v["cy"]
+        ang, count = v["ang"], v["count"]
         self._capture()
         self.doc.add_circular_pattern(f"Circle of {src.name}", src,
                                       (cx, cy), ang, count)
@@ -1556,27 +1553,23 @@ class MainWindow(QMainWindow):
                                     "Create a feature first.")
             return
         names = [f.name for f in cands]
-        name, ok = QInputDialog.getItem(self, "Linear pattern",
-                                        "Feature to pattern:", names, 0, False)
-        if not ok:
+        v = cmddialog.ask(self, "Linear Pattern", [
+            dict(key="src", label="Feature to pattern", kind="combo",
+                 choices=names, group="Object"),
+            dict(key="dx", label="X spacing", kind="double", default=10.0,
+                 min=-1e5, max=1e5, decimals=3, group="Direction"),
+            dict(key="dy", label="Y spacing", kind="double", default=0.0,
+                 min=-1e5, max=1e5, decimals=3, group="Direction"),
+            dict(key="dz", label="Z spacing", kind="double", default=0.0,
+                 min=-1e5, max=1e5, decimals=3, group="Direction"),
+            dict(key="count", label="Occurrences", kind="int", default=3,
+                 min=2, max=500, group="Pattern"),
+        ], remember_key="linear_pattern")
+        if v is None:
             return
-        src = cands[names.index(name)]
-        dx, ok = QInputDialog.getDouble(self, "Linear pattern",
-                                        "X spacing (mm):", 10.0, -1e5, 1e5, 3)
-        if not ok:
-            return
-        dy, ok = QInputDialog.getDouble(self, "Linear pattern",
-                                        "Y spacing (mm):", 0.0, -1e5, 1e5, 3)
-        if not ok:
-            return
-        dz, ok = QInputDialog.getDouble(self, "Linear pattern",
-                                        "Z spacing (mm):", 0.0, -1e5, 1e5, 3)
-        if not ok:
-            return
-        count, ok = QInputDialog.getInt(self, "Linear pattern",
-                                        "Occurrences:", 3, 2, 500, 1)
-        if not ok:
-            return
+        src = cands[names.index(v["src"])]
+        dx, dy, dz = v["dx"], v["dy"], v["dz"]
+        count = v["count"]
         self._capture()
         self.doc.add_linear_pattern(f"Pattern of {src.name}", src,
                                     (dx, dy, dz), count)
@@ -1585,28 +1578,34 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             f"Patterned {src.name}: {count}x at ({dx:g}, {dy:g}, {dz:g}) mm", 6000)
 
-    def _mirror_feature(self, src, plane=None):
+    def _mirror_feature(self, src, plane=None, off=None):
         """Symmetric twin of ``src`` across a datum plane offset from the
         origin. Mirroring the part's mid-plane reproduces Fusion's most
-        common mirror (e.g. a one-sided lug on a bracket)."""
-        if plane is None:
-            plane, ok = QInputDialog.getItem(
-                self, "Mirror", "Mirror plane:", ["YZ", "XZ", "XY"], 0, False)
-            if not ok:
+        common mirror (e.g. a one-sided lug on a bracket).  Whatever the
+        caller already knows (plane from a menu, values from the ribbon
+        dialog) skips the prompt — what's missing lands in ONE dialog."""
+        known = plane is not None
+        if off is None:
+            fields = [] if known else [
+                dict(key="plane", label="Mirror plane", kind="combo",
+                     choices=["YZ", "XZ", "XY"], group="Plane")]
+            default_off = 0.0
+            if known and self.doc.result is not None:
+                # default to the model's own mid-plane along that normal
+                n0 = np.array(MirrorFeature.NORMALS[plane[:2]], float)
+                bb = self.doc.result.bounding_box
+                default_off = float((bb.mean(0) * n0).sum())
+            fields.append(dict(key="off", label="Plane offset",
+                               kind="double", default=default_off,
+                               min=-1e6, max=1e6, group="Plane"))
+            v = cmddialog.ask(self, "Mirror", fields, remember_key="mirror")
+            if v is None:
                 return
+            plane = plane if known else v["plane"]
+            off = v["off"]
         else:
             plane = plane[:2]
         n = np.array(MirrorFeature.NORMALS[plane], float)
-        # default the offset to the model's own mid-plane along the normal
-        off = 0.0
-        if self.doc.result is not None:
-            bb = self.doc.result.bounding_box
-            off = float((bb.mean(0) * n).sum())
-        off, ok = QInputDialog.getDouble(self, "Mirror",
-                                         "Plane offset (mm):", off,
-                                         -1e6, 1e6, 2)
-        if not ok:
-            return
         self._capture()
         self.doc.add_mirror(f"Mirror of {src.name}", src, plane, off)
         self.recompute()
@@ -1623,11 +1622,18 @@ class MainWindow(QMainWindow):
                                     "Create a feature first.")
             return
         names = [f.name for f in cands]
-        name, ok = QInputDialog.getItem(self, "Mirror", "Feature to mirror:",
-                                        names, 0, False)
-        if not ok:
+        v = cmddialog.ask(self, "Mirror", [
+            dict(key="src", label="Feature to mirror", kind="combo",
+                 choices=names, group="Object"),
+            dict(key="plane", label="Mirror plane", kind="combo",
+                 choices=["YZ", "XZ", "XY"], group="Plane"),
+            dict(key="off", label="Plane offset", kind="double",
+                 default=0.0, min=-1e6, max=1e6, group="Plane"),
+        ], remember_key="mirror")
+        if v is None:
             return
-        self._mirror_feature(cands[names.index(name)])
+        self._mirror_feature(cands[names.index(v["src"])],
+                             v["plane"], v["off"])
 
     # ---- solid fillet / chamfer (kernel rims + OpenCascade edges) ------------
     def _body_fillet(self, chamfer: bool):

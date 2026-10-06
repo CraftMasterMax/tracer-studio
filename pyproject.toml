@@ -12,6 +12,7 @@ dependencies = [
     "manifold3d>=3.5",
     "trimesh>=5.0",
     "scipy>=1.14",          # required by trimesh's export/merge paths
+    "networkx>=3.0",        # trimesh's 3MF export graph ops
     "rtree>=1.3",           # trimesh ray BVH — face picking in the viewport
     "shapely>=2.1",
     "pillow>=11.0",

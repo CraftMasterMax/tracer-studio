@@ -19,7 +19,7 @@ from ..core.document import Document
 from ..core.geometry import Solid
 from .camera import Camera
 from .renderer import SceneRenderer
-from .viewcube import ViewCube
+from .viewcube import NavWidget, ViewCube
 
 
 def draw_triad(p: QPainter, cam, w: float, h: float, palette: dict):
@@ -59,6 +59,7 @@ class Viewport(QWidget):
         self._r = renderer
         self._cam = Camera()
         self._cube = ViewCube()
+        self._nav = NavWidget()
         self._doc: Document | None = None
         self._bbox: np.ndarray | None = None
         self._last: QPoint | None = None
@@ -146,6 +147,8 @@ class Viewport(QWidget):
         draw_triad(p, self._cam, self.width(), self.height(), self._r.palette)
         self._cube.place(self.width(), self.height())
         self._cube.draw(p, self._cam)
+        self._nav.place(self.width(), self._cube.rect.bottom() + 8)
+        self._nav.draw(p)
         p.end()
 
     # ---- mouse (Fusion scheme) ----------------------------------------------
@@ -158,6 +161,18 @@ class Viewport(QWidget):
         if hit:
             self._cam.set_view(hit)
             self.update()
+            ev.accept()
+            return
+        nav = self._nav.hit(ev.position())
+        if nav:
+            if nav == "home":
+                self.home()
+            elif nav == "in":
+                self._cam.zoom(1 / 1.25)
+                self.update()
+            else:
+                self._cam.zoom(1.25)
+                self.update()
             ev.accept()
             return
         self._last = ev.position().toPoint()
@@ -192,6 +207,11 @@ class Viewport(QWidget):
     def mouseMoveEvent(self, ev):
         if not self._buttons:
             self._hover_update(ev.position())
+            if self._nav.set_hover(ev.position()):
+                self.setCursor(
+                    Qt.CursorShape.PointingHandCursor
+                    if self._nav.hover else Qt.CursorShape.ArrowCursor)
+                self.update()
             return
         if self._last is None:
             return

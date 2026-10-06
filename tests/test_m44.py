@@ -107,7 +107,11 @@ def test_top_of_the_body_is_lighter_than_the_belly(renderer):
 # ---- proof of life -----------------------------------------------------------
 
 def test_screenshot_proof(qapp):
-    w = MainWindow()
+    try:
+        r = SceneRenderer()
+    except Exception as e:              # CI windows runners have no GL
+        pytest.skip(f"no headless GL available: {e}")
+    w = MainWindow(renderer=r)
     w.doc = demo_document()
     w.recompute()
     w._show_page(w.viewport)
@@ -117,3 +121,4 @@ def test_screenshot_proof(qapp):
     assert w.grab().save(f"{out}/m44_shading.png")
     w._unsaved = False
     w.close()
+    r.ctx.release()

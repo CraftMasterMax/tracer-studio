@@ -10,7 +10,7 @@ from tracer.core.document import (CircularPatternFeature,                    # n
                                  Document, LinearPatternFeature,
                                  MirrorFeature, PrimitiveFeature)
 from tracer.core.geometry import Solid                                        # noqa: E402
-from conftest import tree_texts                                               # noqa: E402
+from conftest import tree_texts, script_cmd, script_cmd_cancel          # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -129,11 +129,8 @@ def test_action_mirror_flow(win, monkeypatch):
                                  dims={"dx": 2, "dy": 8, "dz": 5},
                                  placement=(1, 2, 5)))           # y 2..10
     win.recompute()
-    picks = iter(["lug", "XZ"])                   # feature, then plane
-    monkeypatch.setattr(QInputDialog, "getItem",
-                        staticmethod(lambda *a, **k: (next(picks), True)))
-    monkeypatch.setattr(QInputDialog, "getDouble",
-                        staticmethod(lambda *a, **k: (10.0, True)))
+    picks = {"src": "lug", "plane": "XZ", "off": 10.0}
+    script_cmd(monkeypatch, picks)
     win.action_mirror()
     m = win.doc.features[-1]
     assert isinstance(m, MirrorFeature) and m.plane == "XZ"
@@ -146,8 +143,7 @@ def test_context_mirror_handler_cancels(win, monkeypatch):
     base = win.doc.add(PrimitiveFeature(name="plate", kind="box",
                                         dims={"dx": 9, "dy": 9, "dz": 9}))
     win._capture = lambda: None                   # no-op undo capture
-    monkeypatch.setattr(QInputDialog, "getDouble",
-                        staticmethod(lambda *a, **k: (0.0, False)))  # cancel
+    script_cmd_cancel(monkeypatch)                # dialog answers Cancel
     n = len(win.doc.features)
     win._mirror_feature(base, "XY")
     assert len(win.doc.features) == n             # nothing added on cancel

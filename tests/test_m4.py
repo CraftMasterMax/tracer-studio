@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog,  # noqa: E402
                                QInputDialog, QMessageBox)
 
 from tracer.core.document import (Document, LinearPatternFeature)  # noqa: E402
-from conftest import feature_rows  # noqa: E402
+from conftest import feature_rows, script_cmd  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -83,13 +83,8 @@ def test_pattern_dialog_and_undo(win, monkeypatch):
     win.doc.add_plate("p", 30, 10, 2)
     h = win.doc.add_cylinder("h", 1.5, 10, center=(5, 5), z=-4, op="subtract")
     win.recompute()
-    monkeypatch.setattr(QInputDialog, "getItem",
-                        staticmethod(lambda *a, **k: ("h", True)))
-    dvals = [10.0, 0.0, 0.0]
-    monkeypatch.setattr(QInputDialog, "getDouble",
-                        staticmethod(lambda *a, **k: (dvals.pop(0), True)))
-    monkeypatch.setattr(QInputDialog, "getInt",
-                        staticmethod(lambda *a, **k: (3, True)))
+    script_cmd(monkeypatch, {"src": "h", "dx": 10.0, "dy": 0.0,
+                             "dz": 0.0, "count": 3})
     win.action_linear_pattern()
     pats = [f for f in win.doc.features
             if isinstance(f, LinearPatternFeature)]

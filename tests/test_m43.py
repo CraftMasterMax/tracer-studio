@@ -11,7 +11,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt                                    # noqa: E402
 from PySide6.QtWidgets import QApplication, QMenu                # noqa: E402
 
-from conftest import feature_rows, tree_texts                    # noqa: E402
+from conftest import feature_rows, tree_texts, script_cmd              # noqa: E402
 from tracer.core.document import Document, ExtrudeFeature        # noqa: E402
 from tracer.ui.mainwindow import MainWindow                      # noqa: E402
 from tracer.ui.renderer import SceneRenderer                     # noqa: E402
@@ -155,10 +155,7 @@ def test_sketches_folder_mirrors_embedded_sketches(win, qapp):
 
 
 def test_construction_planes_park_in_construction_folder(win, monkeypatch):
-    monkeypatch.setattr("tracer.ui.mainwindow.QInputDialog.getItem",
-                        staticmethod(lambda *a, **k: ("XY", True)))
-    monkeypatch.setattr("tracer.ui.mainwindow.QInputDialog.getDouble",
-                        staticmethod(lambda *a, **k: (12.0, True)))
+    script_cmd(monkeypatch, {"base": "XY", "dist": 12.0})
     win.action_construction_plane()
     constr = _folder(win, "Construction")
     assert constr.text(0) == "Construction (1)"
@@ -172,10 +169,7 @@ def test_construction_planes_park_in_construction_folder(win, monkeypatch):
 # ---- proof of life ---------------------------------------------------------------
 
 def test_screenshot_proof(win, qapp, monkeypatch):
-    monkeypatch.setattr("tracer.ui.mainwindow.QInputDialog.getItem",
-                        staticmethod(lambda *a, **k: ("XY", True)))
-    monkeypatch.setattr("tracer.ui.mainwindow.QInputDialog.getDouble",
-                        staticmethod(lambda *a, **k: (12.0, True)))
+    script_cmd(monkeypatch, {"base": "XY", "dist": 12.0})
     win.action_construction_plane()
     win._show_page(win.viewport)
     qapp.processEvents()

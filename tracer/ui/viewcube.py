@@ -35,7 +35,6 @@ class ViewCube:
     def place(self, widget_w: int, widget_h: int):
         self.rect = QRectF(widget_w - SIZE - MARGIN, MARGIN,
                            SIZE, SIZE * 0.86)
-
     # ---- drawing -----------------------------------------------------------
     def project(self, camera: Camera):
         cam = Camera(fov=30.0)
@@ -102,3 +101,62 @@ class ViewCube:
             if path.contains(pos):
                 best = kind      # dict order = painter order; last drawn wins
         return best
+
+
+class NavWidget:
+    """Fusion's mini nav stack that sits under the ViewCube: Home,
+    Zoom In, Zoom Out.  Pure geometry + hit-testing; the viewport owns
+    the behaviour (same split as the cube itself)."""
+    SIZE = 24
+    GAP = 4
+
+    KINDS = ("home", "in", "out")
+
+    def __init__(self):
+        self.rects: dict[str, QRectF] = {}
+        self.hover: str | None = None
+
+    def place(self, widget_w: int, top_y: float):
+        x = widget_w - self.SIZE - MARGIN
+        for i, kind in enumerate(self.KINDS):
+            self.rects[kind] = QRectF(x, top_y + i * (self.SIZE + self.GAP),
+                                      self.SIZE, self.SIZE)
+
+    def hit(self, pos) -> str | None:
+        for kind, r in self.rects.items():
+            if r.contains(pos):
+                return kind
+        return None
+
+    def set_hover(self, pos) -> bool:
+        h = self.hit(pos)
+        if h != self.hover:
+            self.hover = h
+            return True
+        return False
+
+    def draw(self, p: QPainter):
+        for kind, r in self.rects.items():
+            p.setBrush(QColor(70, 78, 90) if self.hover == kind
+                       else QColor(50, 56, 64, 210))
+            p.setPen(QPen(QColor(112, 120, 132), 1))
+            p.drawRoundedRect(r, 5, 5)
+            pen = QPen(QColor(226, 230, 236))
+            pen.setWidthF(1.7)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            cx, cy = r.center().x(), r.center().y()
+            if kind == "home":
+                roof = QPainterPath()
+                roof.moveTo(cx - 6, cy - 1)
+                roof.lineTo(cx, cy - 6)
+                roof.lineTo(cx + 6, cy - 1)
+                p.drawPath(roof)
+                p.drawRect(QRectF(cx - 4, cy - 1, 8, 6))
+            elif kind == "in":
+                p.drawLine(QPointF(cx - 5, cy), QPointF(cx + 5, cy))
+                p.drawLine(QPointF(cx, cy - 5), QPointF(cx, cy + 5))
+            else:
+                p.drawLine(QPointF(cx - 5, cy), QPointF(cx + 5, cy))

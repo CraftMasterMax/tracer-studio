@@ -61,6 +61,7 @@ from PySide6.QtWidgets import (QApplication, QInputDialog, QToolButton)  # noqa:
 
 from tracer.ui.mainwindow import MainWindow                             # noqa: E402
 from tracer.ui.renderer import SceneRenderer                            # noqa: E402
+from conftest import script_cmd                                         # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -88,13 +89,14 @@ def win(qapp):
 
 @pytest.fixture
 def dialogs(monkeypatch):
-    """Scripted Construct ▸ Plane answers: base then distance(s)."""
+    """Scripted Construct ▸ Plane answers: base then distance(s).
+    M47: the plane command is one CommandDialog now; the trailing
+    getDouble patch still feeds the classic prompts (extrude height)."""
     def install(base="XY", *distances):
-        seq = iter(distances) if distances else iter([12.0])
-        monkeypatch.setattr(QInputDialog, "getItem",
-                            staticmethod(lambda *a, **k: (base, True)))
+        dist = distances[0] if distances else 12.0
+        script_cmd(monkeypatch, {"base": base, "dist": dist})
         monkeypatch.setattr(QInputDialog, "getDouble",
-                            staticmethod(lambda *a, **k: (next(seq), True)))
+                            staticmethod(lambda *a, **k: (12.0, True)))
     return install
 
 

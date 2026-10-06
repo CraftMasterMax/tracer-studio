@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QApplication,          # noqa: E402
                                QInputDialog)
 
 from tracer.core.document import (CircularPatternFeature, Document)  # noqa: E402
+from conftest import script_cmd                       # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -92,13 +93,8 @@ def test_circular_pattern_dialog_and_undo(win, monkeypatch):
     win.doc.add_cylinder("bolt hole", 2, 10, center=(32, 20), z=-2.5,
                          op="subtract")
     win.recompute()
-    monkeypatch.setattr(QInputDialog, "getItem",
-                        staticmethod(lambda *a, **k: ("bolt hole", True)))
-    vals = [20.0, 20.0, 360.0]
-    monkeypatch.setattr(QInputDialog, "getDouble",
-                        staticmethod(lambda *a, **k: (vals.pop(0), True)))
-    monkeypatch.setattr(QInputDialog, "getInt",
-                        staticmethod(lambda *a, **k: (5, True)))
+    script_cmd(monkeypatch, {"src": "bolt hole", "cx": 20.0, "cy": 20.0,
+                             "ang": 360.0, "count": 5})
     win.action_circular_pattern()
     pats = [f for f in win.doc.features
             if isinstance(f, CircularPatternFeature)]

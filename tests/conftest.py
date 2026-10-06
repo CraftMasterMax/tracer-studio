@@ -45,3 +45,19 @@ def feature_rows(win):
             walk(ch)
     walk(win.rail.tree.invisibleRootItem())
     return out
+
+
+def script_cmd(monkeypatch, values):
+    """Script the unified command dialog (M47) to answer with `values`,
+    keyed by field key — the cmddialog.ask() replacement for headless
+    runs (mirrors what the old QInputDialog patches did per prompt)."""
+    from tracer.ui import cmddialog
+    monkeypatch.setattr(
+        cmddialog, "ask",
+        lambda parent, title, fields, remember_key=None: dict(values))
+
+
+def script_cmd_cancel(monkeypatch):
+    """Every command dialog answers Cancel."""
+    from tracer.ui import cmddialog
+    monkeypatch.setattr(cmddialog, "ask", lambda *a, **k: None)

@@ -68,9 +68,11 @@ viewport-fixed studio lights (the model reads the same from every orbit
 angle), neutral grey body with ground bounce and soft gloss, graphite
 gradient that settles darker under the model.
 
-**M44b — Viewport furniture.**  Origin point + axis arrows in-scene,
-navigation widget by the ViewCube (fit / zoom in-out / fullscreen),
-ground/contact-shadow tuning.
+**✓ M44b — Viewport furniture.**  Shipped: Fusion's mini nav stack
+under the ViewCube — Home / Zoom In / Zoom Out — with hover highlight,
+pointing-hand cursor and working actions (geometry in viewcube.py,
+behaviour in the viewport, same split as the cube). In-scene origin
+arrows and contact shadows remain open ideas.
 
 **✓ M45 — Sketch ribbon flyouts.**  Shipped: Sketch tab gained a
 Dimension button and the Constrain flyout — a two-column grid panel of
@@ -83,9 +85,17 @@ corner opens the primary file surface (New/Open/Save/Save As · Import ·
 Export ▸ all formats · Keyboard shortcuts · Exit) — the exact menu-bar
 QActions shared, so shortcuts and behaviour can never drift apart.
 
-**M47 — Command dialogs.**  One Fusion-style dialog shell (header
+**✓ M47 — Command dialogs.**  One Fusion-style dialog shell (header
 strip, grouped fields, OK/Cancel, Remember Values) replacing scattered
-QInputDialogs for Extrude/Revolve/Hole/Shell/Fillet/Pattern/….
+QInputDialogs.  Shipped: the multi-prompt offenders — Circular/Linear
+Pattern (five chained prompts → one grouped dialog), Mirror (feature +
+plane + offset together; the feature-menu flow asks only the offset it
+doesn't know), Construction Plane (base + distance).
+
+**M47b — Finish the dialog sweep.**  Single-field QInputDialogs
+(Extrude height, Revolve angle, Shell, Fillet/Chamfer, Sweep, Loft,
+press-pull) onto the same shell for consistent chrome + Remember
+Values; retargets the ~20 test files that patch QInputDialog.
 
 **M48 — Section Analysis.**  Clip-plane toggle in the viewport (discard
 in fragment shader beyond the plane), plane = chosen face or origin
