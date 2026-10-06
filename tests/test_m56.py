@@ -62,7 +62,8 @@ def test_right_click_opens_the_marking_menu(win, qapp):
     assert win._mark_menu is not None and win._mark_menu.isVisible()
     labels = [a.text().replace("&", "") for a in win._mark_menu.actions()
               if not a.isSeparator()]
-    assert labels == ["Fit", "Zoom to selection", "Isometric", "Front",
+    assert labels == ["Fit", "Zoom to selection", "Zoom window",
+                      "Isometric", "Front",
                       "Top", "Right", "Visual Styles", "Toggle grid",
                       "Toggle edges"]
     win._mark_menu.close()

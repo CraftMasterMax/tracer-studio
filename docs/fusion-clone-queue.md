@@ -224,6 +224,12 @@ axis+angle, copy flags.  OK re-runs the kernel and the body follows
 honestly reports it has no plain numbers.  In an inch document the
 dialog takes inches.
 
+**M62 — Zoom window.** ✓ SHIPPED.  The marking menu's third zoom
+entry, in Fusion's place after Fit and Zoom to selection: arm Zoom
+window, rubber-band a rectangle, and the camera refits onto the world
+bbox of the mesh that fell inside it.  A plain click or Esc aborts with
+the camera untouched.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, Combine/multi-browser-bodies,
 configurations, assemblies/joints, sheet metal, drawings.

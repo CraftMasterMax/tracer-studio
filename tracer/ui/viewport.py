@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QWidget
 
 from ..core.document import Document
 from ..core.geometry import Solid
-from .camera import Camera
+from .camera import Camera, perspective
 from .renderer import SceneRenderer
 from .viewcube import NavWidget, ViewCube
 
@@ -56,6 +56,7 @@ class Viewport(QWidget):
     rotate_drag = Signal(object)           # Rotate (M55) drag payload dict
     context_request = Signal(object)       # RMB no-drag: marking menu pos
     selection_changed = Signal(int)        # live measure: faces now selected
+    zoom_window = Signal(object)           # Zoom-window (M62) payload dict
 
     def __init__(self, renderer: SceneRenderer, parent=None):
         super().__init__(parent)
@@ -77,6 +78,7 @@ class Viewport(QWidget):
         self._box_drag = False
         self._mv = None                    # Move gesture state (M53)
         self._rot = None                   # Rotate gesture state (M55)
+        self._zoom_win = None              # Zoom-window arming (M62)
         self.setMinimumSize(QSize(320, 240))
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -95,6 +97,7 @@ class Viewport(QWidget):
         self._box, self._box_drag = None, False
         self._mv = None                    # Move gesture state (M53)
         self._rot = None                   # Rotate gesture state (M55)
+        self._zoom_win = None              # Zoom-window arming (M62)
         self._r.set_triad(None)
         if had_sel:
             self.selection_changed.emit(0)
@@ -305,6 +308,49 @@ class Viewport(QWidget):
             np.eye(3)[(rot["axis"] + 2) % 3]
         return float(np.arctan2(p @ v, p @ u))
 
+    # ---- Zoom window (M62) ------------------------------------------------------
+    def begin_zoom_window(self):
+        """Fusion marking-menu Zoom window: arm the rectangle drag;
+        release zooms the camera onto the mesh inside, a plain click or
+        Esc aborts without touching the camera."""
+        self._zoom_win = dict()
+        self.setCursor(QCursor(Qt.CrossCursor))
+        self.update()
+
+    def _cancel_zoom_window(self):
+        if self._zoom_win is None:
+            return
+        self._zoom_win = None
+        self._box, self._box_drag = None, False
+        self.unsetCursor()
+        self.zoom_window.emit(dict(cancel=True))
+        self.update()
+
+    def _zoom_win_bbox(self, p0, p1):
+        """World bbox of mesh vertices whose projection lands inside
+        the screen rectangle — None when the box is a stub or empty."""
+        if self._tm is None:
+            return None
+        w, h = self.width(), self.height()
+        x0, x1 = sorted((p0.x(), p1.x()))
+        y0, y1 = sorted((p0.y(), p1.y()))
+        if x1 - x0 <= 4 or y1 - y0 <= 4:
+            return None
+        vs = np.asarray(self._tm.vertices, float)
+        vp = perspective(self._cam.fov, w / max(h, 1),
+                         0.01, 1e5) @ self._cam.view_matrix()
+        ph = np.column_stack([vs, np.ones(len(vs))]) @ vp.T
+        w_ = ph[:, 3]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            sx = (ph[:, 0] / w_ * 0.5 + 0.5) * w
+            sy = (0.5 - ph[:, 1] / w_ * 0.5) * h
+        inside = ((w_ > 1e-9) & np.isfinite(sx) & np.isfinite(sy)
+                  & (sx >= x0) & (sx <= x1) & (sy >= y0) & (sy <= y1))
+        if not inside.any():
+            return None
+        pts = vs[inside]
+        return (pts.min(axis=0), pts.max(axis=0))
+
     def mousePressEvent(self, ev):
         hit = self._cube.hit(ev.position())
         if hit:
@@ -332,6 +378,12 @@ class Viewport(QWidget):
         self._pp_drag = False
         self._box = None
         self._box_drag = False
+        if (self._zoom_win is not None and ev.button() == Qt.LeftButton
+                and Qt.KeyboardModifier(0) == ev.modifiers()):
+            self._box = [ev.position().toPoint(), ev.position().toPoint()]
+            self._box_drag = True
+            ev.accept()
+            return
         if (self._rot is not None and ev.button() == Qt.LeftButton
                 and ev.modifiers() in (Qt.KeyboardModifier(0),
                                        Qt.ControlModifier)):
@@ -458,6 +510,22 @@ class Viewport(QWidget):
 
     def mouseReleaseEvent(self, ev):
         self._buttons &= ~ev.button()
+        if ev.button() == Qt.LeftButton and self._zoom_win is not None:
+            p0, p1 = (self._box if self._box is not None
+                      else [ev.position().toPoint()] * 2)
+            self._box, self._box_drag = None, False
+            self._zoom_win = None
+            self.unsetCursor()
+            bbox = self._zoom_win_bbox(p0, p1)
+            if bbox is None:
+                self.zoom_window.emit(dict(
+                    cancel=True,
+                    empty=getattr(self, "_dragged", False)))
+            else:
+                self.zoom_window.emit(dict(bbox=bbox))
+            self.update()
+            ev.accept()
+            return
         if ev.button() == Qt.LeftButton and self._rot is not None:
             if self._rot["axis"] is not None:
                 pay = dict(center=self._rot["center"],
@@ -750,6 +818,9 @@ class Viewport(QWidget):
     def keyPressEvent(self, ev):
         k = ev.key()
         if k == Qt.Key_Escape:
+            if self._zoom_win is not None:           # abort a zoom window
+                self._cancel_zoom_window()
+                return
             if self._rot is not None:             # abort a rotate gesture
                 self._cancel_rotate()
                 return

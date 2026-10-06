@@ -100,6 +100,7 @@ class MainWindow(QMainWindow):
         self.viewport.move_drag.connect(self._on_move_drag)
         self.viewport.rotate_drag.connect(self._on_rotate_drag)
         self.viewport.context_request.connect(self._show_marking_menu)
+        self.viewport.zoom_window.connect(self._on_zoom_window)
         self._mark_menu = None               # open marking menu (M56)
         self._move_origin = None             # armed Move gesture (M53)
         self._move_len = 40.0
@@ -1458,6 +1459,8 @@ class MainWindow(QMainWindow):
         m = QMenu(self)
         m.addAction("Fit", lambda checked=False: self.action_view("fit"))
         m.addAction("Zoom to selection", self._zoom_to_selection)
+        m.addAction("Zoom window",
+                    lambda checked=False: self.action_zoom_window())
         m.addSeparator()
         for label, view in (("Isometric", "iso"), ("Front", "front"),
                             ("Top", "top"), ("Right", "right")):
@@ -1480,6 +1483,24 @@ class MainWindow(QMainWindow):
         menu.aboutToHide.connect(
             lambda: setattr(self, "_mark_menu", None))
         menu.popup(self.viewport.mapToGlobal(pos))
+
+    def action_zoom_window(self):
+        """Fusion marking-menu Zoom window (M62): arm the rectangle
+        drag — release zooms the camera onto whatever it enclosed."""
+        self.viewport.begin_zoom_window()
+        self.status.showMessage("Drag a window to zoom into it — click "
+                                "or Esc cancels", 5000)
+
+    def _on_zoom_window(self, payload):
+        if payload.get("cancel") or "bbox" not in payload:
+            self.status.showMessage(
+                "Zoom window: nothing inside the box" if payload.get("empty")
+                else "Zoom window cancelled", 3000)
+            return
+        lo, hi = payload["bbox"]
+        self.viewport.camera().fit(np.asarray([lo, hi], float))
+        self.viewport.update()
+        self.status.showMessage("Zoom window", 2500)
 
     def _zoom_to_selection(self):
         bbox = self.viewport.selection_bbox()
