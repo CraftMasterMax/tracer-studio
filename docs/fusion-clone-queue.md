@@ -117,10 +117,13 @@ the Hole dialog's bore-row show/hide (untested since M31 because every
 test patched `.ask`) was silently broken — now on the version-stable
 LabelRole/FieldRole API and pinned by a real-dialog test.
 
-**M49b — External thread (next).**  Apply the same helix to a cylindrical
-*boss* (convex face) to model a bolt/screw.  Needs cylindrical-face
-detection from the pick map (radius + axis + z-extent) and a command that
-reads it; cosmetic-only option deferred.
+**M49b — External thread.** ✓ SHIPPED.  Click a boss's cylindrical face,
+ribbon ▸ Thread, pick the ISO size — a helical ridge cuts down to the
+minor and the boss becomes a bolt.  Cylindrical faces are recognised by
+fitting the picked facet's smooth region (grow-across-30°-bends flood,
+axis from the normal fan, Kåsa circle fit) — flat or conical patches are
+refused with words a maker can act on.  The size dialog names the
+closest ISO size to the fitted Ø.  Cosmetic threads deferred.
 
 **M50 — Pattern on path.**  Third pattern Fusion offers; reuses the
 M35 path chain: place N instances of a body/feature along a sketch

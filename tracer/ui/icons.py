@@ -259,6 +259,13 @@ def _section(p: QPainter):
     p.drawLine(QPointF(5, 17), QPointF(27, 17))
 
 
+def _thread(p: QPainter):
+    """A bolt shank with helical thread diagonals."""
+    p.drawRect(QRectF(11, 5, 10, 22))
+    for y in (9, 14, 19, 24):
+        p.drawLine(QPointF(11, y + 3), QPointF(21, y))
+
+
 def _dimension(p: QPainter):
     """Measured span: ticks, arrowheads, baseline."""
     p.drawLine(QPointF(5, 16), QPointF(27, 16))
@@ -277,7 +284,8 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "arc": _arc, "trim": _trim, "offset": _offset,
               "construction": _construction, "plane": _plane,
               "constrain": _constrain, "dimension": _dimension,
-              "launcher": _launcher, "section": _section})
+              "launcher": _launcher, "section": _section,
+              "thread": _thread})
 
 
 def icon(name: str) -> QIcon:

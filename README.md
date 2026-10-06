@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M49**
+**Status: M49b**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -51,7 +51,8 @@ independent project with no Autodesk assets or affiliation.)
   **Hole (Ctrl+H): every sketch circle drills a real hole —
   simple, counterbore, or countersink (82°/90°/120°), blind or through-all,
   and now **tapped ISO M3–M12** (drills at the tap-drill Ø and cuts real
-  helical thread geometry out to the major radius);
+  helical thread geometry out to the major radius), plus **Thread**:
+  click a cylindrical boss face and give it real bolt threads (M3–M12);
   the cut direction is probed into the material and re-editing the sketch
   moves the holes with their circles**, linear & circular patterns,
   **mirror**, sketch-on-face,
@@ -79,7 +80,7 @@ independent project with no Autodesk assets or affiliation.)
   a playhead timeline of icon chips, and a blue-grey horizon viewport —
   plus first-launch shortcut tour and a persistent Shortcuts tab driven by
   one canonical key table
-- 570 headless tests (EGL rendering + Qt pixel assertions)
+- 581 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -104,7 +105,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 570 tests, fully headless
+./.venv/bin/python -m pytest -q          # 581 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

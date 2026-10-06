@@ -288,6 +288,33 @@ class HoleFeature(Feature):
 
 
 @dataclass
+class ThreadFeature(Feature):
+    """Bolt threads cut onto a cylindrical boss (M49b).  `radius` is the
+    boss surface — the thread's major — and the helical groove bites
+    pitch/2 deep to the minor, both ends running off the fitted patch so
+    the thread starts and exits cleanly.  `center` sits on the boss axis
+    at the thread start, `axis` runs along it into the threaded length;
+    the command layer fills both in from a picked cylindrical face.
+    A body op in spirit, but it IS a plain subtract of the ridge
+    cutter, so `build()` + op='subtract' ride the generic path."""
+    center: tuple = (0.0, 0.0, 0.0)
+    axis: tuple = (0.0, 0.0, 1.0)
+    radius: float = 4.0
+    pitch: float = 1.0
+    length: float = 10.0
+
+    def build(self) -> Solid:
+        from .thread import helix_ridge
+        n = np.asarray(self.axis, float)
+        n = n / np.linalg.norm(n)
+        u = np.cross(n, np.eye(3)[int(np.abs(n).argmin())])
+        u = u / np.linalg.norm(u)
+        m = frame_matrix(u, np.cross(n, u), self.center)
+        return helix_ridge(float(self.radius), float(self.pitch),
+                           float(self.length)).transformed(m)
+
+
+@dataclass
 class ShellFeature(Feature):
     """Hollow the accumulated body to `thickness` walls, opened at the
     removed planar face(s).  `openings` stores each removed face as
@@ -580,6 +607,12 @@ class Document:
                          thread_pitch=float(f.thread_pitch),
                          thread_len=float(f.thread_len),
                          sketch=f.sketch, sid=f.sid, cidx=int(f.cidx))
+            elif isinstance(f, ThreadFeature):
+                d.update(center=list(map(float, f.center)),
+                         axis=list(map(float, f.axis)),
+                         radius=float(f.radius),
+                         pitch=float(f.pitch),
+                         length=float(f.length))
             return d
         return {"format": "tracer/document", "version": 2,
                 "title": self.title, "units": self.units,
@@ -679,6 +712,12 @@ class Document:
                     thread_len=float(fd.get("thread_len", 0.0)),
                     sketch=fd.get("sketch"), sid=fd.get("sid"),
                     cidx=int(fd.get("cidx", 0)), **base))
+            elif t == "ThreadFeature":
+                doc.features.append(ThreadFeature(
+                    name=fd["name"],
+                    center=tuple(fd["center"]), axis=tuple(fd["axis"]),
+                    radius=float(fd["radius"]), pitch=float(fd["pitch"]),
+                    length=float(fd["length"]), **base))
             elif t == "BodyFilletFeature":
                 doc.features.append(BodyFilletFeature(
                     name=fd["name"], radius=float(fd["radius"]),

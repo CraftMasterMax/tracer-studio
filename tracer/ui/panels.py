@@ -13,7 +13,8 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
                              MirrorFeature, PrimitiveFeature, RevolveFeature,
-                             ShellFeature, SweepFeature, LoftFeature)
+                             ShellFeature, SweepFeature, LoftFeature,
+                             ThreadFeature)
 from .theme import DARK
 
 _OP_GLYPH = {"union": "+", "subtract": "−", "intersect": "∩"}
@@ -104,6 +105,7 @@ class FeatureTree(QTreeWidget):
                     else "\u25b3" if isinstance(f, LoftFeature)
                     else "\u25c8" if isinstance(f, ImportedFeature)
                     else "\u25e7" if isinstance(f, MirrorFeature)
+                    else "\u2240" if isinstance(f, ThreadFeature)  # ≀ screw
                     else "\u2312" if fillet                    # arc = fillet/chamfer
                     else "\u29c9" if isinstance(f, (LinearPatternFeature,
                                                     CircularPatternFeature))
@@ -209,12 +211,22 @@ class PropertiesPanel(QWidget):
             lines.append(f"diameter: Ø{2 * feature.radius:g} mm ({kind})")
             lines.append("depth: through all" if feature.through
                          else f"depth: {feature.depth:g} mm")
+            if feature.thread_pitch > 0:
+                lines.append(f"threaded: pitch {feature.thread_pitch:g} mm, "
+                             f"{feature.thread_len:g} mm long")
             if feature.cb_radius > feature.radius:
                 lines.append(f"counterbore: Ø{2 * feature.cb_radius:g} × "
                              f"{feature.cb_depth:g} mm deep")
             if feature.cs_radius > feature.radius:
                 lines.append(f"countersink: Ø{2 * feature.cs_radius:g} at "
                              f"{feature.cs_angle:g}°")
+        elif isinstance(feature, ThreadFeature):
+            minor = 2 * (feature.radius - feature.pitch / 2)
+            lines.append(f"external thread — pitch {feature.pitch:g} mm")
+            lines.append(f"major: Ø{2 * feature.radius:g} mm, "
+                         f"minor: Ø{minor:g} mm")
+            lines.append(f"length: {feature.length:g} mm "
+                         f"(~{int(feature.length / feature.pitch)} turns)")
         elif isinstance(feature, LoftFeature):
             lines.append(f"loft through {len(feature.sections)} profile(s)")
             for i, sec in enumerate(feature.sections):

@@ -457,6 +457,28 @@ class Viewport(QWidget):
         pts = np.asarray(self._tm.vertices, float)[tris].reshape(-1, 3)
         return dict(point=pts.mean(0), normal=n / nn)
 
+    def smooth_region(self, face: int) -> list[int]:
+        """Every face reachable from `face` through neighbours that bend
+        at most 30 degrees across their shared edge — the WHOLE curved
+        face (a cylinder wall), not one mesh facet.  Flat faces come back
+        as themselves (90-degree creases stop the flood)."""
+        if self._tm is None:
+            return [int(face)]
+        fn = np.asarray(self._tm.face_normals, float)
+        nbrs: dict[int, list[int]] = {}
+        for a, b in np.asarray(self._tm.face_adjacency, int):
+            if float(np.dot(fn[a], fn[b])) > math.cos(math.radians(30)):
+                nbrs.setdefault(int(a), []).append(int(b))
+                nbrs.setdefault(int(b), []).append(int(a))
+        seen = {int(face)}
+        stack = [int(face)]
+        while stack:
+            for q in nbrs.get(stack.pop(), ()):
+                if q not in seen:
+                    seen.add(q)
+                    stack.append(q)
+        return sorted(seen)
+
     def _pick_planar(self, pos):
         """Hit test at pos; accept only faces flat within ~2 degrees across
         a +/-3 px neighbourhood (kills cylinders/cones hiding in meshes)."""

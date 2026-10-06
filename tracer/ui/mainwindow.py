@@ -19,7 +19,8 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
                              LoftFeature, MirrorFeature, PrimitiveFeature,
-                             RevolveFeature, ShellFeature, SweepFeature)
+                             RevolveFeature, ShellFeature, SweepFeature,
+                             ThreadFeature)
 from ..core.measure import describe, face_stats
 from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
                                  model_to_dict, plane_uv)
@@ -280,6 +281,8 @@ class MainWindow(QMainWindow):
           menu_actions=[self.act_fillet, self.act_chamfer, self.act_shell])
         d("shell", "Shell — hollow the body, open top face removed",
           lambda checked=False: self.action_shell())
+        d("thread", "Thread — cut a bolt thread on a cylindrical boss face",
+          lambda checked=False: self.action_thread())
         r.design_sep()
         d("plane", "Construction plane — offset work plane (Ctrl+Shift+P)",
           lambda checked=False: self.action_construction_plane())
@@ -757,6 +760,73 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             f"{p['name']} at {dist:+g} mm from {base} — double-click it in "
             "the browser to sketch on it", 6000)
+
+    def action_thread(self):
+        """Fusion Thread (M49b v1): click a cylindrical boss face and
+        give it real bolt threads — a helical ridge cut to the minor."""
+        from ..core.thread import fit_cylinder
+        if self.doc is None or self.doc.result is None:
+            QMessageBox.warning(self, "Thread",
+                                "Nothing to thread yet — extrude or "
+                                "import a solid first.")
+            return
+        groups = self.viewport.selected_groups()
+        if len(groups) != 1:
+            QMessageBox.information(
+                self, "Thread",
+                "Click exactly ONE cylindrical face to thread — "
+                "flat faces cannot be threaded.")
+            return
+        tm = self.viewport._tm
+        seed = int(sorted(groups[0])[0])
+        tris = np.asarray(self.viewport.smooth_region(seed), int)
+        pts = tm.vertices[np.asarray(tm.faces, int)[tris]].reshape(-1, 3)
+        nrm = np.repeat(np.asarray(tm.face_normals, float)[tris], 3, axis=0)
+        fit = fit_cylinder(pts, nrm)
+        if fit is None:
+            QMessageBox.information(
+                self, "Thread",
+                "That face is not a cylinder — Thread needs the curved "
+                "face of a boss or pin.")
+            return
+        dia = 2.0 * fit["radius"]
+        sizes = list(ISO_COARSE)
+        near = min(sizes, key=lambda n: abs(float(n[1:]) - dia))
+        vals = cmddialog.ask(
+            self, f"Thread — boss Ø {dia:g} mm  (closest size {near})",
+            [dict(key="size", label="ISO size", kind="combo",
+                  choices=[f"{n} × {p:g}" for n, (p, _) in ISO_COARSE
+                           .items()])])
+        if vals is None:
+            return
+        size = vals["size"].split(" ")[0]
+        pitch = ISO_COARSE[size][0]
+        length = fit["zmax"] - fit["zmin"]
+        if length <= 1.2 * pitch:
+            QMessageBox.information(
+                self, "Thread", f"That face is only {length:g} mm tall — "
+                                f"too short for an {size} thread.")
+            return
+        if fit["radius"] - 0.5 * pitch <= 0.1:
+            QMessageBox.information(
+                self, "Thread", f"Ø {dia:g} is too thin for {size}: the "
+                                "thread would cut away the core.")
+            return
+        axis = np.asarray(fit["axis"], float)
+        start = np.asarray(fit["point"], float) + axis * fit["zmin"]
+        self._capture()
+        self.doc.add(ThreadFeature(
+            name=f"Thread {size}", op="subtract",
+            center=tuple(float(t) for t in start),
+            axis=tuple(float(t) for t in axis),
+            radius=float(fit["radius"]), pitch=float(pitch),
+            length=float(length)))
+        self.recompute()
+        self.viewport.refresh()
+        turns = int(length / pitch)
+        self.status.showMessage(
+            f"Thread {size} × {pitch:g} cut on the Ø {dia:g} boss — "
+            f"{turns} turns, minor Ø {dia - pitch:g} mm", 6000)
 
     def action_section(self, spec):
         """Fusion Section Analysis: clip the body on a plane, purely
