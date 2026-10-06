@@ -65,14 +65,22 @@ def test_top_view_is_a_square_with_a_hole():
     assert areas[0] == pytest.approx(math.pi * 16.0, rel=5e-2)  # hole
 
 
-def test_front_view_shows_the_visible_hole_walls():
+def test_front_view_hides_the_bore_behind_the_intact_wall():
+    # M101 migration: the bore walls do NOT face the viewer through an
+    # unbroken front face — a draughtsman dashes them. The solid ink is
+    # the 40x5 outline alone; the facing-region rectangle (16..24) now
+    # lands in the hidden chains, exactly as it does on paper.
     chains = drawing.project_view(_plate(), view="front")
-    # outer 40x5 rectangle + the bore's facing-region boundary (16..24)
     loops = _closed(chains)
-    assert len(loops) >= 2
-    assert any(7.0 < max(p[0] for p in L) - min(p[0] for p in L) < 17.0
-               and 3.0 < max(p[1] for p in L) - min(p[1] for p in L) < 7.0
-               for L in loops)
+    assert len(loops) == 1                       # just the outline
+    outer = loops[0]
+    assert max(p[0] for p in outer) - min(p[0] for p in outer) \
+        == pytest.approx(40.0, abs=0.5)
+    hid = drawing.project_hidden(_plate(), view="front")
+    assert hid, "the bore walls must dash, not vanish"
+    pts = np.vstack([np.asarray(c) for c in hid])
+    assert 7.0 < pts[:, 0].max() - pts[:, 0].min() < 17.0   # ~bore width
+    assert pts[:, 1].max() - pts[:, 1].min() == pytest.approx(5.0, abs=0.4)
 
 
 def test_views_cover_the_four_named_cameras():

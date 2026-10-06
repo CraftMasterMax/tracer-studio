@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M100**
+**Status: M101**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -85,8 +85,10 @@ independent project with no Autodesk assets or affiliation.)
   DXF/SVG sketches import back as constraints
 - **Drawings**: Create ▸ New drawing puts a real sheet (A3/A4) on the
   table — top/front/right/iso views are silhouette-projected LIVE
-  off the model, no re-project step, no stale paper, and hidden back
-  edges come out dashed where the body truly hides them; dimension
+  off the model, no re-project step, no stale paper, and hidden
+  edges come out dashed by a true depth test (a pocket's back wall
+  dashes behind intact metal; a far rim seen through an open hole
+  stays solid); dimension
   the sheet by clicking (two endpoints = linear bubble, one tap on a
   circle = Ø), and the numbers can't lie: bubbles re-measure from the
   model on every repaint, follow a stretch or a redrill, and travel
@@ -111,7 +113,7 @@ independent project with no Autodesk assets or affiliation.)
   a playhead timeline of icon chips, and a blue-grey horizon viewport —
   plus first-launch shortcut tour and a persistent Shortcuts tab driven by
   one canonical key table
-- 981 headless tests (EGL rendering + Qt pixel assertions)
+- 989 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -141,7 +143,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 981 tests, fully headless
+./.venv/bin/python -m pytest -q          # 989 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

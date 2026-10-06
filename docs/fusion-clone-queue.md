@@ -755,6 +755,38 @@ why. Honest scope: scale only (no rotation); an explicit scale is the
 draughtsman's responsibility — like Fusion, a 5:1 detail may hang off
 the sheet, and the auto-fit only balances the NON-overridden views.
 
+**M101 — True hidden-line removal: depth decides, not vibes.** ✓
+SHIPPED.  M97's rule was orientation-only — dash edges whose faces
+flee the viewer — which is fine for convex blocks and hopeless for
+concave ones, because "facing you" is not "visible to you": a milled
+pocket's back wall faces the camera THROUGH the plate's intact front
+wall (and M93 drew it solid — over-drawing the cavity), while a bore's
+far rim, legitimately seen THROUGH an open hole, had no rule that
+could promote it. One classifier now owns the whole question: every
+candidate edge — turn, crease, back crease, grazing-and-back creases
+(pocket floor meeting a fleeing wall) — is sampled at its midpoint
+and asked whether any front-facing triangle covers that point with
+nearer depth (vectorized barycentric interpolation). Covered →
+dashed; uncovered → solid, including a far rim seen through a hole.
+The subtlety that makes it trustworthy: a surface's own edge
+interpolates to the edge's own depth, so coincident cover loses to
+the depth tolerance while a genuinely nearer silhouette crossing wins
+— this is what dashes a box's third back edge in the perfectly
+symmetric iso (a strict point-in-triangle test misses exactly that
+ray). Coincident segments merge, visible winning: rims that repeat
+rims draw one line. Proof sheet: a pocket + blind bore in a plate
+dashes its back wall, floor lines and bore walls in the elevations
+while the opening rims stay solid, and the through bore's walls in
+front view now dash as every drawing standard demands — M93's pin
+migrated to the truth, the first test this pipeline ever corrected
+rather than pinned. Speed too: visible and hidden now share one pass
+cached on the immutable Solid, so steady-state painting beats the old
+eight-full-projections-per-repaint. Honest scope: midpoint sampling
+(a segment that half-slips out from behind a surface flips as whole
+— mesh segments are short); the far bore arc in iso dashes with
+Steiner crumbs (collinear merging can't straighten circles, and
+they're geometrically true); no section/auxiliary views.
+
 **Later candidates (researched, deferred):** Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),
 configurations, assemblies/joints, sheet metal, drawings.
