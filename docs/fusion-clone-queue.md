@@ -587,6 +587,23 @@ undo-safe switcher. Demonstrated: 30 mm plate at 3000 mm³ becomes
 Honest scope: one active configuration at a time (Fusion shows several
 in an assembly), no per-feature suppression per config.
 
+**M92 — Export a sketch as DXF/SVG (M83 in reverse).** ✓ SHIPPED.
+The maker loop's exit ramp: sketch the bracket, hand it to the laser.
+`tracer/core/export2d.py` speaks the same op-tuple IR M83 reads —
+DXF gets TRUE LINE/CIRCLE/ARC/LWPOLYLINE primitives with ezdxf
+(arcs keep their exact geometry; the CCW/DXF direction swap is tested
+as a set, since travel direction is meaningless for profiles), SVG
+writes standard positive y-down paths, 1 unit = 1 mm, viewBox "0 0 w
+h" — which makes M83's translate+flip reader contract the exact
+inverse, spans and lengths preserved through export→import.
+Construction geometry is scaffolding and stays home; ellipses flatten
+to closed polylines (64 segments); an empty sketch says "That sketch
+is empty" and mints no file. Proof by round trip both ways, in tests
+and in a screenshot. File ▸ Export profile (DXF/SVG) lands between
+Export STEP and Export render — the m15 layout pin moved with it, the
+documented pattern. Works from the live editor or straight off a
+sketch FEATURE payload (no edit needed).
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

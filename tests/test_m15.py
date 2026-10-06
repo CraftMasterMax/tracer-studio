@@ -216,6 +216,7 @@ def test_file_menu_layout(win):
               for a in m_file.actions() if not a.isSeparator()]
     order = ["New", "Open", "Recent Files", "Save", "Save As",
              "Import body", "Import profile (DXF/SVG)",
-             "Export mesh", "Export STEP (.step)", "Export render (PNG)",
+             "Export mesh", "Export STEP (.step)",
+             "Export profile (DXF/SVG)", "Export render (PNG)",
              "Exit"]
     assert labels == order

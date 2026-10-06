@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout,
                                QToolBar, QToolButton, QVBoxLayout, QWidget)
 
 from ..core import import2d
+from ..core import export2d
 from ..core import io as fio
 from ..core import params
 from ..core import printcheck
@@ -469,6 +470,9 @@ class MainWindow(QMainWindow):
             for ext in (".stl", ".3mf", ".obj", ".ply")]
         self.act_export_step_a = QAction("Export &STEP (.step)…", self,
                                          triggered=self.action_export_step)
+        self.act_export_profile_a = QAction(
+            "Export &profile (DXF/SVG)", self,
+            triggered=lambda checked=False: self.action_export_profile())
         self.act_export_render_a = QAction(
             "Export &render (PNG)…", self,
             triggered=lambda checked=False: self.action_export_render())
@@ -476,6 +480,7 @@ class MainWindow(QMainWindow):
         for a in self._export_acts:
             m_export.addAction(a)
         m_file.addAction(self.act_export_step_a)
+        m_file.addAction(self.act_export_profile_a)
         m_file.addSeparator()
         m_file.addAction(self.act_export_render_a)
         m_file.addSeparator()
@@ -3241,6 +3246,49 @@ class MainWindow(QMainWindow):
             f"Imported {n} entities from {Path(path).name} "
             "(document measures)", 6000) if n else \
             self.status.showMessage("No profile found in that file", 5000)
+
+    def action_export_profile(self, path=None, feature=None):
+        """File ▸ Export profile (M92): hand the sketch to the laser.
+        DXF carries exact primitives + units, SVG the flattened paths;
+        construction geometry stays home.  Works from the live editor
+        or straight off a sketch feature's payload."""
+        if self.doc is None:
+            return
+        model = None
+        if feature is not None and getattr(feature, "sketch", None):
+            model = model_from_dict(feature.sketch)
+        elif self.sketch is not None and self.sketch.model is not None:
+            model = self.sketch.model
+        if model is None:
+            self.status.showMessage("Nothing to export — no sketch in "
+                                    "hand", 5000)
+            return
+        ops = export2d.sketch_ops(model)
+        if not ops:
+            self.status.showMessage("That sketch is empty", 4000)
+            return
+        if path is None:
+            from PySide6.QtWidgets import QFileDialog
+            name = getattr(model, "name", "profile") or "profile"
+            path, _flt = QFileDialog.getSaveFileName(
+                self, "Export profile", str(Path.home() / f"{name}.dxf"),
+                "DXF (*.dxf);;SVG (*.svg)")
+            if not path:
+                return
+        try:
+            if path.lower().endswith(".svg"):
+                n = export2d.write_svg(ops, path)
+            else:
+                if not path.lower().endswith(".dxf"):
+                    path += ".dxf"
+                n = export2d.write_dxf(ops, path)
+        except Exception as e:
+            self.status.showMessage(f"Export refused: {e}", 6000)
+            return
+        self.status.showMessage(
+            f"Exported {n} entities to {Path(path).name} "
+            "(millimetres)", 6000) if n else \
+            self.status.showMessage("Nothing to write", 4000)
 
     def action_import(self):
         """Import a body (STEP / STL / OBJ / …) as a real history feature.
