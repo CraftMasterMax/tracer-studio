@@ -13,6 +13,7 @@ from typing import Literal
 
 import numpy as np
 
+from . import params
 from .geometry import Solid, circle_contour, round_corners
 from .rimfillet import rim_fillet
 from .sketch.model import frame_matrix, plane_matrix, revolve_matrix
@@ -26,6 +27,34 @@ class Feature:
     op: CombineOp = "union"
     uid: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     suppressed: bool = False
+    bindings: dict = field(default_factory=dict)  # lever key -> formula
+
+    def _lever(self, key: str):
+        """Where a Change Parameters lever key lives: an entry in the
+        dims dict (primitives) or a plain attribute (everything else)."""
+        dims = getattr(self, "dims", None)
+        if isinstance(dims, dict) and key in dims:
+            return dims, key, float(dims[key])
+        if hasattr(self, key) and not callable(getattr(self, key)):
+            return None, key, getattr(self, key)
+        raise params.ParamError(f"{self.name}: no parameter {key!r}")
+
+    def apply_bindings(self, values: dict, scale: float = 1.0) -> None:
+        """Write user-parameter formulas into the numeric levers (the
+        fx column).  Formulas speak the document's measures, so the
+        result scales to stored millimetres; integer levers (pattern
+        counts) round to a usable whole."""
+        for key, expr in self.bindings.items():
+            v = params.eval_expr(expr, values) * scale
+            holder, k, cur = self._lever(key)
+            if isinstance(cur, int) and not isinstance(cur, bool):
+                v = max(1, int(round(v)))
+            else:
+                v = float(v)
+            if holder is None:
+                setattr(self, k, v)
+            else:
+                holder[k] = v
 
 
 @dataclass
@@ -566,6 +595,7 @@ class Document:
         self.features: list[Feature] = []
         self.planes: list[dict] = []      # construction planes (Construct ▸)
         self.appearance: dict | None = None   # Appearance ▸ material paint
+        self.params: dict = {}                # user parameters (M81)
         self._result: Solid | None = None
         self.dirty = False
 
@@ -639,6 +669,13 @@ class Document:
 
     # ---- evaluation ------------------------------------------------------
     def recompute(self) -> Solid | None:
+        if self.params:                   # M81: the sheet drives levers
+            from . import units
+            vals = params.resolve(self.params)   # document measures
+            sc = units.PER_MM[self.units]        # stored truth is mm
+            for f in self.features:
+                if f.bindings:
+                    f.apply_bindings(vals, sc)
         acc: Solid | None = None
         by_uid: dict[str, Solid] = {}
         for f in self.features:
@@ -830,9 +867,11 @@ class Document:
                          radius=float(f.radius),
                          pitch=float(f.pitch),
                          length=float(f.length))
+            d["bindings"] = dict(f.bindings)     # every lever, one line
             return d
         return {"format": "tracer/document", "version": 2,
                 "title": self.title, "units": self.units,
+                "params": dict(self.params),
                 "features": [_feat(f) for f in self.features],
                 "planes": [dict(p) for p in self.planes],
                 "appearance": (dict(self.appearance)
@@ -845,6 +884,7 @@ class Document:
             raise ValueError("not a readable Tracer Studio document")
         doc = cls(title=data.get("title", "Untitled"))
         doc.units = data.get("units", "mm")
+        doc.params = dict(data.get("params", {}))   # pre-M81 files: empty
         for fd in data.get("features", []):
             t = fd["type"]
             base = dict(op=fd["op"], uid=fd.get("uid") or uuid.uuid4().hex[:8],
@@ -984,5 +1024,7 @@ class Document:
                                     "u", "v", "n") if k in p})
         app = data.get("appearance")              # pre-M52 files have none
         doc.appearance = dict(app) if app else None
+        for f, fd in zip(doc.features, data.get("features", [])):
+            f.bindings = dict(fd.get("bindings", {}))   # pre-M81: empty
         doc.dirty = True
         return doc

@@ -12,6 +12,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog,
                                QDialogButtonBox, QDoubleSpinBox, QFormLayout,
                                QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+                               QPlainTextEdit,
                                QSpinBox, QVBoxLayout, QWidget)
 
 from .theme import DARK
@@ -170,10 +171,20 @@ class CommandDialog(QDialog):
         self._fields[key] = w
         return self
 
+    def add_multiline(self, key, label, default="", group=""):
+        w = QPlainTextEdit(str(default))
+        w.setFixedHeight(150)
+        w.setTabChangesFocus(True)
+        self._form(group).addRow(label, w)
+        self._fields[key] = w
+        return self
+
     def value(self, key):
         w = self._fields[key]
         if isinstance(w, QComboBox):
             return w.currentText()
+        if isinstance(w, QPlainTextEdit):
+            return w.toPlainText()
         if isinstance(w, QSpinBox):
             return int(w.value())
         if isinstance(w, QDoubleSpinBox):
@@ -240,6 +251,8 @@ def ask(parent, title, fields, remember_key=None) -> dict | None:
             d.add_check(f["key"], f["label"], f.get("default", False), g)
         elif kind == "text":
             d.add_text(f["key"], f["label"], f.get("default", ""), g)
+        elif kind == "multiline":
+            d.add_multiline(f["key"], f["label"], f.get("default", ""), g)
         else:
             raise ValueError(f"unknown field kind {kind!r}")
     d._prefill()

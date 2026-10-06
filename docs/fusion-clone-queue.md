@@ -421,6 +421,23 @@ skipped rather than silently wrong.  K (construction toggle) grew
 circles and ellipses in the same pass.  Mirrors are static copies —
 Fusion's parametric mirrored constraints are logged as future work.
 
+**M81 — User Parameters + expressions.** ✓ SHIPPED.  First milestone
+out of the Oct-2026 research sweep, and the heart of what "parametric"
+means: a named parameter sheet (`width = 60`, `height = width / 2`,
+comments allowed) plus an fx column on every numeric lever of Change
+Parameters, so a feature's number can CARRY A FORMULA instead of a
+value.  Edit one parameter and the bound levers rebuild through
+`Document.recompute` — formulas are spoken in the document's measures
+and scale to stored millimetres, integer levers (pattern counts) round
+themselves, and a bound lever always follows its formula: type a plain
+number over it and the formula wins, exactly like Fusion's fx cells.
+The evaluator is a whitelisted AST walk (+ - * / ** , min/max/sqrt/
+abs/round, names only — never exec, because these strings come out of
+someone else's JSON); cycles and strays name themselves in the error
+and a sheet with one bad line is refused WHOLE.  Bindings and params
+serialize with the document; pre-M81 files load untouched.
+Sketch-dimension fx bindings (the deeper half) are M81b.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

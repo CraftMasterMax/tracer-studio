@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout,
                                QToolBar, QToolButton, QVBoxLayout, QWidget)
 
 from ..core import io as fio
+from ..core import params
 from ..core import step
 from ..core.thread import ISO_COARSE
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
@@ -516,6 +517,7 @@ class MainWindow(QMainWindow):
         m_mo.addSeparator()
         m_mo.addAction("Change Parameters…",
                        lambda checked=False: self.action_change_params())
+        m_mo.addAction("User Parameters…", self.action_user_parameters)
         m_mo.addAction("Move body…",
                        lambda checked=False: self.action_move_body())
         m_mo.addAction("Rotate body…",
@@ -671,6 +673,7 @@ class MainWindow(QMainWindow):
         if self._feature_params(feature):
             menu.addAction("Change Parameters…",
                            lambda: self.action_change_params(feature))
+        menu.addAction("User Parameters…", self.action_user_parameters)
         menu.addAction("Rename…", lambda: self._rename_feature(feature))
         menu.addSeparator()
         menu.addAction("Unsuppress" if feature.suppressed else "Suppress",
@@ -946,6 +949,35 @@ class MainWindow(QMainWindow):
             feature.center = tuple(mm(f"c{i}") for i in range(3))
         self.doc.dirty = True
 
+    # ---- User Parameters (M81) ----------------------------------------------
+    def action_user_parameters(self):
+        """Fusion's parameter sheet: named numbers (`width = 20`) whose
+        formulas may reference each other, driving every feature lever
+        that carries an fx binding.  A sheet with one bad line is
+        refused whole — nothing half-loads."""
+        if self.doc is None:
+            return
+        sheet = "\n".join(f"{k} = {v}" for k, v in self.doc.params.items())
+        v = cmddialog.ask(self, "User Parameters", [dict(
+            key="sheet", kind="multiline",
+            label="name = formula   (one per line, # comments ok)",
+            default=sheet)])
+        if v is None:
+            return
+        try:
+            raw = params.parse_sheet(v["sheet"])
+            vals = params.resolve(raw)
+        except params.ParamError as e:
+            self.status.showMessage(f"Parameters refused: {e}", 6000)
+            return
+        self._capture()
+        self.doc.params = raw
+        self.recompute()
+        self.status.showMessage(
+            "User parameters: " + ",  ".join(f"{k} = {g:g}"
+                                             for k, g in vals.items())
+            if vals else "User parameters cleared", 5000)
+
     def action_change_params(self, feature=None):
         """Fusion's Modify ▸ Change Parameters: edit the numbers that
         define a feature.  Undo-safe; honours document measures."""
@@ -963,12 +995,33 @@ class MainWindow(QMainWindow):
                 f"{feat.name}: captured geometry — no plain numbers to "
                 "change", 3500)
             return
+        for spec in list(fld):            # the fx column (M81)
+            if spec["kind"] in ("double", "int"):
+                fld.append(dict(key=f"fx_{spec['key']}", kind="text",
+                                label=f"fx \u00b7 {spec['label']}",
+                                default=feat.bindings.get(spec["key"], "")))
         v = cmddialog.ask(self, f"Change Parameters \u2014 {feat.name}",
                           fld)
         if v is None:
             return
+        # M81 fx column: every numeric lever may instead carry a formula
+        exprs, touched = {}, []
+        for key in [k for k in v if str(k).startswith("fx_")]:
+            attr = key[3:]
+            expr = str(v.pop(key)).strip().lstrip("=").strip()
+            touched.append(attr)
+            if expr:
+                try:
+                    params.eval_expr(expr, params.resolve(self.doc.params))
+                except params.ParamError as e:
+                    self.status.showMessage(f"Binding refused: {e}", 6000)
+                    return
+                exprs[attr] = expr
         self._capture()
         self._apply_feature_params(feat, v)
+        for attr in touched:
+            feat.bindings.pop(attr, None)
+        feat.bindings.update(exprs)
         self.recompute()
         self.status.showMessage(f"Parameters changed on {feat.name}", 4000)
 
