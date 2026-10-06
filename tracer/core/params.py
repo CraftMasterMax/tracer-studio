@@ -139,3 +139,31 @@ def parse_sheet(text: str) -> dict:
         raw[name] = expr
     resolve(raw)                          # refuses strays and cycles
     return raw
+
+
+def parse_configs(text: str) -> dict:
+    """M91: named configuration rows for the sheet —
+
+        Small: width = 20, height = 10
+        Large: width = 50        # one per line, # comments ok
+
+    -> {'Small': {'width': '20', 'height': '10'}, ...}.  Values stay
+    raw strings: they are formulas resolved against the merged sheet,
+    exactly like the sheet itself (validated there, not here)."""
+    out: dict = {}
+    for i, line in enumerate(str(text).splitlines(), 1):
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        name, sep, body = line.partition(":")
+        if not sep or not name.strip() or not body.strip():
+            raise ParamError(f"line {i}: expected 'Name: param = value'")
+        entries: dict = {}
+        for item in body.split(","):
+            key, eq, val = item.partition("=")
+            if not eq or not key.strip():
+                raise ParamError(f"line {i}: {item.strip()!r} is not "
+                                 "'name = value'")
+            entries[key.strip()] = val.strip()
+        out[name.strip()] = entries
+    return out

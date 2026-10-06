@@ -525,6 +525,7 @@ class MainWindow(QMainWindow):
         m_mo.addAction("Change Parameters…",
                        lambda checked=False: self.action_change_params())
         m_mo.addAction("User Parameters…", self.action_user_parameters)
+        m_mo.addAction("Configurations…", self.action_configurations)
         m_mo.addAction("Move body…",
                        lambda checked=False: self.action_move_body())
         m_mo.addAction("Rotate body…",
@@ -570,6 +571,8 @@ class MainWindow(QMainWindow):
                           self.action_mass_properties())
         m_tools.addAction("3D Print…",
                           lambda checked=False: self.action_3d_print())
+        m_tools.addAction("Configurations…",
+                          lambda checked=False: self.action_configurations())
 
         m_help = self.menuBar().addMenu("&Help")
         self.act_tour = QAction("&Welcome tour", self,
@@ -1016,6 +1019,63 @@ class MainWindow(QMainWindow):
             "User parameters: " + ",  ".join(f"{k} = {g:g}"
                                              for k, g in vals.items())
             if vals else "User parameters cleared", 5000)
+
+    def action_configurations(self):
+        """Fusion's Configurations, sheet-honest (M91): named rows that
+        override parameter values, one active at a time. The table is
+        text — `Small: width = 18, height = 10` per line — same grammar
+        precedent as the M81 sheet. A bad row is refused whole."""
+        if self.doc is None:
+            return
+        body = "\n".join(
+            f"{name}: " + ", ".join(f"{p} = {val}"
+                                    for p, val in over.items())
+            for name, over in sorted(self.doc.configs.items()))
+        v = cmddialog.ask(self, "Configurations", [
+            dict(key="sheet", kind="multiline",
+                 label="Name: param = value, param = value"
+                 "   (one per line, # comments ok)",
+                 default=body),
+            dict(key="active", kind="combo", label="Active",
+                 choices=["Default"] + sorted(self.doc.configs),
+                 default=self.doc.active_config or "Default")])
+        if v is None:
+            return
+        try:
+            cfgs = params.parse_configs(str(v["sheet"]))
+            if v["active"] != "Default" and v["active"] not in cfgs:
+                raise params.ParamError(
+                    f"configuration {v['active']!r} is not in the table")
+        except params.ParamError as e:
+            self.status.showMessage(f"Configurations refused: {e}", 6000)
+            return
+        self._capture()
+        self.doc.configs = cfgs
+        self.doc.active_config = (None if v["active"] == "Default"
+                                  else v["active"])
+        self.recompute()
+        named = " \u00b7 ".join(sorted(cfgs)) if cfgs else "none defined"
+        self.status.showMessage(
+            f"Configurations: {named}"
+            + (f" \u00b7 active {self.doc.active_config}"
+               if self.doc.active_config else " \u00b7 base parameters"),
+            5000)
+
+    def _set_active_config(self, name):
+        """The switcher half (M91): flip the active configuration and
+        rebuild — the solid follows its new numbers. Undo-safe."""
+        if self.doc is None:
+            return
+        self._capture()
+        self.doc.active_config = name
+        try:
+            self.recompute()
+        except params.ParamError as e:        # sheet got illegal under it
+            self.status.showMessage(f"Configuration refused: {e}", 6000)
+            return
+        self.status.showMessage(
+            f"Configuration {name!r} active — solid rebuilt"
+            if name else "Configuration cleared — base parameters", 4000)
 
     def action_change_params(self, feature=None):
         """Fusion's Modify ▸ Change Parameters: edit the numbers that

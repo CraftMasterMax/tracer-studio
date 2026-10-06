@@ -570,6 +570,23 @@ Undo rolls a typed dimension back with the geometry. Honest scope:
 plain numbers (fx formulas stay in the dimension dialog), millimetres,
 ellipses/slots not armed yet.
 
+**M91 — Configurations: named parameter sets.** ✓ SHIPPED.  Fusion's
+Configurations turn one model into a family — Small/Large rows that
+override sheet names behind a switcher. The third leg of the
+parametric triad now stands: M81's sheet, M89's dimension bindings,
+and here `Document.configs` ({name: {param: formula}}) with
+`active_config` overlaying the base at resolve time via
+`merged_sheet()` — a plain dict overlay, so override formulas may
+reference other sheet names and base formulas keep following the
+overrides. Serialize with the file; unknown active names honestly
+ignore; the dialog (Manage + Tools menus) speaks a text table —
+`Small: width = 18, height = 10` per line (M81's sheet-text precedent)
+— refused whole when malformed, and `_set_active_config` is the
+undo-safe switcher. Demonstrated: 30 mm plate at 3000 mm³ becomes
+1800 under Small and 5000 under Large without touching the model.
+Honest scope: one active configuration at a time (Fusion shows several
+in an assembly), no per-feature suppression per config.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

@@ -596,6 +596,8 @@ class Document:
         self.planes: list[dict] = []      # construction planes (Construct ▸)
         self.appearance: dict | None = None   # Appearance ▸ material paint
         self.params: dict = {}                # user parameters (M81)
+        self.configs: dict = {}               # M91: name -> {param: raw}
+        self.active_config: str | None = None # M91: the one overlaying
         self.rollback_to: int | None = None   # M88 rubber band (view state)
         self._result: Solid | None = None
         self.dirty = False
@@ -691,10 +693,20 @@ class Document:
                    for h in r.get("holes", [])]
         f.sketch = dict(f.sketch, **model_to_dict(m))
 
+    def merged_sheet(self) -> dict:
+        """M91: the base parameters with the active configuration's
+        overrides laid on top — the sheet the rebuild resolves.
+        An unknown active name simply isn't here (honest ignore)."""
+        over = self.configs.get(self.active_config or "")
+        if not over:
+            return self.params
+        return {**self.params,
+                **{k: str(v) for k, v in over.items()}}
+
     def recompute(self) -> Solid | None:
         if self.params:                   # M81: the sheet drives levers
             from . import units
-            vals = params.resolve(self.params)   # document measures
+            vals = params.resolve(self.merged_sheet())   # M91 overlay
             sc = units.PER_MM[self.units]        # stored truth is mm
             for f in self.features:
                 if f.bindings:
@@ -896,6 +908,8 @@ class Document:
         return {"format": "tracer/document", "version": 2,
                 "title": self.title, "units": self.units,
                 "params": dict(self.params),
+                "configs": {k: dict(v) for k, v in self.configs.items()},
+                "active_config": self.active_config,
                 "features": [_feat(f) for f in self.features],
                 "planes": [dict(p) for p in self.planes],
                 "appearance": (dict(self.appearance)
@@ -909,6 +923,9 @@ class Document:
         doc = cls(title=data.get("title", "Untitled"))
         doc.units = data.get("units", "mm")
         doc.params = dict(data.get("params", {}))   # pre-M81 files: empty
+        doc.configs = {k: dict(v) for k, v
+                       in (data.get("configs") or {}).items()}  # M91
+        doc.active_config = data.get("active_config")
         for fd in data.get("features", []):
             t = fd["type"]
             base = dict(op=fd["op"], uid=fd.get("uid") or uuid.uuid4().hex[:8],
