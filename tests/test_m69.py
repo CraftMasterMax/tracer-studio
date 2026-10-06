@@ -145,7 +145,7 @@ def test_change_parameters_leans_the_wall(win, qapp, monkeypatch):
     ef = _wall(win, qapp)
     assert win.doc.result.volume == pytest.approx(8000, rel=1e-6)
     script_cmd(monkeypatch, {"height": 10.0, "fillet": 0.0,
-                             "chamfer": 0.0, "taper": 45.0})
+                             "chamfer": 0.0, "taper": 45.0, "symmetric": False})
     win.action_change_params(ef)
     qapp.processEvents()
     assert ef.taper == pytest.approx(45.0)
@@ -158,13 +158,13 @@ def test_change_parameters_leans_the_wall(win, qapp, monkeypatch):
 def test_taper_back_to_zero_restores_the_box(win, qapp, monkeypatch):
     ef = _wall(win, qapp)
     script_cmd(monkeypatch, {"height": 10.0, "fillet": 0.0,
-                             "chamfer": 0.0, "taper": 30.0})
+                             "chamfer": 0.0, "taper": 30.0, "symmetric": False})
     win.action_change_params(ef)
     qapp.processEvents()
     v30 = win.doc.result.volume
     assert v30 > 8000
     script_cmd(monkeypatch, {"height": 10.0, "fillet": 0.0,
-                             "chamfer": 0.0, "taper": 0.0})
+                             "chamfer": 0.0, "taper": 0.0, "symmetric": False})
     win.action_change_params(ef)
     qapp.processEvents()
     assert win.doc.result.volume == pytest.approx(8000, rel=1e-6)

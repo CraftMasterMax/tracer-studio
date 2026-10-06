@@ -171,6 +171,7 @@ class ExtrudeFeature(Feature):
     fillet: float = 0.0      # round vertical edges (2D corner fillet, mm)
     chamfer: float = 0.0     # cut vertical edges (2D corner chamfer, mm)
     taper: float = 0.0       # draft angle in degrees; + widens as it goes
+    symmetric: bool = False  # straddle the sketch plane (Fusion extent)
 
     def _profile(self):
         if self.fillet > 0 or self.chamfer > 0:
@@ -239,6 +240,9 @@ class ExtrudeFeature(Feature):
             s = Solid.extrude(outer, holes, self.height)
         else:
             s = self._loft_taper(outer, holes)
+        if self.symmetric:            # Fusion's symmetric extent: the
+            s = s.translated((0.0, 0.0,   # profile grows evenly about
+                              -float(self.height) / 2.0))  # its plane
         if self.plane == "XY":
             return s.translated(self.placement)
         m = plane_matrix(self.plane, self.placement, self.axes)
@@ -732,6 +736,7 @@ class Document:
                          height=float(f.height),
                          fillet=float(f.fillet), chamfer=float(f.chamfer),
                          taper=float(f.taper),
+                         symmetric=bool(f.symmetric),
                          placement=list(map(float, f.placement)),
                          plane=f.plane, axes=f.axes, sketch=f.sketch,
                          sid=f.sid, region=f.region)
@@ -853,6 +858,7 @@ class Document:
                     fillet=float(fd.get("fillet", 0.0)),
                     chamfer=float(fd.get("chamfer", 0.0)),
                     taper=float(fd.get("taper", 0.0)),
+                    symmetric=bool(fd.get("symmetric", False)),
                     placement=tuple(fd["placement"]),
                     plane=fd.get("plane", "XY"), axes=fd.get("axes"),
                     sketch=fd.get("sketch"),

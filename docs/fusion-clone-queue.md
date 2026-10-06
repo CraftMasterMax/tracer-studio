@@ -288,6 +288,15 @@ honest — and taper 0 stays byte-identical to the old straight extrude.
 Dialed from Change Parameters (degrees, negative necks in), shown on
 the card as "taper: +45.0°".
 
+**M70 — Symmetric extent.** ✓ SHIPPED.  The extrude dialog's other
+extent voice: a symmetric feature grows −h/2…+h/2 about its sketch
+plane — an XY box sits z −5…+5, a face-sketch wall centres on ITS plane
+wherever that floats, and symmetric + taper composes into a solid that
+bulges mid-height exactly like a drafted rib about the profile. One
+checkbox in Change Parameters, one "extent: symmetric" line on the
+card, JSON-clean, and switching back restores the one-sided box to the
+micron.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),
