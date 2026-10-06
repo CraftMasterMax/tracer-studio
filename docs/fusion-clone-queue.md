@@ -270,6 +270,13 @@ also caught a real M58 bug: PySide6 stores an empty QSettings list as
 the NEXT launch — _recents now shrugs off None, Clear removes the key,
 and the fixture poisons are gone.
 
+**M68 — Torus.** ✓ SHIPPED.  Fusion's fifth primitive, via the kernel's
+revolve on a circle profile: 2·π²·R·r² to faceting tolerance, genus-1
+watertight, resting tangent where placed.  It speaks every primitive
+dialect — Create dialog (ring + tube radius), Combine tool (a cutter
+that guts a slab by exactly its ring volume), Change Parameters, JSON,
+and the ⊕ card's "ring Ø… × tube Ø…".
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

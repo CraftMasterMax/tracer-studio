@@ -226,7 +226,9 @@ class RevolveFeature(Feature):
 
 @dataclass
 class PrimitiveFeature(Feature):
-    """Parametric primitive: box(dx,dy,dz), cylinder(radius,height), sphere(radius)."""
+    """Parametric primitive: box(dx,dy,dz), cylinder(radius,height),
+    cone(radius_bottom,radius_top,height), torus(major,minor),
+    sphere(radius)."""
     kind: str = "box"
     dims: dict = field(default_factory=dict)
     placement: tuple = (0.0, 0.0, 0.0)
@@ -239,6 +241,8 @@ class PrimitiveFeature(Feature):
         elif self.kind == "cone":
             s = Solid.cone(self.dims["radius_bottom"],
                            self.dims["radius_top"], self.dims["height"])
+        elif self.kind == "torus":
+            s = Solid.torus(self.dims["major"], self.dims["minor"])
         elif self.kind == "sphere":
             s = Solid.sphere(self.dims["radius"])
         else:
@@ -418,6 +422,9 @@ class CombineFeature(Feature):
             s = Solid.cone(float(d.get("radius_bottom", 8.0)),
                            float(d.get("radius_top", 3.0)),
                            float(d.get("height", 15.0)))
+        elif self.tool == "torus":
+            s = Solid.torus(float(d.get("major", 15.0)),
+                            float(d.get("minor", 4.0)))
         elif self.tool == "sphere":
             s = Solid.sphere(float(d.get("radius", 5.0)))
         else:

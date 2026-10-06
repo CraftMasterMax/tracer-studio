@@ -351,6 +351,11 @@ class PropertiesPanel(QWidget):
                 size = (f"\u00d8{units.L(2 * d.get('radius_bottom', 0), self.unit)}"
                         f" \u2192 \u00d8{units.L(2 * d.get('radius_top', 0), self.unit)}"
                         f" \u00d7 {units.L(d.get('height', 0), self.unit)}")
+            elif feature.tool == "torus":
+                size = (f"ring \u00d8"
+                        f"{units.L(2 * d.get('major', 0), self.unit)}"
+                        f" \u00d7 tube \u00d8"
+                        f"{units.L(2 * d.get('minor', 0), self.unit)}")
             else:
                 size = f"\u00d8{units.L(2 * d.get('radius', 0), self.unit)}"
             lines.append(f"combine \u2295 {shape} a {feature.tool}")

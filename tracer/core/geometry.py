@@ -142,6 +142,17 @@ class Solid:
         return cls(m)
 
     @classmethod
+    def torus(cls, major: float, minor: float, segments: int = 64) -> "Solid":
+        """Ring of tube radius `minor` about a circle of radius `major`,
+        centred on the origin in the XY plane.  A circle revolved on a
+        parallel axis; volume 2·pi²·R·r² (faceting at `segments` makes
+        it a hair less)."""
+        th = np.linspace(0.0, 2.0 * np.pi, int(segments), endpoint=False)
+        prof = np.column_stack([float(major) + float(minor) * np.cos(th),
+                                float(minor) * np.sin(th)])
+        return cls.revolve(prof)
+
+    @classmethod
     def sphere(cls, radius: float) -> "Solid":
         return cls(m3.Manifold.sphere(radius))
 
