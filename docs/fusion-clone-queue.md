@@ -142,10 +142,19 @@ solid BEFORE history is touched so a plane that would eat everything
 warns instead.  Multi-body splitting (keep both halves as separate
 bodies) stays out of v1 scope — this is the maker-truth 90% of it.
 
+**M52 — Appearance.** ✓ SHIPPED.  Ribbon ▸ Appearance: paint the body
+with a shop material (Steel, Brass, Copper, Anodized red/blue, rubber…)
+or a custom colour, and dial opacity — below 1.0 the body ghosts like
+Fusion's edit-transparency, the grid showing through the walls.  The
+paint is a shader uniform (one multiplication in the Blender-solid
+lighting model), rides the document JSON, re-syncs on open/new/undo,
+and the exact colour returns when the paint is cleared.  Per-body
+appearances arrive with multi-body.
+
 **Later candidates (researched, deferred):** Patch/Thicken
-(surface kernel gap), Draft, Combine/multi-browser-bodies, Appearances
-(per-body colour), configurations, assemblies/joints, sheet metal,
-drawings.  Re-evaluate after M48.
+(surface kernel gap), Draft, Combine/multi-browser-bodies,
+configurations, assemblies/joints, sheet metal, drawings.
+Re-evaluate after M52.
 
 ## Testing doctrine (unchanged)
 

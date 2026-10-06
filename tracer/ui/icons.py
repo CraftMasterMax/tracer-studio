@@ -7,7 +7,8 @@ crisp at any DPI.
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QSize
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
+from PySide6.QtGui import (QColor, QIcon, QPainter, QPainterPath, QPen,
+                           QPixmap, QPolygonF)
 
 _COL = QColor("#e4e8ee")
 
@@ -276,6 +277,17 @@ def _section(p: QPainter):
     p.drawLine(QPointF(5, 17), QPointF(27, 17))
 
 
+def _appearance(p: QPainter):
+    """A paint drop landing on a brushed band."""
+    path = QPainterPath()
+    path.moveTo(16, 4)
+    path.cubicTo(24, 13, 23, 20, 16, 20)
+    path.cubicTo(9, 20, 8, 13, 16, 4)
+    p.fillPath(path, _COL)
+    p.setBrush(_COL)
+    p.drawRect(QRectF(5, 23, 22, 5))
+
+
 def _split(p: QPainter):
     """A solid sliced into two halves by a dashed plane."""
     p.drawRect(QRectF(6, 9, 20, 16))
@@ -311,7 +323,8 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "construction": _construction, "plane": _plane,
               "constrain": _constrain, "dimension": _dimension,
               "launcher": _launcher, "section": _section,
-              "thread": _thread, "split": _split})
+              "thread": _thread, "split": _split,
+              "appearance": _appearance})
 
 
 def icon(name: str) -> QIcon:

@@ -55,6 +55,7 @@ uniform int u_show_edges;
 uniform int u_clip_on;
 uniform vec3 u_clip_n;
 uniform vec3 u_clip_o;
+uniform float u_alpha;
 out vec4 frag;
 
 float edge_amount() {
@@ -92,7 +93,7 @@ void main() {
         float e = clamp(edge_amount(), 0.0, 1.0);
         col = mix(col, u_edge_col, e * 0.65);   // Blender outlines: dark, soft
     }
-    frag = vec4(col, 1.0);
+    frag = vec4(col, u_alpha);
 }
 """
 
@@ -175,6 +176,8 @@ class SceneRenderer:
         self.show_solid = True       # browser bulb: hide/show the body
         self.show_edges = True
         self.clip = None             # Section Analysis: {normal, origin}
+        self._base_override = None   # Appearance: painted body colour
+        self._base_alpha = 1.0       # Appearance: body opacity
         self._grid_extent = 100.0
         self._size = (2, 2)
         self._fbo = None
@@ -289,6 +292,16 @@ class SceneRenderer:
             [(buf, "3f 3f 3f 3f 1f",
               "in_pos", "in_nrm", "in_bary", "in_mask", "in_hi")])
         self._solid_count = len(idx)
+
+    def set_base_color(self, rgb, opacity: float = 1.0):
+        """Appearance paint (M52): tint the solid-shaded body this sRGB
+        colour with this opacity; None restores the theme's viewport
+        grey.  Below 1.0 the body renders see-through, Fusion ghost
+        style."""
+        self._base_override = None if rgb is None else \
+            tuple(float(c) for c in rgb)
+        self._base_alpha = 1.0 if rgb is None else \
+            max(0.05, min(1.0, float(opacity)))
 
     def set_highlight(self, hover_faces=None, sel_faces=()):
         """Tint whole mesh faces: cyan wash under the cursor, blue for
@@ -446,7 +459,7 @@ class SceneRenderer:
             u["u_view"].write(view.tobytes())
             u["u_proj"].write(proj.tobytes())
             u["u_eye"].value = tuple(np.asarray(camera.position, "f4"))
-            u["u_base"].value = p["solid_base"]
+            u["u_base"].value = self._base_override or p["solid_base"]
             u["u_edge_col"].value = p["solid_edge"]
             u["u_hi_hover"].value = p["hi_hover"]
             u["u_hi_sel"].value = p["hi_sel"]
@@ -460,7 +473,12 @@ class SceneRenderer:
                     float(t) for t in self.clip["origin"])
             else:
                 u["u_clip_on"].value = 0
+            u["u_alpha"].value = self._base_alpha
+            if self._base_alpha < 1.0:          # ghosted appearance
+                c.enable(moderngl.BLEND)
             self._solid_vao.render(moderngl.TRIANGLES, vertices=self._solid_count)
+            if self._base_alpha < 1.0:
+                c.disable(moderngl.BLEND)
 
         if self._msaa:
             c.disable(moderngl.DEPTH_TEST)

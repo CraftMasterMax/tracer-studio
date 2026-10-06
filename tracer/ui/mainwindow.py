@@ -303,6 +303,8 @@ class MainWindow(QMainWindow):
               ("Flip clipped side", self.action_flip_section),
               ("Turn section off",
                lambda checked=False: self.action_section(None))])
+        d("appearance", "Appearance — paint the body with a material",
+          lambda checked=False: self.action_appearance())
 
         s = r.sketch_tool
         for glyph, tip, tool in (
@@ -1184,6 +1186,65 @@ class MainWindow(QMainWindow):
             f"Split on the {plane} plane — kept the "
             f"{'lower' if removed_up else 'upper'} half", 5000)
 
+    def _apply_appearance(self):
+        """Push the document's paint (M52) onto the renderer — the one
+        place the colour lives, so undo/open/new all re-sync it."""
+        app = (self.doc.appearance if self.doc else None) or None
+        self._renderer.set_base_color(
+            app["color"] if app else None,
+            app.get("opacity", 1.0) if app else 1.0)
+
+    def action_appearance(self):
+        """Fusion's Appearance dialog (M52): paint the body with a shop
+        material — steel to brass — and dial its opacity."""
+        if self.doc is None or self.doc.result is None:
+            QMessageBox.warning(self, "Appearance",
+                                "Nothing to paint yet — extrude or "
+                                "import a solid first.")
+            return
+        from ..core.appearance import MATERIALS, appearance
+        cur = (self.doc.appearance or {}).get("name", "(none)")
+        choices = ["(none)", "Custom…", *MATERIALS]
+        v = cmddialog.ask(self, "Appearance", [
+            dict(key="preset", label="Material", kind="combo",
+                 choices=choices,
+                 default=cur if cur in choices else "(none)",
+                 group="Body"),
+            dict(key="opacity", label="Opacity", kind="double",
+                 default=(self.doc.appearance or {}).get("opacity", 1.0),
+                 min=0.05, max=1.0, decimals=2, group="Body"),
+        ], remember_key="appearance")
+        if v is None:
+            return
+        preset, op = v["preset"], float(v["opacity"])
+        self._capture()
+        if preset == "(none)":
+            self.doc.appearance = None
+            msg = "Body unpainted"
+        else:
+            if preset == "Custom…":
+                from PySide6.QtGui import QColor
+                from PySide6.QtWidgets import QColorDialog
+                old = (self.doc.appearance or {}).get("color")
+                init = QColor(*(int(round(c * 255)) for c in old)) \
+                    if old else QColor(160, 160, 165)
+                col = QColorDialog.getColor(init, self, "Body colour")
+                if not col.isValid():
+                    self._undo.pop()           # colour cancelled: no edit
+                    return
+                app = {"name": "Custom",
+                       "color": [col.red() / 255, col.green() / 255,
+                                 col.blue() / 255],
+                       "opacity": max(0.05, min(1.0, op))}
+            else:
+                app = appearance(preset, op)
+            self.doc.appearance = app
+            msg = f"Body painted: {app['name']}"
+        self._unsaved = True
+        self._apply_appearance()
+        self.viewport.refresh()
+        self.status.showMessage(msg, 5000)
+
     def _sync_holes(self, sid, payload):
         """Sketch re-edit through the extrude path: holes stay glued to
         their circles (moved circles move holes, deleted circles delete
@@ -1517,6 +1578,8 @@ class MainWindow(QMainWindow):
         self.viewport.set_document(self.doc)
         self.viewport.refresh(fit=False)
         self._update_status()
+        self._apply_appearance()
+
     def new_document(self, doc: Document | None = None):
         self.doc = doc or Document("Untitled")
         self.file_path = None
@@ -1529,6 +1592,7 @@ class MainWindow(QMainWindow):
         self.viewport.set_document(self.doc)
         self._update_status()
         self._on_face_selection()
+        self._apply_appearance()
 
     def _update_title(self):
         name = self.file_path.name if self.file_path else (
@@ -1593,6 +1657,7 @@ class MainWindow(QMainWindow):
         self.viewport.refresh()
         self.rail.tree.reload()
         self.timeline.bar.update()
+        self._apply_appearance()
         self._update_status()
         self._on_face_selection()
 

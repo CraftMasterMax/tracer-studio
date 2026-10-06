@@ -423,6 +423,7 @@ class Document:
         self.units = "mm"
         self.features: list[Feature] = []
         self.planes: list[dict] = []      # construction planes (Construct ▸)
+        self.appearance: dict | None = None   # Appearance ▸ material paint
         self._result: Solid | None = None
         self.dirty = False
 
@@ -674,7 +675,9 @@ class Document:
         return {"format": "tracer/document", "version": 2,
                 "title": self.title, "units": self.units,
                 "features": [_feat(f) for f in self.features],
-                "planes": [dict(p) for p in self.planes]}
+                "planes": [dict(p) for p in self.planes],
+                "appearance": (dict(self.appearance)
+                               if self.appearance else None)}
 
     @classmethod
     def from_dict(cls, data: dict) -> "Document":
@@ -802,5 +805,7 @@ class Document:
                 doc.planes.append({k: p[k] for k in
                                    ("name", "base", "offset", "origin",
                                     "u", "v", "n") if k in p})
+        app = data.get("appearance")              # pre-M52 files have none
+        doc.appearance = dict(app) if app else None
         doc.dirty = True
         return doc

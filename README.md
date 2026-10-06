@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M51**
+**Status: M52**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -65,7 +65,9 @@ independent project with no Autodesk assets or affiliation.)
   needed**), straight edges rounded in true 3D through OCCT when present
   (parametric size, baked result, Modify menu, ⌒ timeline chip),
   **Split Body** — trim the solid flush with XY/XZ/YZ at any offset
-  from centre, flip the kept side (✂ timeline chip, parametric)
+  from centre, flip the kept side (✂ timeline chip, parametric),
+  **Appearance** — paint the body with a material (Brass, Anodized
+  blue…) or custom colour, ghost it with opacity (saved with the file)
 - I/O: STL/3MF/OBJ/PLY mesh import+export, **STEP import/export** via an
   on-demand OpenCascade bridge (compiled with your system g++, cached;
   degrades gracefully where OCCT is absent — e.g. stock Windows, which
@@ -83,7 +85,7 @@ independent project with no Autodesk assets or affiliation.)
   a playhead timeline of icon chips, and a blue-grey horizon viewport —
   plus first-launch shortcut tour and a persistent Shortcuts tab driven by
   one canonical key table
-- 598 headless tests (EGL rendering + Qt pixel assertions)
+- 606 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -108,7 +110,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 598 tests, fully headless
+./.venv/bin/python -m pytest -q          # 606 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
