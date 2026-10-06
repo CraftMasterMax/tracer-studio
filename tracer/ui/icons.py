@@ -343,6 +343,13 @@ def _mass(p: QPainter):
     p.drawRect(QRectF(11, 24, 10, 3))                 # foot
 
 
+def _text(p: QPainter):
+    """A drafted capital A — legs and crossbar (the letter tool)."""
+    p.drawLine(QPointF(6, 27), QPointF(16, 4))
+    p.drawLine(QPointF(16, 4), QPointF(26, 27))
+    p.drawLine(QPointF(10, 18), QPointF(22, 18))
+
+
 def _appearance(p: QPainter):
     """A paint drop landing on a brushed band."""
     path = QPainterPath()
@@ -392,7 +399,8 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "thread": _thread, "split": _split,
               "appearance": _appearance, "move": _move,
               "rotate": _rotate, "combine": _combine,
-              "primitive": _primitive, "mass": _mass})
+              "primitive": _primitive, "mass": _mass,
+              "text": _text})
 
 
 def icon(name: str) -> QIcon:

@@ -292,8 +292,11 @@ class MainWindow(QMainWindow):
           lambda checked=False: self.action_sweep())
         d("loft", "Loft — blend one sketch's profile into another's (Ctrl+L)",
           lambda checked=False: self.action_loft())
-        d("primitive", "Primitive — drop a box, cylinder or sphere",
+        d("primitive", "Primitive — drop a box, cone, cylinder, sphere "
+                       "or torus",
           lambda checked=False: self.action_primitive())
+        d("text", "Text — emboss or engrave a line of text",
+          lambda checked=False: self.action_text())
         d("hole", "Hole — drill every sketch circle (Ctrl+H)",
           lambda checked=False: self.action_hole())
         r.design_sep()
@@ -1867,6 +1870,65 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             f"Added {str(v['kind']).lower()} — placement is the box "
             "corner / cylinder-cone base / sphere-torus centre", 5000)
+
+    def action_text(self):
+        """Fusion's Sketch Text + Extrude as one honest command (M76):
+        emboss or engrave a line of text.  Glyph outlines tessellate
+        from the system font — every island (and its counters) lands as
+        its own parametric extrude, so undo, recompute and Change
+        Parameters treat them like any other wall."""
+        if self.doc is None:
+            return
+        from ..core.text import glyph_regions
+        u = self.doc.units if self.doc.units in units.LABEL else "mm"
+        f = units.PER_MM[u]
+        lab = units.LABEL[u]
+
+        def num(key, label, mm, dec=2, mn=0.01):
+            return dict(key=key, label=f"{label} ({lab})", kind="double",
+                        default=round(mm / f, 6), decimals=dec, min=mn)
+        v = cmddialog.ask(self, "Text", [
+            dict(key="text", label="Text", kind="text",
+                 default="TRACER", group="Content"),
+            num("height", "glyph height", 12.0),
+            num("depth", "depth", 1.5),
+            dict(key="op", label="Operation", kind="combo",
+                 choices=["Emboss (join)", "Engrave (cut)"],
+                 default="Emboss (join)", group="Content"),
+            dict(key="plane", label="Sketch plane", kind="combo",
+                 choices=["XY", "XZ", "YZ"], default="XY",
+                 group="Placement"),
+            num("x", "centre X", 0.0, mn=-1e6), num("y", "centre Y", 0.0,
+                                                    mn=-1e6),
+            num("z", "plane height", 0.0, mn=-1e6),
+        ])
+        if v is None:
+            return
+        txt = str(v["text"])
+        regs = glyph_regions(txt, float(v["height"]) * f)
+        if not regs:
+            QMessageBox.information(self, "Text",
+                                    "Nothing to draw — type some text "
+                                    "first (spaces alone won't do).")
+            return
+        self._capture()
+        op = ("subtract" if str(v["op"]).startswith("Engrave")
+              else "union")
+        depth = float(v["depth"]) * f
+        plane = str(v["plane"])
+        place = tuple(float(v[k]) * f for k in ("x", "y", "z"))
+        for i, reg in enumerate(regs):
+            self.doc.add(ExtrudeFeature(
+                name=f"Text \u201c{txt}\u201d {i + 1}",
+                outer=np.asarray(reg["outer"], float),
+                holes=[np.asarray(h, float) for h in reg["holes"]],
+                height=depth, plane=plane, placement=place, op=op))
+        self.recompute()
+        self.viewport.refresh(fit=True)
+        self.status.showMessage(
+            f"{'Engraved' if op == 'subtract' else 'Embossed'} "
+            f"\u201c{txt}\u201d — {len(regs)} glyph"
+            f"{'s' if len(regs) > 1 else ''}", 5000)
 
     def action_combine(self):
         """Fusion's Combine (M64): Join / Cut / Intersect the body with

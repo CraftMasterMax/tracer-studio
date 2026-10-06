@@ -345,6 +345,18 @@ action_loft names it honestly: "Ring loft base ↻ 3".  Topology as proof:
 three circle sections spaced 120° around an axis blend into a watertight
 genus-1 ring — Euler number 0 — and the JSON round-trip keeps the loop.
 
+**M76 — Emboss / engrave text.** ✓ SHIPPED.  The maker's favourite:
+a name, a part number, a warning.  Qt's tessellation of the system font
+hands us closed glyph contours, sorted into islands and counters by
+containment ranked by AREA (an O's own centroid sits in its counter —
+winding alone lets them claim each other), scaled to the requested cap
+height and centred.  Every island drops as its own parametric
+ExtrudeFeature, so undo, recompute and Change Parameters treat a letter
+like any other wall, and the ribbon gains Text next to Primitive.
+Volume truths come from the same tessellator the command uses, so the
+8000→16000±area·d checks are font-portable: Linux DejaVu and Windows
+Arial both pass their own arithmetic.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),
