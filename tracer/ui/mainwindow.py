@@ -2081,14 +2081,19 @@ class MainWindow(QMainWindow):
         return cands
 
     def action_loft(self):
-        """Fusion Loft: smoothly blend the closed profiles of TWO OR MORE
-        sketches — base through middles to top, any distance or plane."""
+        """Fusion Loft: blend the closed profiles of TWO OR MORE sketches
+        — base through middles to top, optionally a closed ring, any plane."""
         if self.doc is None:
             return
         cands = self._loft_candidates()
-        sids = LoftDialog.ask(self, [(s, label) for s, label, _ in cands])
-        if sids is None:
+        ans = LoftDialog.ask(self, [(s, label) for s, label, _ in cands])
+        if ans is None:
             return
+        if isinstance(ans, dict):              # dialog: {sids, closed}
+            sids = tuple(ans["sids"])
+            closed = bool(ans.get("closed", False))
+        else:                                  # bare tuple (no ring)
+            sids, closed = tuple(ans), False
         if len(sids) < 2 or len(set(sids)) != len(sids):
             QMessageBox.information(
                 self, "Loft", "Blend two or more DIFFERENT sketches.")
@@ -2097,7 +2102,7 @@ class MainWindow(QMainWindow):
         secs = [dict(by_sid[s]) for s in sids]
         names = [next(l for s, l, _ in cands if s == sid) for sid in sids]
         try:                            # validate before touching history
-            LoftFeature(name="loft", sections=secs).build()
+            LoftFeature(name="loft", sections=secs, closed=closed).build()
         except ValueError as e:
             QMessageBox.warning(
                 self, "Loft",
@@ -2105,12 +2110,21 @@ class MainWindow(QMainWindow):
                          "(sketch-on-face gives the second one an offset).")
             return
         self._capture()
-        span = (f"{names[0]} to {names[-1]}" if len(names) == 2
-                else f"{names[0]} through {len(names)}")
-        self.doc.add(LoftFeature(name=f"Loft {span}", sections=secs))
+        if closed:
+            span = f"{names[0]} \u27f3 {len(names)}"
+            name = f"Ring loft {names[0]} through {len(names)}"
+        elif len(names) == 2:
+            span = f"{names[0]} to {names[-1]}"
+            name = f"Loft {span}"
+        else:
+            span = f"{names[0]} through {len(names)}"
+            name = f"Loft {span}"
+        self.doc.add(LoftFeature(name=name, sections=secs, closed=closed))
         self.recompute()
         self.viewport.refresh(fit=True)
-        self.status.showMessage(f"Lofted {span}", 5000)
+        self.status.showMessage(
+            ("Lofted a closed ring through "
+             f"{len(names)} — {span}" if closed else f"Lofted {span}"), 5000)
 
     def _sync_lofts(self, sid, payload):
         """A source sketch was re-edited: rebuild the loft's section for

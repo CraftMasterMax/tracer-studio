@@ -336,6 +336,15 @@ sections blend two honest cone frusta — πr²·h arithmetic to 7e-4,
 watertight (the hourglass proof).  Two-section names and messages are
 untouched; every M36 test speaks to the reshaped dialog unchanged.
 
+**M75 — Closed ring loft.** ✓ SHIPPED.  LoftFeature always
+had a `closed` field and the kernel always stitched last-back-to-first
+("endless ring") — but nothing in the UI ever asked.  The dialog now has
+the checkbox (and graduates to a {sids, closed} contract, with a
+bare-tuple fallback so every older scripted dialog still lofts), and
+action_loft names it honestly: "Ring loft base ↻ 3".  Topology as proof:
+three circle sections spaced 120° around an axis blend into a watertight
+genus-1 ring — Euler number 0 — and the JSON round-trip keeps the loop.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

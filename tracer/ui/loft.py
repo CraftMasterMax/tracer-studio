@@ -9,9 +9,10 @@ arrive preloaded (the old base/top defaults), and ▲▼ fixes any mis-click.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
-                               QHBoxLayout, QLabel, QListWidget,
-                               QListWidgetItem, QPushButton, QVBoxLayout)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog,
+                               QDialogButtonBox, QHBoxLayout, QLabel,
+                               QListWidget, QListWidgetItem, QPushButton,
+                               QVBoxLayout)
 
 
 class LoftDialog(QDialog):
@@ -55,6 +56,10 @@ class LoftDialog(QDialog):
         mv.addStretch(1)
         lay.addLayout(mv)
 
+        self.closed = QCheckBox("Closed loop — last section blends back "
+                                "to the first")
+        lay.addWidget(self.closed)
+
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
@@ -94,7 +99,7 @@ class LoftDialog(QDialog):
                      for i in range(self.listw.count()))
 
     @staticmethod
-    def ask(parent, candidates) -> tuple | None:
+    def ask(parent, candidates) -> dict | None:
         if len(candidates) < 2:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.information(
@@ -104,4 +109,6 @@ class LoftDialog(QDialog):
                 "gives the second one its offset for free.")
             return None
         dlg = LoftDialog(parent, candidates)
-        return dlg.values() if dlg.exec() == QDialog.Accepted else None
+        if dlg.exec() != QDialog.Accepted:
+            return None
+        return {"sids": dlg.values(), "closed": dlg.closed.isChecked()}
