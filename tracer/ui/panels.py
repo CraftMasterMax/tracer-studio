@@ -52,7 +52,7 @@ def _sketch_label(sk: dict) -> str:
 class FeatureTree(QTreeWidget):
     feature_menu = Signal(object, object)   # Feature, global QPoint
     cplane_menu = Signal(str, object)       # plane name, global QPoint
-    body_menu = Signal(object)              # global QPoint
+    body_menu = Signal(object, object)        # body name, global QPoint
     feature_delete = Signal(object)         # Feature (Del key, M72)
     feature_rename = Signal(object)         # Feature (F2 key, M72)
 
@@ -78,7 +78,7 @@ class FeatureTree(QTreeWidget):
         elif role and role[0] == "cplane":
             self.cplane_menu.emit(role[1], self.viewport().mapToGlobal(pos))
         elif role and role[0] == "body":
-            self.body_menu.emit(self.viewport().mapToGlobal(pos))
+            self.body_menu.emit(role[1], self.viewport().mapToGlobal(pos))
 
     def set_document(self, doc: Document):
         self._doc = doc
@@ -111,19 +111,34 @@ class FeatureTree(QTreeWidget):
             origin.addChild(it)
         origin.setExpanded(False)
 
-        # ---- Bodies (1) ▸ Body 1 ▸ features (+ nested sketches) -----------
+        # ---- Bodies (n) ▸ each body ▸ its own features (+ nested sketches)
+        # M104: the folder stopped being theatre — one node per real body,
+        # BOLD is the active one, grey carries the hidden-by-bulb truth.
         feats = list(self._doc.features)
-        bodies = QTreeWidgetItem([f"Bodies ({1 if feats else 0})"])
+        listed = self._doc.body_list()
+        names = [b["name"] for b in listed] or (["Body 1"] if feats else [])
+        bodies = QTreeWidgetItem([f"Bodies ({len(names)})"])
         bodies.setData(0, Qt.UserRole, ("folder", "bodies"))
         root.addChild(bodies)
-        parent = bodies
-        if feats:
-            body_item = QTreeWidgetItem(["\u25a3 Body 1"])  # ▣
-            body_item.setData(0, Qt.UserRole, ("body", None))
+        body_nodes: dict = {}
+        for nm in names:
+            entry = next((b for b in listed if b["name"] == nm), None)
+            vis = True if entry is None else bool(entry.get("visible", True))
+            body_item = QTreeWidgetItem([("\u25a3 " + nm) if vis
+                                         else f"\u25a3 {nm}  (hidden)"])
+            body_item.setData(0, Qt.UserRole, ("body", nm))
+            if self._doc.active_body == nm:
+                fnt = body_item.font(0)
+                fnt.setBold(True)
+                body_item.setFont(0, fnt)
+            if not vis:
+                body_item.setForeground(0, QColor("#767e8a"))
             bodies.addChild(body_item)
-            bodies.setExpanded(True)
             body_item.setExpanded(True)
-            parent = body_item
+            body_nodes[nm] = body_item
+        if names:
+            bodies.setExpanded(True)
+        default = names[0] if names else "Body 1"
         for i, f in enumerate(feats):
             fillet = isinstance(f, BodyFilletFeature)
             glyph = ("\u25cb" if f.suppressed else            # suppressed wins
@@ -153,6 +168,9 @@ class FeatureTree(QTreeWidget):
             item.setData(0, Qt.UserRole, ("feature", i))
             if f.suppressed:
                 item.setForeground(0, QColor("#767e8a"))
+            parent = body_nodes.get(getattr(f, "body", None) or default)
+            if parent is None:                      # orphaned by hand-edit
+                parent = body_nodes[default]
             parent.addChild(item)
             if (isinstance(f, (ExtrudeFeature, RevolveFeature, HoleFeature))
                     and f.sketch):

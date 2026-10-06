@@ -87,7 +87,8 @@ def test_design_panel_groups_follow_fusion_order(win):
         if isinstance(it, QToolButton):
             tip = it.toolTip().split(" \u2014 ")[0].split(" (")[0]
             tips.append(tip)
-    want = ["New sketch", "Extrude", "Sweep", "Loft", "Primitive", "Text",
+    want = ["New sketch", "Extrude", "Sweep", "Loft", "Primitive",
+            "New body", "Text",                                    # M104
             "Hole",
             "Rectangular pattern", "Circular pattern", "Mirror",
             "Pattern on path",

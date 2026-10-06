@@ -293,6 +293,29 @@ def _primitive(p: QPainter):
     p.drawLine(QPointF(22, 6), QPointF(22, 17))
 
 
+def _newbody(p: QPainter):
+    """An iso cube with a plus badge — start a separate body."""
+    pen = QPen(_COL)
+    pen.setWidthF(1.6)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    front = QPolygonF([QPointF(4, 10), QPointF(14, 10), QPointF(14, 20),
+                       QPointF(4, 20)])
+    p.drawPolygon(front)
+    p.drawLine(QPointF(4, 10), QPointF(9, 5))
+    p.drawLine(QPointF(14, 10), QPointF(19, 5))
+    p.drawLine(QPointF(14, 20), QPointF(19, 15))
+    p.drawLine(QPointF(9, 5), QPointF(19, 5))
+    p.drawLine(QPointF(19, 5), QPointF(19, 15))
+    p.setPen(Qt.NoPen)
+    p.setBrush(_COL)
+    p.drawEllipse(QRectF(17, 17, 9, 9))
+    p.setPen(QPen(QColor("#20242b")))
+    p.setBrush(Qt.NoBrush)
+    p.drawLine(QPointF(21.5, 19), QPointF(21.5, 25))
+    p.drawLine(QPointF(19, 22), QPointF(25, 22))
+
+
 def _combine(p: QPainter):
     """Two overlapping circles — one boolean."""
     pen = QPen(_COL)
@@ -400,6 +423,7 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "appearance": _appearance, "move": _move,
               "rotate": _rotate, "combine": _combine,
               "primitive": _primitive, "mass": _mass,
+              "newbody": _newbody,
               "text": _text})
 
 

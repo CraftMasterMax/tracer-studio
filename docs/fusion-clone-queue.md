@@ -843,10 +843,33 @@ split by their turn profile and each run votes for itself — S-curves
 simply break into opposite-signed runs); tangent-split circles dedupe
 by centre+radius; the R leader is a single line, no centre cross.
 
-**Later candidates (researched, deferred):** multi-body phase 2
-(Combine today builds placed tools, M64; separate bodies in the
-browser remain — the next big one), Draft, per-view rotation, sheet
-metal, assemblies/joints. Re-evaluate after M103.
+**M104 — Multi-body phase 2: the browser stopped lying.** ✓
+SHIPPED.  The tree had read `Bodies (1) ▸ Body 1` since M43 and there
+was always exactly one because recompute() had exactly one accumulator.
+Now every feature names the body it builds in (`f.body`), each body
+streams its OWN solid, and a cut in Body 2 leaves Body 1 standing.
+The load-bearing trick that kept the other thousand tests untouched:
+`doc.result` is STILL one Solid — the boolean UNION of the bodies, the
+PART — so measurement, drawings, HLR, sections and export never learned
+multi-body exists, and a single-body doc returns the very same object
+it always did.  Bodies stay separate only in the VIEWPORT, where the
+mesh is the visible bodies STITCHED (concatenated, never booleaned):
+hiding a body lifts exactly its triangles and a wall shared by two
+touching bodies stays drawn, like Fusion.  New Body is a verb (ribbon +
+Create menu), activation is a double-click, the bulb is a per-body menu
+item, active is bold and hidden is grey in the tree, and the whole lot
+saves, migrates (a bodyless file adopts the implicit Body 1 on load)
+and undoes.  Press-Pull now asks the viewport for its own pick mesh —
+the face ids it hands out index the stitched display, not the union.
+Honest scope (phase 2b): exports and drawings still see the fused part,
+not a per-body file set; per-body appearances; shell/split face-picking
+on a multi-body doc can index a different triangulation than the
+stitched mesh (single-body is byte-identical).
+
+**Later candidates (researched, deferred):** multi-body phase 2b
+(per-body STEP/STL + browser appearances, cross-body feature sources),
+Draft, per-view rotation, sheet metal, assemblies/joints, and a section
+cutting-plane arrow on the drawing. Re-evaluate after M104.
 
 ## Oct 2026 research sweep — the landscape and the ranked backlog
 

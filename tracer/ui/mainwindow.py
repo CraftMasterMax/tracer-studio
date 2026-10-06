@@ -176,8 +176,11 @@ class MainWindow(QMainWindow):
         cached = getattr(self, "_pp_cache", None)
         if cached is None or cached[0] is not d.get("ppid"):
             from ..core.presspull import face_region
-            v, _n, f = self.doc.result.to_render_arrays()
-            mesh = trimesh.Trimesh(vertices=v, faces=f, process=False)
+            # The picked faces index the VIEWPORT's stitched mesh, not the
+            # fused union — M104: ask the viewport for its own pick mesh.
+            mesh = self.viewport.pick_mesh()
+            if mesh is None:
+                return
             try:
                 reg = face_region(mesh, d["faces"])
             except Exception:
@@ -218,14 +221,14 @@ class MainWindow(QMainWindow):
             return
         from ..core.presspull import face_region
         solid = self.doc.result
-        v, _n, f = solid.to_render_arrays()          # viewport's index space
+        mesh = self.viewport.pick_mesh()          # the picked-face index space
         faces = np.asarray(d["faces"], int)
-        if faces.size == 0 or int(faces.max()) >= len(f):
+        if (mesh is None or faces.size == 0
+                or int(faces.max()) >= len(mesh.faces)):
             self.viewport.preview_mesh(None)         # doc changed mid-drag
             self.status.showMessage("Press-Pull: stale selection — "
                                     "grab the face again", 4000)
             return
-        mesh = trimesh.Trimesh(vertices=v, faces=f, process=False)
         reg = face_region(mesh, faces)
         if reg is None:
             self.status.showMessage(
@@ -304,6 +307,8 @@ class MainWindow(QMainWindow):
         d("primitive", "Primitive — drop a box, cone, cylinder, sphere "
                        "or torus",
           lambda checked=False: self.action_primitive())
+        d("newbody", "New body — the next feature lands in a separate body",
+          lambda checked=False: self.action_new_body())
         d("text", "Text — emboss or engrave a line of text",
           lambda checked=False: self.action_text())
         d("hole", "Hole — drill every sketch circle (Ctrl+H)",
@@ -523,6 +528,8 @@ class MainWindow(QMainWindow):
                                   triggered=lambda checked=False: self.action_mirror())
         m_cr.addActions([self.act_linpat, self.act_cirpat, self.act_mirror])
         m_cr.addSeparator()
+        m_cr.addAction("New &body",
+                       lambda checked=False: self.action_new_body())
         m_cr.addAction("New drawing…",
                        lambda checked=False: self.action_new_drawing())
 
@@ -642,6 +649,8 @@ class MainWindow(QMainWindow):
             self._feature_activated(self.doc.features[arg])
         elif kind == "sheet":                 # M96: double-click a sheet
             self._open_drawing(arg)
+        elif kind == "body":                  # M104: double-click → activate
+            self.action_activate_body(arg)
 
     def _feature_activated(self, feature):
         if (isinstance(feature, (ExtrudeFeature, RevolveFeature, HoleFeature))
@@ -1689,12 +1698,57 @@ class MainWindow(QMainWindow):
                        lambda: self._delete_plane(name))
         menu.exec_(pos)
 
-    def _body_menu(self, pos):
-        vis = self.viewport._r.show_solid
+    def _body_menu(self, name, pos):
+        """M104 browser body menu: make this the active body, or the
+        per-body bulb.  One node per real body now, so the menu carries
+        the name (pre-M104 there was only ever one and it was theatre)."""
+        if self.doc is None:
+            return
+        entry = next((b for b in self.doc.body_list()
+                      if b["name"] == name), None)
+        vis = True if entry is None else bool(entry.get("visible", True))
         menu = QMenu(self)
-        menu.addAction(("Hide" if vis else "Show") + " body",
-                       lambda: self.viewport.set_solid_visible(not vis))
+        menu.addAction("Activate " + name,
+                       lambda checked=False: self.action_activate_body(name))
+        menu.addAction(("Hide" if vis else "Show") + " " + name,
+                       lambda checked=False: self._toggle_body_visible(name))
         menu.exec_(pos)
+
+    def _toggle_body_visible(self, name):
+        doc = self.doc
+        if doc is None:
+            return
+        vis = next((bool(b.get("visible", True)) for b in doc.body_list()
+                    if b["name"] == name), True)
+        if not doc.set_body_visible(name, not vis):
+            return
+        self._unsaved = True
+        self.rail.tree.reload()
+        self.viewport.refresh()
+        self.status.showMessage(f"{name} " + ("hidden" if vis else "shown"),
+                                3000)
+
+    def action_activate_body(self, name):
+        """M104: make `name` the body every new feature lands in."""
+        if self.doc is None or not self.doc.set_active_body(name):
+            return
+        self.rail.tree.reload()
+        self.status.showMessage(f"Active body: {name} — new features land "
+                                "here", 4000)
+
+    def action_new_body(self):
+        """Create ▸ New body (M104): a fresh body becomes active, so the
+        next feature builds its own solid instead of joining the current
+        one — the first step of a multi-body part."""
+        if self.doc is None:
+            return
+        self._capture()
+        b = self.doc.add_body()
+        self.rail.tree.reload()
+        self.viewport.refresh()
+        self.status.showMessage(
+            f"{b['name']} is now active — the next feature builds there",
+            5000)
 
     def _delete_plane(self, name):
         if self.doc and self.doc.remove_plane(name):

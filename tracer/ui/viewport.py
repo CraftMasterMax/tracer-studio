@@ -92,7 +92,7 @@ class Viewport(QWidget):
         self.refresh(fit=True)
 
     def refresh(self, fit: bool = False):
-        solid = self._doc.result if self._doc else None
+        arrays = self._doc.display_arrays() if self._doc else None
         had_sel = bool(self._sel)
         self._hover, self._sel = None, []
         self._pp, self._pp_drag = None, False
@@ -103,23 +103,30 @@ class Viewport(QWidget):
         self._r.set_triad(None)
         if had_sel:
             self.selection_changed.emit(0)
-        if solid is None:
+        if arrays is None:
             self._r.clear_mesh()
             self._bbox = None
             self._tm = self._gid = None
         else:
-            v, n, f = solid.to_render_arrays()
+            v, n, f = arrays
             self._r.set_mesh(v, n, f)
             # Pick mesh shares the uploaded (needle-filtered) index space,
-            # so raycast face ids map 1:1 onto highlight rows.
+            # so raycast face ids map 1:1 onto highlight rows.  M104:
+            # the mesh is the STITCHED visible bodies, so the index
+            # space is exactly what the eye sees — pick_mesh owns it.
             self._tm = trimesh.Trimesh(vertices=v, faces=f, process=False)
             self._gid = _coplanar_groups(self._tm)
-            self._bbox = solid.bounding_box
+            V = np.asarray(v, float)
+            self._bbox = np.array([V.min(axis=0), V.max(axis=0)])
             self._r._grid_auto(self._bbox)
             if fit:
                 self._cam.fit(self._bbox)
         self._r.set_planes(self._doc.planes if self._doc else [])
         self.update()
+
+    def pick_mesh(self):
+        """The trimesh behind the face ids this viewport hands out."""
+        return self._tm
 
     def solid(self) -> Solid | None:
         return self._doc.result if self._doc else None

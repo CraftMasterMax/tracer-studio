@@ -28,6 +28,8 @@ class Feature:
     uid: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     suppressed: bool = False
     bindings: dict = field(default_factory=dict)  # lever key -> formula
+    body: str | None = None    # M104: which body this feature builds in
+                               # (None reads as the implicit Body 1)
 
     def _lever(self, key: str):
         """Where a Change Parameters lever key lives: an entry in the
@@ -627,8 +629,89 @@ class Document:
         self.active_config: str | None = None # M91: the one overlaying
         self.drawings: list = []              # M93: [{name, page}]
         self.rollback_to: int | None = None   # M88 rubber band (view state)
+        self.bodies: list[dict] = []          # M104: [{name, visible}]
+        self.active_body: str | None = None   # M104: new features land here
         self._result: Solid | None = None
+        self._body_solids: dict[str, Solid] | None = None
         self.dirty = False
+
+    # ---- bodies (M104) ---------------------------------------------------
+    def add_body(self, name: str | None = None) -> dict:
+        """Fusion's New Body: a fresh named stream becomes the active
+        one, and every feature added from now on lands inside it."""
+        if name is None:
+            taken = {b["name"] for b in self.bodies}
+            k = 1
+            while f"Body {k}" in taken:
+                k += 1
+            name = f"Body {k}"
+        b = {"name": name, "visible": True}
+        self.bodies.append(b)
+        self.active_body = name
+        self.dirty = True
+        return b
+
+    def body_list(self) -> list:
+        """The bodies the browser and viewport show.  A history built
+        before M104 (features appended without bodies) materializes the
+        implicit Body 1 the moment anyone asks — the browser never lies."""
+        if not self.bodies and self.features:
+            self.bodies = [{"name": "Body 1", "visible": True}]
+            if self.active_body is None:
+                self.active_body = "Body 1"
+        return self.bodies
+
+    def set_active_body(self, name: str) -> bool:
+        for b in self.body_list():
+            if b["name"] == name:
+                if self.active_body != name:
+                    self.active_body = name
+                    self.dirty = True
+                return True
+        return False
+
+    def set_body_visible(self, name: str, flag: bool) -> bool:
+        """The per-body bulb.  This is a VIEWPORT fact: the part
+        (result) keeps every body — paper and measurement never lie
+        because a browser row happens to be collapsed."""
+        for b in self.body_list():
+            if b["name"] == name:
+                if bool(b.get("visible", True)) != bool(flag):
+                    b["visible"] = bool(flag)
+                    self.dirty = True
+                return True
+        return False
+
+    def body_solids(self) -> dict:
+        """body name -> its Solid, live (rebuilds when dirty)."""
+        self.result                        # refresh both caches
+        return dict(self._body_solids or {})
+
+    def display_arrays(self):
+        """The viewport mesh: visible bodies STITCHED (concatenated,
+        never booleaned), so hiding a body lifts exactly its triangles
+        and a wall shared by two touching bodies stays drawn — Fusion.
+        One visible body returns that solid's own arrays: the exact
+        pixels the single-body world drew before M104."""
+        self.result
+        vs, ns, fs = [], [], []
+        off = 0
+        for b in self.body_list():
+            if not b.get("visible", True):
+                continue
+            s = (self._body_solids or {}).get(b["name"])
+            if s is None:
+                continue
+            v, n, f = s.to_render_arrays()
+            vs.append(v)
+            ns.append(n)
+            fs.append(f + off if off else f)
+            off += len(v)
+        if not vs:
+            return None
+        if len(vs) == 1:
+            return vs[0], ns[0], fs[0]
+        return np.vstack(vs), np.vstack(ns), np.vstack(fs)
 
     # ---- construction planes --------------------------------------------------
     def add_plane(self, base: str, offset: float) -> dict:
@@ -654,6 +737,10 @@ class Document:
 
     # ---- editing -------------------------------------------------------
     def add(self, feature: Feature) -> Feature:
+        if not self.bodies:
+            self.add_body()                 # the implicit Body 1, Fusion-style
+        if getattr(feature, "body", None) is None:
+            feature.body = self.active_body or self.bodies[0]["name"]
         self.features.append(feature)
         self.dirty = True
         return feature
@@ -742,13 +829,19 @@ class Document:
                 sk = getattr(f, "sketch", None)
                 if sk and sk.get("dim_exprs"):        # M89 fx dimensions
                     self._refresh_sketch_feature(f, vals, sc)
-        acc: Solid | None = None
+        # M104: one stream PER BODY.  A feature reads and writes only its
+        # own body's accumulator — a cut in Body 2 leaves Body 1 standing.
+        # Legacy history (f.body is None) streams into the implicit
+        # "Body 1", exactly the single accumulator the world ran on.
+        buckets: dict[str, Solid | None] = {}
         by_uid: dict[str, Solid] = {}
         for pos, f in enumerate(self.features):
             if self.rollback_to is not None and pos >= self.rollback_to:
                 continue                      # M88: past the rubber band
             if f.suppressed:
                 continue
+            key = getattr(f, "body", None) or "Body 1"
+            acc = buckets.get(key)
             if isinstance(f, LinearPatternFeature):
                 src = by_uid.get(f.source_uid)
                 if src is None:          # source deleted/suppressed: no-op
@@ -800,8 +893,8 @@ class Document:
                             else "rotate" if isinstance(f, RotateFeature)
                             else "combine")
                     raise ValueError(f"{f.name!r} has no body to {verb} yet")
-                acc = f.apply(acc)
-                by_uid[f.uid] = acc
+                buckets[key] = f.apply(acc)
+                by_uid[f.uid] = buckets[key]
                 continue          # replaces the body; not a boolean operand
             else:
                 solid = f.build()
@@ -809,16 +902,24 @@ class Document:
             if acc is None:
                 if f.op == "subtract":
                     raise ValueError(f"first feature {f.name!r} cannot be a subtract")
-                acc = solid
+                buckets[key] = solid
             elif f.op == "union":
-                acc = acc.union(solid)
+                buckets[key] = acc.union(solid)
             elif f.op == "subtract":
-                acc = acc.subtract(solid)
+                buckets[key] = acc.subtract(solid)
             else:
-                acc = acc.intersect(solid)
-        self._result = acc
+                buckets[key] = acc.intersect(solid)
+        self._body_solids = {k: v for k, v in buckets.items()
+                             if v is not None}
+        solids = list(self._body_solids.values())
+        if not solids:
+            self._result = None
+        elif len(solids) == 1:
+            self._result = solids[0]          # the single-body world:
+        else:                                 # the very solid it always was
+            self._result = Solid.batch_union(solids)   # the PART is the union
         self.dirty = False
-        return acc
+        return self._result
 
     @property
     def result(self) -> Solid | None:
@@ -830,7 +931,8 @@ class Document:
     def to_dict(self) -> dict:
         def _feat(f: Feature) -> dict:
             d = {"type": type(f).__name__, "name": f.name, "op": f.op,
-                 "uid": f.uid, "suppressed": bool(f.suppressed)}
+                 "uid": f.uid, "suppressed": bool(f.suppressed),
+                 "body": getattr(f, "body", None)}
             if isinstance(f, ExtrudeFeature):
                 d.update(outer=np.asarray(f.outer).tolist(),
                          holes=[np.asarray(h).tolist() for h in f.holes],
@@ -947,6 +1049,8 @@ class Document:
                 "configs": {k: dict(v) for k, v in self.configs.items()},
                 "active_config": self.active_config,
                 "drawings": [dict(g) for g in self.drawings],   # M93
+                "bodies": [dict(b) for b in self.bodies],       # M104
+                "active_body": self.active_body,
                 "features": [_feat(f) for f in self.features],
                 "planes": [dict(p) for p in self.planes],
                 "appearance": (dict(self.appearance)
@@ -964,10 +1068,15 @@ class Document:
                        in (data.get("configs") or {}).items()}  # M91
         doc.active_config = data.get("active_config")
         doc.drawings = [dict(g) for g in (data.get("drawings") or [])]
+        # M104: bodies travel with the file; a bodyless (pre-M104) file
+        # simply reads as one implicit Body 1 (body_list materializes it).
+        doc.bodies = [dict(b) for b in (data.get("bodies") or [])]
+        doc.active_body = data.get("active_body")
         for fd in data.get("features", []):
             t = fd["type"]
             base = dict(op=fd["op"], uid=fd.get("uid") or uuid.uuid4().hex[:8],
-                        suppressed=bool(fd.get("suppressed", False)))
+                        suppressed=bool(fd.get("suppressed", False)),
+                        body=fd.get("body"))
             if t == "ExtrudeFeature":
                 doc.features.append(ExtrudeFeature(
                     name=fd["name"],
@@ -1106,6 +1215,13 @@ class Document:
                     res_faces=fd.get("res_faces", []), **base))
             else:
                 raise ValueError(f"unknown feature type {t!r}")
+        if not doc.bodies:
+            # legacy (pre-M104) file: adopt the whole history into the
+            # implicit Body 1 now, so the reopened doc is explicit forever
+            doc.body_list()
+            for f in doc.features:
+                if f.body is None:
+                    f.body = doc.active_body or "Body 1"
         for p in data.get("planes", []):          # pre-M40 files have none
             if p.get("name") and p.get("origin"):
                 doc.planes.append({k: p[k] for k in

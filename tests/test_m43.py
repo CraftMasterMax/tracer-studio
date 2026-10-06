@@ -108,7 +108,8 @@ def test_axis_nodes_are_tinted_like_the_triad(win):
 def test_features_nest_under_body_1(win):
     body = _folder(win, "Bodies (1)").child(0)
     assert body.text(0).startswith("\u25a3")           # ▣ Body 1
-    assert body.data(0, Qt.UserRole) == ("body", None)
+    # M104: bodies became real — the node now carries its name, not None
+    assert body.data(0, Qt.UserRole) == ("body", "Body 1")
     nested = [body.child(i).text(0) for i in range(body.childCount())]
     assert len(nested) == len(win.doc.features)
     # roles survive the nesting: click target for the properties panel
@@ -127,17 +128,21 @@ def test_body_toggle_hides_solid_in_viewport(win, qapp):
     assert win.viewport._r.show_solid is True
 
 
-def test_body_node_menu_offers_hide_then_show(win, monkeypatch):
+def test_body_node_menu_activates_and_hides_its_body(win, monkeypatch):
+    # M104: the body node's bulb is real — a per-body visibility toggle,
+    # not the old whole-canvas show/hide.
     menus = []
     monkeypatch.setattr(QMenu, "exec_", lambda menu, pos: menus.append(menu))
-    win._body_menu(win.geometry().center())
-    assert [a.text() for a in menus[-1].actions()] == ["Hide body"]
-    menus[-1].actions()[0].trigger()
-    assert win.viewport._r.show_solid is False
-    win._body_menu(win.geometry().center())
-    assert [a.text() for a in menus[-1].actions()] == ["Show body"]
-    menus[-1].actions()[0].trigger()
-    assert win.viewport._r.show_solid is True
+    win._body_menu("Body 1", win.geometry().center())
+    assert [a.text() for a in menus[-1].actions()] == ["Activate Body 1",
+                                                       "Hide Body 1"]
+    menus[-1].actions()[1].trigger()                  # the per-body bulb
+    assert win.doc.bodies[0]["visible"] is False
+    win._body_menu("Body 1", win.geometry().center())
+    assert [a.text() for a in menus[-1].actions()] == ["Activate Body 1",
+                                                       "Show Body 1"]
+    menus[-1].actions()[1].trigger()
+    assert win.doc.bodies[0]["visible"] is True
 
 
 # ---- sketches + construction ----------------------------------------------------
