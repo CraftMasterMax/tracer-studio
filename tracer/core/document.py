@@ -347,6 +347,23 @@ class ShellFeature(Feature):
 
 
 @dataclass
+class SplitFeature(Feature):
+    """Split Body (M51): trim the accumulated body flush with a plane —
+    Fusion's most common split, "cut away one half".  The plane runs
+    through `origin` with `normal` pointing at the side that goes away
+    (flip reverses which half survives).  A body op like Shell: it
+    REPLACES the body, so `op` is unused; being a feature, the trim
+    stays parametric — move `origin` and the cut follows."""
+    origin: tuple = (0.0, 0.0, 0.0)
+    normal: tuple = (0.0, 0.0, 1.0)
+    flip: bool = False
+
+    def apply(self, src: Solid) -> Solid:
+        from .split import split_solid
+        return split_solid(src, self.origin, self.normal, self.flip)
+
+
+@dataclass
 class SweepFeature(Feature):
     """Sweep a circular profile along a drawn path (v1 profile: circle).
     `path` stores the sampled 2D polyline in sketch coordinates, `closed`
@@ -528,10 +545,12 @@ class Document:
                 shift = tuple(v * f.offset for v in n)
                 solid = src.translated((-shift[0], -shift[1], -shift[2])) \
                             .mirror(n).translated(shift)
-            elif isinstance(f, (BodyFilletFeature, ShellFeature)):
+            elif isinstance(f, (BodyFilletFeature, ShellFeature,
+                                SplitFeature)):
                 if acc is None:
                     verb = ("fillet" if isinstance(f, BodyFilletFeature)
-                            else "shell")
+                            else "shell" if isinstance(f, ShellFeature)
+                            else "split")
                     raise ValueError(f"{f.name!r} has no body to {verb} yet")
                 acc = f.apply(acc)
                 by_uid[f.uid] = acc
@@ -628,6 +647,10 @@ class Document:
                          openings=[[[float(x) for x in o[0]],
                                     [float(x) for x in o[1]]]
                                    for o in f.openings])
+            elif isinstance(f, SplitFeature):
+                d.update(origin=list(map(float, f.origin)),
+                         normal=list(map(float, f.normal)),
+                         flip=bool(f.flip))
             elif isinstance(f, HoleFeature):
                 d.update(center=list(map(float, f.center)),
                          normal=list(map(float, f.normal)),
@@ -738,6 +761,11 @@ class Document:
                     name=fd["name"], thickness=float(fd["thickness"]),
                     openings=[(list(map(float, o[0])), list(map(float, o[1])))
                               for o in fd["openings"]], **base))
+            elif t == "SplitFeature":
+                doc.features.append(SplitFeature(
+                    name=fd["name"],
+                    origin=tuple(fd["origin"]), normal=tuple(fd["normal"]),
+                    flip=bool(fd.get("flip", False)), **base))
             elif t == "HoleFeature":
                 doc.features.append(HoleFeature(
                     name=fd["name"],

@@ -90,8 +90,8 @@ def test_design_panel_groups_follow_fusion_order(win):
     want = ["New sketch", "Extrude", "Sweep", "Loft", "Hole",
             "Rectangular pattern", "Circular pattern", "Mirror",
             "Pattern on path",
-            "Fillet", "Shell", "Thread", "Construction plane",
-            "Section analysis"]
+            "Fillet", "Shell", "Thread", "Split body",
+            "Construction plane", "Section analysis"]
     assert tips == want
 
 

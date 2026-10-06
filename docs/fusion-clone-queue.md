@@ -134,9 +134,13 @@ the sketch's frame lifts the 2D walk into 3D exactly like a sweep, and
 the feature is JSON-persistent with a timeline glyph and inspector
 length readout.  Rotation-follows-path and closed loops deferred.
 
-**M51 — Split Body (plane trim).**  Multi-body is out of v1 scope, but
-Fusion's most common split is "cut away one half": Split › plane ›
-discard side, kept as a parametric subtract feature.
+**M51 — Split Body (plane trim).** ✓ SHIPPED.  Ribbon ▸ Split Body:
+choose XY/XZ/YZ, an offset from the body centre (0 = half), flip which
+half survives — the body is trimmed flush with the plane as a parametric
+feature (move it and the cut follows), validated against the current
+solid BEFORE history is touched so a plane that would eat everything
+warns instead.  Multi-body splitting (keep both halves as separate
+bodies) stays out of v1 scope — this is the maker-truth 90% of it.
 
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, Combine/multi-browser-bodies, Appearances

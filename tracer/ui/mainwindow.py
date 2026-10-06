@@ -20,7 +20,8 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              ImportedFeature, LinearPatternFeature,
                              LoftFeature, MirrorFeature, PathPatternFeature,
                              PrimitiveFeature,
-                             RevolveFeature, ShellFeature, SweepFeature,
+                             RevolveFeature, ShellFeature, SplitFeature,
+                             SweepFeature,
                              ThreadFeature)
 from ..core.measure import describe, face_stats
 from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
@@ -286,6 +287,8 @@ class MainWindow(QMainWindow):
           lambda checked=False: self.action_shell())
         d("thread", "Thread — cut a bolt thread on a cylindrical boss face",
           lambda checked=False: self.action_thread())
+        d("split", "Split body — trim the solid flush with a plane",
+          lambda checked=False: self.action_split_body())
         r.design_sep()
         d("plane", "Construction plane — offset work plane (Ctrl+Shift+P)",
           lambda checked=False: self.action_construction_plane())
@@ -1136,6 +1139,50 @@ class MainWindow(QMainWindow):
         self.recompute()
         self.viewport.refresh(fit=True)
         self.status.showMessage(f"Shelled body with {t:g} mm walls", 5000)
+
+    def action_split_body(self):
+        """Fusion Split Body (M51): trim the body flush with a plane —
+        the maker's 'cut away one half'.  The offset measures from the
+        body's centre along the plane normal, so 0 splits it in two."""
+        if self.doc is None or self.doc.result is None:
+            QMessageBox.warning(self, "Split Body",
+                                "Nothing to split yet — extrude or "
+                                "import a solid first.")
+            return
+        from ..core.split import PLANES, split_solid
+        lo, hi = self.doc.result.bounding_box
+        c = [(float(lo[i]) + float(hi[i])) / 2.0 for i in range(3)]
+        v = cmddialog.ask(self, "Split Body", [
+            dict(key="plane", label="Cut on plane", kind="combo",
+                 choices=["XY", "XZ", "YZ"], group="Plane"),
+            dict(key="dist", label="Offset from centre", kind="double",
+                 default=0.0, min=-1e5, max=1e5, decimals=3,
+                 suffix=" mm", group="Plane"),
+            dict(key="flip", label="Keep the other side", kind="check",
+                 default=False, group="Plane"),
+        ], remember_key="split_body")
+        if v is None:
+            return
+        plane, dist, flip = v["plane"], float(v["dist"]), bool(v["flip"])
+        nrm = PLANES[plane]
+        axis = {"XY": 2, "XZ": 1, "YZ": 0}[plane]
+        origin = list(c)
+        origin[axis] += dist
+        try:                            # validate before touching history
+            split_solid(self.doc.result, origin, nrm, flip)
+        except ValueError as e:
+            QMessageBox.warning(self, "Split Body", str(e))
+            return
+        self._capture()
+        self.doc.add(SplitFeature(name=f"Split {plane}",
+                                  origin=tuple(origin), normal=nrm,
+                                  flip=flip))
+        self.recompute()
+        self.viewport.refresh(fit=True)
+        removed_up = nrm[axis] * (-1.0 if flip else 1.0) > 0
+        self.status.showMessage(
+            f"Split on the {plane} plane — kept the "
+            f"{'lower' if removed_up else 'upper'} half", 5000)
 
     def _sync_holes(self, sid, payload):
         """Sketch re-edit through the extrude path: holes stay glued to

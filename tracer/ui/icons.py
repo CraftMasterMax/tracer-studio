@@ -276,6 +276,15 @@ def _section(p: QPainter):
     p.drawLine(QPointF(5, 17), QPointF(27, 17))
 
 
+def _split(p: QPainter):
+    """A solid sliced into two halves by a dashed plane."""
+    p.drawRect(QRectF(6, 9, 20, 16))
+    pen = QPen(_COL)
+    pen.setStyle(Qt.PenStyle.DashLine)
+    p.setPen(pen)
+    p.drawLine(QPointF(16, 6), QPointF(16, 27))
+
+
 def _thread(p: QPainter):
     """A bolt shank with helical thread diagonals."""
     p.drawRect(QRectF(11, 5, 10, 22))
@@ -302,7 +311,7 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "construction": _construction, "plane": _plane,
               "constrain": _constrain, "dimension": _dimension,
               "launcher": _launcher, "section": _section,
-              "thread": _thread})
+              "thread": _thread, "split": _split})
 
 
 def icon(name: str) -> QIcon:

@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QTreeWidget, QTreeWidgetItem, QLabel, QVBoxLayout
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
-                             PathPatternFeature,
+                             PathPatternFeature, SplitFeature,
                              MirrorFeature, PrimitiveFeature, RevolveFeature,
                              ShellFeature, SweepFeature, LoftFeature,
                              ThreadFeature)
@@ -102,6 +102,7 @@ class FeatureTree(QTreeWidget):
             kind = ("\u21bb" if isinstance(f, RevolveFeature)
                     else "\u2300" if isinstance(f, HoleFeature)
                     else "\u25a4" if isinstance(f, ShellFeature)
+                    else "\u2702" if isinstance(f, SplitFeature)  # trim
                     else "\u223f" if isinstance(f, SweepFeature)
                     else "\u25b3" if isinstance(f, LoftFeature)
                     else "\u25c8" if isinstance(f, ImportedFeature)
@@ -285,6 +286,13 @@ class PropertiesPanel(QWidget):
                          for i in range(len(span) - 1))
             lines.append(f"pattern: {feature.count} copies walking a "
                          f"{length:g} mm path")
+        elif isinstance(feature, SplitFeature):
+            n = np.abs(np.asarray(feature.normal, float))
+            ax = int(n.argmax())
+            lines.append(f"split plane \u2702 through "
+                         f"({'xyz'[ax]}={feature.origin[ax]:g} mm)")
+            lines.append("kept side: "
+                         + ("flipped" if feature.flip else "default"))
         placement = getattr(feature, "placement", None)
         if placement is not None:                    # patterns have none
             px, py, pz = placement
