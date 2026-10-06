@@ -397,6 +397,40 @@ class RotateFeature(Feature):
 
 
 @dataclass
+class CombineFeature(Feature):
+    """Combine (M64): Join / Cut / Intersect the whole body with a
+    placed primitive tool — Fusion's Combine, tool built on the spot.
+    `center` is the tool's bounding-box centre; the op picks the
+    boolean.  Parametric: Change Parameters speaks for it too."""
+    tool: str = "box"
+    dims: dict = field(default_factory=dict)
+    center: tuple = (0.0, 0.0, 0.0)
+
+    def build_tool(self) -> Solid:
+        d = self.dims
+        if self.tool == "cylinder":
+            s = Solid.cylinder(float(d.get("radius", 5.0)),
+                               float(d.get("height", 10.0)))
+        elif self.tool == "sphere":
+            s = Solid.sphere(float(d.get("radius", 5.0)))
+        else:
+            s = Solid.box(float(d.get("dx", 10.0)),
+                          float(d.get("dy", 10.0)),
+                          float(d.get("dz", 10.0)))
+        lo, hi = s.bounding_box
+        c = (np.asarray(hi, float) + np.asarray(lo, float)) / 2.0
+        return s.translated(np.asarray(self.center, float) - c)
+
+    def apply(self, src: Solid) -> Solid:
+        t = self.build_tool()
+        if self.op == "subtract":
+            return src.subtract(t)
+        if self.op == "intersect":
+            return src.intersect(t)
+        return src.union(t)
+
+
+@dataclass
 class SweepFeature(Feature):
     """Sweep a circular profile along a drawn path (v1 profile: circle).
     `path` stores the sampled 2D polyline in sketch coordinates, `closed`
@@ -580,13 +614,15 @@ class Document:
                 solid = src.translated((-shift[0], -shift[1], -shift[2])) \
                             .mirror(n).translated(shift)
             elif isinstance(f, (BodyFilletFeature, ShellFeature,
-                                SplitFeature, MoveFeature, RotateFeature)):
+                                SplitFeature, MoveFeature, RotateFeature,
+                                CombineFeature)):
                 if acc is None:
                     verb = ("fillet" if isinstance(f, BodyFilletFeature)
                             else "shell" if isinstance(f, ShellFeature)
                             else "split" if isinstance(f, SplitFeature)
                             else "move" if isinstance(f, MoveFeature)
-                            else "rotate")
+                            else "rotate" if isinstance(f, RotateFeature)
+                            else "combine")
                     raise ValueError(f"{f.name!r} has no body to {verb} yet")
                 acc = f.apply(acc)
                 by_uid[f.uid] = acc
@@ -695,6 +731,9 @@ class Document:
                          axis=list(map(float, f.axis)),
                          angle_deg=float(f.angle_deg),
                          copy=bool(f.copy))
+            elif isinstance(f, CombineFeature):
+                d.update(tool=str(f.tool), dims=dict(f.dims),
+                         center=list(map(float, f.center)))
             elif isinstance(f, HoleFeature):
                 d.update(center=list(map(float, f.center)),
                          normal=list(map(float, f.normal)),
@@ -822,6 +861,12 @@ class Document:
                     axis=tuple(fd["axis"]),
                     angle_deg=float(fd["angle_deg"]),
                     copy=bool(fd.get("copy", False)), **base))
+            elif t == "CombineFeature":
+                doc.features.append(CombineFeature(
+                    name=fd["name"], tool=str(fd.get("tool", "box")),
+                    dims=dict(fd.get("dims", {})),
+                    center=tuple(fd.get("center", (0.0, 0.0, 0.0))),
+                    **base))
             elif t == "HoleFeature":
                 doc.features.append(HoleFeature(
                     name=fd["name"],

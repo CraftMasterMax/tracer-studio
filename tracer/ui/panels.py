@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QTreeWidget, QTreeWidgetItem, QLabel, QVBoxLayout
 
 from ..core import units
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
+                             CombineFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
                              MoveFeature,
@@ -107,6 +108,7 @@ class FeatureTree(QTreeWidget):
                     else "\u2702" if isinstance(f, SplitFeature)  # trim
                     else "\u2725" if isinstance(f, MoveFeature)   # move
                     else "\u27f3" if isinstance(f, RotateFeature)  # spin
+                    else "\u2295" if isinstance(f, CombineFeature)  # combine
                     else "\u223f" if isinstance(f, SweepFeature)
                     else "\u25b3" if isinstance(f, LoftFeature)
                     else "\u25c8" if isinstance(f, ImportedFeature)
@@ -333,6 +335,26 @@ class PropertiesPanel(QWidget):
                          f"{feature.center[2]:g})")
             if feature.copy:
                 lines.append("copy: twin joined")
+        elif isinstance(feature, CombineFeature):
+            d = feature.dims
+            shape = {"union": "join", "subtract": "cut",
+                     "intersect": "intersect"}.get(feature.op,
+                                                   feature.op)
+            if feature.tool == "box":
+                size = (f"{units.L(d.get('dx', 0), self.unit)} \u00d7 "
+                        f"{units.L(d.get('dy', 0), self.unit)} \u00d7 "
+                        f"{units.L(d.get('dz', 0), self.unit)}")
+            elif feature.tool == "cylinder":
+                size = (f"\u00d8{units.L(2 * d.get('radius', 0), self.unit)}"
+                        f" \u00d7 {units.L(d.get('height', 0), self.unit)}")
+            else:
+                size = f"\u00d8{units.L(2 * d.get('radius', 0), self.unit)}"
+            lines.append(f"combine \u2295 {shape} a {feature.tool}")
+            lines.append(f"tool: {size}")
+            lines.append("tool centre: "
+                         f"({feature.center[0]:g}, "
+                         f"{feature.center[1]:g}, "
+                         f"{feature.center[2]:g}) mm")
         placement = getattr(feature, "placement", None)
         if placement is not None:                    # patterns have none
             px, py, pz = placement

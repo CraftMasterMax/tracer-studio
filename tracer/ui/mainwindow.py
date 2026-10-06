@@ -16,6 +16,7 @@ from ..core import io as fio
 from ..core import step
 from ..core.thread import ISO_COARSE
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
+                             CombineFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
                              LoftFeature, MirrorFeature, MoveFeature,
@@ -304,6 +305,8 @@ class MainWindow(QMainWindow):
           lambda checked=False: self.action_move_body())
         d("rotate", "Rotate body — drag a ring to spin it (Ctrl = copy)",
           lambda checked=False: self.action_rotate_body())
+        d("combine", "Combine body — Join / Cut / Intersect a placed "
+          "solid", lambda checked=False: self.action_combine())
         r.design_sep()
         d("plane", "Construction plane — offset work plane (Ctrl+Shift+P)",
           lambda checked=False: self.action_construction_plane())
@@ -788,6 +791,21 @@ class MainWindow(QMainWindow):
             dbl("angle", "angle", feature.angle_deg, dec=1, mn=None,
                 ang=True)
             check("copy", "copy (join the twin)", feature.copy)
+        elif isinstance(feature, CombineFeature):
+            combo("tool", "tool shape", ("Box", "Cylinder", "Sphere"),
+                  {"box": "Box", "cylinder": "Cylinder",
+                   "sphere": "Sphere"}.get(feature.tool, "Box"))
+            combo("op", "operation", ("Join", "Cut", "Intersect"),
+                  {"union": "Join", "subtract": "Cut",
+                   "intersect": "Intersect"}.get(feature.op, "Join"))
+            dbl("dx", "length X", feature.dims.get("dx", 20.0))
+            dbl("dy", "length Y", feature.dims.get("dy", 20.0))
+            dbl("dz", "length Z", feature.dims.get("dz", 20.0))
+            dbl("radius", "radius", feature.dims.get("radius", 8.0),
+                dec=3)
+            dbl("height", "height", feature.dims.get("height", 30.0))
+            for i, k in enumerate("xyz"):
+                dbl(f"c{i}", f"centre {k}", feature.center[i], mn=None)
         return fld
 
     def _apply_feature_params(self, feature, v):
@@ -853,6 +871,20 @@ class MainWindow(QMainWindow):
                                  np.eye(3)["XYZ".index(str(v["axis"]))])
             feature.angle_deg = float(v["angle"])
             feature.copy = bool(v["copy"])
+        elif isinstance(feature, CombineFeature):
+            feature.tool = {"Box": "box", "Cylinder": "cylinder",
+                            "Sphere": "sphere"}[str(v["tool"])]
+            feature.op = {"Join": "union", "Cut": "subtract",
+                          "Intersect": "intersect"}[str(v["op"])]
+            if feature.tool == "box":
+                feature.dims = {"dx": mm("dx"), "dy": mm("dy"),
+                                "dz": mm("dz")}
+            elif feature.tool == "cylinder":
+                feature.dims = {"radius": mm("radius"),
+                                "height": mm("height")}
+            else:
+                feature.dims = {"radius": mm("radius")}
+            feature.center = tuple(mm(f"c{i}") for i in range(3))
         self.doc.dirty = True
 
     def action_change_params(self, feature=None):
@@ -1675,6 +1707,60 @@ class MainWindow(QMainWindow):
              f"{'XYZ'[axis_i]} — twins joined" if is_copy else
              f"Body rotated {deg:+.1f}\u00b0 about "
              f"{'XYZ'[axis_i]} through its centre"), 5000)
+
+    def action_combine(self):
+        """Fusion's Combine (M64): Join / Cut / Intersect the body with
+        a placed primitive tool — bosses, gussets and trims without a
+        single sketch line."""
+        if self.doc is None or self.doc.result is None:
+            QMessageBox.warning(self, "Combine",
+                                "Nothing to combine into yet — extrude "
+                                "or import a solid first.")
+            return
+        lo = np.asarray(self.doc.result.bounding_box[0], float)
+        hi = np.asarray(self.doc.result.bounding_box[1], float)
+        c = (lo + hi) / 2.0
+        u = self.doc.units if self.doc.units in units.LABEL else "mm"
+        f = units.PER_MM[u]
+        lab = units.LABEL[u]
+
+        def num(key, label, mm, dec=2):
+            return dict(key=key, label=f"{label} ({lab})", kind="double",
+                        default=round(mm / f, 6), decimals=dec)
+        v = cmddialog.ask(self, "Combine", [
+            dict(key="tool", label="Tool shape", kind="combo",
+                 choices=["Box", "Cylinder", "Sphere"], default="Box",
+                 group=f"Tool ({lab})"),
+            num("dx", "length X", 20.0), num("dy", "length Y", 20.0),
+            num("dz", "length Z", 20.0),
+            num("radius", "radius", 8.0, 3), num("height", "height", 30.0),
+            dict(key="op", label="Operation", kind="combo",
+                 choices=["Join", "Cut", "Intersect"], default="Join",
+                 group="Boolean"),
+            num("cx", "centre X", float(c[0])),
+            num("cy", "centre Y", float(c[1])),
+            num("cz", "centre Z", float(c[2])),
+        ], remember_key="combine")
+        if v is None:
+            return
+        tool = {"Box": "box", "Cylinder": "cylinder",
+                "Sphere": "sphere"}[str(v["tool"])]
+        dims = ({"radius": float(v["radius"]) * f} if tool == "sphere"
+                else {"radius": float(v["radius"]) * f,
+                      "height": float(v["height"]) * f}
+                if tool == "cylinder"
+                else {"dx": float(v["dx"]) * f, "dy": float(v["dy"]) * f,
+                      "dz": float(v["dz"]) * f})
+        op = {"Join": "union", "Cut": "subtract",
+              "Intersect": "intersect"}[str(v["op"])]
+        self._capture()
+        self.doc.add(CombineFeature(
+            name=f"Combine {tool}", tool=tool, dims=dims, op=op,
+            center=tuple(float(v[k]) * f for k in ("cx", "cy", "cz"))))
+        self.recompute()
+        self.status.showMessage(
+            f"Combined ({str(v['op']).lower()}) a {tool} into the body",
+            5000)
 
     def _sync_holes(self, sid, payload):
         """Sketch re-edit through the extrude path: holes stay glued to

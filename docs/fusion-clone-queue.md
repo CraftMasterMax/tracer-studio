@@ -236,6 +236,15 @@ and offers the hand cursor, Fusion-style; and the selection rubber
 band now speaks Fusion's two colours — blue WINDOW left→right (must
 contain) versus green CROSSING right→left (just touches).
 
+**M64 — Combine.** ✓ SHIPPED.  The ribbon's ⊕ button is Fusion's
+Combine with the tool built on the spot: pick Box, Cylinder or Sphere,
+place its centre, choose **Join / Cut / Intersect** — a boss, a gusset
+or a trim lands without a single sketch line, as one parametric
+CombineFeature that Change Parameters speaks for, JSON round-trips and
+undoes.  Volumes are kernel truth to three decimals (8000 + πr²·20 for
+a pushed-through boss, corner cut exact, intersection exact), watertight
+every time.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, Combine/multi-browser-bodies,
 configurations, assemblies/joints, sheet metal, drawings.

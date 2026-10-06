@@ -277,6 +277,19 @@ def _section(p: QPainter):
     p.drawLine(QPointF(5, 17), QPointF(27, 17))
 
 
+def _combine(p: QPainter):
+    """Two overlapping circles — one boolean."""
+    pen = QPen(_COL)
+    pen.setWidthF(1.8)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QRectF(4, 8, 12, 12))
+    p.drawEllipse(QRectF(12, 8, 12, 12))
+    p.setBrush(_COL)
+    p.setPen(Qt.NoPen)
+    p.drawChord(QRectF(4, 8, 12, 12), 240 * 16, 100 * 16)
+
+
 def _rotate(p: QPainter):
     """A circular arrow — spin in one glyph."""
     pen = QPen(_COL)
@@ -352,7 +365,7 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "launcher": _launcher, "section": _section,
               "thread": _thread, "split": _split,
               "appearance": _appearance, "move": _move,
-              "rotate": _rotate})
+              "rotate": _rotate, "combine": _combine})
 
 
 def icon(name: str) -> QIcon:
