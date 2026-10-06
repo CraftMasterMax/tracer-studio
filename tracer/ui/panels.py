@@ -18,6 +18,7 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              PathPatternFeature, RotateFeature, SplitFeature,
                              MirrorFeature, PrimitiveFeature, RevolveFeature,
                              ShellFeature, SweepFeature, LoftFeature,
+                             ThickenFeature,
                              ThreadFeature)
 from .theme import DARK
 
@@ -136,6 +137,7 @@ class FeatureTree(QTreeWidget):
                     else "\u27f3" if isinstance(f, RotateFeature)  # spin
                     else "\u2295" if isinstance(f, CombineFeature)  # combine
                     else "\u223f" if isinstance(f, SweepFeature)
+                    else "\u25ac" if isinstance(f, ThickenFeature)  # wall
                     else "\u25b3" if isinstance(f, LoftFeature)
                     else "\u25c8" if isinstance(f, ImportedFeature)
                     else "\u25e7" if isinstance(f, MirrorFeature)
@@ -325,6 +327,17 @@ class PropertiesPanel(QWidget):
             lines.append(f"path: {units.val(length, self.unit):.1f} "
                          f"{units.LABEL[self.unit]} "
                          + ("closed ring" if feature.closed else "open"))
+        elif isinstance(feature, ThickenFeature):
+            import math as _m
+            total = 0.0
+            for p in feature.paths:
+                total += sum(_m.dist(p[i], p[i + 1])
+                             for i in range(len(p) - 1)) if len(p) > 1 else 0
+            lines.append(f"wall: {units.A(feature.thickness, self.unit)} "
+                         f"thick × {units.A(feature.depth, self.unit)} deep")
+            lines.append(f"chains: {len(feature.paths)} "
+                         f"({units.val(total, self.unit):.1f} "
+                         f"{units.LABEL[self.unit]} total)")
         elif isinstance(feature, ShellFeature):
             lines.append("wall thickness: "
                          + units.L(feature.thickness, self.unit))

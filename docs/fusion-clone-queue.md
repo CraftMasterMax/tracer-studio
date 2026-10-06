@@ -716,8 +716,28 @@ and it drives the diameter from then on. Honest scope: closed
 circles only; the sketcher's chip is text, not GD&T (tolerance
 stacking is a world away).
 
-**Later candidates (researched, deferred):** Patch/Thicken
-(surface kernel gap), Draft, true multi-body (Combine today builds
+**M99 — Thicken: an open sketch becomes a solid wall.** ✓ SHIPPED.
+Print-makers live here: a drawn path that should be a 3 mm rib, a
+stiffener, a patch plate. Fusion speaks Patch/Thicken for surfaces;
+the honest mesh-kernel twin is a buffer — every OPEN chain of the
+sketch (lines and arcs, construction excluded, sampled and stitched
+where the M93 walker split at a junction) is thickened with BUTT caps
+(a straight wall is exactly length × thickness, no semicircular ears)
+and ROUND joins (corners bend like sheet, never mitre-spike),
+overlapping chains union into one wall before extrusion, and the
+strip extrudes `depth` along the plane normal. Closed loops are
+refused with directions: "every chain here is closed; use Extrude" —
+a maker who means Extrude hears it, not a surprise sliver. The
+feature is parametric like its siblings: sketch payload frozen
+sweep-style, re-run Thicken to re-extract, edit thickness/depth to
+rebuild, timeline ▬ chip, file round-trips, undo captures the mint.
+Measured proof: an L-rib of 95 mm stock reads 3,414.2 mm³ against
+3,420 straight — the round join trimmed the corner by the exact
+sliver it should. Honest scope: XY-style plane transforms like sweep
+(one plane per wall); frozen sketch re-edit shares sweep's dormant
+path; no variable thickness (that's loft's language).
+
+**Later candidates (researched, deferred):** Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),
 configurations, assemblies/joints, sheet metal, drawings.
 Re-evaluate after M52.

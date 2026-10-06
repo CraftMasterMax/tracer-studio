@@ -30,6 +30,7 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              PrimitiveFeature,
                              RevolveFeature, ShellFeature, SplitFeature,
                              SweepFeature,
+                             ThickenFeature,
                              ThreadFeature)
 from ..core.measure import describe, face_stats, mass_properties
 from ..core import units
@@ -391,6 +392,7 @@ class MainWindow(QMainWindow):
           menu_actions=[("Revolve profile… (⇧R)", self._tb_revolve),
                         ("Hole… (Ctrl+H)", self.action_hole),
                         ("Sweep… (W)", self.action_sweep),
+                        ("Thicken…", self.action_thicken),
                         ("Loft… (Ctrl+L)", self.action_loft)])
 
         # app-launcher menu: Fusion's top-left file surface, sharing the
@@ -1652,7 +1654,10 @@ class MainWindow(QMainWindow):
             loft_owns = any(isinstance(f, LoftFeature)
                             and any(s.get("sid") == sid for s in f.sections)
                             for f in self.doc.features)
-            owns = hole_owns or sweep_owns or loft_owns
+            thicken_owns = any(isinstance(f, ThickenFeature)
+                               and f.sid == sid
+                               for f in self.doc.features)
+            owns = hole_owns or sweep_owns or loft_owns or thicken_owns
             if owns:
                 self._capture()
             if hole_owns:
@@ -1661,6 +1666,8 @@ class MainWindow(QMainWindow):
                 self._sync_sweeps(sid, payload)
             if loft_owns:
                 self._sync_lofts(sid, payload)
+            if thicken_owns:
+                self._sync_thickens(sid, payload)
             self._update_sketch_features(sid, profiles, payload,
                                          capture=not owns)
             self.sketch.set_model(SketchModel())     # committed: clear editor
@@ -2565,6 +2572,59 @@ class MainWindow(QMainWindow):
             f"Swept Ø{2 * r:g} tube along the "
             + ("closed path" if closed else "open path"), 5000)
 
+    def action_thicken(self):
+        """Fusion Patch/Thicken, mesh-honest (M99): the sketch's OPEN
+        chains wall into a solid of `thickness` x `depth` — ribs,
+        stiffeners, patch plates. Closed profiles are said no, kindly."""
+        if self.doc is None:
+            return
+        m = self.sketch.model
+        if m is None:
+            QMessageBox.information(
+                self, "Thicken",
+                "Thicken runs from a sketch: draw open lines and/or arcs "
+                "— the path to wall in. Closed profiles are Extrude's "
+                "job.")
+            return
+        from ..core.thicken import open_chains
+        try:
+            chains = open_chains(m)
+        except ValueError as e:
+            QMessageBox.warning(self, "Thicken", str(e))
+            return
+        from . import cmddialog
+        v = cmddialog.ask(self, "Thicken", [
+            dict(key="thickness", kind="double",
+                 label="Wall thickness (mm)",
+                 default=2.0, min=0.01, max=1e4, decimals=3),
+            dict(key="depth", kind="double", label="Depth (mm)",
+                 default=5.0, min=0.01, max=1e5, decimals=3)])
+        if v is None:
+            return
+        t, dp = float(v["thickness"]), float(v["depth"])
+        payload = model_to_dict(m)
+        owned = [f for f in self.doc.features
+                 if isinstance(f, ThickenFeature) and f.sid == m.sid]
+        self._capture()
+        paths = [[[float(x), float(y)] for x, y in c] for c in chains]
+        if owned:                                   # re-thicken in place
+            f = owned[0]
+            for extra in owned[1:]:
+                self.doc.features.remove(extra)
+            f.thickness, f.depth, f.paths = t, dp, paths
+            f.name = f"Wall {t:g}"
+            f.sketch = dict(payload)
+        else:
+            self.doc.add(ThickenFeature(
+                name=f"Wall {t:g}", thickness=t, depth=dp, paths=paths,
+                plane=m.plane, placement=tuple(map(float, m.origin)),
+                axes=m.axes, sketch=dict(payload), sid=m.sid))
+        self.recompute()
+        self.viewport.refresh(fit=True)
+        self.status.showMessage(
+            f"Thickened {len(chains)} open chain(s) to a {t:g} mm wall, "
+            f"{dp:g} mm deep", 5000)
+
     def _sync_sweeps(self, sid, payload):
         """Sketch re-edit committed: re-extract circle + path for sweeps
         born from this sketch; drop them if the recipe stopped working."""
@@ -2588,6 +2648,29 @@ class MainWindow(QMainWindow):
         keep.radius, keep.closed = r, bool(closed)
         keep.path = [list(map(float, p)) for p in pts]
         keep.name = f"Sweep Ø{2 * r:g}"
+        keep.sketch = dict(payload)
+        return True
+
+    def _sync_thickens(self, sid, payload):
+        """Sketch re-edit committed: re-extract the open chains for
+        walls born from this sketch; drop them if nothing open is left
+        (M99 — the wall follows the path it was thickened from)."""
+        walls = [f for f in self.doc.features
+                 if isinstance(f, ThickenFeature) and f.sid == sid]
+        if not walls:
+            return False
+        from ..core.thicken import open_chains
+        m = model_from_dict(payload)
+        try:
+            chains = open_chains(m)
+        except ValueError:
+            for f in walls:                        # nothing open anymore
+                self.doc.features.remove(f)
+            return True
+        keep = walls[0]
+        for extra in walls[1:]:
+            self.doc.features.remove(extra)
+        keep.paths = [[[float(x), float(y)] for x, y in c] for c in chains]
         keep.sketch = dict(payload)
         return True
 
@@ -2782,6 +2865,12 @@ class MainWindow(QMainWindow):
                          "path — tube, handle, rod")
         sweep.clicked.connect(self.action_sweep)
         bl.addWidget(sweep)
+        thk = QPushButton("Thicken…")           # M99: Patch/Thicken twin
+        thk.setProperty("tb", True)
+        thk.setToolTip("Wall this sketch's open chains into solid stock — "
+                       "ribs, stiffeners, patch plates")
+        thk.clicked.connect(self.action_thicken)
+        bl.addWidget(thk)
         self.sketch = SketchCanvas()
         self.sketch.profiles_ready.connect(self._on_profiles)
         self.sketch.state_changed.connect(self._on_sketch_state)

@@ -557,6 +557,33 @@ class SweepFeature(Feature):
 
 
 @dataclass
+class ThickenFeature(Feature):
+    """M99: a sketch's open chains, thickened to a wall of `thickness`
+    (butt caps, round joins) and extruded `depth` along the plane
+    normal. `paths` carries the sampled polylines in sketch
+    coordinates — frozen, sweep-style: re-run Thicken to re-extract."""
+    thickness: float = 2.0
+    depth: float = 5.0
+    paths: list = field(default_factory=list)   # [[[x, y], ...], ...]
+    plane: str = "XY"
+    placement: tuple = (0.0, 0.0, 0.0)
+    axes: list | None = None
+    sketch: dict | None = None
+    sid: int | None = None
+
+    def build(self) -> Solid:
+        from .thicken import thicken_solids
+        parts = thicken_solids(self.paths, self.thickness, self.depth)
+        if not parts:
+            raise ValueError("Thicken: the sketch has no open chain left")
+        s = parts[0]
+        for p in parts[1:]:
+            s = s.union(p)
+        return s.transformed(plane_matrix(self.plane, self.placement,
+                                          self.axes))
+
+
+@dataclass
 class LoftFeature(Feature):
     """Blend between closed profiles drawn in two sketches — Fusion Loft.
     Each section carries its own sketch placement (origin planes or
@@ -865,6 +892,14 @@ class Document:
                          closed=bool(f.closed), plane=f.plane,
                          placement=list(map(float, f.placement)),
                          axes=f.axes, sketch=f.sketch, sid=f.sid)
+            elif isinstance(f, ThickenFeature):
+                d.update(thickness=float(f.thickness),
+                         depth=float(f.depth),
+                         paths=[[[float(x), float(y)] for x, y in p]
+                                for p in f.paths],
+                         plane=f.plane,
+                         placement=list(map(float, f.placement)),
+                         axes=f.axes, sketch=f.sketch, sid=f.sid)
             elif isinstance(f, ShellFeature):
                 d.update(thickness=float(f.thickness),
                          openings=[[[float(x) for x in o[0]],
@@ -1000,6 +1035,16 @@ class Document:
                     name=fd["name"], radius=float(fd["radius"]),
                     path=[list(map(float, p)) for p in fd["path"]],
                     closed=bool(fd.get("closed", False)),
+                    plane=fd.get("plane", "XY"),
+                    placement=tuple(fd.get("placement", (0.0, 0.0, 0.0))),
+                    axes=fd.get("axes"), sketch=fd.get("sketch"),
+                    sid=fd.get("sid"), **base))
+            elif t == "ThickenFeature":
+                doc.features.append(ThickenFeature(
+                    name=fd["name"], thickness=float(fd["thickness"]),
+                    depth=float(fd["depth"]),
+                    paths=[[list(map(float, p)) for p in chain]
+                           for chain in fd["paths"]],
                     plane=fd.get("plane", "XY"),
                     placement=tuple(fd.get("placement", (0.0, 0.0, 0.0))),
                     axes=fd.get("axes"), sketch=fd.get("sketch"),
