@@ -18,7 +18,8 @@ from ..core.thread import ISO_COARSE
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
-                             LoftFeature, MirrorFeature, PrimitiveFeature,
+                             LoftFeature, MirrorFeature, PathPatternFeature,
+                             PrimitiveFeature,
                              RevolveFeature, ShellFeature, SweepFeature,
                              ThreadFeature)
 from ..core.measure import describe, face_stats
@@ -276,6 +277,8 @@ class MainWindow(QMainWindow):
           lambda checked=False: self.action_circular_pattern())
         d("mirror", "Mirror — flip a feature across a plane or axis",
           lambda checked=False: self.action_mirror())
+        d("ppattern", "Pattern on path — copies walking a sketch path",
+          lambda checked=False: self.action_path_pattern())
         r.design_sep()
         d("fillet", "Fillet — round every sharp edge of the body",
           menu_actions=[self.act_fillet, self.act_chamfer, self.act_shell])
@@ -1615,8 +1618,61 @@ class MainWindow(QMainWindow):
         return [f for f in self.doc.features
                 if not isinstance(f, (LinearPatternFeature,
                                       CircularPatternFeature,
+                                      PathPatternFeature,
                                       BodyFilletFeature))
                 and not f.suppressed]
+
+    def action_path_pattern(self):
+        """Fusion Pattern-on-Path (M50): the open line/arc chain of the
+        current sketch is the walk — N equally spaced copies of the
+        chosen feature ride it, translation first (v1)."""
+        if self.doc is None or self.doc.result is None:
+            return
+        m = self.sketch.model
+        if m is None:
+            QMessageBox.information(
+                self, "Pattern on Path",
+                "Run this from a sketch: draw a connected OPEN chain of "
+                "lines/arcs, starting it at the feature you want to "
+                "repeat.")
+            return
+        cands = self._pattern_candidates()
+        if not cands:
+            QMessageBox.information(self, "Pattern on Path",
+                                    "Create a feature to pattern first.")
+            return
+        from ..core.sweep import path_chain
+        try:
+            pts, closed = path_chain(m, need_circle=False)
+        except ValueError as e:
+            QMessageBox.warning(self, "Pattern on Path", str(e))
+            return
+        if closed or len(pts) < 2:
+            QMessageBox.warning(
+                self, "Pattern on Path",
+                "The path must be an OPEN chain of lines/arcs — v1 "
+                "does not loop.")
+            return
+        names = [f.name for f in cands]
+        v = cmddialog.ask(self, "Pattern on Path", [
+            dict(key="src", label="Feature to pattern", kind="combo",
+                 choices=names, group="Object"),
+            dict(key="count", label="Occurrences along the path",
+                 kind="int", default=4, min=2, max=200, group="Pattern"),
+        ], remember_key="path_pattern")
+        if v is None:
+            return
+        src = cands[names.index(v["src"])]
+        self._capture()
+        self.doc.add(PathPatternFeature(
+            name=f"Path of {src.name}", op=src.op, source_uid=src.uid,
+            path=[list(map(float, p)) for p in pts],
+            count=int(v["count"]), plane=m.plane,
+            placement=tuple(map(float, m.origin)), axes=m.axes))
+        self.recompute()
+        self.viewport.refresh(fit=True)
+        self.status.showMessage(
+            f"Patterned {src.name} \u00d7{v['count']} along the path", 6000)
 
     def action_circular_pattern(self):
         if self.doc is None:

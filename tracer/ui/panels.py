@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QTreeWidget, QTreeWidgetItem, QLabel, QVBoxLayout
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
+                             PathPatternFeature,
                              MirrorFeature, PrimitiveFeature, RevolveFeature,
                              ShellFeature, SweepFeature, LoftFeature,
                              ThreadFeature)
@@ -109,6 +110,7 @@ class FeatureTree(QTreeWidget):
                     else "\u2312" if fillet                    # arc = fillet/chamfer
                     else "\u29c9" if isinstance(f, (LinearPatternFeature,
                                                     CircularPatternFeature))
+                    else "\u2935" if isinstance(f, PathPatternFeature)
                     else "\u25a1")
             label = (f"{glyph} {f.name}" if fillet
                      else f"{glyph} {kind} {f.name}")
@@ -274,6 +276,15 @@ class PropertiesPanel(QWidget):
         elif isinstance(feature, CircularPatternFeature):
             lines.append(f"pattern: {feature.count}x over {feature.angle:g}° "
                          f"about ({feature.center[0]:g}, {feature.center[1]:g})")
+        elif isinstance(feature, PathPatternFeature):
+            import numpy as _np
+            from ..core.sweep import sample_polyline
+            pts = sample_polyline(feature.path, feature.count)
+            span = _np.asarray(pts)
+            length = sum(float(_np.linalg.norm(span[i + 1] - span[i]))
+                         for i in range(len(span) - 1))
+            lines.append(f"pattern: {feature.count} copies walking a "
+                         f"{length:g} mm path")
         placement = getattr(feature, "placement", None)
         if placement is not None:                    # patterns have none
             px, py, pz = placement

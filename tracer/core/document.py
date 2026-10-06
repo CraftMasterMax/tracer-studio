@@ -67,6 +67,22 @@ class CircularPatternFeature(Feature):
 
 
 @dataclass
+class PathPatternFeature(Feature):
+    """Copies of the source feature walking a drawn sketch path —
+    Fusion's pattern-on-path.  `path` is the sampled 2D polyline in
+    sketch coordinates, placed into 3D by `plane`/`placement`/`axes`
+    exactly like a sweep.  `count` equally spaced stations ride the
+    path; copy 0 stays where the source is, the rest follow the path's
+    spacing (translation-only, v1).  Start the path at the source."""
+    source_uid: str = ""
+    path: list = field(default_factory=list)      # [[x, y], ...]
+    count: int = 3
+    plane: str = "XY"
+    placement: tuple = (0.0, 0.0, 0.0)
+    axes: list | None = None
+
+
+@dataclass
 class MirrorFeature(Feature):
     """Mirror twin of the source solid across a datum plane: the coordinate
     plane XY/XZ/YZ shifted `offset` mm along its normal. Inherits the
@@ -476,6 +492,18 @@ class Document:
                 for k in range(max(1, int(f.count))):
                     c = src.translated(tuple(v * k for v in f.vector))
                     solid = c if solid is None else solid.union(c)
+            elif isinstance(f, PathPatternFeature):
+                src = by_uid.get(f.source_uid)
+                if src is None:
+                    continue
+                from .sweep import sample_polyline
+                M = plane_matrix(f.plane, f.placement, f.axes)
+                ws = [M[:3, :3] @ np.array([x, y, 0.0]) + M[:3, 3]
+                      for x, y in sample_polyline(f.path, f.count)]
+                solid = None
+                for w in ws:
+                    c = src.translated(tuple(w - ws[0]))
+                    solid = c if solid is None else solid.union(c)
             elif isinstance(f, CircularPatternFeature):
                 src = by_uid.get(f.source_uid)
                 if src is None:
@@ -563,6 +591,12 @@ class Document:
                 d.update(source_uid=f.source_uid,
                          vector=list(map(float, f.vector)),
                          count=int(f.count))
+            elif isinstance(f, PathPatternFeature):
+                d.update(source_uid=f.source_uid,
+                         path=[list(map(float, p)) for p in f.path],
+                         count=int(f.count), plane=f.plane,
+                         placement=list(map(float, f.placement)),
+                         axes=f.axes)
             elif isinstance(f, CircularPatternFeature):
                 d.update(source_uid=f.source_uid,
                          center=list(map(float, f.center)),
@@ -663,6 +697,13 @@ class Document:
                 doc.features.append(LinearPatternFeature(
                     name=fd["name"], source_uid=fd["source_uid"],
                     vector=tuple(fd["vector"]), count=int(fd["count"]), **base))
+            elif t == "PathPatternFeature":
+                doc.features.append(PathPatternFeature(
+                    name=fd["name"], source_uid=fd["source_uid"],
+                    path=[list(map(float, p)) for p in fd["path"]],
+                    count=int(fd["count"]), plane=fd.get("plane", "XY"),
+                    placement=tuple(fd.get("placement", (0., 0., 0.))),
+                    axes=fd.get("axes"), **base))
             elif t == "CircularPatternFeature":
                 doc.features.append(CircularPatternFeature(
                     name=fd["name"], source_uid=fd["source_uid"],

@@ -77,6 +77,22 @@ def _cpattern(p: QPainter):
     p.drawEllipse(c, 11.5, 11.5)
 
 
+def _ppattern(p: QPainter):
+    """A block array walking a curved path: three copies on a dashed arc."""
+    import math
+    pen = QPen(_COL)
+    pen.setStyle(Qt.PenStyle.DashLine)
+    p.setPen(pen)
+    p.drawArc(QRectF(3, 7, 26, 26), 0, 90 * 16)
+    pen.setStyle(Qt.PenStyle.SolidLine)
+    p.setPen(pen)
+    p.setBrush(_COL)
+    for k in (0, 45, 90):
+        a = math.radians(k)
+        x, y = 16 + 13 * math.cos(a), 20 - 13 * math.sin(a)
+        p.drawRect(QRectF(x - 2.5, y - 2.5, 5, 5))
+
+
 def _mirror(p: QPainter):
     """Solid half, ghost half, plane between."""
     p.drawPolygon(QPolygonF([QPointF(6, 24), QPointF(6, 10),
@@ -108,6 +124,7 @@ def _chamfer(p: QPainter):
 
 _DRAW = {"sketch": _sketch, "extrude": _box, "revolve": _revolve,
          "pattern": _pattern, "cpattern": _cpattern, "mirror": _mirror,
+         "ppattern": _ppattern,
          "fillet": _fillet, "chamfer": _chamfer}
 
 

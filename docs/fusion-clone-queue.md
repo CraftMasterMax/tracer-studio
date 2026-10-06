@@ -125,9 +125,14 @@ axis from the normal fan, Kåsa circle fit) — flat or conical patches are
 refused with words a maker can act on.  The size dialog names the
 closest ISO size to the fitted Ø.  Cosmetic threads deferred.
 
-**M50 — Pattern on path.**  Third pattern Fusion offers; reuses the
-M35 path chain: place N instances of a body/feature along a sketch
-path via frame-transform copies (loft kernel already builds the frames).
+**M50 — Pattern on path.** ✓ SHIPPED.  Draw an open line/arc chain
+(reusing M35's path_chain, now with the profile circle optional), pick a
+feature and a count, and N copies walk the path at equal arc-length
+stations — ribs, handles-in-a-row, bolt circles on an arc.  Placement is
+translation-along-the-polyline (v1: no rotation following the curve),
+the sketch's frame lifts the 2D walk into 3D exactly like a sweep, and
+the feature is JSON-persistent with a timeline glyph and inspector
+length readout.  Rotation-follows-path and closed loops deferred.
 
 **M51 — Split Body (plane trim).**  Multi-body is out of v1 scope, but
 Fusion's most common split is "cut away one half": Split › plane ›

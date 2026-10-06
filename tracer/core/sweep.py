@@ -49,18 +49,24 @@ def _arc_samples(a, m, b, step_deg: float = 15.0) -> list:
              cy + r * math.sin(a0 + total * k / n)) for k in range(n + 1)]
 
 
-def path_chain(model) -> tuple[list, bool]:
+def path_chain(model, need_circle: bool = True) -> tuple[list, bool]:
     """Order a sketch's loose line/arc chain into one polyline:
-    returns ([(x, y), ...], closed).  Needs exactly one construction-free
-    circle (the profile), one connected non-branching chain of lines and
-    arcs; every neighbour must share an endpoint.  Raises ValueError with
-    a maker-readable reason."""
+    returns ([(x, y), ...], closed).  With need_circle (sweep) it
+    requires exactly one construction-free circle (the profile);
+    without (pattern-on-path) a circle in the sketch is an error.
+    One connected non-branching chain of lines and arcs; every
+    neighbour must share an endpoint.  Raises ValueError with a
+    maker-readable reason."""
     from .sketch.entities import Arc
     circles = [c for c in model.sketch.circles
                if not getattr(c, "construction", False)]
-    if len(circles) != 1:
+    if need_circle and len(circles) != 1:
         raise ValueError("Sweep needs exactly one circle as the profile — "
                          f"the sketch has {len(circles)}")
+    if not need_circle and circles:
+        raise ValueError("Pattern-on-path wants only the path — delete the "
+                         f"circle ({len(circles)}) and pick the feature in "
+                         "the dialog instead")
     ents = [e for e in list(model.sketch.lines) + list(model.sketch.arcs)
             if not e.construction]
     if not ents:
@@ -150,6 +156,31 @@ def _smooth_poly(pts, blend: float, closed: bool) -> np.ndarray:
             corner(pts[i - 1], pts[i], pts[i + 1], out)
         out.append(pts[-1])
     return np.asarray(out, float)
+
+
+def sample_polyline(pts, count: int) -> list:
+    """`count` points equally spaced by arc length over a 2D polyline,
+    first and last included (pattern-on-path stations).  Degenerate
+    (zero-length) paths return the single point repeated.  Rigid
+    placement later preserves these spacings into 3D."""
+    pts = np.asarray(pts, float)
+    if pts.shape[0] < 2:
+        raise ValueError("the path is too short to pattern along")
+    n = max(2, int(count))
+    seg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+    total = float(seg.sum())
+    if total < 1e-9:
+        return [tuple(float(t) for t in pts[0])] * n
+    cum = np.concatenate([[0.0], np.cumsum(seg)])
+    targets = np.linspace(0.0, total, n)
+    out = []
+    for t in targets:
+        k = int(np.clip(np.searchsorted(cum, t, side="right") - 1,
+                        0, len(seg) - 1))
+        f = 0.0 if seg[k] < 1e-12 else (t - cum[k]) / seg[k]
+        p = pts[k] + (pts[k + 1] - pts[k]) * f
+        out.append((float(p[0]), float(p[1])))
+    return out
 
 
 def sweep_tube(path, radius: float, closed: bool, ring: int = 32) -> Solid:
