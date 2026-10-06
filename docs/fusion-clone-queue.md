@@ -427,6 +427,83 @@ placed tools, M64; separate bodies in the browser remain),
 configurations, assemblies/joints, sheet metal, drawings.
 Re-evaluate after M52.
 
+## Oct 2026 research sweep — the landscape and the ranked backlog
+
+A ten-thread research pass (subagent fleet was down — provider 503s — so
+it was run inline with web tools).  The short version: **nobody clones
+Fusion's UX.**  The open field splits into (a) FreeCAD/SolveSpace —
+right features, wrong ergonomics; (b) code-CAD (CadQuery/build123d/
+ManifoldCAD) — no GUI; (c) a fresh wave of OCCT-based hobby modelers
+(rcad, vcad, OneCAD, noBS-CAD, datum, Oblikovati, hobbycad) that all
+chase B-rep and none chase Fusion's *feel*.  Redditors ex-Fusion users
+say the quiet part out loud: FreeCAD "looks completely alien"; the
+10-document Fusion cap and cloud dependency are driving people out.
+Tracer's niche — genuine Fusion muscle-memory, offline, GPL — is
+confirmed empty.
+
+Field notes worth keeping:
+
+- **FreeCAD 1.1** (2026-03-25, LGPL): headline features were exactly
+  ours to steal first — interactive draggers, transparent previews,
+  *projection/intersection into sketches*, hole dialog rework with
+  threads, "master sketch" internal contours.  Confirms demand for M82.
+- **rcad** (GrantObi/rcad, MIT, 2026-06): closest functional cousin —
+  constraint glyphs, live DOF, drag-to-solve, holes (simple/cbore/
+  ccsink), mirror/patterns, rollback + suppress.  B-rep/OCCT though.
+- **ecto/vcad** (MIT): started ON MANIFOLD ("great for 3D printing,
+  not enough for real CAD") then ripped it out for a hand-built B-rep.
+  Their retreat is our proof: a mesh kernel is *honest scope* for
+  maker CAD — we ship threads/text/shells fine without SSI dragons.
+  Also: "built for AI agents" (MCP) is their growth angle.
+- **KittyCAD/ezpz** (MIT): Zoo's open 2D constraint solver — good
+  literature for our redundancy/conflict reporting (M87), not a
+  dependency (we stay pure-Python LM).
+- **manifold3d (our kernel!) ships more than we use**: CrossSection
+  with `offset(JoinType.Round/Miter)`, `compose(FillRule.EvenOdd/
+  NonZero)`, mirror/hull/rotate, and `Manifold.batch_boolean`.
+  Exact rounded offsets (M84), kernel-side profile rules (M85) and
+  batched pattern unions come FREE — no new deps, no shapely winding
+  hacks.  This is the highest-leverage finding of the sweep.
+- **SketchForge-3D / ManifoldCAD**: browser apps on our kernel, but
+  Tinkercad/script flavours — no overlap with our desktop-clone lane.
+- Community magnet: DXF/SVG import is what laser/CNC makers ask for
+  first (ezdxf, MIT, is the standard); OpenSCAD's Customizer proves
+  the parameter-sheet payoff.
+
+**Ranked execution order (the loop runs this):**
+
+1. **M81 — User Parameters + expressions.**  Fusion's parameter sheet:
+   named globals (`width = 20`), `= width * 2` bindings on feature
+   fields, safe-ast evaluator, cycle/unknown errors, rebuild on edit.
+   The parametric heart every serious rival lists first.  Effort M,
+   headless-testable, low risk.
+2. **M82 — Project model edges into sketches** (mesh-honest
+   Project/Include): slice the solid with the sketch plane
+   (trimesh.section) → construction loops under the cursor.  Unlocks
+   sketch-on-face workflows; FreeCAD 1.1 headline proves demand.  M.
+3. **M83 — DXF/SVG import → sketch profiles** (ezdxf + svgelements,
+   both MIT): Insert ▸ Import, splines flattened, closed → extrude.
+   The maker-audience magnet.  M.
+4. **M84 — Robust offset entities via CrossSection.offset**: JoinType
+   Round/Miter + miter limit, arcs/circles finally offsettable, self-
+   clean.  S–M, zero new deps.
+5. **M85 — Profile core on FillRule + batch_boolean**: retire the
+   shapely even-odd winding ranking for the kernel's own compose;
+   batched unions speed patterns; groundwork for honest multi-body.  M,
+   touches core — sequenced AFTER M84 proves the API surface.
+6. **M86 — 3D Print dialog** (Utilities ▸ 3D Print clone): watertight
+   check, volume/mass/triangle count, drop-to-bed, one-click STL.  S.
+7. **M87 — Solver intelligence**: redundant/conflicting constraint
+   detection + on-canvas highlights (ezpz/SolveSpace literature).  M.
+8. Then: timeline suppress/rollback, drawings (ezdxf again),
+   configurations, multi-body phase 2.
+
+**Non-goals (documented, from the same sweep):** migrating to a B-rep
+kernel (the vcad saga is the cautionary tale — years for SSI parity),
+T-splines/sculpt, CAM, cloud sync / CRDT collaboration, STEP AP-242
+exact parametrics (our STEP is mesh; honest in docs), and chasing zoo's
+code-first KCL model — Tracer is point-and-click native.
+
 ## Testing doctrine (unchanged)
 
 Every milestone: kernel unit tests with analytic ground truth (volumes,
