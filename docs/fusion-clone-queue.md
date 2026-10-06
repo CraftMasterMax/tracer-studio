@@ -277,6 +277,17 @@ dialect — Create dialog (ring + tube radius), Combine tool (a cutter
 that guts a slab by exactly its ring volume), Change Parameters, JSON,
 and the ⊕ card's "ring Ø… × tube Ø…".
 
+**M69 — Taper (draft angle).** ✓ SHIPPED.  Extrusions can now lean: a
+taper of θ degrees lofts the outer skin to the profile offset outward by
+h·tan θ (shapely mitre buffers, winding-normalised so the loft never
+twists) while holes shrink on the same slope through cutters that run
+1 mm past both caps.  Volumes track the exact prismatoid — a 45° wall
+40×20 grows to 60×40 (Simpson-exact areas), a drafted circle is a cone
+frustum, a drafted through-hole keeps its channel watertight with genus
+honest — and taper 0 stays byte-identical to the old straight extrude.
+Dialed from Change Parameters (degrees, negative necks in), shown on
+the card as "taper: +45.0°".
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

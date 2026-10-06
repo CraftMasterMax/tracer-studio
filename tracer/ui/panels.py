@@ -213,6 +213,8 @@ class PropertiesPanel(QWidget):
             if feature.chamfer > 0:
                 lines.append("vertical chamfer: "
                              + units.L(feature.chamfer, self.unit))
+            if abs(feature.taper) > 1e-9:
+                lines.append(f"taper: {feature.taper:+.1f}\u00b0")
             lines.append(f"outer vertices: {len(np.asarray(feature.outer))}")
             lines.append(f"holes: {len(feature.holes)}")
         elif isinstance(feature, RevolveFeature):

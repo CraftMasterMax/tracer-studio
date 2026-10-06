@@ -759,6 +759,8 @@ class MainWindow(QMainWindow):
             dbl("height", "height", feature.height)
             dbl("fillet", "fillet", feature.fillet, mn=0.0)
             dbl("chamfer", "chamfer", feature.chamfer, mn=0.0)
+            dbl("taper", "taper", feature.taper, dec=1, mn=None,
+                ang=True)
         elif isinstance(feature, RevolveFeature):
             dbl("angle", "angle", feature.angle, dec=1, ang=True)
         elif isinstance(feature, HoleFeature):
@@ -858,6 +860,7 @@ class MainWindow(QMainWindow):
             feature.height = mm("height")
             feature.fillet = mm("fillet")
             feature.chamfer = mm("chamfer")
+            feature.taper = float(v["taper"])
         elif isinstance(feature, RevolveFeature):
             feature.angle = float(v["angle"])
         elif isinstance(feature, HoleFeature):

@@ -170,6 +170,7 @@ class ExtrudeFeature(Feature):
     region: int = 0
     fillet: float = 0.0      # round vertical edges (2D corner fillet, mm)
     chamfer: float = 0.0     # cut vertical edges (2D corner chamfer, mm)
+    taper: float = 0.0       # draft angle in degrees; + widens as it goes
 
     def _profile(self):
         if self.fillet > 0 or self.chamfer > 0:
@@ -179,9 +180,65 @@ class ExtrudeFeature(Feature):
             return outer, holes
         return self.outer, self.holes
 
+    def _loft_taper(self, outer, holes) -> Solid:
+        """Tapered wall (Fusion's draft): the outer skin lofts to the
+        profile offset outward by h·tan(taper); each hole lofts to its
+        shrunken self as a cutter extended past both caps.  Areas grow
+        quadratically with z, so the lofted solid tracks the exact
+        prismatoid to tessellation tolerance."""
+        import math
+
+        from shapely.geometry import Polygon
+
+        from .loft import loft
+        d = math.tan(math.radians(float(self.taper))) * self.height
+
+        def sgn(a):
+            return float(np.sum(a[:, 0] * np.roll(a[:, 1], -1)
+                                - np.roll(a[:, 0], -1) * a[:, 1]))
+
+        def off(p2, dist):
+            poly = Polygon(np.asarray(p2, float))
+            q = poly.buffer(dist, join_style=2, mitre_limit=50.0)
+            if q.is_empty:                     # feature swallowed to a
+                c = poly.representative_point()  # point — a stub cutter
+                r = 0.05                       # still cuts cleanly
+                stub = [(c.x - r, c.y - r), (c.x + r, c.y - r),
+                        (c.x + r, c.y + r), (c.x - r, c.y + r)]
+                if sgn(np.asarray(p2, float)) < 0:
+                    stub = stub[::-1]
+                return stub
+            if q.geom_type == "MultiPolygon":
+                q = max(q.geoms, key=lambda g: g.area)
+            grown = np.asarray(q.exterior.coords[:-1], float)
+            # GEOS may hand back the opposite winding — the loft engine
+            # needs both rings turning the same way or it twists
+            if sgn(grown) * sgn(np.asarray(p2, float)) < 0:
+                grown = grown[::-1]
+            return list(grown)
+
+        def ring(p2, z):
+            a = np.asarray(p2, float)
+            return np.column_stack([a, np.full(len(a), z)])
+
+        h = float(self.height)
+        body = loft([ring(outer, 0.0), ring(off(outer, d), h)])
+        step = d / h                            # radial drift per mm
+        for hole in holes:
+            # a +taper WIDENS material, so the hole shrinks going up:
+            # buffer(-d) at the top; extended 1 mm past each cap along
+            # the same slope for a clean through-cut
+            cutter = loft([ring(off(hole, step), -1.0),
+                           ring(off(hole, -(d + step)), h + 1.0)])
+            body = body.subtract(cutter)
+        return body
+
     def build(self) -> Solid:
         outer, holes = self._profile()
-        s = Solid.extrude(outer, holes, self.height)
+        if abs(float(self.taper)) < 1e-9:
+            s = Solid.extrude(outer, holes, self.height)
+        else:
+            s = self._loft_taper(outer, holes)
         if self.plane == "XY":
             return s.translated(self.placement)
         m = plane_matrix(self.plane, self.placement, self.axes)
@@ -674,6 +731,7 @@ class Document:
                          holes=[np.asarray(h).tolist() for h in f.holes],
                          height=float(f.height),
                          fillet=float(f.fillet), chamfer=float(f.chamfer),
+                         taper=float(f.taper),
                          placement=list(map(float, f.placement)),
                          plane=f.plane, axes=f.axes, sketch=f.sketch,
                          sid=f.sid, region=f.region)
@@ -794,6 +852,7 @@ class Document:
                     height=fd["height"],
                     fillet=float(fd.get("fillet", 0.0)),
                     chamfer=float(fd.get("chamfer", 0.0)),
+                    taper=float(fd.get("taper", 0.0)),
                     placement=tuple(fd["placement"]),
                     plane=fd.get("plane", "XY"), axes=fd.get("axes"),
                     sketch=fd.get("sketch"),
