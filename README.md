@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M53**
+**Status: M54**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -70,7 +70,8 @@ independent project with no Autodesk assets or affiliation.)
   blue…) or custom colour, ghost it with opacity (saved with the file),
   **Move body** — grab an RGB triad arrow and slide the solid with the
   mouse exactly like Fusion's Move; release commits a parametric ✥
-  feature (Esc cancels)
+  feature (Esc cancels); **Visual Styles** — Wireframe, Ghosted,
+  Shaded, Shaded with edges, X-ray (View menu)
 - I/O: STL/3MF/OBJ/PLY mesh import+export, **STEP import/export** via an
   on-demand OpenCascade bridge (compiled with your system g++, cached;
   degrades gracefully where OCCT is absent — e.g. stock Windows, which
@@ -88,7 +89,7 @@ independent project with no Autodesk assets or affiliation.)
   a playhead timeline of icon chips, and a blue-grey horizon viewport —
   plus first-launch shortcut tour and a persistent Shortcuts tab driven by
   one canonical key table
-- 613 headless tests (EGL rendering + Qt pixel assertions)
+- 617 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -113,7 +114,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 613 tests, fully headless
+./.venv/bin/python -m pytest -q          # 617 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

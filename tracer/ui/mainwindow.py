@@ -509,6 +509,12 @@ class MainWindow(QMainWindow):
                                  triggered=self.action_toggle_edges)
         m_view.addAction(self.act_grid)
         m_view.addAction(self.act_edges)
+        m_vs = m_view.addMenu("Visual Styles")
+        for _label in ("Wireframe", "Ghosted", "Shaded",
+                       "Shaded with edges", "X-ray"):
+            m_vs.addAction(
+                _label, lambda checked=False, lb=_label:
+                self.action_visual_style(lb))
 
         m_help = self.menuBar().addMenu("&Help")
         self.act_tour = QAction("&Welcome tour", self,
@@ -1194,6 +1200,14 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             f"Split on the {plane} plane — kept the "
             f"{'lower' if removed_up else 'upper'} half", 5000)
+
+    def action_visual_style(self, label: str):
+        """Fusion View ▸ Visual Styles (M54): the honest five — faces
+        only lines, 20% ghost, plain shaded, our Blender default, and
+        the blue-grey X-ray."""
+        self._renderer.set_visual_style(label)
+        self.viewport.update()
+        self.status.showMessage(f"{label} visual style", 4000)
 
     def _apply_appearance(self):
         """Push the document's paint (M52) onto the renderer — the one

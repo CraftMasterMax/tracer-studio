@@ -54,6 +54,7 @@ uniform vec3 u_hi_hover;
 uniform vec3 u_hi_sel;
 uniform float u_edge_width;
 uniform int u_show_edges;
+uniform int u_wire;                // Wireframe style: keep only edges
 uniform int u_clip_on;
 uniform vec3 u_clip_n;
 uniform vec3 u_clip_o;
@@ -91,10 +92,11 @@ void main() {
          * pow(1.0 - max(dot(N, V), 0.0), 3.0);              // faint edge light
     if (v_hi > 0.75)       col = mix(col, u_hi_sel, 0.45);   // picked face
     else if (v_hi > 0.25)  col = mix(col, u_hi_hover, 0.25); // face under cursor
-    if (u_show_edges == 1) {
-        float e = clamp(edge_amount(), 0.0, 1.0);
-        col = mix(col, u_edge_col, e * 0.65);   // Blender outlines: dark, soft
-    }
+    float e_fill = clamp(edge_amount(), 0.0, 1.0);
+    if (u_wire == 1 && e_fill < 0.08)
+        discard;                    // Wireframe: only edges remain (M54)
+    if (u_show_edges == 1)
+        col = mix(col, u_edge_col, e_fill * 0.65);  // Blender outlines: dark, soft
     frag = vec4(col, u_alpha);
 }
 """
@@ -181,6 +183,7 @@ class SceneRenderer:
         self._base_override = None   # Appearance: painted body colour
         self._base_alpha = 1.0       # Appearance: body opacity
         self._mesh_off = (0.0, 0.0, 0.0)   # live Move preview offset
+        self._style = "shaded with edges"  # Fusion visual style (M54)
         self._triad = None           # Move triad: (origin, length)
         self._triad_vao = None
         self._triad_count = 0
@@ -314,6 +317,16 @@ class SceneRenderer:
         """Live Move preview (M53): slide the solid this world offset;
         set_mesh() resets it — the recompute bakes the truth."""
         self._mesh_off = tuple(float(v) for v in off)
+
+    def set_visual_style(self, name: str):
+        """Fusion View ▸ Visual Styles (M54): wireframe / ghosted /
+        shaded / shaded with edges (the default) / xray."""
+        st = str(name).strip().lower().replace("x-ray", "xray")
+        known = {"wireframe", "ghosted", "shaded", "shaded with edges",
+                 "xray"}
+        if st not in known:
+            raise ValueError(f"unknown visual style {name!r}")
+        self._style = st
 
     def set_triad(self, origin, length: float = 40.0):
         """Move triad (M53): RGB arrows at `origin`, Fusion-style, drawn
@@ -505,16 +518,28 @@ class SceneRenderer:
         # solid
         if self.show_solid and self._solid_vao is not None and self._solid_count:
             c.enable(moderngl.DEPTH_TEST)
+            st = self._style
+            base = self._base_override
+            alpha = self._base_alpha
+            if st == "xray":
+                base = base or (0.45, 0.52, 0.68)
+                alpha = 0.35
+            elif st == "ghosted":
+                alpha = 0.2
+            show_edges = {"shaded": 0, "ghosted": 1, "xray": 1,
+                          "wireframe": 1}.get(
+                              st, 1 if self.show_edges else 0)
             u = self._solid_prog
             u["u_view"].write(view.tobytes())
             u["u_proj"].write(proj.tobytes())
             u["u_eye"].value = tuple(np.asarray(camera.position, "f4"))
-            u["u_base"].value = self._base_override or p["solid_base"]
+            u["u_base"].value = base or p["solid_base"]
             u["u_edge_col"].value = p["solid_edge"]
             u["u_hi_hover"].value = p["hi_hover"]
             u["u_hi_sel"].value = p["hi_sel"]
             u["u_edge_width"].value = 1.2
-            u["u_show_edges"].value = 1 if self.show_edges else 0
+            u["u_show_edges"].value = show_edges
+            u["u_wire"].value = 1 if st == "wireframe" else 0
             if self.clip:
                 u["u_clip_on"].value = 1
                 u["u_clip_n"].value = tuple(
@@ -523,12 +548,12 @@ class SceneRenderer:
                     float(t) for t in self.clip["origin"])
             else:
                 u["u_clip_on"].value = 0
-            u["u_alpha"].value = self._base_alpha
+            u["u_alpha"].value = alpha
             u["u_off"].value = tuple(float(v) for v in self._mesh_off)
-            if self._base_alpha < 1.0:          # ghosted appearance
+            if alpha < 1.0:                   # ghosted / xray / painted
                 c.enable(moderngl.BLEND)
             self._solid_vao.render(moderngl.TRIANGLES, vertices=self._solid_count)
-            if self._base_alpha < 1.0:
+            if alpha < 1.0:
                 c.disable(moderngl.BLEND)
 
         # move triad — interaction furniture: on top of the body (M53)

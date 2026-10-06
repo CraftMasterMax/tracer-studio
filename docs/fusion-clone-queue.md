@@ -162,6 +162,14 @@ a trace.  While at it the mouse grammar was corrected to Fusion's
 real defaults: **MMB drags orbit, Shift+MMB pans** (it had been
 inverted).  Rotate-by-triad and copy-on-move deferred.
 
+**M54 — Visual Styles.** ✓ SHIPPED.  View ▸ Visual Styles, the honest
+five: **Wireframe** (faces discard, only crease + silhouette edges
+remain), **Ghosted** (20% body — the grid reads through, Fusion's edit
+look), **Shaded**, **Shaded with edges** (our pixel-pinned Blender
+default — restoring it restores every pixel), and **X-ray** (blue-grey
+at 35%).  Each style is shader-uniform state, pixel-tested per style;
+paints from Appearance still tint through Ghosted and X-ray.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, Combine/multi-browser-bodies,
 configurations, assemblies/joints, sheet metal, drawings.
