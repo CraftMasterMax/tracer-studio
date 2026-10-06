@@ -43,16 +43,19 @@ def closest_distance(a: dict, b: dict) -> float:
     return float(np.sqrt(d2.min()))
 
 
-def describe(a: dict, b: dict | None) -> str:
-    """One-line measurement, Fusion status-bar style."""
+def describe(a: dict, b: dict | None, unit: str = "mm") -> str:
+    """One-line measurement, Fusion status-bar style, in document
+    measures (M60)."""
+    from . import units
     if b is None:
-        return f"face area {a['area']:.1f} mm²" + (
+        return f"face area {units.A(a['area'], unit, sep=False)}" + (
             "" if a["planar"] else "  (curved)")
     ang = angle_between(a, b)
     dist = closest_distance(a, b)
     if abs(ang - 180.0) < 0.5 or ang < 0.5:
         kind = "parallel" if abs(ang - 180.0) < 0.5 else "parallel (same way)"
-        return f"{kind}: gap {dist:.2f} mm"
+        return f"{kind}: gap {units.D(dist, unit)}"
     if abs(ang - 90.0) < 0.5:
-        return f"perpendicular, meeting at {closest_distance(a, b):.2f} mm"
-    return f"angle {ang:.1f}°, closest {dist:.2f} mm"
+        return (f"perpendicular, meeting at "
+                f"{units.D(closest_distance(a, b), unit)}")
+    return f"angle {ang:.1f}°, closest {units.D(dist, unit)}"

@@ -9,6 +9,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QTreeWidget, QTreeWidgetItem, QLabel, QVBoxLayout,
                                QTabWidget, QWidget, QFrame)
 
+from ..core import units
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              Document, ExtrudeFeature, HoleFeature,
                              ImportedFeature, LinearPatternFeature,
@@ -180,12 +181,16 @@ class PropertiesPanel(QWidget):
         lay.addWidget(self._title)
         lay.addWidget(self._body)
         lay.addStretch(1)
+        self.unit = "mm"
+
+    def set_unit(self, unit: str):
+        self.unit = unit if unit in units.LABEL else "mm"
 
     def show_stats(self, volume: float, area: float):
         """Whole-body numbers, Fusion-inspector style (no selection)."""
         self._body.setText(
-            f"<b>Body</b><br>volume: {volume:,.1f} mm³<br>"
-            f"surface area: {area:,.1f} mm²<br>"
+            f"<b>Body</b><br>volume: {units.V(volume, self.unit)}<br>"
+            f"surface area: {units.A(area, self.unit)}<br>"
             "<span style='color:#767e8a'>click a face to measure it; "
             "ctrl+click to measure between</span>")
 
@@ -199,11 +204,13 @@ class PropertiesPanel(QWidget):
         else:
             lines = [f"<b>{feature.name}</b>", f"operation: {feature.op}"]
         if isinstance(feature, ExtrudeFeature):
-            lines.append(f"height: {feature.height:g} mm")
+            lines.append(f"height: {units.L(feature.height, self.unit)}")
             if feature.fillet > 0:
-                lines.append(f"vertical fillet: {feature.fillet:g} mm")
+                lines.append("vertical fillet: "
+                             + units.L(feature.fillet, self.unit))
             if feature.chamfer > 0:
-                lines.append(f"vertical chamfer: {feature.chamfer:g} mm")
+                lines.append("vertical chamfer: "
+                             + units.L(feature.chamfer, self.unit))
             lines.append(f"outer vertices: {len(np.asarray(feature.outer))}")
             lines.append(f"holes: {len(feature.holes)}")
         elif isinstance(feature, RevolveFeature):
@@ -214,24 +221,30 @@ class PropertiesPanel(QWidget):
             kind = ("counterbore" if feature.cb_radius > feature.radius else
                     "countersink" if feature.cs_radius > feature.radius
                     else "simple")
-            lines.append(f"diameter: Ø{2 * feature.radius:g} mm ({kind})")
+            lines.append(f"diameter: Ø{units.L(2 * feature.radius, self.unit)}"
+                         f" ({kind})")
             lines.append("depth: through all" if feature.through
-                         else f"depth: {feature.depth:g} mm")
+                         else f"depth: {units.L(feature.depth, self.unit)}")
             if feature.thread_pitch > 0:
-                lines.append(f"threaded: pitch {feature.thread_pitch:g} mm, "
-                             f"{feature.thread_len:g} mm long")
+                lines.append(
+                    f"threaded: pitch "
+                    f"{units.L(feature.thread_pitch, self.unit)}, "
+                    f"{units.L(feature.thread_len, self.unit)} long")
             if feature.cb_radius > feature.radius:
-                lines.append(f"counterbore: Ø{2 * feature.cb_radius:g} × "
-                             f"{feature.cb_depth:g} mm deep")
+                lines.append(
+                    f"counterbore: "
+                    f"Ø{units.val(2 * feature.cb_radius, self.unit):g}"
+                    f" × {units.L(feature.cb_depth, self.unit)} deep")
             if feature.cs_radius > feature.radius:
                 lines.append(f"countersink: Ø{2 * feature.cs_radius:g} at "
                              f"{feature.cs_angle:g}°")
         elif isinstance(feature, ThreadFeature):
             minor = 2 * (feature.radius - feature.pitch / 2)
-            lines.append(f"external thread — pitch {feature.pitch:g} mm")
-            lines.append(f"major: Ø{2 * feature.radius:g} mm, "
-                         f"minor: Ø{minor:g} mm")
-            lines.append(f"length: {feature.length:g} mm "
+            lines.append("external thread — pitch "
+                         + units.L(feature.pitch, self.unit))
+            lines.append(f"major: Ø{units.L(2 * feature.radius, self.unit)}, "
+                         f"minor: Ø{units.L(minor, self.unit)}")
+            lines.append(f"length: {units.L(feature.length, self.unit)} "
                          f"(~{int(feature.length / feature.pitch)} turns)")
         elif isinstance(feature, LoftFeature):
             lines.append(f"loft through {len(feature.sections)} profile(s)")
@@ -242,7 +255,7 @@ class PropertiesPanel(QWidget):
                     - pts[(k + 1) % len(pts)][0] * pts[k][1]
                     for k in range(len(pts)))
                 lines.append(f"profile {i + 1}: {len(pts)} pts, "
-                             f"area {abs(a):,.0f} mm\u00b2")
+                             f"area {units.A(abs(a), self.unit, 0)}")
             if feature.closed:
                 lines.append("ring loft (closed loop)")
         elif isinstance(feature, SweepFeature):
@@ -251,23 +264,26 @@ class PropertiesPanel(QWidget):
             length = sum(_m.dist(pts[i], pts[i + 1])
                          for i in range(len(pts) - 1)) if len(pts) > 1 else 0.0
             lines.append(f"profile: Ø{2 * feature.radius:g} circle")
-            lines.append(f"path: {length:.1f} mm "
+            lines.append(f"path: {units.val(length, self.unit):.1f} "
+                         f"{units.LABEL[self.unit]} "
                          + ("closed ring" if feature.closed else "open"))
         elif isinstance(feature, ShellFeature):
-            lines.append(f"wall thickness: {feature.thickness:g} mm")
+            lines.append("wall thickness: "
+                         + units.L(feature.thickness, self.unit))
             lines.append(f"faces removed: {len(feature.openings)}")
         elif isinstance(feature, PrimitiveFeature):
             lines.append(f"kind: {feature.kind}")
             for k, v in feature.dims.items():
-                lines.append(f"{k}: {v:g} mm")
+                lines.append(f"{k}: {units.L(v, self.unit)}")
         elif isinstance(feature, ImportedFeature):
             lines.append(f"imported mesh: {len(feature.faces)} triangles")
         elif isinstance(feature, MirrorFeature):
             lines.append(f"mirror across {feature.plane}"
-                         f" @ {feature.offset:g} mm")
+                         f" @ {units.L(feature.offset, self.unit)}")
         elif isinstance(feature, BodyFilletFeature):
             kind = "chamfer" if feature.chamfer else "fillet"
-            lines.append(f"{kind}: {feature.radius:g} mm on all sharp edges")
+            lines.append(f"{kind}: {units.L(feature.radius, self.unit)}"
+                         " on all sharp edges")
             if feature.n_rims:
                 lines.append(f"circular rims rounded: {feature.n_rims}")
             baked = len(feature.res_faces)
@@ -275,8 +291,10 @@ class PropertiesPanel(QWidget):
                          else "not yet computed")
         elif isinstance(feature, LinearPatternFeature):
             lines.append(f"pattern: {feature.count}x at "
-                         f"({feature.vector[0]:g}, {feature.vector[1]:g}, "
-                         f"{feature.vector[2]:g}) mm")
+                         f"({units.val(feature.vector[0], self.unit):g}, "
+                         f"{units.val(feature.vector[1], self.unit):g}, "
+                         f"{units.val(feature.vector[2], self.unit):g}) "
+                         f"{units.LABEL[self.unit]}")
         elif isinstance(feature, CircularPatternFeature):
             lines.append(f"pattern: {feature.count}x over {feature.angle:g}° "
                          f"about ({feature.center[0]:g}, {feature.center[1]:g})")
@@ -288,17 +306,22 @@ class PropertiesPanel(QWidget):
             length = sum(float(_np.linalg.norm(span[i + 1] - span[i]))
                          for i in range(len(span) - 1))
             lines.append(f"pattern: {feature.count} copies walking a "
-                         f"{length:g} mm path")
+                         f"{units.L(length, self.unit)} path")
         elif isinstance(feature, SplitFeature):
             n = np.abs(np.asarray(feature.normal, float))
             ax = int(n.argmax())
             lines.append(f"split plane \u2702 through "
-                         f"({'xyz'[ax]}={feature.origin[ax]:g} mm)")
+                         f"({'xyz'[ax]}="
+                         f"{units.val(feature.origin[ax], self.unit):g} "
+                         f"{units.LABEL[self.unit]})")
             lines.append("kept side: "
                          + ("flipped" if feature.flip else "default"))
         elif isinstance(feature, MoveFeature):
             x, y, z = (float(v) for v in feature.vec)
-            lines.append(f"translate \u2725 x {x:+g}, y {y:+g}, z {z:+g} mm")
+            lines.append(f"translate \u2725 ({units.val(x, self.unit):+g}, "
+                         f"{units.val(y, self.unit):+g}, "
+                         f"{units.val(z, self.unit):+g}) "
+                         f"{units.LABEL[self.unit]}")
             if feature.copy:
                 lines.append("copy: twin joined")
         elif isinstance(feature, RotateFeature):

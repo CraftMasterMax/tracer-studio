@@ -25,6 +25,7 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              SweepFeature,
                              ThreadFeature)
 from ..core.measure import describe, face_stats
+from ..core import units
 from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
                                  model_to_dict, plane_uv)
 from . import icons
@@ -526,6 +527,11 @@ class MainWindow(QMainWindow):
             m_vs.addAction(
                 _label, lambda checked=False, lb=_label:
                 self.action_visual_style(lb))
+
+        m_tools = self.menuBar().addMenu("&Tools")
+        m_tools.addAction("Document Measures…",
+                          lambda checked=False:
+                          self.action_document_measures())
 
         m_help = self.menuBar().addMenu("&Help")
         self.act_tour = QAction("&Welcome tour", self,
@@ -1118,10 +1124,11 @@ class MainWindow(QMainWindow):
             return
         try:
             stats = [face_stats(self.viewport._tm, g) for g in groups]
+            u = self.doc.units if self.doc else "mm"
             if len(stats) == 1:
-                msg = describe(stats[0], None)
+                msg = describe(stats[0], None, u)
             elif len(stats) == 2:
-                msg = describe(stats[0], stats[1])
+                msg = describe(stats[0], stats[1], u)
             else:
                 msg = (f"{len(stats)} faces selected — keep exactly two "
                        "to measure between")
@@ -1228,6 +1235,36 @@ class MainWindow(QMainWindow):
             app["color"] if app else None,
             app.get("opacity", 1.0) if app else 1.0)
 
+    def _apply_units(self):
+        u = self.doc.units if self.doc and self.doc.units in units.LABEL \
+            else "mm"
+        self.rail.props.set_unit(u)
+
+    def action_document_measures(self):
+        """Fusion Tools ▸ Document Measures (M60): choose the
+        vocabulary every readout speaks — the model itself stays pure
+        millimetres, the unit rides the file as metadata."""
+        if self.doc is None:
+            return
+        names = {"Millimetre (mm)": "mm", "Centimetre (cm)": "cm",
+                 "Inch (in)": "inch"}
+        inv = {v: k for k, v in names.items()}
+        v = cmddialog.ask(self, "Document Measures", [
+            dict(key="unit", label="Length units", kind="combo",
+                 choices=list(names),
+                 default=inv.get(self.doc.units, "Millimetre (mm)"),
+                 group="Primary units"),
+        ])
+        if v is None:
+            return
+        if names[v["unit"]] != self.doc.units:
+            self.doc.units = names[v["unit"]]
+            self._unsaved = True
+        self._apply_units()
+        self._update_status()
+        self.status.showMessage(
+            f"Document measures: {units.LABEL[self.doc.units]}", 4000)
+
     # ---- marking menu (M56) -----------------------------------------------------
     def _marking_menu(self):
         """Fusion's right-click quick menu: fit / zoom-to / the four
@@ -1316,6 +1353,7 @@ class MainWindow(QMainWindow):
             msg = f"Body painted: {app['name']}"
         self._unsaved = True
         self._apply_appearance()
+        self._apply_units()
         self.viewport.refresh()
         self.status.showMessage(msg, 5000)
 
@@ -1765,6 +1803,7 @@ class MainWindow(QMainWindow):
         self.viewport.refresh(fit=False)
         self._update_status()
         self._apply_appearance()
+        self._apply_units()
 
     def new_document(self, doc: Document | None = None):
         self.doc = doc or Document("Untitled")
@@ -1779,6 +1818,7 @@ class MainWindow(QMainWindow):
         self._update_status()
         self._on_face_selection()
         self._apply_appearance()
+        self._apply_units()
 
     def _update_title(self):
         name = self.file_path.name if self.file_path else (
@@ -1880,6 +1920,7 @@ class MainWindow(QMainWindow):
         self.rail.tree.reload()
         self.timeline.bar.update()
         self._apply_appearance()
+        self._apply_units()
         self._update_status()
         self._on_face_selection()
 
@@ -1889,7 +1930,9 @@ class MainWindow(QMainWindow):
         if self.doc and self.doc.result is not None:
             vol = f" · volume {self.doc.result.volume:,.1f} mm³"
         self.status.showMessage(f"{self.doc.title if self.doc else ''}"
-                                f" — {n} feature{'s' if n != 1 else ''}{vol} · units mm")
+                                f" — {n} feature{'s' if n != 1 else ''}"
+                                f"{vol} · units "
+                                f"{units.LABEL.get(self.doc.units, 'mm')}")
         self._update_title()
 
     # ---- slots ---------------------------------------------------------------

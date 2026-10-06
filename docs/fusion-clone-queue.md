@@ -206,6 +206,15 @@ the set (left→right still windows, right→left still crosses).  Measure
 now follows Fusion: click one face to read it, Ctrl+click a second to
 read between.
 
+**M60 — Document Measures.** ✓ SHIPPED.  Tools ▸ Document Measures
+(now a Tools menu of its own, like Fusion): millimetre, centimetre or
+inch, and every readout re-voices live — the body card, every feature
+card, the measure line, the status bar's unit tag.  The model never
+changes: geometry stays pure millimetres and the unit ships as file
+metadata, so an inch document is the same math with a different
+accent.  mm output is byte-identical to the pre-M60 voice the suite
+pins.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, Combine/multi-browser-bodies,
 configurations, assemblies/joints, sheet metal, drawings.
