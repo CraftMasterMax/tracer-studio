@@ -687,6 +687,19 @@ class Document:
         self.result                        # refresh both caches
         return dict(self._body_solids or {})
 
+    def export_solids(self) -> list:
+        """The part as SEPARATE bodies for per-body export (M105): every
+        body that has a solid, in browser order.  The whole part goes —
+        the viewport bulb is a view fact and does not gate the file
+        (Fusion exports every body, visible or not)."""
+        self.result
+        out = []
+        for b in self.body_list():
+            s = (self._body_solids or {}).get(b["name"])
+            if s is not None:
+                out.append((b["name"], s))
+        return out
+
     def display_arrays(self):
         """The viewport mesh: visible bodies STITCHED (concatenated,
         never booleaned), so hiding a body lifts exactly its triangles

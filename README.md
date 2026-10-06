@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M104**
+**Status: M105**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -107,7 +107,10 @@ independent project with no Autodesk assets or affiliation.)
    silently merge — each body streams its own geometry, gets its own ▣
    node under **Bodies (n)** in the browser (double-click to make it
    active, bold is active), and the bulb hides exactly one body's
-   triangles while the fused part (measure, drawings, export) stays whole
+   triangles while the fused part (measure, drawings, export) stays whole.
+   **Exports speak per body**: a multi-body design saves to 3MF/OBJ as
+   separate named objects (a slicer opens Body 1, Body 2, …) and to STL
+   as every shell; one body exports exactly as before
 - UX: Fusion mouse grammar — MMB orbits, Shift+MMB pans, RMB orbit, wheel zooms
   toward the cursor, left-drag on empty space rubber-bands a selection
   (window/crossing) — ViewCube, **Section Analysis (ribbon ▸ Section: clip
@@ -121,7 +124,7 @@ independent project with no Autodesk assets or affiliation.)
   a playhead timeline of icon chips, and a blue-grey horizon viewport —
   plus first-launch shortcut tour and a persistent Shortcuts tab driven by
   one canonical key table
-- 1022 headless tests (EGL rendering + Qt pixel assertions)
+- 1032 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -151,7 +154,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1022 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1032 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

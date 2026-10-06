@@ -3401,7 +3401,7 @@ class MainWindow(QMainWindow):
         if not Path(path).suffix:
             path += ext
         try:
-            out = fio.export_mesh(self.doc.result, path)
+            out = fio.export_solids(self.doc.export_solids(), path)
             self.status.showMessage(f"Exported {out}", 6000)
         except Exception as e:
             QMessageBox.critical(self, "Export failed", str(e))

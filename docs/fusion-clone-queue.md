@@ -866,10 +866,36 @@ not a per-body file set; per-body appearances; shell/split face-picking
 on a multi-body doc can index a different triangulation than the
 stitched mesh (single-body is byte-identical).
 
-**Later candidates (researched, deferred):** multi-body phase 2b
-(per-body STEP/STL + browser appearances, cross-body feature sources),
-Draft, per-view rotation, sheet metal, assemblies/joints, and a section
-cutting-plane arrow on the drawing. Re-evaluate after M104.
+**M105 — exports speak per body: the file finally keeps the parts apart.** ✓
+SHIPPED.  M104 made bodies real inside the app, but every export still
+funnelled through doc.result — the boolean UNION — so a bracket (Body 1)
+with a separately-modelled handle (Body 2) left the building as one
+merged lump, unselectable in the slicer.  Now the part leaves as its
+BODIES: Document.export_solids() hands over every body that has a solid,
+in browser order, and io.export_solids writes each as its own object —
+3MF/OBJ carry them as SEPARATE, NAMED objects (a slicer opens
+"Body 1"/"Body 2", CAD reads distinct solids, world positions intact),
+while STL/PLY — single-container formats with no notion of an object —
+get every shell concatenated so a disjoint part still lands as N
+watertight islands.  One body writes exactly the mesh it always did:
+the single-body file is byte-for-byte what Tracer produced before
+per-body export existed (the old export_mesh() now just calls the
+multi path with one body).  The whole part goes regardless of the
+viewport bulb — a hidden browser row is a view fact, not a licence to
+lose geometry from a shipped file.  The one-click Print STL keeps
+exporting the fused whole-tray (it already carried every disjoint
+shell, and a print bed wants one coherent tray, not a body picker).
+Honest scope: STEP still exports the fused part — a NAMED STEP compound
+means teaching the compiled OCCT bridge to accept many solids at once
+(and it is untestable where OpenCascade isn't installed), so per-body
+STEP rides with the bridge work below.
+
+**Later candidates (researched, deferred):** multi-body phase 2c —
+per-body STEP compound (needs the C++ OCCT bridge to take a compound)
++ per-body appearances in the viewport (vertex-coloured stitch),
+cross-body feature sources; then Draft, per-view rotation, sheet metal,
+assemblies/joints, and a section cutting-plane arrow on the drawing.
+Re-evaluate after M105.
 
 ## Oct 2026 research sweep — the landscape and the ranked backlog
 
