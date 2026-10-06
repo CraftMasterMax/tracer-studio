@@ -438,6 +438,23 @@ and a sheet with one bad line is refused WHOLE.  Bindings and params
 serialize with the document; pre-M81 files load untouched.
 Sketch-dimension fx bindings (the deeper half) are M81b.
 
+**M82 — Project model edges into sketches.** ✓ SHIPPED.  The single
+most-requested workflow on r/3Dprinting forums (and FreeCAD 1.1's
+headline feature): sketch on a plane and PROJECT the solid's edges
+under the cursor.  On a mesh kernel the honest translation is the
+plane cross-section — trimesh slices the current solid and the rings
+land as REFERENCE geometry (SketchModel.refs), never solver entities:
+a projected circle really is the mesh's 64-gon, and minting solver
+points for it would explode the DOF and turn every click into a
+phantom magnet.  Refs draw dashed, persist with the sketch payload,
+undo with the history snapshots, REPLACE themselves on re-project and
+never enter loops or constraints — but the drawing magnet grabs their
+vertices, so new geometry snaps to real material edges (verified:
+corner snap is exact).  Coplanar grazes fall back ±1 µm into material;
+a plane slid along its normal honestly projects nothing.  Sketch
+placement offsets of the consuming feature are not yet honoured (the
+projection rides the sketch's own frame) — logged with M81b.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

@@ -1271,6 +1271,30 @@ class MainWindow(QMainWindow):
                                 "K construction · "
                                 "X extrude · Esc select")
 
+    def _project_model_edges(self):
+        """Project — Fusion's Project/Include on a mesh kernel: slice
+        the current solid with the sketch's plane and land the
+        contours as reference geometry under the cursor.  Replacing on
+        every press keeps the canvas honest (no stacked duplicates)."""
+        cv = self.sketch
+        if cv is None or cv.model is None:
+            return
+        res = self.doc.result if self.doc is not None else None
+        if res is None:
+            self.status.showMessage("Nothing to project — no solid yet",
+                                    4000)
+            return
+        cv._push_hist()
+        tm = res.to_trimesh()
+        n = cv.model.project(tm.vertices, tm.faces)
+        cv.update()
+        self.doc.dirty = True
+        self.status.showMessage(
+            (f"Projected {n} model contour"
+             + ("s" if n != 1 else "") + " — snap to the dashed edges")
+            if n else "Nothing to project — the plane misses the solid",
+            5000)
+
     def _start_sketch_on_face(self, point, normal):
         if self.doc is None or not self._discard_guard():
             return
@@ -2317,6 +2341,14 @@ class MainWindow(QMainWindow):
             b.setProperty("tb", True)
             bl.addWidget(b)
             self._tool_btns[tool] = b
+        self._sketch_project_btn = QPushButton(
+            "Project",
+            clicked=lambda checked=False: self._project_model_edges())
+        self._sketch_project_btn.setProperty("tb", True)
+        self._sketch_project_btn.setToolTip(
+            "Project — lay the model edges crossing this plane under "
+            "the cursor as reference geometry (Fusion's Project)")
+        bl.addWidget(self._sketch_project_btn)
         self._sketch_mirror_btn = QPushButton(
             "Mirror", clicked=lambda checked=False: self.sketch.act_mirror())
         self._sketch_mirror_btn.setProperty("tb", True)

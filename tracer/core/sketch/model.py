@@ -93,6 +93,7 @@ class SketchModel:
         self.plane = plane
         self.axes: list | None = None      # FACE plane: [u, v] as 3-lists
         self.origin: tuple = (0.0, 0.0, 0.0)
+        self.refs: list = []         # projected model edges (M82 refs)
         self.sid = id(self)          # association key while in memory
 
     # ---- entity factory --------------------------------------------------
@@ -379,6 +380,45 @@ class SketchModel:
         return res
 
     # ---- profile extraction ----------------------------------------------------
+    def project(self, verts, faces) -> int:
+        """Fusion's Project/Include, honest for a mesh kernel: slice the
+        model with THIS sketch's plane and lay the contours under the
+        cursor as REFERENCE geometry (refs, not entities — a projected
+        circle really IS the 64-gon of the mesh, and minting solver
+        points for it would explode the DOF count).  Refs never join
+        loops or constraints, but the drawing magnet grabs their
+        vertices, so new geometry snaps to real material edges.
+        A plane that grazes a boundary falls back a hair (±1 µm) into
+        the material — a coplanar cut is undefined.  Returns how many
+        contours landed."""
+        import trimesh
+        M = plane_matrix(self.plane, tuple(self.origin), self.axes)
+        o, u, v, n = M[:3, 3], M[:3, 0], M[:3, 1], M[:3, 2]
+        mesh = trimesh.Trimesh(np.asarray(verts, float),
+                               np.asarray(faces, np.int64), process=False)
+        self.refs = []
+        for off in (0.0, 1e-3, -1e-3):
+            try:
+                sec = mesh.section(plane_origin=o + n * off, plane_normal=n)
+            except Exception:
+                continue
+            if sec is None or not len(sec.discrete):
+                continue
+            rings = []
+            for pl in sec.discrete:
+                p = np.asarray(pl, float)
+                xy = np.column_stack([(p - o) @ u, (p - o) @ v])
+                step = np.hypot(*(xy[1:] - xy[:-1]).T)
+                xy = xy[np.r_[True, step > 1e-9]]      # weld consecutive
+                if len(xy) > 3 and math.hypot(*(xy[0] - xy[-1])) < 1e-9:
+                    rings.append({"pts": xy[:-1], "closed": True})
+                elif len(xy) >= 2:
+                    rings.append({"pts": xy, "closed": False})
+            if rings:
+                self.refs = rings
+                return len(rings)
+        return 0
+
     def to_loops(self):
         """Return [(outer Nx2 array, area, ccw), ...] from closed loops.
 
@@ -505,6 +545,9 @@ def model_to_dict(m: SketchModel) -> dict:
     if m.plane == "FACE":
         d["axes"] = [[float(t) for t in a] for a in m.axes]
         d["origin"] = [float(t) for t in m.origin]
+    d["refs"] = [{"pts": [[float(x), float(y)]
+                          for x, y in np.asarray(r["pts"], float)],
+                  "closed": bool(r["closed"])} for r in m.refs]
     return d
 
 
@@ -553,6 +596,9 @@ def model_from_dict(d: dict) -> SketchModel:
     for e in d.get("ellipses", []):
         el = m.sketch.ellipse(pts[e[0]], e[1], e[2])
         el.construction = bool(e[3]) if len(e) > 3 else False
+    m.refs = [{"pts": np.asarray(r["pts"], float),
+               "closed": bool(r.get("closed", False))}
+              for r in d.get("refs", [])]        # pre-M82 files: none
     for c in d.get("constraints", []):
         t = c["t"]
         if t == "H":

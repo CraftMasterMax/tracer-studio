@@ -164,6 +164,7 @@ class SketchCanvas(QWidget):
         tmp = model_from_dict(d)
         # keep THIS model's identity: sid links features to their sketch
         self.model.sketch = tmp.sketch
+        self.model.refs = tmp.refs              # projected edges undo too
         self._sel = []
         self._drag_pt = None
         self._line_start = None
@@ -239,6 +240,10 @@ class SketchCanvas(QWidget):
         if p is not None:
             return p
         wp = self._world(q)
+        for r in getattr(self.model, "refs", []):       # M82: projected
+            for x, y in np.asarray(r["pts"], float):    # edges magnetize
+                if math.hypot(x - wp[0], y - wp[1]) * self._scale <= _HIT_PX:
+                    return (float(x), float(y))
         if math.hypot(wp[0], wp[1]) * self._scale <= _HIT_PX:
             return (0.0, 0.0)                      # the sketch origin
         if self._snap_grid:
@@ -1211,6 +1216,7 @@ class SketchCanvas(QWidget):
         p.fillRect(self.rect(), BG)
         self._draw_grid(p)
         if self.model:
+            self._draw_refs(p)
             self._draw_entities(p)
             self._draw_dimensions(p)
             self._draw_glyphs(p)
@@ -1330,6 +1336,21 @@ class SketchCanvas(QWidget):
         p.setPen(QPen(AXIS_Y, 1.4))
         p.drawLine(self.w2s(0, y0), self.w2s(0, y1))
         p.setFont(font_before)
+
+    def _draw_refs(self, p: QPainter):
+        """M82: projected model contours — thin dashed grey, never
+        selectable, never solved: Fusion's projected reference edges."""
+        if not getattr(self.model, "refs", None):
+            return
+        p.save()
+        p.setPen(QPen(QColor(150, 152, 160), 1.4, Qt.DashLine))
+        for r in self.model.refs:
+            pts = [self.w2s(float(x), float(y))
+                   for x, y in np.asarray(r["pts"], float)]
+            loop = pts + pts[:1] if r["closed"] else pts
+            for a, b in zip(loop, loop[1:]):
+                p.drawLine(a, b)
+        p.restore()
 
     def _draw_entities(self, p: QPainter):
         sk = self.model.sketch
