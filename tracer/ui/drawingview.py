@@ -224,6 +224,8 @@ class DrawingCanvas(QWidget):
             return
         placed = placed if placed is not None else self.placed()
         views_cache: dict = {}
+        arcs_cache: dict = {}
+        srcs = self._sources()
         for g in self.doc.drawings:
             for d in g.get("dims", []):
                 pv = placed.get(d["view"])
@@ -252,6 +254,31 @@ class DrawingCanvas(QWidget):
                         d["a"] = [cx, cy]
                         d["b"] = [cx + ux * r, cy + uy * r]
                     d["text"] = "\u00d8 %.2f" % float(d.get("r", 0.0) * 2)
+                    continue
+                if d.get("radius"):
+                    key = d["view"]
+                    if key not in arcs_cache:
+                        src = srcs.get(key)
+                        arcs_cache[key] = (
+                            drawing.find_arcs(self.views().get(key, []))
+                            if src is not None
+                            and src[1] in ("top", "front", "right")
+                            else [])
+                    want = d.get("center", d.get("a"))
+                    best = None
+                    for (cx, cy), r in arcs_cache[key]:
+                        dd = math.dist((cx, cy), want)
+                        if dd <= max(4.0, 0.6 * r) and (
+                                best is None or dd < best[2]):
+                            best = ((cx, cy), r, dd)
+                    if best is not None:
+                        (cx, cy), r, _ = best
+                        d["center"] = [cx, cy]
+                        d["r"] = r
+                        ux, uy = d.get("dir", (1.0, 0.0))
+                        d["a"] = [cx, cy]
+                        d["b"] = [cx + ux * r, cy + uy * r]
+                    d["text"] = "R %.2f" % float(d.get("r", 0.0))
                     continue
                 sc = pv["sc"]
                 lo = (pv["min"][0] / sc, pv["min"][1] / sc)
@@ -292,6 +319,21 @@ class DrawingCanvas(QWidget):
                      "dir": (dx / dd, dy / dd), "r": r})
                 self.update()
                 return
+        src = self._sources().get(view)             # M103: an arc?
+        if src is not None and src[1] in ("top", "front", "right"):
+            for (cx, cy), r in drawing.find_arcs(
+                    self.views().get(view, [])):
+                if abs(math.dist(raw, (cx, cy)) - r) <= max(2.0, 0.35 * r):
+                    dx, dy = raw[0] - cx, raw[1] - cy
+                    dd = math.hypot(dx, dy) or 1.0
+                    self._dim_first = None
+                    self.dim_added.emit(
+                        view, (cx, cy),
+                        (cx + dx / dd * r, cy + dy / dd * r),
+                        {"radius": True, "center": (cx, cy),
+                         "dir": (dx / dd, dy / dd), "r": r})
+                    self.update()
+                    return
         pt = self._snap(view, sheet, placed)
         if self._dim_first is None or self._dim_first[0] != view:
             self._dim_first = (view, pt)
@@ -442,6 +484,9 @@ class DrawingCanvas(QWidget):
             if d.get("diameter"):                          # M95 Ø style
                 self._draw_diameter(p, f, ink, d, sc, off)
                 continue
+            if d.get("radius"):            # M103: R, centre to rim
+                self._draw_radius(p, f, ink, d, sc, off)
+                continue
             A = self.s2p(d["a"][0] * sc + off[0],
                          d["a"][1] * sc + off[1])
             B = self.s2p(d["b"][0] * sc + off[0],
@@ -538,6 +583,52 @@ class DrawingCanvas(QWidget):
         br = fm.boundingRect(d["text"])
         mid = QPointF(0.5 * (far.x() + near.x()),
                       0.5 * (far.y() + near.y()))
+        gap = QRectF(mid.x() - br.width() / 2 - 3,
+                     mid.y() - br.height() / 2 - 2,
+                     br.width() + 6, br.height() + 4)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor("#f5f5f2"))
+        p.drawRect(gap)
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(QColor(195, 60, 60)))
+        p.setFont(f)
+        p.drawText(gap, Qt.AlignCenter, d["text"])
+
+    def _draw_radius(self, p: QPainter, f, ink, d, sc, off):
+        """M103: an R leader runs from the arc's centre out to the rim,
+        one arrowhead on the rim, text on the paper just past the tip.
+        Endpoints ride centre + dir*r so the leader follows the live
+        arc resolve_dims re-found (a redrilled scallop moves alone)."""
+        cx, cy = d["a"]
+        ux, uy = d.get("dir", (1.0, 0.0))
+        r = float(d.get("r", math.dist(d["a"], d["b"])))
+        if r < 1e-9:
+            return
+        centre = self.s2p(cx * sc + off[0], cy * sc + off[1])
+        rim = self.s2p((cx + ux * r) * sc + off[0],
+                       (cy + uy * r) * sc + off[1])
+        p.setPen(ink)
+        p.drawLine(centre, rim)
+        v = rim - centre
+        L = math.hypot(v.x(), v.y())
+        if L < 1e-6:
+            return
+        u = QPointF(v.x() / L, v.y() / L)
+        n = QPointF(-u.y(), u.x())
+        base = QPointF(rim.x() - u.x() * 7, rim.y() - u.y() * 7)
+        path = QPainterPath()
+        path.moveTo(rim)
+        path.lineTo(QPointF(base.x() + n.x() * 1.8, base.y() + n.y() * 1.8))
+        path.lineTo(QPointF(base.x() - n.x() * 1.8, base.y() - n.y() * 1.8))
+        path.closeSubpath()
+        p.setBrush(QColor(195, 60, 60))
+        p.setPen(Qt.NoPen)
+        p.drawPath(path)
+        p.setBrush(Qt.NoBrush)
+        fm = p.fontMetrics()
+        br = fm.boundingRect(d["text"])
+        mid = QPointF(0.5 * (centre.x() + rim.x()) + n.x() * 9,
+                      0.5 * (centre.y() + rim.y()) + n.y() * 9)
         gap = QRectF(mid.x() - br.width() / 2 - 3,
                      mid.y() - br.height() / 2 - 2,
                      br.width() + 6, br.height() + 4)

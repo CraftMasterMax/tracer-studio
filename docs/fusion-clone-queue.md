@@ -813,10 +813,40 @@ only (no offset/aligned/revolved cuts, no cutting-plane arrows),
 one dialog per cut, and the removed half is always the viewer-side
 one — the standard reading. Suite stands at exactly 1000 tests.
 
-**Later candidates (researched, deferred):** Draft, true multi-body (Combine today builds
-placed tools, M64; separate bodies in the browser remain),
-configurations, assemblies/joints, sheet metal, drawings.
-Re-evaluate after M52.
+**M103 — The R bubble: arcs buried in outlines get dimensions too.** ✓
+SHIPPED.  One tap lays Ø on a circle (M95) — but arcs never ride
+alone in a mesh silhouette. A scallop on an edge, a nook in a corner,
+a boss breaking through a wall: the chain walker delivers the WHOLE
+boundary as one loop, straights and arc fused, often TANGENT at the
+junctions (zero turn, invisible to any "split at corners" idea).
+find_arcs cuts arcs out by CURVATURE: a vertex turns 1..60°, its
+neighbours the same way and the same sign — mesh walls step a steady
+5.6° while 90° corners and 0° tangent seams break the run; rings are
+opened AT a corner (never through an arc) before the scan. Each run
+gets a circle by VOTE — three vantage triples (head, middle, tail)
+propose circumcircles, the one with most inliers wins, Kåsa polishes
+the inlier set — because a run's last chord often already points down
+the straight that follows, and a contaminated least-squares fit lies
+prettier than it should (its endpoints sit happily on the wrong
+million-millimetre circle: the vote is not decoration, it is
+survival; the circumcircle itself had to be computed against a
+translated origin or float cancellation manufactured that million).
+Refusals: residuals past 10% of r, spans under 25° or over 330° (a
+whole ring is fit_circle's), radii beyond 25× the run's extent
+(collinear dust), ellipse views (arcs are ortho-only, like the Ø).
+The bubble behaves like M95's: one click, centre + travel direction
+stored, the arc RE-FOUND among the live runs on every repaint —
+widen the scallop 6→8 and the leader redraws alone; DXF carries the
+centre-to-rim leader; undo, file round-trip, per-view scale: all
+inherited. Honest scope: a run is one arc (multi-arc polylines are
+split by their turn profile and each run votes for itself — S-curves
+simply break into opposite-signed runs); tangent-split circles dedupe
+by centre+radius; the R leader is a single line, no centre cross.
+
+**Later candidates (researched, deferred):** multi-body phase 2
+(Combine today builds placed tools, M64; separate bodies in the
+browser remain — the next big one), Draft, per-view rotation, sheet
+metal, assemblies/joints. Re-evaluate after M103.
 
 ## Oct 2026 research sweep — the landscape and the ranked backlog
 

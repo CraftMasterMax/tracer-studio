@@ -1202,6 +1202,15 @@ class MainWindow(QMainWindow):
                      "a": [float(a[0]), float(a[1])],
                      "b": [float(b[0]), float(b[1])],
                      "text": "\u00d8 %.2f" % (2 * r)}
+        elif opts.get("radius"):                 # M103: the arc bubble
+            r = float(opts["r"])
+            entry = {"view": view, "radius": True,
+                     "center": [float(x) for x in opts["center"]],
+                     "dir": [float(x) for x in opts["dir"]],
+                     "r": r,
+                     "a": [float(a[0]), float(a[1])],
+                     "b": [float(b[0]), float(b[1])],
+                     "text": "R %.2f" % r}
         else:
             entry = {"view": view, "a": [float(a[0]), float(a[1])],
                      "b": [float(b[0]), float(b[1])],
@@ -1290,6 +1299,9 @@ class MainWindow(QMainWindow):
                         vx, vy = B[0] - A[0], B[1] - A[1]
                         L = math.hypot(vx, vy)
                         if L < 1e-9:
+                            continue
+                        if d.get("radius"):         # M103: one leader
+                            ops.append(("line", A, B))
                             continue
                         nx, ny = -vy / L, vx / L
                         ctr = (off[0] + 0.5 * (view["min"][0]

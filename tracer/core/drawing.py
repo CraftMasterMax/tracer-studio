@@ -265,6 +265,153 @@ def fit_circle(chain):
     return (float(c[0]), float(c[1])), r
 
 
+def _kasa(Q):
+    """Algebraic circle fit (Kåsa): solves D x + E y + F = -(x^2+y^2).
+    Returns (cx, cy, r) or None when the system lies (collinear)."""
+    A = np.column_stack([Q[:, 0], Q[:, 1], np.ones(len(Q))])
+    b = -(Q ** 2).sum(axis=1)
+    try:
+        sol, *_ = np.linalg.lstsq(A, b, rcond=None)
+    except np.linalg.LinAlgError:
+        return None
+    D, E, F = (float(x) for x in sol)
+    cx, cy = -D / 2.0, -E / 2.0
+    rr = cx * cx + cy * cy - F
+    if rr <= 0.0:
+        return None
+    return cx, cy, math.sqrt(rr)
+
+
+def _circ3(a, b, c):
+    """Circumcircle of three points; None when (nearly) collinear.
+    Computed against A as origin: the absolute-coordinate form cancels
+    catastrophically when the triple is tight and far from (0,0) —
+    exactly the mesh case here (points 0.5 apart at radius 40) — and
+    returns a spurious million-mm circle."""
+    ax, ay = a
+    bx, by = b[0] - ax, b[1] - ay
+    cx, cy = c[0] - ax, c[1] - ay
+    d = 2.0 * (bx * cy - by * cx)
+    if abs(d) < 1e-9:
+        return None
+    bb, cc = bx * bx + by * by, cx * cx + cy * cy
+    ux = (cy * bb - by * cc) / d
+    uy = (bx * cc - cx * bb) / d
+    return (ax + ux, ay + uy), math.hypot(ux, uy)
+
+
+def find_arcs(chains: list) -> list:
+    """M103: circular arcs BURIED IN silhouette chains — a scallop on
+    an edge, a rounded corner, a boss breaking through a wall. Arcs
+    never ride alone (chains trace whole boundary loops, and
+    _merge_collinear leaves a straight run as ONE segment), so an arc
+    is cut out by CURVATURE: a vertex turns by 1..60 degrees, the same
+    way as its neighbours — a 64-gon wall turns 5.6 degrees per step,
+    while true corners (90 deg) and tangent junctions (0 deg) break
+    the run. Maximal same-signed runs get a circle by VOTE — three
+    vantage triples (head, middle, tail of the run) each propose a
+    circumcircle, the proposal with the most inliers wins, and Kåsa
+    polishes the inlier set — because a run's last chord often already
+    points down the straight that follows, and a least-squares fit
+    without that outlier's pull lies prettier than it should. What
+    still lies is refused:
+    residuals past 10% of r, spans under 25 degrees or over 330
+    (a whole ring is fit_circle's territory — and a closed chain whose
+    run spans nearly the entire ring IS that ring), radii absurdly
+    beyond the run's own extent (collinear dust). Deduped, because a
+    circle split by a tangent vertex fits to itself twice.
+    Returns [((cx, cy), r), ...] in the chains' own 2D basis."""
+    found: list = []
+    seen: set = set()
+    for L in chains:
+        P = np.asarray(L, float)
+        if P.shape[0] < 6:
+            continue
+        closed = bool(np.allclose(P[0], P[-1], atol=1e-6))
+        if closed:
+            P = P[:-1]
+        dd = np.hypot(*(np.diff(P, axis=0)).T)
+        if not (dd > 1e-9).all():                 # weld repeated tips
+            P = np.vstack([P[:-1][np.r_[dd[:-1], True] > 1e-9], P[-1:]])
+        n = len(P)
+        if n < 6:
+            continue
+        e = np.diff(P, axis=0)
+        e = e / np.hypot(e[:, 0], e[:, 1])[:, None]
+        T = np.zeros(n)
+        cross = e[:-1, 0] * e[1:, 1] - e[:-1, 1] * e[1:, 0]
+        dot = (e[:-1] * e[1:]).sum(axis=1)
+        T[1:n - 1] = np.degrees(np.arctan2(cross, dot))
+        if closed:                                 # the ring's closing edge
+            w = P[0] - P[-1]
+            w = w / math.hypot(w[0], w[1])
+            T[0] = math.degrees(math.atan2(
+                w[0] * e[0, 1] - w[1] * e[0, 0], float(w @ e[0])))
+            T[n - 1] = math.degrees(math.atan2(
+                e[-1, 0] * w[1] - e[-1, 1] * w[0], float(e[-1] @ w)))
+            big = np.nonzero(np.abs(T) > 60.0)[0]
+            if len(big):
+                # open the ring AT a corner, never through an arc
+                cut = int(big[np.abs(T[big]).argmax()])
+                P, T = np.roll(P, -cut, axis=0), np.roll(T, -cut)
+            elif len(np.nonzero(np.abs(T) < 1.0)[0]) == 0:
+                continue          # a pure polygon ring: fit_circle's job
+            T[0] = T[n - 1] = 0.0                  # linear ends break runs
+        band = (np.abs(T) >= 1.0) & (np.abs(T) <= 60.0)
+        sgn = np.sign(T)
+        i = 1
+        while i <= n - 2:
+            if not band[i]:
+                i += 1
+                continue
+            j = i
+            while (j + 1 <= n - 2 and band[j + 1]
+                   and sgn[j + 1] == sgn[j]):
+                j += 1
+            Q = P[i:j + 2]
+            i = j + 1
+            if len(Q) < 5:
+                continue
+            m = len(Q)
+            diag = float(np.hypot(*(Q.max(axis=0) - Q.min(axis=0))))
+            best = None
+            for trip in ((0, 1, 2), (m // 2 - 1, m // 2, m // 2 + 1),
+                         (m - 3, m - 2, m - 1)):  # three vantage triples
+                c3 = _circ3(Q[trip[0]], Q[trip[1]], Q[trip[2]])
+                if c3 is None:
+                    continue
+                (ux, uy), rr = c3
+                if rr <= 1e-9 or rr > 25.0 * max(diag, 1e-9):
+                    continue
+                inl = np.abs(np.linalg.norm(Q - [ux, uy], axis=1)
+                             - rr) <= 0.10 * rr
+                if best is None or int(inl.sum()) > int(best.sum()):
+                    best = inl
+            if best is None or int(best.sum()) < 5 \
+                    or int(best.sum()) * 2 < m:    # mostly junk
+                continue
+            Qi = Q[best]
+            f = _kasa(Qi)                          # polish on the inliers
+            if f is None:
+                continue
+            cx, cy, r = f
+            if float(np.abs(np.linalg.norm(Qi - [cx, cy], axis=1)
+                            - r).max()) > 0.10 * r:
+                continue
+            if r > 25.0 * max(diag, 1e-9):
+                continue                           # dust fits a lie
+            ang = np.unwrap(np.arctan2(Qi[:, 1] - cy, Qi[:, 0] - cx))
+            span = math.degrees(abs(float(ang[-1] - ang[0])))
+            if not 25.0 <= span <= 330.0:
+                continue
+            k = (round(cx, 3), round(cy, 3), round(r, 3))
+            if k in seen:
+                continue
+            seen.add(k)
+            found.append(((cx, cy), r))
+    return found
+
+
 def parse_scale(text: str):
     """M100: the Scale dialog's wording → a factor. "Fit (auto)"
     (anything starting with fit) means the layout assistant decides
