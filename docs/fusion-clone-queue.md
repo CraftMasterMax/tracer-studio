@@ -327,6 +327,15 @@ in both the body nest and the Sketches folder.  Constraints that fight
 stay silent; the role data under the renamed text still double-clicks
 into the editor.
 
+**M74 — N-section loft.** ✓ SHIPPED.  The kernel always lofts a list;
+the command capped it at two.  Fusion's dialog gathers sections in order,
+and now so does ours: pick + Add into an ordered list with ▲▼ and Remove
+(which refuses to starve the loft below two), the first two sketches
+preloaded so the old base→top click path stays one click.  Three circle
+sections blend two honest cone frusta — πr²·h arithmetic to 7e-4,
+watertight (the hourglass proof).  Two-section names and messages are
+untouched; every M36 test speaks to the reshaped dialog unchanged.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),

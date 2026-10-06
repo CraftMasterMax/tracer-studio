@@ -1,47 +1,97 @@
-"""Loft command dialog — pick the two sketches whose profiles blend.
+"""Loft command dialog — pick the sketches whose profiles blend, in order.
 
-Fusion's Loft asks for sections in order; this is the same question with
-fewer clicks: every loftable sketch in the document (exactly one closed
-outline, nothing inside it) lands in both dropdowns, base defaults to the
-first, top to the second.  ``LoftDialog.ask`` returns (sid_base, sid_top)
-or None.
+Fusion's Loft asks for sections in sequence (base → middles → top) and so
+do we now: every loftable sketch in the document (exactly one closed
+outline, nothing inside it) can be added to an ordered section list; two
+arrive preloaded (the old base/top defaults), and ▲▼ fixes any mis-click.
+``LoftDialog.ask`` returns the ordered sid tuple (length ≥ 2) or None.
 """
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
-                               QFormLayout, QLabel, QVBoxLayout)
+                               QHBoxLayout, QLabel, QListWidget,
+                               QListWidgetItem, QPushButton, QVBoxLayout)
 
 
 class LoftDialog(QDialog):
     def __init__(self, parent=None, candidates=()):
         super().__init__(parent)
-        self.setWindowTitle("Loft between sketches")
+        self.setWindowTitle("Loft through sketches")
+        self.resize(360, 380)
         lay = QVBoxLayout(self)
-        head = QLabel("Blend the closed profile of one sketch into "
-                      "another's — base to top.")
+        head = QLabel("Blend closed profiles in order — base to top.")
         head.setObjectName("dim")
+        head.setWordWrap(True)
         lay.addWidget(head)
 
-        form = QFormLayout()
-        form.setSpacing(6)
-        self.base = QComboBox()
-        self.top = QComboBox()
+        row = QHBoxLayout()
+        self.pick = QComboBox()
         for sid, label in candidates:
-            self.base.addItem(label, sid)
-            self.top.addItem(label, sid)
-        if self.top.count() > 1:
-            self.top.setCurrentIndex(1)
-        form.addRow("Base profile", self.base)
-        form.addRow("Top profile", self.top)
-        lay.addLayout(form)
+            self.pick.addItem(label, sid)
+        add = QPushButton("Add")
+        add.clicked.connect(self._add_current)
+        row.addWidget(self.pick, 1)
+        row.addWidget(add)
+        lay.addLayout(row)
+
+        lab = QLabel("Sections (in order):")
+        lab.setObjectName("dim")
+        lay.addWidget(lab)
+        self.listw = QListWidget()
+        lay.addWidget(self.listw, 1)
+
+        mv = QHBoxLayout()
+        up = QPushButton("\u25b2")
+        up.setToolTip("Move section earlier")
+        up.clicked.connect(lambda: self._move(-1))
+        down = QPushButton("\u25bc")
+        down.setToolTip("Move section later")
+        down.clicked.connect(lambda: self._move(1))
+        rem = QPushButton("Remove")
+        rem.clicked.connect(self._remove)
+        for b in (up, down, rem):
+            mv.addWidget(b)
+        mv.addStretch(1)
+        lay.addLayout(mv)
 
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
 
+        # the old defaults: first two candidates, base then top
+        for sid, label in list(candidates)[:2]:
+            self._insert(sid, label)
+
+    # ---- ordered list plumbing ---------------------------------------------
+    def _insert(self, sid, label):
+        it = QListWidgetItem(label)
+        it.setData(Qt.UserRole, sid)
+        self.listw.addItem(it)
+
+    def _add_current(self):
+        if self.pick.currentData() is None:
+            return
+        self._insert(self.pick.currentData(), self.pick.currentText())
+
+    def _move(self, delta):
+        r = self.listw.currentRow()
+        t = r + delta
+        if r < 0 or not (0 <= t < self.listw.count()):
+            return
+        it = self.listw.takeItem(r)
+        self.listw.insertItem(t, it)
+        self.listw.setCurrentRow(t)
+
+    def _remove(self):
+        r = self.listw.currentRow()
+        if r >= 0 and self.listw.count() > 2:   # a loft needs two
+            self.listw.takeItem(r)
+
     def values(self) -> tuple:
-        return (self.base.currentData(), self.top.currentData())
+        return tuple(self.listw.item(i).data(Qt.UserRole)
+                     for i in range(self.listw.count()))
 
     @staticmethod
     def ask(parent, candidates) -> tuple | None:
@@ -49,9 +99,9 @@ class LoftDialog(QDialog):
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.information(
                 parent, "Loft",
-                "A loft blends two sketches. Draw a closed profile in two "
-                "different sketches — sketching on a face gives the second "
-                "one its offset for free.")
+                "A loft blends two sketches — or more. Draw a closed "
+                "profile in two different sketches — sketching on a face "
+                "gives the second one its offset for free.")
             return None
         dlg = LoftDialog(parent, candidates)
         return dlg.values() if dlg.exec() == QDialog.Accepted else None

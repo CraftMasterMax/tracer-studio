@@ -2081,23 +2081,21 @@ class MainWindow(QMainWindow):
         return cands
 
     def action_loft(self):
-        """Fusion Loft (v1): smoothly blend the closed profile of one
-        sketch into another's — base to top, any distance or plane."""
+        """Fusion Loft: smoothly blend the closed profiles of TWO OR MORE
+        sketches — base through middles to top, any distance or plane."""
         if self.doc is None:
             return
         cands = self._loft_candidates()
         sids = LoftDialog.ask(self, [(s, label) for s, label, _ in cands])
         if sids is None:
             return
-        a, b = sids
-        if a == b:
-            QMessageBox.information(self, "Loft",
-                                    "Pick two DIFFERENT sketches to blend.")
+        if len(sids) < 2 or len(set(sids)) != len(sids):
+            QMessageBox.information(
+                self, "Loft", "Blend two or more DIFFERENT sketches.")
             return
         by_sid = {s: sec for s, _label, sec in cands}
-        secs = [dict(by_sid[a]), dict(by_sid[b])]
-        name_a = next(l for s, l, _ in cands if s == a)
-        name_b = next(l for s, l, _ in cands if s == b)
+        secs = [dict(by_sid[s]) for s in sids]
+        names = [next(l for s, l, _ in cands if s == sid) for sid in sids]
         try:                            # validate before touching history
             LoftFeature(name="loft", sections=secs).build()
         except ValueError as e:
@@ -2107,11 +2105,12 @@ class MainWindow(QMainWindow):
                          "(sketch-on-face gives the second one an offset).")
             return
         self._capture()
-        self.doc.add(LoftFeature(name=f"Loft {name_a} to {name_b}",
-                                 sections=secs))
+        span = (f"{names[0]} to {names[-1]}" if len(names) == 2
+                else f"{names[0]} through {len(names)}")
+        self.doc.add(LoftFeature(name=f"Loft {span}", sections=secs))
         self.recompute()
         self.viewport.refresh(fit=True)
-        self.status.showMessage(f"Lofted {name_a} into {name_b}", 5000)
+        self.status.showMessage(f"Lofted {span}", 5000)
 
     def _sync_lofts(self, sid, payload):
         """A source sketch was re-edited: rebuild the loft's section for
