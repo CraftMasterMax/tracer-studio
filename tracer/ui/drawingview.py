@@ -71,33 +71,69 @@ class DrawingCanvas(QWidget):
             0, min(self.sheet_idx, len(self.doc.drawings) - 1))]
 
     # ---- data -----------------------------------------------------------
-    def views(self) -> dict:
-        """Live silhouette views of the current result (model space)."""
+    def sections(self) -> list:
+        """M102: the stored cuts on this sheet ({name, axis, at})."""
+        return list(self.sheet().get("sections") or [])
+
+    def _sources(self) -> dict:
+        """view name -> (solid to project, standard view key), live.
+        The four standards project the full result; a section projects
+        its half through the standard basis that reads the cut face."""
         if self.doc is None or self.doc.result is None:
             return {}
-        return {v: drawing.project_view(self.doc.result, view=v)
-                for v in drawing.STANDARD}
+        out = {v: (self.doc.result, v) for v in drawing.STANDARD}
+        for sec in self.sections():
+            try:
+                d = drawing.section(self.doc.result, sec["axis"],
+                                    float(sec["at"]))
+            except Exception:
+                continue
+            out[sec["name"]] = (d["half"], d["view"])
+        return out
+
+    def views(self) -> dict:
+        """Live silhouette views of the current result (model space),
+        sections included."""
+        return {name: drawing.project_view(sol, view=v)
+                for name, (sol, v) in self._sources().items()}
 
     def chains(self, view: str = "top") -> list:
         return self.views().get(view, [])
 
     def hidden_views(self) -> dict:
         """M97: dashed back creases per view (model space, live)."""
-        if self.doc is None or self.doc.result is None:
-            return {}
-        return {v: drawing.project_hidden(self.doc.result, view=v)
-                for v in drawing.STANDARD}
+        return {name: drawing.project_hidden(sol, view=v)
+                for name, (sol, v) in self._sources().items()}
 
     def hidden_page(self, view: str) -> list:
         """Hidden chains in sheet-mm page coords — moves included,
         since the frame they ride on already carries the view's move."""
-        if self.doc is None or self.doc.result is None:
+        src = self._sources().get(view)
+        if src is None:
             return []
+        sol, vkey = src
         sc, off = self.frames()[view]
         return [[(float(p[0] * sc + off[0]), float(p[1] * sc + off[1]))
                  for p in c]
-                for c in drawing.project_hidden(self.doc.result,
-                                                view=view)]
+                for c in drawing.project_hidden(sol, view=vkey)]
+
+    def cuts_page(self) -> dict:
+        """M102: section name -> closed cut-face loops in sheet-mm page
+        coords (moves and per-view scales ride the frame)."""
+        srcs = self._sources()
+        out: dict = {}
+        fr = self.frames()
+        for sec in self.sections():
+            name = sec["name"]
+            if name not in srcs or name not in fr:
+                continue
+            d = drawing.section(self.doc.result, sec["axis"],
+                                float(sec["at"]))
+            sc, off = fr[name]
+            out[name] = [[(float(p[0] * sc + off[0]),
+                           float(p[1] * sc + off[1])) for p in L]
+                         for L in d["cut"]]
+        return out
 
     def placed(self, views: dict | None = None) -> dict:
         """Per view: {sc, off, min, max, chains} — the shared M94
@@ -314,7 +350,7 @@ class DrawingCanvas(QWidget):
                    Qt.AlignLeft | Qt.AlignVCenter,
                    f"{name}   {self.page}   1:{max(1, round(1 / self.page_scale()))}"
                    if self.views() else name)
-        # views + hidden ink + bubbles (one placement pass for all)
+        # views + section hatch + hidden ink + bubbles (one pass)
         views = self.views()
         placed = self.placed(views)
         p.setPen(QPen(QColor(28, 30, 34), max(1.0, 0.35 * self._zoom)))
@@ -325,14 +361,23 @@ class DrawingCanvas(QWidget):
                 pts = [self.s2p(x, y) for x, y in c]
                 for i in range(len(pts) - 1):
                     p.drawLine(pts[i], pts[i + 1])
+        cuts = self.cuts_page()
+        if cuts:                        # M102: 45° hatch fills the wound
+            p.setPen(QPen(QColor(110, 114, 120),
+                          max(0.6, 0.22 * self._zoom)))
+            for loops in cuts.values():
+                for ha, hb in drawing.hatch_region(loops):
+                    p.drawLine(self.s2p(*ha), self.s2p(*hb))
         if self.doc is not None and self.doc.result is not None:
             hp = QPen(QColor(140, 144, 150), max(0.8, 0.28 * self._zoom))
             hp.setStyle(Qt.DashLine)
-            p.setPen(hp)                        # M97: dashed back creases
+            p.setPen(hp)                        # M101: depth-hidden ink
+            srcs = self._sources()
             for name in placed:
-                for c in drawing.project_hidden(
-                        self.doc.result, view=name,
-                        visible=views.get(name, [])):
+                src = srcs.get(name)
+                if src is None:
+                    continue
+                for c in drawing.project_hidden(src[0], view=src[1]):
                     pts = [self.s2p(p2[0] * placed[name]["sc"]
                                     + placed[name]["off"][0],
                                     p2[1] * placed[name]["sc"]
@@ -340,15 +385,22 @@ class DrawingCanvas(QWidget):
                            for p2 in c]
                     for i in range(len(pts) - 1):
                         p.drawLine(pts[i], pts[i + 1])
-        # M100: a view on an explicit scale wears its ratio as a caption
+        # M100: a view on an explicit scale wears its ratio as a caption;
+        # M102: a section wears its letter (A-A · 1:2 when both)
         vs = self.sheet().get("vscale") or {}
-        if vs:
+        sec_names = {s["name"] for s in self.sections()}
+        if vs or sec_names:
             f2 = p.font()
             f2.setPointSizeF(max(5.5, 7 * min(self._zoom, 2.0)))
             p.setFont(f2)
             for name, fr in placed.items():
                 fac = vs.get(name)
-                if not fac:
+                bits = []
+                if name in sec_names:
+                    bits.append(name)
+                if fac:
+                    bits.append(scale_label(float(fac)))
+                if not bits:
                     continue
                 c0 = self.s2p(
                     fr["off"][0] + 0.5 * (fr["min"][0] + fr["max"][0]),
@@ -357,7 +409,7 @@ class DrawingCanvas(QWidget):
                 p.drawText(QRectF(c0.x() - 40, c0.y(), 80,
                                   14 * self._zoom),
                            Qt.AlignHCenter | Qt.AlignTop,
-                           scale_label(float(fac)))
+                           " \u00b7 ".join(bits))
         self._draw_dims(p, placed)
 
     def _draw_dims(self, p: QPainter, placed: dict):

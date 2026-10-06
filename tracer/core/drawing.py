@@ -291,6 +291,147 @@ def parse_scale(text: str):
     return f
 
 
+# --------------------------------------------------------------------- M102
+# Sections: cut the body open, keep the half BEHIND the plane, and the
+# viewer reads the result in the standard view that looks AT that face.
+
+SECTION_VIEWS = {"X": "right", "Y": "front", "Z": "top"}
+# which side survives: material between the viewer and the plane is
+# discarded — so for each axis, exactly one inequality keeps matter:
+_SECTION_KEEP = {"X": -1, "Y": +1, "Z": -1}
+_section_cache: dict = {}
+
+
+def section(solid, axis: str = "Y", at: float = 0.0) -> dict:
+    """M102: {"half": Solid beyond the plane (the kept side), "view":
+    the standard view that reads it, "cut": closed loops of the cut
+    face in that view's 2D basis}. The loops come from slicing the
+    ORIGINAL solid — the plane crosses material there, and the M82
+    lesson applies: jitter off coplanar degeneracy if a cut grazes a
+    feature boundary. Booleans and slices are exact per (solid, axis,
+    at): the immutable Solid caches the whole result, so repaints are
+    free until the model changes."""
+    key = (id(solid), axis, round(float(at), 9))
+    hit = _section_cache.get(key)
+    if hit is not None and hit[0] is solid:
+        return hit[1]
+    from .geometry import Solid
+    i = "XYZ".index(axis)
+    view = SECTION_VIEWS[axis]
+    sgn = _SECTION_KEEP[axis]
+    bb = np.asarray(solid.bounding_box, float)
+    lo, hi = bb[0], bb[1]
+    pad = 100.0
+    box_lo = [lo[k] - pad for k in range(3)]
+    box_hi = [hi[k] + pad for k in range(3)]
+    if sgn > 0:                       # keep coord >= at (viewer side dies)
+        box_lo[i] = float(at)
+    else:                             # keep coord <= at
+        box_hi[i] = float(at)
+    M = np.eye(4)
+    M[:3, 3] = box_lo
+    halfspace = Solid.box(*[box_hi[k] - box_lo[k] for k in range(3)])
+    half = solid.intersect(halfspace.transformed(M))
+    import trimesh
+    tm = solid.to_trimesh()
+    nrm = np.zeros(3)
+    nrm[i] = 1.0
+    _, X, Y = _basis(view)
+    loops: list = []
+    for off in (0.0, 1e-3, -1e-3):
+        try:
+            sec = tm.section(plane_origin=nrm * (at + off),
+                             plane_normal=nrm)
+        except Exception:
+            continue
+        if sec is None or not len(sec.discrete):
+            continue
+        for pl in sec.discrete:
+            P = np.asarray(pl, float)
+            xy = np.column_stack([P @ X, P @ Y])
+            step = np.hypot(*(xy[1:] - xy[:-1]).T)
+            xy = xy[np.r_[True, step > 1e-9]]          # weld crumbs
+            if len(xy) > 3 and math.hypot(*(xy[0] - xy[-1])) < 1e-9:
+                xy = xy[:-1]                           # closed: no repeat
+            if len(xy) >= 3:
+                loops.append([(float(x), float(y)) for x, y in xy])
+        if loops:
+            break
+    res = {"half": half, "view": view, "cut": loops}
+    if len(_section_cache) > 64:
+        _section_cache.clear()
+    _section_cache[key] = (solid, res)
+    return res
+
+
+def _sweep_hatch(region, spacing: float) -> list:
+    """Shared 45° sweep: the family x - y = c across a shapely region."""
+    from shapely.geometry import LineString
+    minx, miny, maxx, maxy = region.bounds
+    step = spacing * math.sqrt(2.0)     # perpendicular spacing
+    out: list = []
+    c = minx - maxy - step              # x - y ranges over the bounds:
+    while c <= maxx - miny + step:      # [minx-maxy, maxx-miny]
+        cut = region.intersection(LineString([(minx - 1.0, minx - 1.0 - c),
+                                              (maxx + 1.0, maxx + 1.0 - c)]))
+        if not cut.is_empty:
+            for g in getattr(cut, "geoms", [cut]):
+                if g.geom_type != "LineString" or g.length < 1e-9:
+                    continue
+                cs = list(g.coords)
+                out.append(((float(cs[0][0]), float(cs[0][1])),
+                            (float(cs[-1][0]), float(cs[-1][1]))))
+        c += step
+    return out
+
+
+def hatch_lines(loop, spacing: float = 3.5) -> list:
+    """M102: the draughtsman's 45° section hatch, clipped to a closed
+    2D loop (shapely does the honest clipping; multi-piece crossings
+    become multiple segments)."""
+    from shapely.geometry import Polygon
+    P = Polygon(np.asarray(loop, float))
+    if not P.is_valid:
+        P = P.buffer(0)
+    if P.is_empty or P.area <= 1e-9:
+        return []
+    return _sweep_hatch(P, spacing)
+
+
+def hatch_region(loops, spacing: float = 3.5) -> list:
+    """M102: hatch a WHOLE cut face at once — loops whose representative
+    point sits inside a bigger loop are HOLES (the pocket is air, and
+    air gets no hatching), subtracted before the sweep. This is what
+    the sheet paints and the DXF writes; hatch_lines stays for a
+    single ring."""
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+    polys = []
+    for L in loops:
+        P = Polygon(np.asarray(L, float))
+        if not P.is_valid:
+            P = P.buffer(0)
+        if not P.is_empty and P.area > 1e-9:
+            polys.append(P)
+    if not polys:
+        return []
+    outers: list = []
+    holes: list = []
+    for i, p in enumerate(polys):
+        rp = p.representative_point()
+        if any(j != i and q.area > p.area and q.contains(rp)
+               for j, q in enumerate(polys)):
+            holes.append(p)
+        else:
+            outers.append(p)
+    region = unary_union(outers)
+    if holes:
+        region = region.difference(unary_union(holes))
+    if region.is_empty or region.area <= 1e-9:
+        return []
+    return _sweep_hatch(region, spacing)
+
+
 def place(views: dict, page: str = "A3", margin: float = 10.0,
           moves: dict | None = None,
           scales: dict | None = None) -> dict:
@@ -309,6 +450,12 @@ def place(views: dict, page: str = "A3", margin: float = 10.0,
     """
     base = fit_scale(views, page, margin)
     W, H = PAGES.get(page, PAGES["A3"])
+    # M102: a sheet can carry more views than the standard four (sections
+    # are named A-A, B-B...). The layout assistant parks them in the
+    # middle band, staggered, and the draughtsman's drag has the rest.
+    EXTRA = [(0.5, 0.5), (0.5, 0.64), (0.5, 0.36),
+             (0.30, 0.5), (0.70, 0.5)]
+    extra_i = 0
     out: dict = {}
     for name, chains in views.items():
         if not chains:
@@ -319,7 +466,11 @@ def place(views: dict, page: str = "A3", margin: float = 10.0,
         hi = P.max(axis=0)
         cx = 0.5 * (hi[0] + lo[0])
         cy = 0.5 * (hi[1] + lo[1])
-        fx, fy = SLOTS.get(name, (0.5, 0.5))
+        if name in SLOTS:
+            fx, fy = SLOTS[name]
+        else:
+            fx, fy = EXTRA[min(extra_i, len(EXTRA) - 1)]
+            extra_i += 1
         mx, my = (moves or {}).get(name, (0.0, 0.0))
         off = (fx * W - cx + mx, fy * H - cy + my)
         out[name] = {"sc": float(sc), "off": (float(off[0]),

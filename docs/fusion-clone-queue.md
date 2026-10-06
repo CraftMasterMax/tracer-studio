@@ -787,6 +787,32 @@ eight-full-projections-per-repaint. Honest scope: midpoint sampling
 Steiner crumbs (collinear merging can't straighten circles, and
 they're geometrically true); no section/auxiliary views.
 
+**M102 — Section views on the sheet: cut the body, hatch the wound.** ✓
+SHIPPED.  M84's Section analysis only clipped the DISPLAY; the paper
+had no way to say "here is what is inside". Now the sheet bar's
+Section… dialog picks a plane (X/Y/Z + position) and the drawing
+gains a stored, NAMED live view — A-A, then B-B — built from the
+half of the body BEHIND the plane, projected through the standard
+view that reads the cut face straight-on (Y-cut → front, X → right,
+Z → top plan). Because every drawing mechanism since M93 is keyed by
+view NAME, the section inherits all of it for free: bubbles measure
+the model, M96 drags it, M100 scales it, M101 dashes its hidden
+edges, DXF carries it, undo uncuts it, and a stretch re-derives the
+wound live (the cut face itself is sliced from the ORIGINAL solid —
+the M82 jitter trick guards planes that graze feature boundaries).
+The hatch is real geometry, not a texture: the family x − y = c
+swept across the face and clipped with shapely, so the PNG and the
+DXF agree line for line. Two lessons earned the honest way: the
+c-range must span the BOUNDS (a formula tuned on miny=0 hatched
+nothing once views sat at real sheet positions), and air gets no
+ink — a Z-cut through a pocket is a RING, and hatch_region subtracts
+inner loops before sweeping, because hatching a cavity is a drafting
+lie. The layout assistant parks extra views in the middle band,
+staggered, under grey A-A/B-B captions. Honest scope: full sections
+only (no offset/aligned/revolved cuts, no cutting-plane arrows),
+one dialog per cut, and the removed half is always the viewer-side
+one — the standard reading. Suite stands at exactly 1000 tests.
+
 **Later candidates (researched, deferred):** Draft, true multi-body (Combine today builds
 placed tools, M64; separate bodies in the browser remain),
 configurations, assemblies/joints, sheet metal, drawings.

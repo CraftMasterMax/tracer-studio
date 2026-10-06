@@ -1047,6 +1047,13 @@ class MainWindow(QMainWindow):
             lambda on: self.drawing.set_dim_mode(on))
         bl.addWidget(dimb)
         self._dim_btn = dimb
+        secb = QPushButton("Section\u2026")              # M102 cut
+        secb.setProperty("tb", True)
+        secb.setToolTip("Cut the body on a plane and draught the "
+                        "wound: a live hatched section view (A-A) "
+                        "that re-derives with the model")
+        secb.clicked.connect(self.action_section_view)
+        bl.addWidget(secb)
         bl.addStretch(1)
         lay.addWidget(bar)
         from .drawingview import DrawingCanvas
@@ -1122,6 +1129,59 @@ class MainWindow(QMainWindow):
         self.doc.dirty = True
         self.drawing.update()
         self.status.showMessage(f"{view} view scale: {label}", 4000)
+
+    def action_section_view(self):
+        """M102: the sheet's stored cut — dialog picks the plane, the
+        half beyond it lands as a live view (A-A, B-B...) whose chains,
+        bubbles, hidden ink, moves and scales all re-derive on every
+        repaint. Not to be confused with Inspect ▸ Section, which only
+        clips the viewport display."""
+        if self.doc is None or self.doc.result is None:
+            return
+        g = self.drawing.sheet()
+        if not g:
+            return
+        from . import cmddialog
+        bb = self.doc.result.bounding_box
+        v = cmddialog.ask(self, "Section view", [
+            dict(key="action", kind="combo", label="Action",
+                 choices=["New section", "Remove last section"]),
+            dict(key="axis", kind="combo", label="Cut plane normal",
+                 choices=["Y (front cut)", "X (side cut)",
+                          "Z (horizontal cut)"]),
+            dict(key="at", kind="double", label="Cut position",
+                 default=float(0.5 * (bb[0][2] + bb[1][2])),
+                 min=-1e6, max=1e6, decimals=2)])
+        if v is None:
+            return
+        secs = list(g.get("sections") or [])
+        if str(v["action"]).startswith("Remove"):
+            if not secs:
+                self.status.showMessage("No section views on this "
+                                        "sheet", 4000)
+                return
+            self._capture()
+            gone = secs.pop()
+            g["sections"] = secs
+            if not secs:
+                del g["sections"]
+            self.doc.dirty = True
+            self.drawing.update()
+            self.status.showMessage(f"Section {gone['name']} removed",
+                                    4000)
+            return
+        axis = str(v["axis"]).strip()[0].upper()
+        if axis not in ("X", "Y", "Z"):
+            axis = "Y"
+        letter = chr(ord("A") + len(secs))
+        name = f"{letter}-{letter}"
+        self._capture()
+        secs.append({"name": name, "axis": axis, "at": float(v["at"])})
+        g["sections"] = secs
+        self.doc.dirty = True
+        self.drawing.update()
+        self.status.showMessage(
+            f"Section {name} ({axis} = {float(v['at']):.2f} mm)", 4000)
 
     def _add_dim(self, view: str, a: tuple, b: tuple, opts: dict = None):
         """A finished bubble (M94/M95): undo-captured, stored in MODEL
@@ -1200,6 +1260,12 @@ class MainWindow(QMainWindow):
                         if len(c) > 1:
                             ops.append(("poly", [tuple(p) for p in c],
                                         False))
+                # M102: section hatching travels as honest line geometry
+                from ..core import drawing as _dr
+                for loops in self.drawing.cuts_page().values():
+                    for ha, hb in _dr.hatch_region(loops):
+                        ops.append(("poly", [tuple(ha), tuple(hb)],
+                                    False))
                 # M94: the bubbles' ink travels (the paper text is the
                 # PNG's job — DXF line art only)
                 if self.doc.drawings:
