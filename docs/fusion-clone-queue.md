@@ -259,8 +259,20 @@ from the Create dialog and as Combine tools: truncated cones at
 cutters carving chamfer-like corner nicks, all three radii plus height
 editable in Change Parameters.
 
+**M67 — Autosave & crash recovery.** ✓ SHIPPED.  Every successful
+recompute mirrors the document into a recovery folder
+(QSettings-relocatable, so tests never haunt the real one); save, open,
+new and a clean close clear it.  The app's entry point offers the
+newest autosave at startup — Open reopens the real document with path
+and dirty flag intact; Discard deletes it for good.  The recovery tests
+also caught a real M58 bug: PySide6 stores an empty QSettings list as
+"@Invalid()" and reads it back as None, so Clear Recent Files crashed
+the NEXT launch — _recents now shrugs off None, Clear removes the key,
+and the fixture poisons are gone.
+
 **Later candidates (researched, deferred):** Patch/Thicken
-(surface kernel gap), Draft, Combine/multi-browser-bodies,
+(surface kernel gap), Draft, true multi-body (Combine today builds
+placed tools, M64; separate bodies in the browser remain),
 configurations, assemblies/joints, sheet metal, drawings.
 Re-evaluate after M52.
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import numpy as np
 import trimesh
@@ -2201,6 +2202,87 @@ class MainWindow(QMainWindow):
         self._apply_appearance()
         self._apply_units()
 
+    # ---- autosave & crash recovery (M67) ---------------------------------------
+    def _recovery_dir(self) -> Path:
+        d = Path(str(QSettings().value(
+            "paths/recovery_dir",
+            str(Path.home() / ".local" / "share" / "tracer-studio"
+                / "recovery"))))
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _autosave_file(self) -> Path:
+        stem = self.file_path.stem if self.file_path else "untitled"
+        return self._recovery_dir() / f"{stem}.autosave.tracer"
+
+    def _autosave(self):
+        """Every successful recompute mirrors the document to disk, so a
+        crash loses at most the last unsaved edit."""
+        if self.doc is None:
+            return
+        try:
+            from datetime import datetime
+            self._autosave_file().write_text(json.dumps(dict(
+                path=str(self.file_path) if self.file_path else None,
+                saved=datetime.now().isoformat(timespec="seconds"),
+                doc=self.doc.to_dict())))
+        except Exception:                 # the safety net never bites
+            pass
+
+    def _clear_autosave(self):
+        try:
+            p = self._autosave_file()
+            if p.exists():
+                p.unlink()
+        except Exception:
+            pass
+
+    def maybe_recover(self) -> bool:
+        """Startup offer: an autosave from a previous crash can be
+        restored, or thrown away. Called by tracer.app.main(), not by
+        the constructor, so headless tests never see the prompt."""
+        best = None
+        for p in self._recovery_dir().glob("*.autosave.tracer"):
+            try:
+                mt = p.stat().st_mtime
+            except OSError:
+                continue
+            if best is None or mt > best[0]:
+                best = (mt, p)
+        if best is None:
+            return False
+        p = best[1]
+        try:
+            payload = json.loads(p.read_text())
+        except Exception:
+            p.unlink(missing_ok=True)
+            return False
+        where = (f" for {payload['path']}" if payload.get("path")
+                 else " (unsaved document)")
+        ans = QMessageBox.question(
+            self, "Recover unsaved work",
+            f"An autosave from {payload.get('saved', 'earlier')}"
+            f"{where} was found. Restore it?",
+            QMessageBox.StandardButton.Open | QMessageBox.Discard,
+            QMessageBox.StandardButton.Open)
+        if ans != QMessageBox.StandardButton.Open:
+            p.unlink(missing_ok=True)
+            return False
+        try:
+            doc = Document.from_dict(payload["doc"])
+            doc.recompute()
+        except Exception as e:
+            QMessageBox.warning(self, "Recovery failed", str(e))
+            return False
+        self.new_document(doc)
+        sp = payload.get("path")
+        self.file_path = Path(sp) if sp else None
+        self._unsaved = True
+        self._update_title()
+        self.status.showMessage(
+            "Recovered unsaved work — review it and save", 6000)
+        return True
+
     def _update_title(self):
         name = self.file_path.name if self.file_path else (
             (self.doc.title if self.doc else "Untitled") + ("" if not self.doc or not self.doc.dirty else " •"))
@@ -2229,10 +2311,13 @@ class MainWindow(QMainWindow):
         self._unsaved = False
         self._update_title()
         self._note_recent(self.file_path)
+        self._clear_autosave()
 
     # ---- recent files (M58) -------------------------------------------------------
     def _recents(self):
         v = QSettings().value("files/recent", [])
+        if v is None:               # PySide6 reads a stored empty list
+            v = []                  # ("@Invalid()") back as None
         if isinstance(v, str):
             v = [v] if v else []
         return [Path(p) for p in v]
@@ -2258,7 +2343,9 @@ class MainWindow(QMainWindow):
         self.m_recent.addSeparator()
         self.m_recent.addAction(
             "Clear", lambda checked=False: (
-                QSettings().setValue("files/recent", []),
+                # remove, don't setValue([]): PySide6 round-trips an
+                # empty list as None and poisons the next launch
+                QSettings().remove("files/recent"),
                 self._rebuild_recents()))
 
     def _open_path(self, path):
@@ -2270,6 +2357,7 @@ class MainWindow(QMainWindow):
         self.new_document(doc)
         self.file_path = Path(path)
         self._note_recent(path)
+        self._clear_autosave()
         self._update_title()
         self.status.showMessage(f"Opened {Path(path).name}", 5000)
 
@@ -2303,6 +2391,7 @@ class MainWindow(QMainWindow):
         self._apply_appearance()
         self._apply_units()
         self._update_status()
+        self._autosave()
         self._on_face_selection()
 
     def _update_status(self):
@@ -2319,6 +2408,7 @@ class MainWindow(QMainWindow):
     # ---- slots ---------------------------------------------------------------
     def action_new(self):
         self.new_document()
+        self._clear_autosave()
 
     def action_view(self, kind: str):
         if kind == "fit":
@@ -2650,6 +2740,7 @@ class MainWindow(QMainWindow):
                 if getattr(self, "_unsaved", False):   # dialog was cancelled
                     ev.ignore()
                     return
+        self._clear_autosave()      # on disk or discarded: nothing to recover
         ev.accept()
 
     def action_import(self):

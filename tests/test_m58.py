@@ -26,9 +26,9 @@ def qapp():
 @pytest.fixture
 def win(qapp):
     s = QSettings()
-    saved = s.value("files/recent", [])
-    s.setValue("files/recent", [])
-    s.sync()
+    saved = s.value("files/recent", None)
+    s.remove("files/recent")       # setValue([]) would store @Invalid(),
+    s.sync()                       # which PySide6 later reads back as None
     try:
         from tracer.ui.renderer import SceneRenderer
         from tracer.ui.mainwindow import MainWindow
@@ -46,7 +46,10 @@ def win(qapp):
         r.ctx.release()
     finally:
         s2 = QSettings()
-        s2.setValue("files/recent", saved)
+        if saved:
+            s2.setValue("files/recent", saved)
+        else:
+            s2.remove("files/recent")
         s2.sync()
 
 

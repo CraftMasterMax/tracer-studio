@@ -65,6 +65,29 @@ def script_cmd_cancel(monkeypatch):
     monkeypatch.setattr(cmddialog, "ask", lambda *a, **k: None)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_recovery_dir():
+    """No headless test may poison the user's real crash-recovery folder
+    — an autosave written by pytest would haunt their next app start.
+    Point every test run at a temp directory and restore after."""
+    from PySide6.QtCore import QSettings
+    s = QSettings()
+    key = "paths/recovery_dir"
+    saved = s.value(key, None)
+    import shutil
+    import tempfile
+    d = tempfile.mkdtemp(prefix="tracer-recovery-")
+    s.setValue(key, d)
+    s.sync()
+    yield d
+    if saved is None:
+        s.remove(key)
+    else:
+        s.setValue(key, saved)
+    s.sync()
+    shutil.rmtree(d, ignore_errors=True)
+
+
 @pytest.fixture(autouse=True)
 def _no_real_command_dialogs(monkeypatch):
     """Hangs happen silently when an unpatched flow reaches a real modal

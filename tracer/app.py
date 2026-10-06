@@ -17,6 +17,7 @@ def main() -> int:
     win = MainWindow()
     win.show()
     win.maybe_show_tour()
+    win.maybe_recover()
     return app.exec()
 
 
