@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M58**
+**Status: M59**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -90,7 +90,7 @@ independent project with no Autodesk assets or affiliation.)
   a playhead timeline of icon chips, and a blue-grey horizon viewport —
   plus first-launch shortcut tour and a persistent Shortcuts tab driven by
   one canonical key table
-- 636 headless tests (EGL rendering + Qt pixel assertions)
+- 640 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -102,7 +102,9 @@ python3 -m venv .venv
 
 ## Using it
 
-3D: **click a face** to select · **drag a face** to Press-Pull (+Esc to
+3D: **click a face** to select (whole faces; **Ctrl+click** adds/
+removes; rubber band left→right windows, right→left crosses,
+Ctrl+drag adds) · **drag a face** to Press-Pull (+Esc to
 cancel, release to commit) · **double-click a face** to sketch on it ·
 **Move/Rotate body** spawn a triad — drag an arrow to slide, a ring to
 spin, **Ctrl = copy** (Fusion's Move/Copy) ·
@@ -118,7 +120,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 636 tests, fully headless
+./.venv/bin/python -m pytest -q          # 640 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

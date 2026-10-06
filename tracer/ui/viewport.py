@@ -326,6 +326,7 @@ class Viewport(QWidget):
             return
         self._last = ev.position().toPoint()
         self._buttons |= ev.button()
+        self._ctrl_at_press = bool(ev.modifiers() & Qt.ControlModifier)
         self._dragged = False
         self._pp = None
         self._pp_drag = False
@@ -365,11 +366,13 @@ class Viewport(QWidget):
                 ev.accept()
                 return
         if ev.button() == Qt.LeftButton and self._tm is not None \
-                and Qt.KeyboardModifier(0) == ev.modifiers() \
+                and ev.modifiers() in (Qt.KeyboardModifier(0),
+                                       Qt.ControlModifier) \
                 and self._mv is None and self._rot is None:
             px, py = ev.position().x(), ev.position().y()
             hit = self._shoot(self._tm, px, py)
-            if hit is not None:
+            if hit is not None \
+                    and not (ev.modifiers() & Qt.ControlModifier):
                 g = self._group(hit[2])
                 n = np.asarray(self._tm.face_normals, float)[g].sum(0)
                 n /= max(float(np.linalg.norm(n)), 1e-12)
@@ -381,6 +384,7 @@ class Viewport(QWidget):
             else:
                 self._box = [ev.position().toPoint(),
                              ev.position().toPoint()]
+                self._box_add = bool(ev.modifiers() & Qt.ControlModifier)
         if self._hover:
             self._hover = None                       # no wash while dragging
             self._apply_hi()
@@ -485,11 +489,13 @@ class Viewport(QWidget):
             return
         if (ev.button() == Qt.LeftButton
                 and not getattr(self, "_dragged", True)):
-            self._click_select(ev.position())       # Fusion: pick a face
+            self._click_select(ev.position(),       # Fusion: pick a face
+                               ctrl=getattr(self, "_ctrl_at_press", False))
         if ev.button() == Qt.LeftButton and getattr(self, "_box_drag", False):
             p0, p1 = self._box
             self._box, self._box_drag = None, False
-            self._select_box(p0, p1)
+            self._select_box(p0, p1,
+                             add=getattr(self, "_box_add", False))
         elif ev.button() == Qt.LeftButton and getattr(self, "_pp_drag", False):
             self.press_pull.emit({**self._pp, "live": False})
             self.unsetCursor()
@@ -584,26 +590,31 @@ class Viewport(QWidget):
             self._hover = faces
             self._apply_hi()
 
-    def _click_select(self, pos):
+    def _click_select(self, pos, ctrl: bool = False):
         if self._tm is None:
             return
         hit = self._shoot(self._tm, pos.x(), pos.y())
         if hit is None:
-            if self._sel:
+            if not ctrl and self._sel:
                 self._sel = []
                 self._apply_hi()
                 self.selection_changed.emit(0)
             return
         faces = self._group(hit[2])
-        if faces[0] in self._sel:
-            kill = set(faces)
-            self._sel = [f for f in self._sel if f not in kill]
+        if ctrl:
+            # Fusion: Ctrl+click toggles this face in/out of the set
+            if faces[0] in self._sel:
+                kill = set(faces)
+                self._sel = [f for f in self._sel if f not in kill]
+            else:
+                self._sel += [f for f in faces if f not in self._sel]
         else:
-            self._sel += [f for f in faces if f not in self._sel]
+            # Fusion: a plain click REPLACES the selection
+            self._sel = list(faces)
         self._apply_hi()
         self.selection_changed.emit(len(self.selected_groups()))
 
-    def _select_box(self, p0, p1):
+    def _select_box(self, p0, p1, add: bool = False):
         """Fusion's rubber-band gestures: drag left→right is a WINDOW
         (faces whose triangles all land inside), right→left is CROSSING
         (faces whose silhouette the box touches).  Whole logical faces
@@ -633,10 +644,13 @@ class Viewport(QWidget):
             pick = ((tx.min(axis=1) <= x1) & (tx.max(axis=1) >= x0)
                     & (ty.min(axis=1) <= y1) & (ty.max(axis=1) >= y0))
             pick &= fin[tri].all(axis=1)
-        self._sel = []
+        if not add:
+            self._sel = []
         if self._gid is not None and pick.any():
             for g in np.unique(self._gid[pick]):
-                self._sel.extend(np.flatnonzero(self._gid == g).tolist())
+                self._sel.extend(f for f in
+                                 np.flatnonzero(self._gid == g).tolist()
+                                 if f not in self._sel)
         self._hover = None
         self._apply_hi()
         self.selection_changed.emit(len(self.selected_groups()))

@@ -187,7 +187,7 @@ class PropertiesPanel(QWidget):
             f"<b>Body</b><br>volume: {volume:,.1f} mm³<br>"
             f"surface area: {area:,.1f} mm²<br>"
             "<span style='color:#767e8a'>click a face to measure it; "
-            "click two to measure between</span>")
+            "ctrl+click to measure between</span>")
 
     def show_feature(self, feature):
         if feature is None:

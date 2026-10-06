@@ -198,6 +198,14 @@ QSettings-backed), the submenu lists only files that still exist with
 full paths as tooltips, and Clear forgets everything.  Menu order now
 matches Fusion: New · Open · Open Recent · Save · Save As.
 
+**M59 — Selection grammar.** ✓ SHIPPED.  Fusion-exact on real faces:
+a plain click REPLACES the selection (whole logical faces), Ctrl+click
+toggles faces in and out of the set, Ctrl+click empty ground changes
+nothing, plain click empty clears, and a Ctrl+drag rubber band ADDS to
+the set (left→right still windows, right→left still crosses).  Measure
+now follows Fusion: click one face to read it, Ctrl+click a second to
+read between.
+
 **Later candidates (researched, deferred):** Patch/Thicken
 (surface kernel gap), Draft, Combine/multi-browser-bodies,
 configurations, assemblies/joints, sheet metal, drawings.
