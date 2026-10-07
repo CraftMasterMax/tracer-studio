@@ -3569,7 +3569,7 @@ class MainWindow(QMainWindow):
         for p in sorted(self._recovery_dir().glob("*.autosave.tracer"),
                         key=lambda q: q.stat().st_mtime, reverse=True):
             try:
-                data = json.loads(p.read_text())
+                data = fio.load_json(p)
             except Exception:
                 p.unlink(missing_ok=True)
                 continue
@@ -3713,7 +3713,7 @@ class MainWindow(QMainWindow):
             return False
         p = files[0]
         try:
-            payload = json.loads(p.read_text())
+            payload = fio.load_json(p)
             doc = Document.from_dict(payload["doc"])
             doc.recompute()
         except Exception:
