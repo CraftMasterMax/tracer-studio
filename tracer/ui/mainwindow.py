@@ -2618,14 +2618,18 @@ class MainWindow(QMainWindow):
                 f"{len(hits)} clashing pair(s) — largest "
                 f"{hits[0]['volume']:,.1f} mm³", 5000)
             return
-        from ..core.appearance import appearance
         self._capture()
         made = []
-        for h in hits:
+        clash_red = {"name": "Clash", "color": [0.95, 0.10, 0.12],
+                     "opacity": 1.0}          # brighter than Anodized red:
+        for h in hits:                        # xray dims everything 0.35
             b, _f = self.doc.add_interference(h["a"], h["b"])
-            self.doc.set_body_appearance(b["name"],
-                                         appearance("Anodized red", 1.0))
+            self.doc.set_body_appearance(b["name"], clash_red)
             made.append(b["name"])
+        # The lens lives INSIDE the union: X-ray reveals the clash seam
+        # through the parents (the red solid itself stays depth-shielded
+        # until you hide one in the browser — hence the hint below).
+        self._renderer.set_visual_style("xray")   # idempotent
         self.recompute()
         self.viewport.refresh()
         logservice.info("Interference: " + "; ".join(
@@ -2633,7 +2637,8 @@ class MainWindow(QMainWindow):
             source="interference")
         self.status.showMessage(
             f"{len(made)} interference bod{'y' if len(made) == 1 else 'ies'}"
-            f" created — live: move a body and the clash re-solves", 6000)
+            f" created — hide a parent in the browser to see the red "
+            f"clash; move a body and it re-solves", 8000)
 
     def action_mass_properties(self):
         """Fusion's Inspect ▸ Mass Properties (M71): volume, surface
