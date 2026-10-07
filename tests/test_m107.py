@@ -45,7 +45,17 @@ def test_clearance_spot_values_are_iso_273():
     assert F.clearance("M3", "medium") == pytest.approx(3.4)
     assert F.clearance("M8", "medium") == pytest.approx(9.0)
     assert F.clearance("M3", "close") == pytest.approx(3.2)
-    assert F.clearance("M4", "coarse") == pytest.approx(4.6)
+    assert F.clearance("M4", "coarse") == pytest.approx(4.8)
+
+
+def test_clearance_folklore_cells_stay_corrected():
+    """iso273_washers_verify.md (2026-10-07): seven cells had drifted
+    into shop-table folklore (nominal+0.1 style).  Official ISO 273:1979
+    preview PDF says otherwise; these pins keep it honest."""
+    assert F.CLEARANCE["M4"] == (4.3, 4.5, 4.8)     # was 4.1/4.3/4.6
+    assert F.CLEARANCE["M5"] == (5.3, 5.5, 5.8)     # was 5.1/5.3
+    assert F.CLEARANCE["M6"][2] == 7.0              # was 7.1
+    assert F.CLEARANCE["M8"][2] == 10.0             # was 9.5
 
 
 def test_tap_and_pitch_come_from_the_thread_table():
@@ -83,14 +93,14 @@ def test_insert_drills_match_2026_source_sweep():
 
 def test_hole_for_bundles_each_kind():
     cl = F.hole_for("M4", "clearance")
-    assert cl["drill"] == pytest.approx(4.3) and cl["type"] == "simple"
+    assert cl["drill"] == pytest.approx(4.5) and cl["type"] == "simple"
     assert cl["thread"] == "None" and cl["cb_dia"] == 0.0
 
     tp = F.hole_for("M4", "tapped")
     assert tp["drill"] is None and tp["thread"] == "M4"  # tap path drives it
 
     sh = F.hole_for("M5", "socket head")
-    assert sh["drill"] == pytest.approx(5.3)
+    assert sh["drill"] == pytest.approx(5.5)
     assert sh["type"] == "counterbore"
     assert sh["cb_dia"] == pytest.approx(9.0)
     assert sh["cb_depth"] == pytest.approx(5.2)
@@ -168,7 +178,7 @@ def test_dialog_clearance_fills_the_drill(qapp):
     dlg.size.setCurrentText("M4")
     dlg.std.setCurrentText("Clearance")
     v = dlg.values()
-    assert v["drill"] == pytest.approx(4.3)
+    assert v["drill"] == pytest.approx(4.5)
     assert v["type"] == "simple" and v["thread"] == "None"
 
 
@@ -177,7 +187,7 @@ def test_dialog_socket_head_fills_counterbore(qapp):
     dlg.size.setCurrentText("M5")
     dlg.std.setCurrentText("Socket head (cbore)")
     v = dlg.values()
-    assert v["drill"] == pytest.approx(5.3)
+    assert v["drill"] == pytest.approx(5.5)
     assert v["type"] == "counterbore"
     assert v["cb_dia"] == pytest.approx(9.0)
     assert v["cb_depth"] == pytest.approx(5.2)
@@ -238,12 +248,12 @@ def test_action_hole_socket_head_cuts_clearance_plus_cbore(win, qapp,
     _plate_with_circle(win, qapp, r=4.0)
     monkeypatch.setattr(
         HoleDialog, "ask",
-        staticmethod(lambda p, d: _opts(type="counterbore", drill=5.3,
+        staticmethod(lambda p, d: _opts(type="counterbore", drill=5.5,
                                         cb_dia=9.0, cb_depth=5.2, depth=12.0)))
     win.action_hole()
     qapp.processEvents()
     hf = [f for f in win.doc.features if isinstance(f, HoleFeature)][0]
-    assert hf.radius == pytest.approx(2.65)       # M5 clearance / 2
+    assert hf.radius == pytest.approx(2.75)       # M5 clearance / 2
     assert hf.cb_radius == pytest.approx(4.5)     # Ø9 cbore / 2
     assert hf.cb_depth == pytest.approx(5.2)
     assert win.doc.result.to_trimesh().is_watertight

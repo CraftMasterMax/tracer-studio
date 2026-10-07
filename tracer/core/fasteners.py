@@ -14,10 +14,10 @@ auditable.  Thread pitch + tap drill are reused verbatim from
 ``thread.ISO_COARSE`` (the tap path already trusts those figures).
 
 Sources (nominal dimensions, mm) — re-keyed by hand, never copied:
-  * Clearance holes — the canonical EN ISO 273 close/medium/coarse set.
-    NOT independently verified this file (no free ISO 273 reprint was
-    reachable 2026-10-07); supplier columns corroborate most cells but
-    are *recommendations*, so treat as [?] pending a checked copy.
+  * Clearance holes — EN ISO 273 close/medium/coarse (H12/H13/H14).
+    ✓✓ VERIFIED 2026-10-07 against the official ISO 273:1979 preview
+    PDF plus three reprints; 7 shop-folklore cells corrected in the
+    sweep (see the CLEARANCE table notes).
   * Tapped holes    — ISO 261 pitch (✓✓ verified), ISO 724 tap drill
     (✓✓ verified vs four charts) via ISO_COARSE.
   * Socket head cap screws (SHCS) — DIN 912 / ISO 4762 head Ø + height
@@ -36,11 +36,17 @@ SIZES = tuple(ISO_COARSE)                     # M3..M12
 
 # ISO 273 clearance-hole diameters: size -> (close, medium, coarse)
 CLEARANCE = {
+    # EN ISO 273:1979 (fine/H12, medium/H13, coarse/H14) — verified
+    # 2026-10-07 cell-by-cell against the official ISO preview PDF
+    # (text layer + OCR) and three independent reprints
+    # [iso273_washers_verify.md].  Seven cells were corrected: the old
+    # M4/M5 close-medium pairs and coarse M6/M8 were shop-table
+    # folklore (nominal+0.1 style), not the standard.
     "M3":  (3.2, 3.4, 3.6),
-    "M4":  (4.1, 4.3, 4.6),
-    "M5":  (5.1, 5.3, 5.8),
-    "M6":  (6.4, 6.6, 7.1),
-    "M8":  (8.4, 9.0, 9.5),
+    "M4":  (4.3, 4.5, 4.8),      # was 4.1 / 4.3 / 4.6
+    "M5":  (5.3, 5.5, 5.8),      # was 5.1 / 5.3 / 5.8
+    "M6":  (6.4, 6.6, 7.0),      # was 6.4 / 6.6 / 7.1
+    "M8":  (8.4, 9.0, 10.0),     # was 8.4 / 9.0 / 9.5
     "M10": (10.5, 11.0, 12.0),
     "M12": (13.0, 13.5, 14.5),
 }
