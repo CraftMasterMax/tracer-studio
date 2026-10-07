@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M125**
+**Status: M126**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -84,7 +84,17 @@ independent project with no Autodesk assets or affiliation.)
   center" stays the default), mirrors sweep across any construction
   plane, and deleting a referenced datum warns naming every dependent
   feature — proceed anyway and the M118 red badge tells, never a raw
-  exception**
+  exception**,
+  **transform lattice (M126): geometric pattern = step transforms
+  (translate + rotate about a named axis + scale about a base point)
+  raised to grid indices across two directions — named work axes drive
+  the rails and the pivot (the M125 datum store earns its keep), so
+  shrinking rotated spirals and oblique grids share one dialog; scale
+  is its N=1 degenerate (uniform or per-axis, negative factors mirror
+  for left-hand twins); refusals stay honest (a zero factor collapses
+  nothing, 4096-copy lattices bounce), Change Parameters round-trips
+  every lever, and lattice/scale features register in the
+  datum_references ledger so the delete-warning still catches them**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -265,7 +275,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1339 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1355 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

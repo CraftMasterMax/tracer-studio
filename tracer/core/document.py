@@ -43,6 +43,43 @@ def _rot_about_line(origin, direction, theta) -> np.ndarray:
     return m
 
 
+def _trans(vec) -> np.ndarray:
+    m = np.eye(4)
+    m[:3, 3] = np.asarray(vec, float)
+    return m
+
+
+def _scale_about(origin, factors) -> np.ndarray:
+    """4x4 anisotropic scale about a base point; a scalar factor
+    broadcasts to all three axes."""
+    k = np.asarray(factors, float)
+    if k.shape == ():
+        k = np.repeat(float(k), 3)
+    o = np.asarray(origin, float)
+    m = np.eye(4)
+    m[0, 0], m[1, 1], m[2, 2] = k
+    m[:3, 3] = o - k * o
+    return m
+
+
+def _lattice_step(feat, doc, idx) -> np.ndarray:
+    """Copy transform of a geometric-pattern lattice at grid index
+    (i, j): the step (T·R·S) of direction 1 raised to i, composed with
+    direction 2's raised to j — a true spiral once rotation or per-step
+    scale is nonzero, an oblique grid when they are not."""
+    ao, ad = doc.axis_frame(feat.axis or "Z")
+
+    def one(dref, t, r, k):
+        return (_trans(doc._dir(dref) * float(t))
+                @ _rot_about_line(ao, ad, math.radians(float(r)))
+                @ _scale_about(feat.base, [float(k)] * 3))
+
+    i, j = idx
+    return (np.linalg.matrix_power(one(feat.d1, feat.t1, feat.r1, feat.k1), i)
+            @ np.linalg.matrix_power(one(feat.d2, feat.t2, feat.r2,
+                                         feat.k2), j))
+
+
 @dataclass
 class Feature:
     name: str
@@ -150,6 +187,42 @@ class MirrorFeature(Feature):
     source_uid: str = ""
     plane: str = "YZ"
     offset: float = 0.0
+
+
+@dataclass
+class GeometricPatternFeature(Feature):
+    """Copies of the source solid on a T·R·S lattice (M126): two
+    independent step transforms — each translate + rotate about a named
+    axis + scale about the base point — raised to the copy's index, so
+    Fusion's geometric pattern (the spiral of shrinking copies) needs
+    no face identity, only frames. Directions and pivot accept NAMED
+    datums (an axis name resolves to its line) or raw vectors.
+    n2=1 gives the single-direction lattice."""
+    source_uid: str = ""
+    axis: str = "Z"                  # rotation/scale pivot (named datum)
+    base: tuple = (0.0, 0.0, 0.0)    # translate/scale anchor ("base point")
+    d1: object = (1.0, 0.0, 0.0)     # vector or named axis
+    n1: int = 3
+    t1: float = 10.0                 # mm per step along d1
+    r1: float = 0.0                  # degrees per step about `axis`
+    k1: float = 1.0                  # scale factor per step (> 0)
+    d2: object = (0.0, 1.0, 0.0)
+    n2: int = 1
+    t2: float = 0.0
+    r2: float = 0.0
+    k2: float = 1.0
+    MAX_COPIES = 4096
+
+
+@dataclass
+class ScaleFeature(Feature):
+    """Resize one solid about a base point (M126) — the N=1 degenerate
+    of the geometric-pattern lattice: uniform k or per-axis (kx,ky,kz).
+    A negative factor mirrors too; the mesh round-trip fixes winding.
+    Inherits the source's op, like mirror."""
+    source_uid: str = ""
+    base: tuple = (0.0, 0.0, 0.0)
+    factors: tuple = (1.0, 1.0, 1.0)
 
 
 @dataclass
@@ -1136,7 +1209,22 @@ class Document:
                 out.append(f.name)
             elif isinstance(f, CircularPatternFeature) and f.axis == name:
                 out.append(f.name)
+            elif isinstance(f, GeometricPatternFeature) and \
+                    name in (f.axis, f.d1, f.d2):
+                out.append(f.name)      # pivot or either lattice rail
         return out
+
+    def _dir(self, ref) -> np.ndarray:
+        """Lattice direction (M126): a string resolves through the axis
+        store ("X"/"Y"/"Z" or a work axis); anything else must be a
+        non-zero literal vector."""
+        if isinstance(ref, str):
+            return np.asarray(self.axis_frame(ref)[1], float)
+        v = np.asarray(ref, float)
+        n = float(np.linalg.norm(v))
+        if n < 1e-12:
+            raise params.ParamError("pattern direction cannot be zero")
+        return v / n
 
     def axis_frame(self, ref: str):
         """(origin, dir) for X/Y/Z or a stored work axis."""
@@ -1259,6 +1347,31 @@ class Document:
             name=name, op=op or source.op, source_uid=source.uid,
             plane=plane, offset=float(offset)))
 
+    def add_geometric_pattern(self, name, source: Feature, *, axis="Z",
+                              base=(0.0, 0.0, 0.0), d1=(1.0, 0.0, 0.0),
+                              n1=3, t1=10.0, r1=0.0, k1=1.0,
+                              d2=(0.0, 1.0, 0.0), n2=1, t2=0.0, r2=0.0,
+                              k2=1.0, op=None):
+        return self.add(GeometricPatternFeature(
+            name=name, op=op or source.op, source_uid=source.uid,
+            axis=axis, base=tuple(float(v) for v in base),
+            d1=d1 if isinstance(d1, str) else
+            tuple(float(v) for v in d1),
+            n1=int(n1), t1=float(t1), r1=float(r1), k1=float(k1),
+            d2=d2 if isinstance(d2, str) else
+            tuple(float(v) for v in d2),
+            n2=int(n2), t2=float(t2), r2=float(r2), k2=float(k2)))
+
+    def add_scale(self, name, source: Feature, base=(0.0, 0.0, 0.0),
+                  factors=1.0, op=None):
+        k = np.asarray(factors, float)
+        if k.shape == ():
+            k = np.repeat(float(k), 3)
+        return self.add(ScaleFeature(
+            name=name, op=op or source.op, source_uid=source.uid,
+            base=tuple(float(v) for v in base),
+            factors=tuple(float(v) for v in k)))
+
     @staticmethod
     def _rotz_about(cx, cy, t) -> "np.ndarray":
         c, s = np.cos(t), np.sin(t)
@@ -1375,6 +1488,36 @@ class Document:
                 shift = tuple(p0[i] + n[i] * f.offset for i in range(3))
                 solid = src.translated((-shift[0], -shift[1], -shift[2])) \
                             .mirror(n).translated(shift)
+            elif isinstance(f, GeometricPatternFeature):
+                src = by_uid.get(f.source_uid)
+                if src is None:
+                    continue
+                n1, n2 = int(f.n1), int(f.n2)
+                if n1 < 1 or n2 < 1:
+                    raise params.ParamError("lattice counts must be >= 1")
+                if n1 * n2 > f.MAX_COPIES:
+                    raise params.ParamError(
+                        f"lattice of {n1}x{n2} exceeds {f.MAX_COPIES} "
+                        "copies")
+                if float(f.k1) <= 0 or float(f.k2) <= 0:
+                    raise params.ParamError(
+                        "lattice step factors must be positive")
+                solid = Solid.batch_union(
+                    [src.transformed(_lattice_step(f, self, m))
+                     for m in ((i, j) for i in range(n1)
+                               for j in range(n2))])
+            elif isinstance(f, ScaleFeature):
+                src = by_uid.get(f.source_uid)
+                if src is None:
+                    continue
+                k = np.asarray(f.factors, float)
+                if k.shape == ():
+                    k = np.repeat(float(k), 3)
+                if k.size != 3:
+                    raise params.ParamError("scale wants 1 or 3 factors")
+                if not np.all(k):
+                    raise params.ParamError("scale factors cannot be zero")
+                solid = src.transformed(_scale_about(f.base, k))
             elif isinstance(f, InterferenceFeature):
                 # a clash AS A BODY: intersect two source streams exactly
                 # as their users see them — placement state included.
@@ -1516,6 +1659,21 @@ class Document:
             elif isinstance(f, MirrorFeature):
                 d.update(source_uid=f.source_uid, plane=f.plane,
                          offset=float(f.offset))
+            elif isinstance(f, GeometricPatternFeature):
+                d.update(source_uid=f.source_uid, axis=f.axis,
+                         base=list(map(float, f.base)),
+                         d1=f.d1 if isinstance(f.d1, str)
+                         else list(map(float, f.d1)),
+                         n1=int(f.n1), t1=float(f.t1), r1=float(f.r1),
+                         k1=float(f.k1),
+                         d2=f.d2 if isinstance(f.d2, str)
+                         else list(map(float, f.d2)),
+                         n2=int(f.n2), t2=float(f.t2), r2=float(f.r2),
+                         k2=float(f.k2))
+            elif isinstance(f, ScaleFeature):
+                d.update(source_uid=f.source_uid,
+                         base=list(map(float, f.base)),
+                         factors=list(map(float, f.factors)))
             elif isinstance(f, BodyFilletFeature):
                 d.update(radius=float(f.radius), chamfer=bool(f.chamfer),
                          n_rims=int(f.n_rims), src_key=f.src_key,
@@ -1678,6 +1836,24 @@ class Document:
                 doc.features.append(MirrorFeature(
                     name=fd["name"], source_uid=fd["source_uid"],
                     plane=fd["plane"], offset=float(fd["offset"]), **base))
+            elif t == "GeometricPatternFeature":
+                doc.features.append(GeometricPatternFeature(
+                    name=fd["name"], source_uid=fd["source_uid"],
+                    axis=fd.get("axis", "Z"),
+                    base=tuple(fd.get("base", (0.0, 0.0, 0.0))),
+                    d1=fd["d1"] if isinstance(fd["d1"], str)
+                    else tuple(map(float, fd["d1"])),
+                    n1=int(fd["n1"]), t1=float(fd["t1"]),
+                    r1=float(fd["r1"]), k1=float(fd["k1"]),
+                    d2=fd["d2"] if isinstance(fd["d2"], str)
+                    else tuple(map(float, fd["d2"])),
+                    n2=int(fd["n2"]), t2=float(fd["t2"]),
+                    r2=float(fd["r2"]), k2=float(fd["k2"]), **base))
+            elif t == "ScaleFeature":
+                doc.features.append(ScaleFeature(
+                    name=fd["name"], source_uid=fd["source_uid"],
+                    base=tuple(fd.get("base", (0.0, 0.0, 0.0))),
+                    factors=tuple(fd["factors"]), **base))
             elif t == "LoftFeature":
                 doc.features.append(LoftFeature(
                     name=fd["name"], closed=bool(fd.get("closed", False)),

@@ -91,7 +91,7 @@ def test_design_panel_groups_follow_fusion_order(win):
             "New body", "Text",                                    # M104
             "Hole", "Interlock",                                   # M121
             "Rectangular pattern", "Circular pattern", "Mirror",
-            "Pattern on path",
+            "Pattern on path", "Geometric pattern", "Scale",
             "Fillet", "Shell", "Thread", "Split body", "Move body",
             "Rotate body", "Combine body",
             "Construction plane", "Work axis", "Section analysis",

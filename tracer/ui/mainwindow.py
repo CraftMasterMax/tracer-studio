@@ -27,10 +27,12 @@ from ..core import step
 from ..core.thread import ISO_COARSE
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              CombineFeature,
-                             Document, ExtrudeFeature, HoleFeature,
+                             Document, ExtrudeFeature, GeometricPatternFeature,
+                             HoleFeature,
                              ImportedFeature, LinearPatternFeature,
                              LoftFeature, MirrorFeature, MoveFeature,
                              PathPatternFeature, RotateFeature,
+                             ScaleFeature,
                              PrimitiveFeature,
                              RevolveFeature, ShellFeature, SplitFeature,
                              SweepFeature,
@@ -378,6 +380,10 @@ class MainWindow(QMainWindow):
           lambda checked=False: self.action_mirror())
         d("ppattern", "Pattern on path — copies walking a sketch path",
           lambda checked=False: self.action_path_pattern())
+        d("geopattern", "Geometric pattern — T·R·S lattice of copies",
+          lambda checked=False: self.action_geometric_pattern())
+        d("scale", "Scale — resize a feature about a base point",
+          lambda checked=False: self.action_scale())
         r.design_sep()
         d("fillet", "Fillet — round every sharp edge of the body",
           menu_actions=[self.act_fillet, self.act_chamfer, self.act_shell])
@@ -908,7 +914,14 @@ class MainWindow(QMainWindow):
         lab = units.LABEL[u]
         fld = []
 
-        def dbl(key, label, mm, dec=2, mn=0.0, ang=False):
+        def dbl(key, label, mm, dec=2, mn=0.0, ang=False, plain=False):
+            if plain:                 # dimensionless factor: no unit story
+                spec = dict(key=key, kind="double", decimals=dec,
+                            label=label, default=float(mm))
+                if mn is not None:
+                    spec["min"] = mn
+                fld.append(spec)
+                return
             spec = dict(key=key, kind="double", decimals=dec,
                         label=f"{label} ({'\u00b0' if ang else lab})")
             spec["default"] = float(mm) if ang else round(mm / sc, 6)
@@ -977,6 +990,21 @@ class MainWindow(QMainWindow):
             dbl("angle", "angle", feature.angle, dec=1, mn=1.0, ang=True)
         elif isinstance(feature, PathPatternFeature):
             ints("count", "occurrences", feature.count)
+        elif isinstance(feature, GeometricPatternFeature):
+            ints("n1", "count 1", feature.n1, mn=1)
+            ints("n2", "count 2", feature.n2, mn=1)
+            dbl("t1", "translate 1", feature.t1, mn=None)
+            dbl("t2", "translate 2", feature.t2, mn=None)
+            dbl("r1", "rotate 1", feature.r1, dec=1, mn=None, ang=True)
+            dbl("r2", "rotate 2", feature.r2, dec=1, mn=None, ang=True)
+            dbl("k1", "scale per step 1", feature.k1, dec=3, mn=0.01,
+                plain=True)
+            dbl("k2", "scale per step 2", feature.k2, dec=3, mn=0.01,
+                plain=True)
+        elif isinstance(feature, ScaleFeature):
+            for i, axl in enumerate("XYZ"):
+                dbl(f"k{i}", f"factor {axl}", feature.factors[i], dec=3,
+                    mn=None, plain=True)
         elif isinstance(feature, MirrorFeature):
             combo("plane", "mirror plane", ("YZ", "XZ", "XY"),
                   feature.plane)
@@ -1077,6 +1105,13 @@ class MainWindow(QMainWindow):
             feature.angle = float(v["angle"])
         elif isinstance(feature, PathPatternFeature):
             feature.count = int(v["count"])
+        elif isinstance(feature, GeometricPatternFeature):
+            feature.n1, feature.n2 = int(v["n1"]), int(v["n2"])
+            feature.t1, feature.t2 = mm("t1"), mm("t2")
+            feature.r1, feature.r2 = float(v["r1"]), float(v["r2"])
+            feature.k1, feature.k2 = float(v["k1"]), float(v["k2"])
+        elif isinstance(feature, ScaleFeature):
+            feature.factors = tuple(float(v[f"k{i}"]) for i in range(3))
         elif isinstance(feature, MirrorFeature):
             feature.plane = str(v["plane"])
             feature.offset = mm("offset")
@@ -4543,6 +4578,8 @@ class MainWindow(QMainWindow):
         return [f for f in self.doc.features
                 if not isinstance(f, (LinearPatternFeature,
                                       CircularPatternFeature,
+                                      GeometricPatternFeature,
+                                      ScaleFeature,
                                       PathPatternFeature,
                                       BodyFilletFeature))
                 and not f.suppressed]
@@ -4712,6 +4749,128 @@ class MainWindow(QMainWindow):
         self.viewport.refresh(fit=True)
         self.status.showMessage(
             f"Mirrored {src.name} across {plane} @ {off:g} mm", 6000)
+
+    def action_geometric_pattern(self):
+        """Fusion's Geometric Pattern (M126): a T·R·S lattice — two step
+        transforms, each translate + rotate about a named axis + scale
+        about a base point, raised to grid indices. Directions and the
+        pivot are NAMES when the datum store should drive them (M125);
+        count 2 = 1 keeps it a single-direction spiral."""
+        if self.doc is None:
+            return
+        cands = self._pattern_candidates()
+        if not cands:
+            QMessageBox.information(self, "Nothing to pattern",
+                                    "Create a feature first.")
+            return
+        names = [f.name for f in cands]
+        dirs = ["X", "Y", "Z"] + [a["name"] for a in self.doc.axes]
+        v = cmddialog.ask(self, "Geometric Pattern", [
+            dict(key="src", label="Feature to pattern", kind="combo",
+                 choices=names, group="Object"),
+            dict(key="axis", label="Rotate / scale about", kind="combo",
+                 choices=dirs, default="Z", group="Pivot"),
+            dict(key="base", label="Base point", kind="text",
+                 default="0,0,0", group="Pivot"),
+            dict(key="d1", label="Direction 1", kind="combo",
+                 choices=dirs, default="X", group="First step"),
+            dict(key="n1", label="Count", kind="int", default=4, min=1,
+                 max=64, group="First step"),
+            dict(key="t1", label="Translate per step", kind="double",
+                 default=8.0, min=-1e5, max=1e5, group="First step"),
+            dict(key="r1", label="Rotate per step", kind="double",
+                 default=0.0, min=-359.9, max=359.9, suffix="°",
+                 group="First step"),
+            dict(key="k1", label="Scale per step", kind="double",
+                 default=1.0, min=0.01, max=100.0, group="First step"),
+            dict(key="d2", label="Direction 2", kind="combo",
+                 choices=dirs, default="Y", group="Second step"),
+            dict(key="n2", label="Count", kind="int", default=1, min=1,
+                 max=64, group="Second step"),
+            dict(key="t2", label="Translate per step", kind="double",
+                 default=0.0, min=-1e5, max=1e5, group="Second step"),
+            dict(key="r2", label="Rotate per step", kind="double",
+                 default=0.0, min=-359.9, max=359.9, suffix="°",
+                 group="Second step"),
+            dict(key="k2", label="Scale per step", kind="double",
+                 default=1.0, min=0.01, max=100.0, group="Second step"),
+        ], remember_key="geometric_pattern")
+        if v is None:
+            return
+        src = cands[names.index(v["src"])]
+        try:
+            base = self._pt(v["base"])
+        except params.ParamError as exc:
+            self.status.showMessage(f"Lattice refused: {exc}", 6000)
+            return
+        self._capture()
+        self.doc.add_geometric_pattern(
+            f"Lattice of {src.name}", src, axis=v["axis"], base=base,
+            d1=v["d1"], n1=v["n1"], t1=v["t1"], r1=v["r1"], k1=v["k1"],
+            d2=v["d2"], n2=v["n2"], t2=v["t2"], r2=v["r2"], k2=v["k2"])
+        self.recompute()
+        self.viewport.refresh(fit=True)
+        span = (f"{v['n1']}x{v['n2']} along {v['d1']} x {v['d2']}"
+                if v["n2"] > 1 else f"{v['n1']} along {v['d1']}")
+        twist = "" if not (v["r1"] or v["k1"] != 1) else \
+            " (spiral: rotated/shrinking per step)"
+        self.status.showMessage(
+            f"Patterned {src.name}: lattice of {span}{twist} about "
+            f"{v['axis']}", 6000)
+
+    def action_scale(self):
+        """Fusion's Scale (M126): resize one feature's solid about a
+        base point — uniform or per axis; a negative factor mirrors
+        that axis (left-hand parts from right-hand models)."""
+        if self.doc is None:
+            return
+        cands = self._pattern_candidates()
+        if not cands:
+            QMessageBox.information(self, "Nothing to scale",
+                                    "Create a feature first.")
+            return
+        names = [f.name for f in cands]
+        v = cmddialog.ask(self, "Scale", [
+            dict(key="src", label="Feature to scale", kind="combo",
+                 choices=names, group="Object"),
+            dict(key="base", label="Base point", kind="text",
+                 default="0,0,0", group="Frame"),
+            dict(key="mode", label="Mode", kind="combo",
+                 choices=("Uniform", "Per axis"), group="Size"),
+            dict(key="k", label="Uniform factor", kind="double",
+                 default=1.5, min=-1000.0, max=1000.0, group="Size"),
+            dict(key="kx", label="Factor X", kind="double", default=1.0,
+                 min=-1000.0, max=1000.0, group="Size"),
+            dict(key="ky", label="Factor Y", kind="double", default=1.0,
+                 min=-1000.0, max=1000.0, group="Size"),
+            dict(key="kz", label="Factor Z", kind="double", default=1.0,
+                 min=-1000.0, max=1000.0, group="Size"),
+        ], remember_key="scale")
+        if v is None:
+            return
+        src = cands[names.index(v["src"])]
+        try:
+            base = self._pt(v["base"])
+        except params.ParamError as exc:
+            self.status.showMessage(f"Scale refused: {exc}", 6000)
+            return
+        if v["mode"].startswith("Uniform"):
+            factors = (v["k"],) * 3
+        else:
+            factors = (v["kx"], v["ky"], v["kz"])
+        if not all(factors):
+            self.status.showMessage(
+                "Scale refused: a factor of 0 collapses the solid", 6000)
+            return
+        self._capture()
+        self.doc.add_scale(f"Scaled {src.name}", src, base=base,
+                           factors=factors)
+        self.recompute()
+        self.viewport.refresh(fit=True)
+        self.status.showMessage(
+            f"Scaled {src.name} by "
+            f"{'x'.join(f'{f:g}' for f in factors)} about ({v['base']})",
+            6000)
 
     def action_mirror(self):
         if self.doc is None:

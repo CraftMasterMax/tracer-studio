@@ -276,6 +276,26 @@ def _axis(p: QPainter):
     p.drawLine(QPointF(19, 13), QPointF(23, 18))
 
 
+def _geopattern(p: QPainter):
+    """Geometric pattern: squares shrinking along a receding diagonal."""
+    p.drawRect(QRectF(3, 19, 9, 9))
+    p.drawRect(QRectF(14, 15, 6, 6))
+    p.drawRect(QRectF(22, 12, 4, 4))
+    p.setPen(QPen(_COL, 1.2))
+    p.drawLine(QPointF(27, 10), QPointF(30, 7))
+
+
+def _scale(p: QPainter):
+    """Scale: a small square growing about its base point."""
+    p.drawEllipse(QPointF(5, 26), 1.6, 1.6)
+    p.drawRect(QRectF(4, 20, 5, 5))
+    p.drawRect(QRectF(13, 7, 14, 14))
+    p.setPen(QPen(_COL, 1.2))
+    p.drawLine(QPointF(8, 21), QPointF(12, 17))
+    p.drawLine(QPointF(12, 17), QPointF(9.5, 17))
+    p.drawLine(QPointF(12, 17), QPointF(12, 19.5))
+
+
 def _constrain(p: QPainter):
     """Two lines joined by a link pin: geometry tied together."""
     p.drawLine(QPointF(7, 7), QPointF(7, 25))
@@ -444,7 +464,7 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "circle": _circle, "slot": _slot, "poly": _poly,
               "arc": _arc, "trim": _trim, "offset": _offset,
               "construction": _construction, "plane": _plane,
-              "axis": _axis,
+              "axis": _axis, "geopattern": _geopattern, "scale": _scale,
               "constrain": _constrain, "dimension": _dimension,
               "launcher": _launcher, "section": _section,
               "thread": _thread, "split": _split,

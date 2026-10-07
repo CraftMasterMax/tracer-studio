@@ -1356,16 +1356,18 @@ M125; items 1-11 below are history.*
     the construction colour, solid).
 13. **M126 — transform-lattice batch: geometric pattern + scale**
     [from wave-4 `coil_geometric_pattern.md`, disk-verified 72l/1534w].
-    v1 = GeometricPatternFeature: per-copy T·R·S affine lattice (two
-    directions × counts, per-step rotate/scale), direction references
-    resolved BY NAME through the M125 datum store — that synergy is
-    what ranks it over the two UI ladders from the same wave; boolean-
-    free New-Body mode first, capped Join/Cut second. ScaleFeature =
-    its N=1 degenerate (base point, uniform or xyz, winding fix for
-    negative factors) — same PR, effort 0.4+1.0 per the probe. DEFER:
-    coil-v1 (2–3×; the ring-loft reuses the loft engine + THIS PR's
-    transform util, so it queues right after), feature-level patterns,
-    fill/boundary patterns. Next in rank, both fully probed: browser
+    (v1) SHIPPED — pattern + scale landed as one vertical slice
+    (suite 1355): two-direction (T·R·S)^i lattice with NAMED rails and
+    pivot through the M125 store, base-anchored scale with negative
+    mirror, Change Parameters unit-free for factors, datum_references
+    extended so lattice bindings join the delete warning. A live test
+    caught a real reload bug mid-build (from_dict silently defaulted
+    n2/t2 when the branch was retyped — now pinned with non-defaults).
+    coil-v1 RE-RANKED as M127 (2–3×; ring-loft reuses the loft engine
+    + this PR's transform util). DEFER: feature-level patterns,
+    boundary/fill patterns, spiral-type coil, internal modeled
+    threads (cosmetic-thread story later with drawings).
+    Next in rank, both fully probed: browser
     polish (in-place rename + "(1)" suffix, tree↔canvas cross-
     highlight, isolate/show-all — ladder in `browser_conventions.md`),
     then nav (quaternion named views, turntable + Shift+MBB re-pivot,
