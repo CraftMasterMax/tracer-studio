@@ -89,7 +89,7 @@ def test_design_panel_groups_follow_fusion_order(win):
             tips.append(tip)
     want = ["New sketch", "Extrude", "Sweep", "Loft", "Primitive",
             "New body", "Text",                                    # M104
-            "Hole",
+            "Hole", "Interlock",                                   # M121
             "Rectangular pattern", "Circular pattern", "Mirror",
             "Pattern on path",
             "Fillet", "Shell", "Thread", "Split body", "Move body",
