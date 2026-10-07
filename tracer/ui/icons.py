@@ -10,7 +10,9 @@ from PySide6.QtCore import QPointF, QRectF, Qt, QSize
 from PySide6.QtGui import (QColor, QIcon, QPainter, QPainterPath, QPen,
                            QPixmap, QPolygonF)
 
-_COL = QColor("#e4e8ee")
+from . import theme
+
+_COL = QColor(theme.DARK["fg"])
 
 
 def _pm(draw) -> QPixmap:
@@ -310,7 +312,7 @@ def _newbody(p: QPainter):
     p.setPen(Qt.NoPen)
     p.setBrush(_COL)
     p.drawEllipse(QRectF(17, 17, 9, 9))
-    p.setPen(QPen(QColor("#20242b")))
+    p.setPen(QPen(QColor(theme.DARK["bg0"])))
     p.setBrush(Qt.NoBrush)
     p.drawLine(QPointF(21.5, 19), QPointF(21.5, 25))
     p.drawLine(QPointF(19, 22), QPointF(25, 22))

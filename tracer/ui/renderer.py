@@ -193,6 +193,8 @@ class SceneRenderer:
         self._vcolor = 0             # M106: per-body colour path on?
         self._mesh_off = (0.0, 0.0, 0.0)   # live Move preview offset
         self._preview_rot = None           # live Rotate preview mat4
+        self._ghost = False                # amber feature-preview on?
+        self._ghost_saved: tuple = (None, 1.0)
         self._style = "shaded with edges"  # Fusion visual style (M54)
         self._triad = None           # Move triad: (origin, length)
         self._triad_vao = None
@@ -325,6 +327,19 @@ class SceneRenderer:
             [(buf, "3f 3f 3f 3f 1f 3f",
               "in_pos", "in_nrm", "in_bary", "in_mask", "in_hi", "in_base")])
         self._solid_count = len(idx)
+
+    def set_ghost(self, on: bool):
+        """Fusion's feature-preview voice: while on, the body glows the
+        amber ghost token at preview opacity; off restores whatever
+        appearance colour the document wears."""
+        if on and not self._ghost:
+            self._ghost_saved = (self._base_override, self._base_alpha)
+            self._ghost = True
+            self._base_override = self.palette["preview"]
+            self._base_alpha = 0.45
+        elif not on and self._ghost:
+            self._ghost = False
+            self._base_override, self._base_alpha = self._ghost_saved
 
     def set_base_color(self, rgb, opacity: float = 1.0):
         """Appearance paint (M52): tint the solid-shaded body this sRGB

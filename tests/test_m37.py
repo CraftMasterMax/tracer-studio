@@ -279,9 +279,13 @@ def test_click_select_then_click_empty_clears(win, qapp):
     assert len(cv.selected_groups()) == 0
 
 
-def test_selection_is_fusion_orange():
+def test_selection_is_fusion_blue():
+    # M112: the unified theme picks geometry in autodeskBlue; the 2019
+    # orange lives on HOVER now, as the famous peach
     r, g, b = DARK["hi_sel"]
-    assert r >= 0.95 and g <= 0.70 and b <= 0.25
+    assert b >= 0.8 and r <= 0.2
+    hr, hg, hb = DARK["hi_hover"]
+    assert hr >= 0.85 and hb <= 0.55
 
 
 # ---- proof of life ------------------------------------------------------------

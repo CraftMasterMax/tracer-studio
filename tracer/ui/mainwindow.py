@@ -1936,7 +1936,7 @@ class MainWindow(QMainWindow):
             from PySide6.QtWidgets import QColorDialog
             old = (b.get("appearance") or {}).get("color")
             init = QColor(*(int(round(c * 255)) for c in old)) \
-                if old else QColor(160, 160, 165)
+                if old else QColor.fromRgbF(*DARK["solid_base"])
             col = QColorDialog.getColor(init, self, f"{name} colour")
             if not col.isValid():
                 self._undo.pop()
@@ -2554,7 +2554,7 @@ class MainWindow(QMainWindow):
                 from PySide6.QtWidgets import QColorDialog
                 old = (self.doc.appearance or {}).get("color")
                 init = QColor(*(int(round(c * 255)) for c in old)) \
-                    if old else QColor(160, 160, 165)
+                    if old else QColor.fromRgbF(*DARK["solid_base"])
                 col = QColorDialog.getColor(init, self, "Body colour")
                 if not col.isValid():
                     self._undo.pop()           # colour cancelled: no edit
@@ -3245,7 +3245,8 @@ class MainWindow(QMainWindow):
         bl.addWidget(self._snap_btn)
         # Fusion's constraint voice on the toolbar (M73): fully / dof
         self._sketch_state = QLabel("")
-        self._sketch_state.setStyleSheet("color:#9ab0c8; padding:0 8px;")
+        self._sketch_state.setStyleSheet(
+            f"color:{DARK['accent_soft']}; padding:0 8px;")
         bl.addWidget(self._sketch_state)
         bl.addStretch(1)
         back = QPushButton("← Back")

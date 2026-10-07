@@ -1155,6 +1155,18 @@ consequence.
   sidecar (named points forever, non-destructive restore), rolling
   ×5 autosave with ghost-eating recovery, corrupted-file fallback,
   never-silent conflict guard, Revert to Saved. Suite now 1140.
+- Side quest (`e88d3f8`, `00bcb2c`): one-easy-launch — install-linux.sh
+  puts `tracer` on PATH, adds the app-grid entry, and binds `.tracer`
+  files to double-click; `main()` opens a document argument; clean-room
+  QPainter icon; LF-pinned shell scripts keep Windows CI honest.
+- **M112** (this wave): the theme-token sweep — HIG darkBlue surfaces,
+  autodeskBlue accent, the peach hover / blue select / amber ghost in
+  the renderer (canvas follows the chrome), sketch states on their
+  public semantics (white-constrained, violet projected, green dims,
+  blue HUD), view cube + drawing sheet tokenised, one generated QSS
+  with SP-rhythm sizes, styled inputs/tooltips and blue list
+  selection. "No UI module spells a colour" is pinned by test_m112.
+  Suite now 1159.
 
 ### Corrections wave 2 bought us
 - **Fusion HAS a 3D sketch mode now** (triad, per-point plane
@@ -1177,6 +1189,8 @@ consequence.
   privacy; Tracer's history lives in a file you own."*
 
 ### Ranked queue v2 (matrix-informed; supersession noted)
+*Shipped since this ranking: M112 theme tokens (test_m112, suite
+1159). The live queue starts at M113; item 1 below is history.*
 1. **M112 — theme tokens** (`ui/theme.py` + single QSS: darkBlue
    surfaces, autodeskBlue accent, hover/select trio; no-px rule from
    `a11y_precision_cad.md`). [matrix rank 5]

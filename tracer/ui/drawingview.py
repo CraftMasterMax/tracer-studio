@@ -15,6 +15,21 @@ from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
 from ..core import drawing
+from .theme import DRAWING
+
+# the sheet is paper: its inks never follow the UI theme (a drawing
+# prints the same in dark or light chrome); tokens live in theme.DRAWING
+_DESK = QColor(DRAWING["desk"])
+_DESK_EDGE = QColor(DRAWING["desk_edge"])
+_PAPER = QColor(DRAWING["paper"])
+_VIEW_EDGE = QColor(DRAWING["view_edge"])
+_SHEET = QColor(DRAWING["sheet"])
+_BORDER = QColor(DRAWING["border"])
+_DETAIL = QColor(DRAWING["detail"])
+_HATCH = QColor(DRAWING["hatch"])
+_FAINT = QColor(DRAWING["faint"])
+_RED = QColor(DRAWING["red"])
+_SELECT = QColor(DRAWING["select"])
 
 
 def scale_label(factor: float) -> str:
@@ -441,14 +456,14 @@ class DrawingCanvas(QWidget):
 
     def paintPage(self, p: QPainter):
         p.setRenderHint(QPainter.Antialiasing)
-        p.fillRect(self.rect(), QColor(52, 56, 62))          # desk grey
+        p.fillRect(self.rect(), _DESK)          # desk grey
         W, H = drawing.PAGES.get(self.page, drawing.PAGES["A3"])
         a = self.s2p(0, 0)
         b = self.s2p(W, H)
         sheet = QRectF(min(a.x(), b.x()), min(a.y(), b.y()),
                        abs(b.x() - a.x()), abs(b.y() - a.y()))
-        p.setPen(QPen(QColor(20, 22, 26), 1))
-        p.setBrush(QColor("#f5f5f2"))                        # the paper
+        p.setPen(QPen(_DESK_EDGE, 1))
+        p.setBrush(_PAPER)                        # the paper
         p.drawRect(sheet)
         p.setBrush(Qt.NoBrush)
         self._paint_block(p)                                 # M108 title block
@@ -456,7 +471,7 @@ class DrawingCanvas(QWidget):
         # views + section hatch + hidden ink + bubbles (one pass)
         views = self.views()
         placed = self.placed(views)
-        p.setPen(QPen(QColor(28, 30, 34), max(1.0, 0.35 * self._zoom)))
+        p.setPen(QPen(_VIEW_EDGE, max(1.0, 0.35 * self._zoom)))
         for view in placed.values():
             for c in view["chains"]:
                 if len(c) < 2:
@@ -466,13 +481,13 @@ class DrawingCanvas(QWidget):
                     p.drawLine(pts[i], pts[i + 1])
         cuts = self.cuts_page()
         if cuts:                        # M102: 45° hatch fills the wound
-            p.setPen(QPen(QColor(110, 114, 120),
+            p.setPen(QPen(_DETAIL,
                           max(0.6, 0.22 * self._zoom)))
             for loops in cuts.values():
                 for ha, hb in drawing.hatch_region(loops):
                     p.drawLine(self.s2p(*ha), self.s2p(*hb))
         if self.doc is not None and self.doc.result is not None:
-            hp = QPen(QColor(140, 144, 150), max(0.8, 0.28 * self._zoom))
+            hp = QPen(_HATCH, max(0.8, 0.28 * self._zoom))
             hp.setStyle(Qt.DashLine)
             p.setPen(hp)                        # M101: depth-hidden ink
             srcs = self._sources()
@@ -506,7 +521,7 @@ class DrawingCanvas(QWidget):
                 # anchor with the view (its own spin, text stays upright)
                 c0 = self.s2p(*self._spin(
                     fr, (fr["ctr"][0], fr["off"][1] + fr["min"][1] - 3.0)))
-                p.setPen(QPen(QColor(90, 94, 100)))
+                p.setPen(QPen(_FAINT))
                 p.drawText(QRectF(c0.x() - 40, c0.y(), 80,
                                   14 * self._zoom),
                            Qt.AlignHCenter | Qt.AlignTop,
@@ -531,10 +546,10 @@ class DrawingCanvas(QWidget):
         p.save()
         tb = drawing.title_block(self.sheet(), meta=self._block_meta(),
                                  page=self.page)
-        p.setPen(QPen(QColor(70, 74, 80), 1))
+        p.setPen(QPen(_BORDER, 1))
         for (ax, ay), (bx, by) in tb["lines"]:
             p.drawLine(self.s2p(ax, ay), self.s2p(bx, by))
-        p.setPen(QPen(QColor(38, 40, 44)))
+        p.setPen(QPen(_SHEET))
         self._paint_cells(p, tb["cells"])
         p.restore()
 
@@ -575,7 +590,7 @@ class DrawingCanvas(QWidget):
         tb = drawing.title_block(self.sheet(), meta=self._block_meta(),
                                  page=self.page)
         t = drawing.parts_list_table(rows, tb["rect"], page=self.page)
-        p.setPen(QPen(QColor(70, 74, 80), 1))
+        p.setPen(QPen(_BORDER, 1))
         for (ax, ay), (bx, by) in t["lines"]:
             p.drawLine(self.s2p(ax, ay), self.s2p(bx, by))
         if t["overflow"]:
@@ -584,7 +599,7 @@ class DrawingCanvas(QWidget):
                                "xa": x0, "xb": x0 + w,
                                "y": y0 + h + 2.5, "size": 1.6,
                                "align": "l"})
-        p.setPen(QPen(QColor(38, 40, 44)))
+        p.setPen(QPen(_SHEET))
         self._paint_cells(p, t["cells"])
         p.restore()
 
@@ -610,10 +625,10 @@ class DrawingCanvas(QWidget):
                 a = self.s2p(ax, ay)
                 cx, cy = a.x() + 2 * r, a.y() - 2 * r
                 c = QPointF(cx, cy)
-                p.setPen(QPen(QColor(38, 40, 44),
+                p.setPen(QPen(_SHEET,
                               max(1.0, 0.35 * self._zoom)))
                 p.drawLine(a, QPointF(cx - r * 0.8, cy + r * 0.8))
-                p.setBrush(QColor("#f5f5f2"))
+                p.setBrush(_PAPER)
                 p.drawEllipse(c, r, r)
                 p.setBrush(Qt.NoBrush)
                 p.drawText(QRectF(c.x() - r, c.y() - r, 2 * r, 2 * r),
@@ -629,14 +644,14 @@ class DrawingCanvas(QWidget):
         g = self.sheet()                           # M96: this sheet only
         dims = g.get("dims", [])
         self.resolve_dims(placed)
-        ink = QPen(QColor(195, 60, 60), max(1.0, 0.5 * self._zoom))
+        ink = QPen(_RED, max(1.0, 0.5 * self._zoom))
         f = p.font()
         f.setPointSizeF(max(6.5, 9 * min(self._zoom, 2.0)))
         if self._dim_first is not None:                   # pending pick
             view = placed.get(self._dim_first[0])
             if view is not None:
                 q = self.s2p(*self._m2p(view, self._dim_first[1]))
-                p.setPen(QPen(QColor(78, 161, 255), 1.6))
+                p.setPen(QPen(_SELECT, 1.6))
                 p.setBrush(Qt.NoBrush)
                 p.drawEllipse(q, 5, 5)
         for d in dims:
@@ -685,7 +700,7 @@ class DrawingCanvas(QWidget):
                 path.lineTo(w1)
                 path.lineTo(w2)
                 path.closeSubpath()
-                p.setBrush(QColor(195, 60, 60))
+                p.setBrush(_RED)
                 p.setPen(Qt.NoPen)
                 p.drawPath(path)
                 p.setPen(ink)
@@ -696,10 +711,10 @@ class DrawingCanvas(QWidget):
                          mid.y() + n.y() * od - br.height() / 2 - 2,
                          br.width() + 6, br.height() + 4)
             p.setPen(Qt.NoPen)
-            p.setBrush(QColor("#f5f5f2"))                 # knockout gap
+            p.setBrush(_PAPER)                 # knockout gap
             p.drawRect(gap)
             p.setBrush(Qt.NoBrush)
-            p.setPen(QPen(QColor(195, 60, 60)))
+            p.setPen(QPen(_RED))
             p.setFont(f)
             p.drawText(gap, Qt.AlignCenter, d["text"])
 
@@ -735,7 +750,7 @@ class DrawingCanvas(QWidget):
             path.lineTo(QPointF(base.x() - n.x() * 1.8,
                                 base.y() - n.y() * 1.8))
             path.closeSubpath()
-            p.setBrush(QColor(195, 60, 60))
+            p.setBrush(_RED)
             p.setPen(Qt.NoPen)
             p.drawPath(path)
             p.setPen(ink)
@@ -748,10 +763,10 @@ class DrawingCanvas(QWidget):
                      mid.y() - br.height() / 2 - 2,
                      br.width() + 6, br.height() + 4)
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor("#f5f5f2"))
+        p.setBrush(_PAPER)
         p.drawRect(gap)
         p.setBrush(Qt.NoBrush)
-        p.setPen(QPen(QColor(195, 60, 60)))
+        p.setPen(QPen(_RED))
         p.setFont(f)
         p.drawText(gap, Qt.AlignCenter, d["text"])
 
@@ -782,7 +797,7 @@ class DrawingCanvas(QWidget):
         path.lineTo(QPointF(base.x() + n.x() * 1.8, base.y() + n.y() * 1.8))
         path.lineTo(QPointF(base.x() - n.x() * 1.8, base.y() - n.y() * 1.8))
         path.closeSubpath()
-        p.setBrush(QColor(195, 60, 60))
+        p.setBrush(_RED)
         p.setPen(Qt.NoPen)
         p.drawPath(path)
         p.setBrush(Qt.NoBrush)
@@ -794,10 +809,10 @@ class DrawingCanvas(QWidget):
                      mid.y() - br.height() / 2 - 2,
                      br.width() + 6, br.height() + 4)
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor("#f5f5f2"))
+        p.setBrush(_PAPER)
         p.drawRect(gap)
         p.setBrush(Qt.NoBrush)
-        p.setPen(QPen(QColor(195, 60, 60)))
+        p.setPen(QPen(_RED))
         p.setFont(f)
         p.drawText(gap, Qt.AlignCenter, d["text"])
 

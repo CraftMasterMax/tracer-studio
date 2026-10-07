@@ -247,12 +247,15 @@ def test_buffer_chips_paints_on_the_canvas(sketch, qapp):
         sketch._draw_typein(p)
         p.end()
         img = pm.toImage()
+        from tracer.ui import theme
+        chip = QColor(theme.DARK["bg2"])     # M112: chip rides the bg2 token
         n = 0
         for x in range(0, 600, 2):
             for y in range(0, 400, 2):
                 q = img.pixelColor(x, y)
-                if (abs(q.red() - 63) <= 2 and abs(q.green() - 68) <= 2
-                        and abs(q.blue() - 76) <= 2):
+                if (abs(q.red() - chip.red()) <= 2
+                        and abs(q.green() - chip.green()) <= 2
+                        and abs(q.blue() - chip.blue()) <= 2):
                     n += 1
         return n
 

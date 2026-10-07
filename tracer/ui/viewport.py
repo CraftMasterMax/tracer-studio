@@ -19,6 +19,7 @@ from ..core.document import Document
 from ..core.geometry import Solid
 from .camera import Camera, perspective
 from .renderer import SceneRenderer
+from . import theme
 from .viewcube import NavWidget, ViewCube
 
 
@@ -172,12 +173,15 @@ class Viewport(QWidget):
 
     def preview_mesh(self, solid: Solid | None):
         """Swap the GPU mesh without touching the document (Press-Pull
-        live preview); pass None to restore the committed model."""
+        live preview); pass None to restore the committed model.
+        During preview the body wears Fusion's amber ghost tint."""
         if solid is None:
+            self._r.set_ghost(False)
             self.refresh()
             return
         v, n, f = solid.to_render_arrays()
         self._r.set_mesh(v, n, f)
+        self._r.set_ghost(True)
         self.update()
 
     # ---- paint -------------------------------------------------------------
@@ -207,8 +211,10 @@ class Viewport(QWidget):
         """Fusion's two rubber voices: left→right WINDOW (blue, must
         contain) vs right→left CROSSING (green, just touches)."""
         if window:
-            return QColor(120, 170, 255), QColor(120, 170, 255, 24)
-        return QColor(120, 220, 150), QColor(120, 220, 150, 24)
+            c = theme.DARK["accent_soft"]
+        else:
+            c = theme.DARK["success"]
+        return QColor(c), QColor(theme.rgba(c, 24))
 
     def _box_is_window(self) -> bool:
         return self._box is not None and \

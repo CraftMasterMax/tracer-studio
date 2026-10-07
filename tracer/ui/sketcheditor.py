@@ -28,19 +28,26 @@ from ..core.sketch.entities import (Arc, Circle, Ellipse, Line, Point,
 from ..core.sketch.model import (_dim_tag, SketchModel, math_dist,
                                  model_from_dict, model_to_dict)
 from ..core.sketch.profile import regions
+from . import theme
 from .cmddialog import Shell
 
-ACCENT = QColor("#4ea1ff")
-FG = QColor("#e6e9ec")
-DIM = QColor("#a9b1bb")
-FAINT = QColor("#454b55")
-BG = QColor("#2f343c")
-GRID = QColor(255, 255, 255, 14)
-GRID_MAJOR = QColor(255, 255, 255, 28)
-AXIS_X = QColor(200, 100, 105)
-AXIS_Y = QColor(120, 185, 110)
-OK = QColor("#7ec97e")
-WARN = QColor("#e5b567")
+ACCENT = QColor(theme.SKETCH["under"])       # unconstrained / active blue
+SEL = QColor(theme.SKETCH["sel"])            # picked geometry
+PROJ = QColor(theme.SKETCH["projected"])     # projected reference edges
+INFER = QColor(theme.SKETCH["infer"])        # inference + snap hint
+FG = QColor(theme.SKETCH["full"])            # fully constrained = white
+DIM = QColor(theme.CHAR[".500"])
+CONSTR = QColor(theme.SKETCH["construction"])
+DIMC = QColor(theme.SKETCH["dim"])           # dimensions are green
+HUD = QColor(theme.SKETCH["hud"])            # heads-up readouts are blue
+FAINT = QColor(theme.DB[".200"])
+BG = QColor(theme.DB[".250"])
+GRID = QColor(theme.rgba(theme.DB[".100"], 46))
+GRID_MAJOR = QColor(theme.rgba(theme.DB[".100"], 76))
+AXIS_X = QColor.fromRgbF(*theme.DARK["axis_x"])
+AXIS_Y = QColor.fromRgbF(*theme.DARK["axis_y"])
+OK = QColor(theme.SUCCESS)
+WARN = QColor(theme.WARNING)
 
 _HIT_PX = 9
 
@@ -1344,9 +1351,9 @@ class SketchCanvas(QWidget):
             rect = QRectF(pos.x() - br.width() / 2 - 5,
                           pos.y() - br.height() / 2 - 2,
                           br.width() + 10, br.height() + 4)
-            p.setBrush(QColor("#3f444c"))
-            p.setPen(QPen(QColor("#4ea1ff") if bound
-                         else QColor("#2c6fb8"), 1))
+            p.setBrush(QColor(theme.DARK["bg2"]))
+            p.setPen(QPen(QColor(theme.DARK["accent"]) if bound
+                          else QColor(theme.DARK["accent_dim"]), 1))
             p.drawRoundedRect(rect, 3, 3)
             p.setPen(FG)
             p.drawText(rect, Qt.AlignCenter, text)
@@ -1480,8 +1487,8 @@ class SketchCanvas(QWidget):
                       at.y() - br.height() / 2 - 3,
                       br.width() + 12, br.height() + 6)
         p.setFont(self._font)
-        p.setBrush(QColor("#3f444c"))
-        p.setPen(QPen(QColor("#4ea1ff"), 1.4))
+        p.setBrush(QColor(theme.DARK["bg2"]))
+        p.setPen(QPen(QColor(theme.DARK["accent"]), 1.4))
         p.drawRoundedRect(rect, 3, 3)
         p.setPen(FG)
         p.drawText(rect, Qt.AlignCenter, self._num_buf)
@@ -1518,12 +1525,12 @@ class SketchCanvas(QWidget):
         p.setFont(font_before)
 
     def _draw_refs(self, p: QPainter):
-        """M82: projected model contours — thin dashed grey, never
-        selectable, never solved: Fusion's projected reference edges."""
+        """M82: projected model contours — thin dashed violet (Fusion's
+        projected-edge purple), never selectable, never solved."""
         if not getattr(self.model, "refs", None):
             return
         p.save()
-        p.setPen(QPen(QColor(150, 152, 160), 1.4, Qt.DashLine))
+        p.setPen(QPen(PROJ, 1.4, Qt.DashLine))
         for r in self.model.refs:
             pts = [self.w2s(float(x), float(y))
                    for x, y in np.asarray(r["pts"], float)]
@@ -1537,7 +1544,7 @@ class SketchCanvas(QWidget):
         r = self._last_result
         constrained = r is not None and r.converged and r.dof == 0
         solid_pen = QPen(FG if constrained else ACCENT, 1.7)
-        constr_pen = QPen(DIM, 1.2, Qt.DashLine)
+        constr_pen = QPen(CONSTR, 1.2, Qt.DashLine)
         for l in sk.lines:
             p.setPen(constr_pen if l.construction else solid_pen)
             p.drawLine(self.w2s(l.a.x, l.a.y), self.w2s(l.b.x, l.b.y))
@@ -1562,7 +1569,7 @@ class SketchCanvas(QWidget):
             cen = self.w2s(e.c.x, e.c.y)
             p.drawEllipse(cen, e.rx * self._scale, e.ry * self._scale)
         # selected
-        p.setPen(QPen(ACCENT, 2.4))
+        p.setPen(QPen(SEL, 2.4))
         for e in self._sel:
             if isinstance(e, Line):
                 p.drawLine(self.w2s(e.a.x, e.a.y), self.w2s(e.b.x, e.b.y))
@@ -1583,8 +1590,8 @@ class SketchCanvas(QWidget):
         for pt, _ in self._all_points():
             pos = self.w2s(pt.x, pt.y)
             selected = pt in self._sel
-            p.setPen(QPen(ACCENT if selected else DIM, 1.2))
-            p.setBrush(ACCENT if selected else BG)
+            p.setPen(QPen(SEL if selected else DIM, 1.2))
+            p.setBrush(SEL if selected else BG)
             s = 3.8 if selected else 2.6
             p.drawRect(QRectF(pos.x() - s, pos.y() - s, 2 * s, 2 * s))
         p.setBrush(Qt.NoBrush)
@@ -1593,7 +1600,7 @@ class SketchCanvas(QWidget):
                       if isinstance(self._snap_hint, Point)
                       else self._snap_hint)
             pos = self.w2s(hx, hy)
-            p.setPen(QPen(ACCENT, 1.6))
+            p.setPen(QPen(INFER, 1.6))
             p.drawEllipse(pos, 7, 7)
 
     def _draw_glyphs(self, p: QPainter):
@@ -1709,7 +1716,7 @@ class SketchCanvas(QWidget):
         return pts, self.w2s(px + lab * math.cos(mid), py + lab * math.sin(mid))
 
     def _draw_arc(self, p: QPainter, pts):
-        p.setPen(QPen(DIM, 1))
+        p.setPen(QPen(DIMC, 1))
         for a, b in zip(pts, pts[1:]):
             p.drawLine(a, b)
 
@@ -1717,12 +1724,12 @@ class SketchCanvas(QWidget):
                c=None):
         w = 20 if wide else 13
         rect = QRectF(at.x() - w / 2, at.y() - 8, w, 15)
-        fill = QColor(27, 29, 34, 200)
+        fill = QColor(theme.rgba(theme.DB[".350"], 200))
         if c is not None:                 # M87: diagnosed constraints glow
             if id(c) in self._conflicting:
-                fill = QColor(224, 82, 82, 210)      # Fusion's conflict red
+                fill = QColor(theme.rgba(theme.ERROR, 210))    # conflict red
             elif id(c) in self._redundant:
-                fill = QColor(230, 180, 60, 210)     # amber for redundant
+                fill = QColor(theme.rgba(theme.WARNING, 210))  # amber
         p.setPen(QPen(DIM, 1))
         p.setBrush(fill)
         p.drawRoundedRect(rect, 3, 3)
@@ -1814,7 +1821,7 @@ class SketchCanvas(QWidget):
                           FG))
         if self._cursor is not None:
             cx, cy = self._cursor
-            lines.append((f"X {cx:.2f}   Y {cy:.2f} mm", DIM))
+            lines.append((f"X {cx:.2f}   Y {cy:.2f} mm", HUD))
         tool = {"select": ("Select (S/L/R/C/E/O/Y/A) · H/V/F/D/Q/T/I/J/M "
                            "constraints · / trim · . on-curve · X extrude"),
                 "line": "Line — click points, Enter/Esc stops",
@@ -1826,7 +1833,7 @@ class SketchCanvas(QWidget):
                 "slot": "Slot — 3 clicks: centre · centre · width",
                 "poly": "Polygon — click centre · click vertex · "
                         "3-9 sides"}
-        lines.append(("Tool: " + tool.get(self._tool, "?"), DIM))
+        lines.append(("Tool: " + tool.get(self._tool, "?"), HUD))
         if self._last_result is not None:
             r = self._last_result
             if r.converged and r.dof == 0:

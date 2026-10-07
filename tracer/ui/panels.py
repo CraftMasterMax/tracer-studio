@@ -135,7 +135,7 @@ class FeatureTree(QTreeWidget):
                 fnt.setBold(True)
                 body_item.setFont(0, fnt)
             if not vis:
-                body_item.setForeground(0, QColor("#767e8a"))
+                body_item.setForeground(0, QColor(DARK["fg_faint"]))
             bodies.addChild(body_item)
             body_item.setExpanded(True)
             body_nodes[nm] = body_item
@@ -170,7 +170,7 @@ class FeatureTree(QTreeWidget):
             item = QTreeWidgetItem([label])
             item.setData(0, Qt.UserRole, ("feature", i))
             if f.suppressed:
-                item.setForeground(0, QColor("#767e8a"))
+                item.setForeground(0, QColor(DARK["fg_faint"]))
             parent = body_nodes.get(getattr(f, "body", None) or default)
             if parent is None:                      # orphaned by hand-edit
                 parent = body_nodes[default]
@@ -268,8 +268,8 @@ class PropertiesPanel(QWidget):
         self._body.setText(
             f"<b>Body</b><br>volume: {units.V(volume, self.unit)}<br>"
             f"surface area: {units.A(area, self.unit)}<br>"
-            "<span style='color:#767e8a'>click a face to measure it; "
-            "ctrl+click to measure between</span>")
+            f"<span style='color:{DARK['fg_faint']}'>click a face to "
+            "measure it; ctrl+click to measure between</span>")
 
     def show_feature(self, feature):
         if feature is None:

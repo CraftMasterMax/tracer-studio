@@ -10,8 +10,10 @@ from PySide6.QtWidgets import QScrollArea, QToolTip, QWidget
 
 from ..core.document import (BodyFilletFeature, Document, LoftFeature,
                              ShellFeature, SweepFeature)
+from . import theme
 
-OP_COLOR = {"union": "#4ea1ff", "subtract": "#e06c75", "intersect": "#a9b1bb"}
+OP_COLOR = {"union": theme.DARK["accent"], "subtract": theme.DARK["danger"],
+            "intersect": theme.DARK["fg_dim"]}
 
 
 class TimelineBar(QWidget):
@@ -72,23 +74,24 @@ class TimelineBar(QWidget):
         return {"union": "+", "subtract": "\u2212", "intersect": "\u2229"}[f.op]
 
     def paintEvent(self, ev):
+        D = theme.DARK
         with QPainter(self) as p:
             p.setRenderHint(QPainter.Antialiasing)
-            p.fillRect(self.rect(), QColor("#2b2e33"))
-            p.setPen(QPen(QColor("#4a5059")))
+            p.fillRect(self.rect(), QColor(D["bg0"]))
+            p.setPen(QPen(QColor(D["line"])))
             p.drawLine(0, 0, self.width(), 0)
             self._chips = []
             # playhead: history position marker (click = home view)
             h = self.height() - 14
             self._home = QRectF(6, 7, 22, h)
-            p.setBrush(QColor("#33373d"))
-            p.setPen(QPen(QColor("#4a5059"), 1))
+            p.setBrush(QColor(D["bg1"]))
+            p.setPen(QPen(QColor(D["line"]), 1))
             p.drawRoundedRect(self._home, 4, 4)
             mid = self._home.center()
             tri = QPolygonF([QPointF(mid.x() - 3, mid.y() - 5),
                              QPointF(mid.x() - 3, mid.y() + 5),
                              QPointF(mid.x() + 5, mid.y())])
-            p.setBrush(QColor("#d3d7dd"))
+            p.setBrush(QColor(D["fg"]))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawPolygon(tri)
             if not self.doc:
@@ -99,7 +102,7 @@ class TimelineBar(QWidget):
             self._marker = None
             if rb == 0:
                 self._marker = QRectF(31, 5, 6, h + 4)
-                p.setPen(QPen(QColor("#4ea1ff"), 2.2))
+                p.setPen(QPen(QColor(D["accent"]), 2.2))
                 p.drawLine(34, 6, 34, 6 + int(h))
             for i, f in enumerate(self.doc.features):
                 r = QRectF(x, 7, 30, h)
@@ -107,24 +110,25 @@ class TimelineBar(QWidget):
                        or (rb is not None and i >= rb))    # hidden by band
                 sel = i == self._sel
                 p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QColor("#33373d" if dim
-                                 else ("#464d57" if sel else "#3a3f47")))
+                p.setBrush(QColor(D["bg1"] if dim
+                                 else (D["accent_deep"] if sel
+                                       else D["bg2"])))
                 p.drawRoundedRect(r, 4, 4)
-                pen = QPen(QColor("#767e8a") if dim
-                           else (QColor("#4ea1ff") if i == last or sel
+                pen = QPen(QColor(D["fg_faint"]) if dim
+                           else (QColor(D["accent"]) if i == last or sel
                                  else QColor(OP_COLOR[f.op])))
                 pen.setWidthF(1.6 if (sel or i == last) else 1.0)
                 p.setPen(pen)
                 p.setBrush(Qt.BrushStyle.NoBrush)
                 p.drawRoundedRect(r, 4, 4)
                 p.setFont(self._glyph_font)
-                p.setPen(QColor("#767e8a") if dim else QColor("#e6e9ec"))
+                p.setPen(QColor(D["fg_faint"]) if dim else QColor(D["fg"]))
                 p.drawText(r, Qt.AlignCenter, self._glyph(f))
                 self._chips.append((x, 30, f))
                 if rb is not None and i + 1 == rb:
                     mx = x + 32                # rubber band after this chip
                     self._marker = QRectF(mx - 3, 5, 7, h + 4)
-                    p.setPen(QPen(QColor("#4ea1ff"), 2.2))
+                    p.setPen(QPen(QColor(D["accent"]), 2.2))
                     p.drawLine(int(mx), 6, int(mx), 6 + int(h))
                 x += 34
 

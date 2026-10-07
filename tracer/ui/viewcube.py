@@ -8,6 +8,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 
 from .camera import Camera, perspective
+from .theme import VIEWCUBE
 
 SIZE = 66          # cube corner-to-corner px
 MARGIN = 12
@@ -83,17 +84,18 @@ class ViewCube:
             front = cos_view > 0.75
             hot = hover == kind               # hit() hands back the kind
             if hot:
-                p.setBrush(QColor("#4a5a72"))    # Fusion-style hover
-                p.setPen(QPen(QColor("#8db4e8"), 1))
+                p.setBrush(QColor(VIEWCUBE["hover"]))
+                p.setPen(QPen(QColor(VIEWCUBE["hover_edge"]), 1))
             else:
-                p.setBrush(QColor("#3a3f48" if front else "#2a2e35"))
-                p.setPen(QPen(QColor("#565d68"), 1))
+                p.setBrush(QColor(VIEWCUBE["face_front"] if front
+                                 else VIEWCUBE["face"]))
+                p.setPen(QPen(QColor(VIEWCUBE["edge"]), 1))
             p.drawPath(path)
             f = QFont(p.font())
             f.setPointSize(8)
             f.setBold(True)
             p.setFont(f)
-            p.setPen(QColor("#c8cdd4"))
+            p.setPen(QColor(VIEWCUBE["text"]))
             p.drawText(path.boundingRect(), Qt.AlignCenter, label)
             self._screen[label] = (path, kind)
 
@@ -142,11 +144,11 @@ class NavWidget:
 
     def draw(self, p: QPainter):
         for kind, r in self.rects.items():
-            p.setBrush(QColor(70, 78, 90) if self.hover == kind
-                       else QColor(50, 56, 64, 210))
-            p.setPen(QPen(QColor(112, 120, 132), 1))
+            p.setBrush(QColor(VIEWCUBE["nav_hover"]) if self.hover == kind
+                       else QColor(VIEWCUBE["nav_bg"]))
+            p.setPen(QPen(QColor(VIEWCUBE["nav_edge"]), 1))
             p.drawRoundedRect(r, 5, 5)
-            pen = QPen(QColor(226, 230, 236))
+            pen = QPen(QColor(VIEWCUBE["nav_glyph"]))
             pen.setWidthF(1.7)
             pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)

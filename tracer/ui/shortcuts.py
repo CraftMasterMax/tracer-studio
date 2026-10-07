@@ -12,6 +12,8 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QDialog, QFrame, QHBoxLayout, QLabel,
                                QScrollArea, QVBoxLayout, QWidget)
 
+from .theme import DARK
+
 # (group title, [(keys, what, is_keyboard), ...])
 SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
     ("Look around (3D viewport)", [
@@ -143,14 +145,14 @@ class ShortcutsPage(QScrollArea):
             hf.setPointSize(10)
             hf.setBold(True)
             head.setFont(hf)
-            head.setStyleSheet("color:#8ab4f8; padding-top:6px;")
+            head.setStyleSheet(f"color:{DARK['accent_soft']}; padding-top:6px;")
             col.addWidget(head)
             for keys, what, _kb in rows:
                 row = QHBoxLayout()
                 row.setSpacing(10)
                 k = QLabel(keys)
                 k.setFont(mono)
-                k.setStyleSheet("color:#f0c674;")
+                k.setStyleSheet(f"color:{DARK['hover']};")
                 k.setMinimumWidth(190)
                 row.addWidget(k)
                 row.addWidget(QLabel(what))
@@ -158,7 +160,7 @@ class ShortcutsPage(QScrollArea):
                 col.addLayout(row)
             line = QFrame()
             line.setFrameShape(QFrame.HLine)
-            line.setStyleSheet("color:#3a3f4b;")
+            line.setStyleSheet(f"color:{DARK['line']};")
             col.addWidget(line)
         col.addStretch(1)
         self.setWidget(body)
@@ -188,7 +190,7 @@ class TourDialog(QDialog):
             row = QHBoxLayout()
             k = QLabel(keys)
             k.setFont(mono)
-            k.setStyleSheet("color:#f0c674;")
+            k.setStyleSheet(f"color:{DARK['hover']};")
             k.setMinimumWidth(170)
             row.addWidget(k)
             row.addWidget(QLabel(what))
