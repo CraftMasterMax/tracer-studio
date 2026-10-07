@@ -1371,7 +1371,14 @@ M125; items 1-11 below are history.*
     Outside section positioning, runout ends, internal modeled
     threads (cosmetic-thread wedge M128+). DEFER: feature-level patterns,
     boundary/fill patterns, spiral-type coil, internal modeled
-    threads (cosmetic-thread story later with drawings).
+    threads (cosmetic-thread story later with drawings). COSMETIC
+    WEDGE SHIPPED (M128, rung a, suite 1379): holes carry ISO
+    designations (coarse-pitch-omitted grammar, 6H/6g defaults —
+    codes, so no new data table for the M123 validator to police),
+    a Cosmetic mode drills only the tap-drill core, and the major-Ø
+    decal ring rides the datum line buffer. Modeled groove stays the
+    legacy default. Rung (b), section-triggered drawing callouts,
+    joins the drawings tail next.
     Next in rank, both fully probed: browser
     polish (in-place rename + "(1)" suffix, tree↔canvas cross-
     highlight, isolate/show-all — ladder in `browser_conventions.md`),

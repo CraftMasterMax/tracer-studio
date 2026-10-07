@@ -490,9 +490,22 @@ class HoleFeature(Feature):
     cs_angle: float = 90.0        # cone included angle, degrees
     thread_pitch: float = 0.0     # ISO pitch (0 = plain drilled hole)
     thread_len: float = 0.0       # threaded length from the opening
+    thread_size: str = ""         # M-name ("" = infer from pitch, legacy)
+    thread_class: str = ""        # ISO tolerance class ("" = 6H when threaded)
+    thread_mode: str = "modeled"  # "cosmetic" = decal ring only, no groove
     sketch: dict | None = None
     sid: int | None = None
     cidx: int = 0
+
+    @property
+    def designation(self) -> str:
+        """ISO designation like "M8-6H" ("" for plain holes): what a
+        drawing will one day print (M128 wedge, rung b)."""
+        if self.thread_pitch <= 0:
+            return ""
+        from .thread import designation as _desig
+        return _desig(self.thread_size, self.thread_pitch, internal=True,
+                      cls=self.thread_class)
 
     def build(self) -> Solid:
         n = np.asarray(self.normal, float)
@@ -513,7 +526,8 @@ class HoleFeature(Feature):
                 parts.append(Solid.revolve(np.array([
                     [self.radius, 0.0], [self.cs_radius, 0.0],
                     [self.radius, k]])))
-        if self.thread_pitch > 0 and self.thread_len > 1.2 * self.thread_pitch:
+        if (self.thread_pitch > 0 and self.thread_mode == "modeled"
+                and self.thread_len > 1.2 * self.thread_pitch):
             from .thread import helix_groove
             tl = min(self.thread_len, L)
             if tl > 1.2 * self.thread_pitch:
@@ -539,6 +553,16 @@ class ThreadFeature(Feature):
     radius: float = 4.0
     pitch: float = 1.0
     length: float = 10.0
+    thread_size: str = ""         # M-name from the dialog (M128 metadata)
+    thread_class: str = ""        # ISO class ("" = 6g external default)
+
+    @property
+    def designation(self) -> str:
+        """External designation like "M10-6g". The bolt ridge stays
+        modeled in v1 — cosmetics for bosses wait for rung (b)."""
+        from .thread import designation as _desig
+        return _desig(self.thread_size, self.pitch, internal=False,
+                      cls=self.thread_class)
 
     def build(self) -> Solid:
         from .thread import helix_ridge
@@ -1239,6 +1263,23 @@ class Document:
                 out.append(f.name)      # the helix spins on this line
         return out
 
+    def thread_decals(self) -> list[dict]:
+        """Cosmetic threads (M128): the ISO major-diameter ring each
+        cosmetically-threaded hole wears — the drawing-grade
+        representation the standards tooling itself recommends over
+        modeled internals. Modeled threads have real geometry and
+        need no decal."""
+        out = []
+        for f in self.features:
+            if (isinstance(f, HoleFeature) and f.thread_pitch > 0
+                    and f.thread_mode == "cosmetic" and not f.suppressed):
+                out.append(dict(
+                    center=tuple(float(v) for v in f.center),
+                    axis=tuple(float(v) for v in f.normal),
+                    radius=float(f.radius) + float(f.thread_pitch) / 2.0,
+                    label=f.designation))
+        return out
+
     def _dir(self, ref) -> np.ndarray:
         """Lattice direction (M126): a string resolves through the axis
         store ("X"/"Y"/"Z" or a work axis); anything else must be a
@@ -1780,13 +1821,18 @@ class Document:
                          cs_angle=float(f.cs_angle),
                          thread_pitch=float(f.thread_pitch),
                          thread_len=float(f.thread_len),
+                         thread_size=f.thread_size,
+                         thread_class=f.thread_class,
+                         thread_mode=f.thread_mode,
                          sketch=f.sketch, sid=f.sid, cidx=int(f.cidx))
             elif isinstance(f, ThreadFeature):
                 d.update(center=list(map(float, f.center)),
                          axis=list(map(float, f.axis)),
                          radius=float(f.radius),
                          pitch=float(f.pitch),
-                         length=float(f.length))
+                         length=float(f.length),
+                         thread_size=f.thread_size,
+                         thread_class=f.thread_class)
             elif isinstance(f, InterlockFeature):
                 d.update(kind=f.kind, role=f.role,
                          center=list(map(float, f.center)),
@@ -1979,6 +2025,9 @@ class Document:
                     cs_angle=float(fd.get("cs_angle", 90.0)),
                     thread_pitch=float(fd.get("thread_pitch", 0.0)),
                     thread_len=float(fd.get("thread_len", 0.0)),
+                    thread_size=fd.get("thread_size", ""),
+                    thread_class=fd.get("thread_class", ""),
+                    thread_mode=fd.get("thread_mode", "modeled"),
                     sketch=fd.get("sketch"), sid=fd.get("sid"),
                     cidx=int(fd.get("cidx", 0)), **base))
             elif t == "ThreadFeature":
@@ -1986,7 +2035,9 @@ class Document:
                     name=fd["name"],
                     center=tuple(fd["center"]), axis=tuple(fd["axis"]),
                     radius=float(fd["radius"]), pitch=float(fd["pitch"]),
-                    length=float(fd["length"]), **base))
+                    length=float(fd["length"]),
+                    thread_size=fd.get("thread_size", ""),
+                    thread_class=fd.get("thread_class", ""), **base))
             elif t == "InterlockFeature":
                 doc.features.append(InterlockFeature(
                     name=fd["name"], kind=fd["kind"], role=fd["role"],

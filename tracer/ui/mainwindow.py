@@ -2537,6 +2537,10 @@ class MainWindow(QMainWindow):
         thread = opts.get("thread", "None")
         tap_pitch, tap_dia = ((0.0, 0.0) if thread == "None"
                               else ISO_COARSE[thread])
+        t_size = opts.get("thread_size", thread if tap_pitch else "")
+        t_class = opts.get("thread_class", "") if tap_pitch else ""
+        t_mode = (opts.get("thread_mode", "modeled") if tap_pitch
+                  else "modeled")
         drill = opts.get("drill")          # M107 preset Ø; the circle places only
         payload = model_to_dict(m)
         owned = [f for f in self.doc.features
@@ -2558,6 +2562,8 @@ class MainWindow(QMainWindow):
                 f.cb_radius, f.cb_depth = cb_r, float(opts["cb_depth"])
                 f.cs_radius, f.cs_angle = cs_r, float(opts["cs_angle"])
                 f.thread_pitch, f.thread_len = tap_pitch, tlen
+                f.thread_size, f.thread_class = t_size, t_class
+                f.thread_mode = t_mode
                 f.name = nm + kind
                 f.sketch = dict(payload)
                 continue
@@ -2575,6 +2581,8 @@ class MainWindow(QMainWindow):
                 cb_radius=cb_r, cb_depth=float(opts["cb_depth"]),
                 cs_radius=cs_r, cs_angle=float(opts["cs_angle"]),
                 thread_pitch=tap_pitch, thread_len=tlen,
+                thread_size=t_size, thread_class=t_class,
+                thread_mode=t_mode,
                 sketch=dict(payload), sid=m.sid, cidx=i))
         for f in owned[len(circles):]:        # circles deleted while editing
             self.doc.features.remove(f)
@@ -2585,7 +2593,11 @@ class MainWindow(QMainWindow):
         self.viewport.refresh(fit=True)
         self.status.showMessage(
             f"Drilled {len(circles)} {opts['type']} hole(s)"
-            + (" — through all" if through else f" — {depth:g} mm deep"), 6000)
+            + (" — through all" if through else f" — {depth:g} mm deep")
+            + (f"  ·  {thread}"
+               f"[{opts.get('thread_class', '') or '6H'}, "
+               f"{opts.get('thread_mode', 'modeled')}]"
+               if tap_pitch else ""), 6000)
 
     def _on_face_selection(self, n: int = 0):
         """Measure-on-pick (Fusion's Inspect>Measure, live): picked faces

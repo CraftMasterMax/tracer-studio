@@ -39,6 +39,32 @@ ISO_COARSE = {
     "M12": (1.75, 10.20),
 }
 
+
+def coarse_size(pitch: float) -> str:
+    """Which M size carries this ISO coarse pitch (pitches are unique
+    across the table). Lets a legacy hole that stores only its pitch
+    still answer with a designation; '' when nothing matches
+    (fine pitches the coarse dialog never offered)."""
+    for name, (p, _) in ISO_COARSE.items():
+        if abs(p - float(pitch)) < 1e-9:
+            return name
+    return ""
+
+
+def designation(size: str, pitch: float, internal: bool = True,
+                cls: str = "") -> str:
+    """ISO metric thread designation (M128): the coarse pitch is
+    omitted ("M8-6H"), a fine one is written out ("M8x1-6H"); the
+    tolerance class defaults to 6H internal / 6g external. Classes
+    are CODES, not measured numbers — the fastener-data citation law
+    (M123) is about tables, so formatting lives right here."""
+    size = size or coarse_size(pitch)
+    if not size:
+        return ""
+    coarse = ISO_COARSE[size][0]
+    shown = "" if abs(float(pitch) - coarse) < 1e-9 else f"x{float(pitch):g}"
+    return f"{size}{shown}-{cls or ('6H' if internal else '6g')}"
+
 H_RATIO = 0.61343           # ISO fundamental thread depth / pitch (ref)
 
 

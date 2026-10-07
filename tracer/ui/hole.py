@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog,
                                QDialogButtonBox, QDoubleSpinBox, QFormLayout,
                                QLabel, QVBoxLayout)
 
-from ..core.thread import ISO_COARSE
+from ..core.thread import ISO_COARSE, designation
 from ..core import fasteners as _F
 
 TYPES = ("Simple", "Counterbore", "Countersink")
@@ -62,6 +62,11 @@ class HoleDialog(QDialog):
         self.type.addItems(TYPES)
         self.thread = QComboBox()
         self.thread.addItems(THREADS)
+        self.t_class = QComboBox()          # M128: common ISO internal
+        self.t_class.addItems(("6H", "6F", "7H"))    # classes (codes,
+        self.t_mode = QComboBox()           # not tables — no M123 law)
+        self.t_mode.addItems(("Modeled — real groove",
+                              "Cosmetic — decal ring"))
         self.depth = _spin(5.0)
         self.through = QCheckBox("Through all")
         self.cb_dia = _spin(max(diameters) + 4.0)
@@ -76,6 +81,10 @@ class HoleDialog(QDialog):
         form.addRow("Size", self.size)
         form.addRow("Type", self.type)
         form.addRow("Thread", self.thread)
+        tr = form.rowCount()
+        form.addRow("Class", self.t_class)
+        form.addRow("Thread form", self.t_mode)
+        self._thread_rows = (tr, tr + 1)        # M128: hidden unless tapped
         form.addRow("Depth", self.depth)
         form.addRow(" ", self.through)
         r = form.rowCount()
@@ -101,6 +110,9 @@ class HoleDialog(QDialog):
         self.type.currentIndexChanged.connect(self._sync_rows)
         self.through.toggled.connect(self.depth.setDisabled)
         self.thread.currentIndexChanged.connect(self._sync_head)
+        self.thread.currentIndexChanged.connect(self._sync_rows)
+        self.t_class.currentIndexChanged.connect(self._sync_head)
+        self.t_mode.currentIndexChanged.connect(self._sync_head)
         self.std.currentIndexChanged.connect(self._apply_std)
         self.size.currentIndexChanged.connect(self._apply_std)
         self._sync_rows()
@@ -153,15 +165,21 @@ class HoleDialog(QDialog):
                           f"{kind}: drill {dia} {note}".rstrip())
 
     def _sync_head(self):
-        """Show what a tapped hole will actually drill: tap-drill Ø and
-        pitch, so the sketch circle is understood as placement only."""
+        """Show what a tapped hole will actually drill: the full ISO
+        designation (M128: "M6-6H [modeled]"), tap-drill Ø and pitch,
+        so the sketch circle is understood as placement only."""
         t = self.thread.currentText()
         if t == "None":
             self.head.setText(self._head0)
         else:
             pitch, tap = ISO_COARSE[t]
-            self.head.setText(f"{len(self._diam)} circle(s) — {t}: tap-drill "
-                              f"Ø {tap:g}, pitch {pitch:g} mm")
+            desig = designation(t, pitch, internal=True,
+                                cls=self.t_class.currentText())
+            mode = "cosmetic" if self.t_mode.currentIndex() == 1 \
+                else "modeled"
+            self.head.setText(f"{len(self._diam)} circle(s) — {desig} "
+                              f"[{mode}]: tap-drill Ø {tap:g}, pitch "
+                              f"{pitch:g} mm")
 
     def _set_row(self, index, visible):
         """Toggle a form row's label + field.  Uses QFormLayout's
@@ -180,6 +198,8 @@ class HoleDialog(QDialog):
             self._set_row(i, t == "Counterbore")
         for i in self._cs_rows:
             self._set_row(i, t == "Countersink")
+        for i in self._thread_rows:          # M128: class + form only
+            self._set_row(i, self.thread.currentText() != "None")
 
     def values(self) -> dict:
         ang = self.cs_angle.currentData()
@@ -188,8 +208,16 @@ class HoleDialog(QDialog):
                 ang = float(self.cs_angle.currentText().rstrip("°"))
             except ValueError:
                 ang = 90.0
+        threaded = self.thread.currentText() != "None"
         return {"type": self.type.currentText().lower(),
                 "thread": self.thread.currentText(),
+                "thread_size": self.thread.currentText() if threaded
+                else "",
+                "thread_class": self.t_class.currentText() if threaded
+                else "",
+                "thread_mode": ("cosmetic" if self.t_mode.currentIndex()
+                                == 1 else "modeled") if threaded
+                else "modeled",
                 "drill": self._drill,
                 "depth": float(self.depth.value()),
                 "through": bool(self.through.isChecked()),

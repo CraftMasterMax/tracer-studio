@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M127**
+**Status: M128**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -101,7 +101,14 @@ independent project with no Autodesk assets or affiliation.)
   forward (height = turns x pitch); right/left hand, spring or boss
   thread, Pappus-true volumes; internal modeled cut-threads
   deliberately NOT offered — decoration serves them better, as the
-  standards tooling itself admits**
+  standards tooling itself admits**,
+  **cosmetic threads (M128): a tapped hole carries its full ISO
+  designation (M8-6H grammar: coarse pitch omitted, fine written out,
+  6H internal / 6g external) as metadata, and in Cosmetic mode drills
+  only its tap-drill core — the major-Ø decal ring in the viewport
+  replaces the helix the standards tooling itself discourages
+  modeling; the M49 groove stays the legacy default, so no file on
+  disk silently changes shape**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -282,7 +289,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1367 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1379 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

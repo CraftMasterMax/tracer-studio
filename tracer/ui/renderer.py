@@ -183,6 +183,7 @@ class SceneRenderer:
         self._grid_count = 0
         self._planes: list[dict] = []
         self._axes: list[dict] = []       # M125 work axes (datum store)
+        self._decals: list[dict] = []     # M128 cosmetic-thread rings
         self._plane_vao: moderngl.VertexArray | None = None
         self._plane_count = 0
         self.show_grid = True
@@ -494,12 +495,19 @@ class SceneRenderer:
         self._axes = list(axes)
         self._rebuild_planes()
 
+    def set_decals(self, rings: list[dict]):
+        """Cosmetic-thread major-Ø rings (M128): dict per ring with
+        center/axis/radius. They ride the same line buffer as the
+        datums — decoration never touches solid geometry."""
+        self._decals = list(rings)
+        self._rebuild_planes()
+
     def _rebuild_planes(self):
         if self._plane_vao is not None:
             self._plane_vao.release()
             self._plane_vao = None
             self._plane_count = 0
-        if not self._planes and not self._axes:
+        if not self._planes and not self._axes and not self._decals:
             return
         e = max(self._grid_extent * 0.35, 20.0)     # quarter-grid squares
         pr, pg, pb = self.palette["plane_line"]
@@ -522,6 +530,19 @@ class SceneRenderer:
             o = np.asarray(ax["origin"], float)       # one full-span line
             dd = np.asarray(ax["dir"], float)
             add(o - e * dd, o + e * dd, (pr, pg, pb, 0.85))
+        for rg in self._decals:                       # M128: cosmetic
+            c0 = np.asarray(rg["center"], float)      # thread rings at
+            n = np.asarray(rg["axis"], float)         # ISO major Ø —
+            n = n / np.linalg.norm(n)                 # 64 chords, faint
+            u = np.cross(n, np.eye(3)[int(np.abs(n).argmin())])
+            u = u / np.linalg.norm(u)
+            v = np.cross(n, u)
+            r = float(rg["radius"])
+            pts = [c0 + r * (np.cos(2 * np.pi * i / 64) * u
+                             + np.sin(2 * np.pi * i / 64) * v)
+                   for i in range(64)]
+            for i in range(64):
+                add(pts[i], pts[(i + 1) % 64], (pr, pg, pb, 0.6))
         arr = np.array(lines, np.float32)
         buf = self.ctx.buffer(arr.tobytes())
         self._plane_vao = self.ctx.vertex_array(
