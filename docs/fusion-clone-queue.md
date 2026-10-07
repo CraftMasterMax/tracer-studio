@@ -1248,8 +1248,11 @@ M117 measure win-pack (test_m117, suite 1220 — ranks 11+12 closed,
 inertia/extents/section properties shipped); M118 Message Log (test_m118,
 suite 1236 — rank 6's item jumped the queue: failures now NAME their
 feature, the timeline badges it red, and a log double-click selects it —
-the deep-link Fusion's docs never shipped). The live queue starts at
-M119; items 1-7 below are history.*
+the deep-link Fusion's docs never shipped); M119 degrees-of-freedom
+overlay (test_m119, suite 1244 — the kernel report's verified beat:
+null-space analysis projected per point, crosses and slide-arrows on
+the canvas, the view Fusion's forums begged for). The live queue starts
+at M120; items 1-8 below are history.*
 1. **M112 — theme tokens** (`ui/theme.py` + single QSS: darkBlue
    surfaces, autodeskBlue accent, hover/select trio; no-px rule from
    `a11y_precision_cad.md`). [matrix rank 5]
@@ -1275,12 +1278,16 @@ M119; items 1-7 below are history.*
    panel with filter/Copy/Save/Clear, dedupe-at-tail, session chip —
    out of rank order because every later failure-UX milestone stands
    on it). [was rank 6's item]
-8. **M119 — planegcs embed** behind the solver iface. [rank 9; wave-1
-   M115]
+8. **M119 — degrees-of-freedom overlay** (shipped in planegcs's slot —
+   the DOF projection needed no C++ and demos against Fusion today;
+   the embed it displaced folds into M120, the milestone whose UX it
+   serves). [was rank 9's item; `fusion_kernel_architecture` §3]
 9. **M120 — sketch muscle**: `core/snaps.py` object snaps +
    **auto-constrain-on-drop live and free** (theirs is batch +
-   premium-gated) + 2D spline; `core/spline3d.py` next enables
-   3D-path sweep. [rank 15 + `snap_geometry.md`]
+   premium-gated) + 2D spline + **planegcs embed** behind the solver
+   iface (absorbed from old M119; the DOF overlay already rides the
+   iface and survives a backend swap); `core/spline3d.py` next enables
+   3D-path sweep. [ranks 15 + 9 + `snap_geometry.md`]
 10. **M121 — interlock family** (Snap Fit/Boss/Rest/Lip + Emboss
     text via QRawFont — zero new deps). [ranks 7 + 24]
 11. **M122 — fastener library** ([H] rows verified first) +
@@ -1351,11 +1358,12 @@ Corrections that reshape the queue:
   redraw (same-image colour variants) — our M112 token approach was the
   right call and needs no icon re-do to "match 2025". [confirms v2]
 
-Queue impact: M119 (planegcs embed, rank 9) stays first — now also
-carries the DOF overlay beat. Load-tiers and the selector-based fillet
-re-bind are the two new items for the next re-rank; nothing shipped is
-invalidated, and three beats (load tiers, DOF overlay, reliability
-wedge) gained hard citations.
+Queue impact: the DOF overlay shipped first as M119 (pure Python —
+it needed no C++ and demos today); planegcs embed folded into M120,
+the sketch-muscle milestone whose UX it serves. Load-tiers and the
+selector-based fillet re-bind are the two new items for the next
+re-rank; nothing shipped is invalidated, and three beats (load tiers,
+DOF overlay, reliability wedge) gained hard citations.
 
 ### Strategic frame, upgraded
 The matrix turned positioning into inventory: **16 verified

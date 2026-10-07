@@ -132,6 +132,7 @@ class SketchCanvas(QWidget):
                                                  False, type=bool))
         self._last_result = None
         self._dim_hits: list = []
+        self._show_dof = False            # M119: degrees-of-freedom overlay
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMinimumSize(320, 240)
         f = QFont()
@@ -1108,6 +1109,11 @@ class SketchCanvas(QWidget):
         elif not sel and self.model and (self.model.sketch.lines
                                          or self.model.sketch.circles):
             menu.addAction("Offset outline\u2026 (U)", self.act_offset)
+            menu.addSeparator()
+            dof = menu.addAction("Show degrees of freedom")
+            dof.setCheckable(True)
+            dof.setChecked(self._show_dof)
+            dof.toggled.connect(self.set_show_dof)
         elif self.tangent_ok(sel):
             menu.addAction("Tangent", self.act_tangent)
             if all(isinstance(e, (Circle, Arc)) for e in sel):
@@ -1313,11 +1319,94 @@ class SketchCanvas(QWidget):
             self._draw_entities(p)
             self._draw_dimensions(p)
             self._draw_glyphs(p)
+            if self._show_dof:                    # M119: the DOF overlay
+                self._draw_dof(p)
             self._draw_typein(p)              # M90: the live number chip
             self._draw_preview(p)
         self._draw_band(p)
         self._draw_hud(p)
         p.end()
+
+    # ---- M119: the degrees-of-freedom overlay ------------------------------
+    def set_show_dof(self, on: bool):
+        """The toggle Fusion's forums begged for and its UI never gave
+        (kernel report §3): show WHERE a sketch can still move, not just
+        that it can."""
+        self._show_dof = bool(on)
+        if self._show_dof and self.model:
+            self._solve()                     # fresh kinematics to draw
+        self.update()
+
+    def _draw_dof(self, p: QPainter):
+        res = self._last_result
+        if res is None or not getattr(res, "point_dof", None):
+            return
+        L = 15.0                                   # arrow reach, px
+        pen = QPen(ACCENT, 1.6)
+        p.setPen(pen)
+        for ent in self._dof_points():
+            d = res.point_dof.get(ent.id, 0)
+            if not d:
+                continue
+            at = self.w2s(ent.x, ent.y)
+            dirs = []
+            dx, dy = res.free_dirs.get(ent.id, (1.0, 0.0))
+            nrm = (dx * dx + dy * dy) ** 0.5 or 1.0
+            dirs.append((dx / nrm, dy / nrm))
+            if d >= 2:                             # cross of two directions
+                dirs.append((-dy / nrm, dx / nrm))
+            for ux, uy in dirs:
+                tip = self.w2s(ent.x + ux * L / max(self._scale, 1e-6),
+                               ent.y + uy * L / max(self._scale, 1e-6))
+                p.drawLine(at, tip)                # double-ended: motion
+                p.drawLine(at, self.w2s(ent.x - ux * L / max(self._scale, 1e-6),
+                                        ent.y - uy * L / max(self._scale, 1e-6)))
+                self._arrow_head(p, at, tip)
+                self._arrow_head(p, at, self.w2s(
+                    ent.x - ux * L / max(self._scale, 1e-6),
+                    ent.y - uy * L / max(self._scale, 1e-6)))
+
+    @staticmethod
+    def _arrow_head(p: QPainter, frm, to):
+        import math as _m
+        v = to - frm
+        ln = (v.x() ** 2 + v.y() ** 2) ** 0.5
+        if ln < 6:
+            return
+        ux, uy = v.x() / ln, v.y() / ln
+        from PySide6.QtCore import QPointF
+        a = 5.0
+        p.drawLine(to, QPointF(to.x() - a * (ux * 0.866 - uy * 0.5),
+                               to.y() - a * (uy * 0.866 + ux * 0.5)))
+        p.drawLine(to, QPointF(to.x() - a * (ux * 0.866 + uy * 0.5),
+                               to.y() - a * (uy * 0.866 - ux * 0.5)))
+
+    def _dof_points(self):
+        """Every value-carrying point the solver may have analysed."""
+        sk = self.model.sketch
+        out = []
+        for ln in sk.lines:
+            out += [ln.a, ln.b]
+        for c in sk.circles:
+            out.append(c.c)
+        for a in sk.arcs:
+            out += [a.a, a.m, a.b]
+        for e in sk.ellipses:
+            out.append(e.c)
+        out += list(sk.points)
+        seen, uniq = set(), []
+        for q in out:
+            if q.id not in seen:
+                seen.add(q.id)
+                uniq.append(q)
+        return uniq
+
+    def dof_summary(self) -> str:
+        res = self._last_result
+        if res is None or not getattr(res, "point_dof", None):
+            return "no sketch"
+        free = sum(1 for v in res.point_dof.values() if v)
+        return f"{free} free point{'s' if free != 1 else ''}, {res.dof} dof"
 
     # ---- dimension labels (double-click editable, Fusion-style) ------------
     def _dim_text(self, c) -> str:
@@ -1860,6 +1949,8 @@ class SketchCanvas(QWidget):
                 "poly": "Polygon — click centre · click vertex · "
                         "3-9 sides"}
         lines.append(("Tool: " + tool.get(self._tool, "?"), HUD))
+        if self._show_dof:                       # M119 overlay is on: speak
+            lines.append(("DOF \u00b7 " + self.dof_summary(), WARN))
         if self._last_result is not None:
             r = self._last_result
             if r.converged and r.dof == 0:

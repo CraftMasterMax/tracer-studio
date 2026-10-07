@@ -24,6 +24,8 @@ class SolveResult:
     failed: list = field(default_factory=list)
     redundant: list = field(default_factory=list)    # M87: add-nothing
     conflicting: list = field(default_factory=list)  # M87: won't close
+    point_dof: dict = field(default_factory=dict)    # M119: point.id -> 0..2
+    free_dirs: dict = field(default_factory=dict)  # M119: point.id -> (dx,dy)
 
     def __bool__(self): return self.converged
 
@@ -129,7 +131,11 @@ class Sketch:
         n = x.size
         m = len(rows)
         if m == 0:
-            return SolveResult(True, 0.0, n, 0)
+            res = SolveResult(True, 0.0, n, 0)
+            for p in pts:                   # no constraints: every point
+                res.point_dof[p.id] = 2     # floats free, two ways
+                res.free_dirs[p.id] = (1.0, 0.0)
+            return res
 
         def res(vec):
             self._unpack(pts, circles, ells, vec)
@@ -204,9 +210,33 @@ class Sketch:
                     seen.add(id(o))
                     out.append(o)
             return out
-        return SolveResult(converged and rn < tol, rn, dof, it, failed,
-                           redundant=_origins(red),
-                           conflicting=_origins(bad))
+        result = SolveResult(converged and rn < tol, rn, dof, it, failed,
+                             redundant=_origins(red),
+                             conflicting=_origins(bad))
+        # ---- M119: WHERE the freedom lives, not just how much. The
+        # Jacobian's null space holds every instantaneous motion the
+        # constraints still allow; projecting it into each point's
+        # 2 coords answers Inventor's "show all degrees of freedom"
+        # — the view Fusion's users beg for and it never shipped
+        # [fusion_kernel_architecture §3; forums 6803824/10057799].
+        try:
+            from scipy.linalg import null_space
+            N = null_space(J, rcond=1e-7)           # n × (n-rank)
+        except Exception:
+            N = np.zeros((n, 0))
+        for i, p in enumerate(pts):
+            proj = N[[2 * i, 2 * i + 1], :]         # this point's slice
+            if N.shape[1] == 0 or proj.size == 0:
+                result.point_dof[p.id] = 0
+                continue
+            pr = int(np.linalg.matrix_rank(proj, tol=1e-9))
+            result.point_dof[p.id] = min(pr, 2)
+            if pr:
+                ux = (proj @ proj.T)                # 2×2 energy tensor
+                w, V = np.linalg.eigh(ux)
+                d = V[:, -1]                        # richest free direction
+                result.free_dirs[p.id] = (float(d[0]), float(d[1]))
+        return result
 
 
 _TOL_SCALE = 100.0
