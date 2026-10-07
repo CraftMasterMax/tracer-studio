@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Tracer Studio
+GenericName=Parametric CAD
+Comment=Keyboard-first parametric CAD for makers — free forever, offline
+Exec=@PREFIX@/.venv/bin/tracer %f
+Icon=tracer-studio
+Terminal=false
+Categories=Graphics;3DGraphics;Qt;
+Keywords=cad;parametric;3d;modeling;maker;print;engineering;
+MimeType=application/x-tracer;

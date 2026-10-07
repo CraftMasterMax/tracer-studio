@@ -152,10 +152,24 @@ independent project with no Autodesk assets or affiliation.)
 
 ## Run it
 
+**Linux — one installer, then just `tracer`:**
+
+```bash
+git clone https://github.com/CraftMasterMax/tracer-studio && cd tracer-studio
+./tools/install-linux.sh
+```
+
+That builds a private `.venv`, puts **`tracer`** on your PATH
+(`tracer part.tracer` opens a file), adds **Tracer Studio** to your
+app launcher grid, and associates **`.tracer` files** so they open
+with a double-click. Removing it: `./tools/uninstall-linux.sh`.
+
+**From source (or Windows):**
+
 ```bash
 python3 -m venv .venv
 ./.venv/bin/pip install -e .[dev]        # Windows: .venv\Scripts\pip install -e .[dev]
-./.venv/bin/python -m tracer             # or: ./.venv/bin/tracer
+./.venv/bin/python -m tracer             # or: ./.venv/bin/tracer [file.tracer]
 ```
 
 ## Using it
@@ -178,7 +192,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1140 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1147 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

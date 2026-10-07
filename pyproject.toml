@@ -35,7 +35,7 @@ build-backend = "setuptools.build_meta"
 include = ["tracer*"]
 
 [tool.setuptools.package-data]
-"tracer.resources" = ["fonts/*.ttf", "fonts/*.txt"]
+"tracer.resources" = ["fonts/*.ttf", "fonts/*.txt", "*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
