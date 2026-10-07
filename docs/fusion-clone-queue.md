@@ -1197,6 +1197,16 @@ consequence.
   tracer:-prefixed metadata, part labels, and the whole build grounded
   on the plate without touching a vertex. STL/OBJ/PLY keep the trimesh
   road untouched. Suite now 1197.
+- **M116**: the crowned module — `core/topology.py` reads a triangulated
+  Solid the way a designer names it: union-find face groups (box 6,
+  cylinder 2 planes + 1 tube), crease-walked semantic edges between
+  corners (box exactly 12, a cylinder rim ONE closed loop whose length
+  tracks 2πr inside 1%), planarity verdicts per group, and the cone's
+  float-noise apex slivers dismissed rather than shredded (the
+  256-facet trap, pinned by test). Cached on the immutable Solid;
+  face-pair → edge-token lookup ready for the fillet dialog — one
+  classifier for selection kinds, crossing windows and drawing-line
+  quality. Suite now 1206.
 
 ### Corrections wave 2 bought us
 - **Fusion HAS a 3D sketch mode now** (triad, per-point plane
@@ -1224,8 +1234,9 @@ consequence.
 matrix's #1 gap is CLOSED); M114 ISO 286 fit callouts (test_m114,
 suite 1182 — matrix rank 2 closed, drawing keys D/B/F/Esc shipped with
 it); M115 native 3MF (test_m115, suite 1197 — rank 3 closed, the
-writer audit's four gaps fixed). The live queue starts at M116; items
-1-4 below are history.*
+writer audit's four gaps fixed); M116 the topology classifier
+(test_m116, suite 1206 — the fillet/selection/HLR unblocker lands).
+The live queue starts at M117; items 1-5 below are history.*
 1. **M112 — theme tokens** (`ui/theme.py` + single QSS: darkBlue
    surfaces, autodeskBlue accent, hover/select trio; no-px rule from
    `a11y_precision_cad.md`). [matrix rank 5]

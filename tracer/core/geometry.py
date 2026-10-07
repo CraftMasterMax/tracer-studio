@@ -117,6 +117,7 @@ class Solid:
 
     def __init__(self, manifold: m3.Manifold):
         self._m = manifold
+        self._topology = None       # M116: lazily computed, see below
 
     # ---- constructors -------------------------------------------------
     @classmethod
@@ -232,6 +233,15 @@ class Solid:
         tm = self.to_trimesh()
         tm.apply_transform(np.asarray(m4, dtype=np.float64))
         return Solid.from_mesh(tm.vertices, tm.faces)
+
+    def topology(self):
+        """The face/edge/corner reading of this solid (M116), computed
+        once and cached: Solids are immutable and every boolean returns
+        a NEW one, so a cached reading can never go stale."""
+        if self._topology is None:
+            from .topology import Topology
+            self._topology = Topology(self.to_trimesh())
+        return self._topology
 
     def to_trimesh(self) -> trimesh.Trimesh:
         tm = self._m.to_mesh()
