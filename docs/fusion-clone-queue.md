@@ -1293,6 +1293,70 @@ M119; items 1-7 below are history.*
   prefs two-pane (re-verify landing), `tracer merge3`, DXF curve-fit,
   exact HLR, truss sim-lite.
 
+### Wave-1 research addendum (2026-10-07; six reports, ~27.5k words)
+
+`fusion_kernel_architecture.md`, `fusion_command_anatomy.md`,
+`fusion_large_assembly.md`, `ui_icons.md`, `ui_navcube.md` (+ its
+`ui_navcube_cloning_checklist.md`). Landed in `/tmp/opencode/research/`.
+Corrections that reshape the queue:
+
+- **Fusion's scale answer is "don't compute", and it has NO
+  per-component load tiers.** Fusion's own Sept-2026 notes ship "an
+  automatic **mesh-assisted fallback** for Boolean operations that
+  cannot be resolved" — the exact-geometry kernel really does fail, and
+  the vendor degrades to mesh. SolidWorks has Lightweight/SpeedPak;
+  Fusion has nothing per-component. → **Tracer differentiator: per-body
+  load tiers (Full / Graphics-only / Suppressed) as a first-class
+  browser feature.** A cleaner beat than anything in v2's tail; promote
+  above "browser polish".
+- **Kill the persistent-topological-naming problem with *selectors*,
+  not stored IDs** (Rule Fillet pattern: "all concave edges of feature
+  X", re-evaluated each rebuild). Our M116 `core/topology.py` is the
+  substrate — this is its intended payoff, and how the fillet dialog
+  should bind edges. Fold into the fillet-rebind work (matrix rank 27
+  continuation), tag [M].
+- **`Placement ≠ Feature` from day one.** Component moves are kinematic
+  (no timeline feature) until an explicit `CapturePosition`; body moves
+  are parametric. Retrofitting this separation into the tree is brutal
+  — encode it as a dataclass boundary now, before assembly phase 1.
+  [S, architecture]
+- **Error-vs-Warning is kernel-derived, and we can beat the honesty.**
+  Fusion: a *geometry* reference failure → yellow warn (replay cached
+  mesh); a *topology* reference failure → red error (blocks + propagates
+  to dependents). M118 already names the guilty feature; next step is
+  the two-tier severity + dependent-propagation, surfaced *proactively*
+  (Fusion hides errors behind the rollback bar — a documented footgun).
+  [M; extends M118]
+- **View orientation is settled enough to build.** Our mini-triad is
+  additive (Fusion has no bottom-left widget — confirmed absent);
+  defaults ARE the docs (MMB=pan, Shift+MMB=orbit; the "MMB=orbit"
+  memory is the SolidWorks preset); F5–F8 do not exist; FOV ≈22.6°
+  [community-converged]. Build the ViewCube straight from the
+  cloning-checklist file (13 sections, 12 acceptance tests). [M, nav]
+- **Icon set v2 = clone the *grammar*, restyle the art.** The real
+  Fusion icons are enumerable from a public help CDN (a digger pulled
+  120 + montages) but those files are **quarantined — Chinese wall**:
+  artists work from this text only. Semantic code to clone: blue dots =
+  defining handles, red = constraints/locks, orange dash-dot =
+  construction, white = reference, blue = result, yellow sparkle = auto.
+  Corrected pictograms: Extrude = blue prism on a white plate (no
+  arrow); Revolve = profile + dash-dot axis (no arc). [S–M, art task]
+- **DOF overlay is Fusion's #1 documented user gap** (forums begging
+  for "show all degrees of freedom"/"find missing constraints"). We
+  already have per-entity DOF count — an overlay + "highlight free
+  DOFs" button demos against Fusion the same week. Fold into M119
+  planegcs work (the solver iface we're embedding already computes it).
+  [M; verified beat]
+- **The 2025 "unified UI" refresh is a chrome retheme**, not a glyph
+  redraw (same-image colour variants) — our M112 token approach was the
+  right call and needs no icon re-do to "match 2025". [confirms v2]
+
+Queue impact: M119 (planegcs embed, rank 9) stays first — now also
+carries the DOF overlay beat. Load-tiers and the selector-based fillet
+re-bind are the two new items for the next re-rank; nothing shipped is
+invalidated, and three beats (load tiers, DOF overlay, reliability
+wedge) gained hard citations.
+
 ### Strategic frame, upgraded
 The matrix turned positioning into inventory: **16 verified
 advantages** (offline versions where their own docs lose them, live
