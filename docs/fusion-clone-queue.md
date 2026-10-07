@@ -1328,6 +1328,22 @@ M125; items 1-11 below are history.*
     double-compensation + SuperSlicer-inverted-sign trap is surfaced in
     the 3D Print dialog. Deferred to M125+: per-material δ presets,
     3MF metadata, pin −δ and planar elephant-foot compensation.
+12. **M125 — construction-geo batch** [from `fusion_construction_geo.md`,
+    probed + repo-grounded 2026-10-07]. v1 = the usage-weighted cheap
+    set: (1) named DATUM store under a browser "Construction" bulb
+    (planes/axes as first-class, visible, selectable buckets);
+    (2) plane methods beyond offset — At Angle, Through Three Points,
+    Midplane (mesh-plane-fit), offset To-Object; (3) axis methods —
+    Through Two Points, Through Two Planes (intersection);
+    (4) circular pattern about any NAMED AXIS + mirror across any NAMED
+    PLANE — killing the +Z/+YZ hardcoding (document.py:91/:1052);
+    (5) datum-aware errors: yellow/red timeline + sketch-plane
+    re-host (Fusion heals nothing either — honest reselect beats fake
+    healing). DEFER (expensive without B-rep face identity): tangent/
+    perpendicular-at-point on curved faces, along-path, UCS, pattern/
+    mirror OF construction geo, proximity re-matching. Grammar notes:
+    dashed/faded datums, no auto-hide (X toggles sketch construction —
+    already ours), plane name labels renderer-side.
 - Tail (queued by matrix order, unnumbered): construction-geo batch,
   browser polish, radial marking wheel, nav presets, single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
