@@ -1063,6 +1063,13 @@ class MainWindow(QMainWindow):
                         "that re-derives with the model")
         secb.clicked.connect(self.action_section_view)
         bl.addWidget(secb)
+        tbb = QPushButton("Title\u2026")                 # M108 title block
+        tbb.setProperty("tb", True)
+        tbb.setToolTip("Fill the drawing title block — number, title, "
+                       "drawn-by, date and material (scale, sheet size "
+                       "and sheet number are added for you)")
+        tbb.clicked.connect(self.action_title_block)
+        bl.addWidget(tbb)
         bl.addStretch(1)
         lay.addWidget(bar)
         from .drawingview import DrawingCanvas
@@ -1191,6 +1198,43 @@ class MainWindow(QMainWindow):
         self.drawing.update()
         self.status.showMessage(
             f"Section {name} ({axis} = {float(v['at']):.2f} mm)", 4000)
+
+    def action_title_block(self):
+        """M108: fill the sheet's ISO title block.  Only the human fields
+        are stored (number/title/author/date/material); scale, sheet size
+        and the sheet number are derived from the drawing at draw time, so
+        they can never go stale.  Cancelling changes nothing; the block
+        rides the document's undo and the JSON save for free."""
+        if self.doc is None or not self.doc.drawings:
+            self.status.showMessage("Create a drawing first", 3000)
+            return
+        g = self.drawing.sheet() or self.doc.drawings[-1]
+        block = dict(g.get("block") or {})
+        from . import cmddialog
+        v = cmddialog.ask(self, "Title block", [
+            dict(key="number", kind="text", label="Drawing no.",
+                 default=block.get("number", "")),
+            dict(key="title", kind="text", label="Title",
+                 default=block.get("title", g.get("name", ""))),
+            dict(key="author", kind="text", label="Drawn by",
+                 default=block.get("author", "")),
+            dict(key="date", kind="text", label="Date",
+                 default=block.get("date", "")),
+            dict(key="material", kind="text", label="Material",
+                 default=block.get("material", ""), group="Part")])
+        if v is None:
+            return
+        self._capture()
+        clean = {k: str(v.get(k, "")).strip() for k in
+                 ("number", "title", "author", "date", "material")}
+        clean = {k: val for k, val in clean.items() if val}
+        if clean:
+            g["block"] = clean
+        else:
+            g.pop("block", None)
+        self.doc.dirty = True
+        self.drawing.update()
+        self.status.showMessage("Title block updated", 3000)
 
     def _add_dim(self, view: str, a: tuple, b: tuple, opts: dict = None):
         """A finished bubble (M94/M95): undo-captured, stored in MODEL

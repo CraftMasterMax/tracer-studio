@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M107**
+**Status: M108**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
@@ -101,8 +101,10 @@ independent project with no Autodesk assets or affiliation.)
   model on every repaint, follow a stretch or a redrill, and travel
   when you drag a view; double-click a view for its **scale picker**
   (Fit, 1:1, 1:2, …) — bubbles keep measuring the model while the ink
-  follows the ratio; sheets live in the browser tree and export as
-  PNG+DXF
+  follows the ratio; a filled-in **title block** (drawing no., title,
+  drawn-by, date, material — scale, sheet size and the sheet number are
+  added for you) proves the paper came from this model; sheets live in
+  the browser tree and export as PNG+DXF
 - **Configurations**: multiple design variants in one file — a text
   table per config (`Small: width = 18, height = 10`) overrides
   parameters on the fly; switch the active config and the solid,
@@ -160,7 +162,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1059 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1073 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

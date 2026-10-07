@@ -927,13 +927,38 @@ which clears the drill override and leaves every field to the user, so
 the pre-library behaviour (and all four hole test files) is byte-for-byte
 unchanged — only the verb learned "drill overrides the circle."
 
-**Later candidates (researched, deferred):** multi-body phase 2c —
+**M108 — the drawing title block: provenance for the sheet.** ✓
+SHIPPED.  Backlog #2 from the Oct sweep.  A drawing with no title block
+is a pretty picture with no story — nobody knows what it is, who drew it,
+when, or what it's made of.  Fusion stamps an ISO block bottom-right; so
+does Tracer now.  The five HUMAN fields (drawing no., title, drawn-by,
+date, material) are stored on the sheet as `sheet["block"]`; scale, page
+size and the sheet's place in the set ("2 / 3") are DERIVED at draw time
+from the drawing, so a block can never carry a stale scale after the
+model grows.  All of it lives in one pure resolver, `drawing.
+title_block(sheet, meta, page)`, returning sheet-mm geometry (frame + the
+row/column dividers) and text cells with explicit column boxes, so text
+clips inside its own cell and never bleeds across a divider.  The canvas
+paints it through the same sheet→pixel map as every view; an untouched
+sheet still shows a populated, honest block (title falls back to the
+sheet name).  The block is deliberately **paper-only**: it paints in the
+canvas and so lands in the PNG, but never enters the DXF line stream —
+drawing it there corrupts CAD re-import, exactly as the bubble *text*
+already stayed the PNG's job.  A `save()/restore()` around the paint
+keeps its pen + font from leaking into the views, bubbles and hatch
+painted after it.  Editing is one verb (Title… on the sheet bar): a
+text dialog prefilled from the current block; blanks are stripped, an
+all-empty block is dropped, and the dict rides the document's undo stack
+and JSON save for free — no new serialisation.
+
+**Later candidates (researched, deferred):** the rest of backlog #2 — a
+drawing parts-list BOM table + balloons wired to it; multi-body phase 2c —
 per-body STEP compound (needs the C++ OCCT bridge to take a compound)
 + per-body opacity + cross-body feature sources; the fastener library's
 own tail (more threads/fine-pitch, more insert brands, a modelled external
 thread on a stud); then Draft, per-view rotation, sheet metal,
 assemblies/joints, and a section cutting-plane arrow on the drawing.
-Re-evaluate after M107.
+Re-evaluate after M108.
 
 ## Oct 2026 research sweep — the landscape and the ranked backlog
 

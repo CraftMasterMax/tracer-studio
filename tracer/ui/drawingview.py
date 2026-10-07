@@ -377,21 +377,45 @@ class DrawingCanvas(QWidget):
         p.setBrush(QColor("#f5f5f2"))                        # the paper
         p.drawRect(sheet)
         p.setBrush(Qt.NoBrush)
-        # title block bottom-right, Fusion-sheet style
-        tb = QRectF(sheet.right() - 150 * self._zoom,
-                    sheet.bottom() - 24 * self._zoom,
-                    150 * self._zoom, 24 * self._zoom)
-        p.setPen(QPen(QColor(90, 94, 100), 1))
-        p.drawRect(tb)
-        name = self.sheet().get("name", "")
-        p.setPen(QPen(QColor(40, 42, 46)))
-        f = p.font()
-        f.setPointSizeF(max(6.0, 9 * min(self._zoom, 2.0)))
-        p.setFont(f)
-        p.drawText(tb.adjusted(6, 2, -6, -2),
-                   Qt.AlignLeft | Qt.AlignVCenter,
-                   f"{name}   {self.page}   1:{max(1, round(1 / self.page_scale()))}"
-                   if self.views() else name)
+        self._paint_block(p)                                 # M108 title block
+
+
+    def _block_meta(self) -> dict:
+        """Derived title-block strings the canvas (not the sheet) knows:
+        fitted print scale and sheet position within the drawing set."""
+        n = max(1, len(self.doc.drawings)) if self.doc else 1
+        sc = max(1, round(1 / self.page_scale())) if self.views() else 1
+        return {"scale": f"1:{sc}", "sheet": f"{self.sheet_idx + 1} / {n}"}
+
+    def _paint_block(self, p: QPainter):
+        """Draw the ISO title block bottom-right from the pure resolver.
+        It's sheet furniture, not view geometry: it paints here (and thus
+        into the PNG) but never enters the DXF line stream — and it saves /
+        restores the painter so its pen + font can't leak into the views,
+        bubbles and section hatch painted after it."""
+        p.save()
+        tb = drawing.title_block(self.sheet(), meta=self._block_meta(),
+                                 page=self.page)
+        p.setPen(QPen(QColor(70, 74, 80), 1))
+        for (ax, ay), (bx, by) in tb["lines"]:
+            p.drawLine(self.s2p(ax, ay), self.s2p(bx, by))
+        p.setPen(QPen(QColor(38, 40, 44)))
+        for c in tb["cells"]:
+            if not c["text"]:
+                continue
+            top = self.s2p(c["xa"], c["y"] + c["size"])
+            bot = self.s2p(c["xb"], c["y"] - c["size"])
+            box = QRectF(min(top.x(), bot.x()), min(top.y(), bot.y()),
+                         abs(bot.x() - top.x()), abs(bot.y() - top.y()))
+            f = p.font()
+            f.setPixelSize(max(5, int(c["size"] * self._zoom)))
+            p.setFont(f)
+            al = {"l": Qt.AlignLeft, "c": Qt.AlignHCenter,
+                  "r": Qt.AlignRight}[c["align"]]
+            p.drawText(box.adjusted(2, 0, -2, 0), al | Qt.AlignVCenter,
+                       c["text"])
+        p.restore()
+
         # views + section hatch + hidden ink + bubbles (one pass)
         views = self.views()
         placed = self.placed(views)

@@ -28,6 +28,68 @@ VIEWS = {
 STANDARD = ["top", "front", "right", "iso"]
 PAGES = {"A3": (420.0, 297.0), "A4": (297.0, 210.0)}     # landscape mm
 
+# The editable title-block fields (M108): what a draughtsman types.  Scale,
+# page size and sheet number are DERIVED at draw time, never stored here.
+TITLE_FIELDS = ("number", "title", "author", "date", "material")
+
+
+def title_block(sheet: dict, meta: dict | None = None,
+                page: str = "A3") -> dict:
+    """Resolve a sheet's title block into sheet-mm geometry + text (M108).
+
+    Coordinates are the sheet's own space (y-up, origin lower-left) so the
+    canvas maps them through the same s2p as every view, and the DXF writer
+    can emit the frame as plain line art (text stays the PNG's job, exactly
+    as with dimension bubbles).  ``meta`` carries the derived strings the
+    caller knows: ``scale`` (e.g. "1:2"), ``page`` and ``sheet`` ("1 / 1").
+    Every field degrades to a sane default — an untouched sheet still shows
+    a populated, honest block.
+    """
+    block = dict(sheet.get("block") or {})
+    meta = meta or {}
+    W, H = PAGES.get(page, PAGES["A3"])
+    margin = 10.0
+    wblk = min(180.0, W - 2 * margin)
+    hblk = min(40.0, H - 2 * margin)
+    x0, y0 = W - margin - wblk, margin
+    r1, r2 = y0 + hblk / 3.0, y0 + 2 * hblk / 3.0        # row boundaries
+    cx, dx = x0 + wblk / 2.0, x0 + wblk / 3.0
+    ex = x0 + 2 * wblk / 3.0
+    lines = [((x0, y0), (x0 + wblk, y0)),
+             ((x0 + wblk, y0), (x0 + wblk, y0 + hblk)),
+             ((x0 + wblk, y0 + hblk), (x0, y0 + hblk)),
+             ((x0, y0 + hblk), (x0, y0)),
+             ((x0, r1), (x0 + wblk, r1)), ((x0, r2), (x0 + wblk, r2)),
+             ((cx, r1), (cx, r2)), ((dx, y0), (dx, r1)), ((ex, y0), (ex, r1))]
+    title = block.get("title") or sheet.get("name", "")
+    num = block.get("number", "")
+    yt, ym, yb = (r2 + y0 + hblk) / 2, (r1 + r2) / 2, (y0 + r1) / 2
+    xL, xR = x0, x0 + wblk
+    # each cell carries the column box [xa,xb] it lives in + a y centre, so
+    # the painter aligns/clips text inside its own box (never bleeding into
+    # the neighbour across a divider).
+    cells = [
+        {"text": title, "xa": x0, "xb": cx, "y": yt,
+         "size": hblk / 3 * 0.5, "align": "l"},
+        {"text": num, "xa": cx, "xb": xR, "y": yt,
+         "size": hblk / 3 * 0.5, "align": "r"},
+        {"text": f"Drawn: {block.get('author', '')}" if block.get("author")
+         else "Drawn:", "xa": x0, "xb": cx, "y": ym,
+         "size": hblk / 3 * 0.38, "align": "l"},
+        {"text": f"Date: {block.get('date', '')}" if block.get("date")
+         else "Date:", "xa": cx, "xb": xR, "y": ym,
+         "size": hblk / 3 * 0.38, "align": "l"},
+        {"text": f"Scale {meta.get('scale', '')}".strip(), "xa": x0, "xb": dx,
+         "y": yb, "size": hblk / 3 * 0.38, "align": "l"},
+        {"text": (block.get("material") if block.get("material")
+                  else "—"), "xa": dx, "xb": ex, "y": yb,
+         "size": hblk / 3 * 0.38, "align": "c"},
+        {"text": f"Sheet {meta.get('sheet', '')}".strip(), "xa": ex, "xb": xR,
+         "y": yb, "size": hblk / 3 * 0.38, "align": "r"},
+    ]
+    return {"rect": (x0, y0, wblk, hblk), "lines": lines, "cells": cells,
+            "page": page}
+
 
 def _basis(view: str) -> tuple:
     d = np.asarray(VIEWS[view]["dir"], float)
