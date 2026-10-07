@@ -97,6 +97,10 @@ class MainWindow(QMainWindow):
         "Titanium Ti-6Al-4V", "Copper",
     ]
     _MATERIAL_DENSITIES = _density_labels(_PRINT_ORDER)  # g/cm³ in label
+    # M124 print fit-mode: the δ menu. 0 default = never silently lie;
+    # 0.2 = the FDM line-fit folklore the interlock grammar already uses.
+    _FIT_DELTAS = ("0.0 — as-modelled", "0.1 mm", "0.2 mm — FDM line-fit",
+                   "0.3 mm", "0.5 mm")
 
     def __init__(self, renderer: SceneRenderer | None = None):
         super().__init__()
@@ -2555,6 +2559,15 @@ class MainWindow(QMainWindow):
                      default="\n".join(lines)),
                 dict(key="m", kind="combo", label="Material",
                      choices=self._MATERIAL_DENSITIES, default=dens),
+                dict(key="fit", kind="combo", label="Print fit δ (M124)",
+                     choices=self._FIT_DELTAS,
+                     default=str(s.value("printfit/delta",
+                                         "0.0 — as-modelled"))),
+                dict(key="apply", kind="combo", label="Apply δ",
+                     choices=("Label only (geometry unchanged)",
+                              "Enlarge holes by δ (export only)"),
+                     default=str(s.value("printfit/apply",
+                                         "Label only (geometry unchanged)"))),
                 dict(key="drop", kind="check",
                      label="Drop to bed (rest on z=0 in the STL)",
                      default=True)])
@@ -2570,9 +2583,29 @@ class MainWindow(QMainWindow):
             str(Path(self.doc.title + ".stl")), "STL (*.stl)")
         if not path:
             return
-        self._print_export(path, drop=bool(v["drop"]))
-        self.status.showMessage(
-            f"Print-ready STL written to {Path(path).name}", 5000)
+        from ..core import printfit
+        delta = float(str(v["fit"]).split()[0])
+        enlarge = v["apply"].startswith("Enlarge") and delta > 0.0
+        s.setValue("printfit/delta", str(v["fit"]))
+        s.setValue("printfit/apply", v["apply"])
+        if enlarge:
+            with printfit.compensated(self.doc, delta) as (pl, _d):
+                self._print_export(path, drop=bool(v["drop"]))
+                msg = printfit.describe(pl)
+            logservice.info("Print fit: " + msg, source="printfit")
+            self.status.showMessage(
+                f"Print-fit {msg} — document untouched, "
+                f"STL only; beware double compensation if your slicer "
+                f"also offsets holes", 8000)
+        else:
+            self._print_export(path, drop=bool(v["drop"]))
+            if delta > 0.0:
+                self.status.showMessage(
+                    "δ set but Label-only: " + "; ".join(
+                        printfit.EXPECTED_DEVIATION), 8000)
+            else:
+                self.status.showMessage(
+                    f"Print-ready STL written to {Path(path).name}", 5000)
 
     def _print_export(self, path, drop: bool = True):
         """Export the current solid as an STL, optionally resting it on

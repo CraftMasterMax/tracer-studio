@@ -1266,9 +1266,14 @@ throwaway InterferenceResults can never be); M123 fastener library with
 PROVENANCE (test_m123, suite 1301 — data/*.json tables each stamped with
 standard + edition + sources + verified date; Hole dialog names its
 sources live; the CI validator cross-checks neighbours — washer ID ==
-ISO 273 close — and the sweep it enabled corrected 7 clearance cells).
-The live queue starts at M124 (print fit-mode); items 1-10 below are
-history.*
+ISO 273 close — and the sweep it enabled corrected 7 clearance cells);
+M124 print fit-mode (test_m124, suite 1311 — δ at the export boundary:
+hole radii rewritten parametrically inside a context manager, analytic
+to the micron, document never touched; δ=0 default + label-only mode
+speaks the sourced deviations; morphological ball-offsets PROVED
+unable to move hole walls and dropped from the plan before shipping).
+The live queue starts at
+M125; items 1-11 below are history.*
 1. **M112 — theme tokens** (`ui/theme.py` + single QSS: darkBlue
    surfaces, autodeskBlue accent, hover/select trio; no-px rule from
    `a11y_precision_cad.md`). [matrix rank 5]
@@ -1309,20 +1314,20 @@ history.*
    `snap_geometry.md` + `planegcs_embeddability.md`]
 10. **M121 — interlock family** (Snap Fit/Boss/Rest/Lip + Emboss
     text via QRawFont — zero new deps). [ranks 7 + 24]
-11. **M124 — print fit-mode** (parametric δ at export). [rank 8] —
-    researched 2026-10-07 (`print_fit_mode.md`): the design is settled.
-    v1 ships (a) HOLE/FIT-FACE-ONLY compensation — rewrite cylindrical
-    face radii at export (hole +δ, pin −δ), no topology change, refuse
-    features under 2δ, emit a face→Δ change-log into 3MF metadata;
-    (b) LABEL-ONLY default mode annotating expected deviation (holes
-    −0.1…−0.2, elephant-foot +0.15/0.2 from Prusa's own factory
-    profiles) so unset δ never silently lies; (c) δ default 0 with a
-    double-compensation warning naming each slicer's knob — and
-    SuperSlicer's OPPOSITE hole-sign convention. Staged beta: full-solid
-    ball offset via manifold3d ≥3.4 `minkowski_sum/difference` (proven
-    in the probe: shrinks a Ø5 hole by exactly δ, watertight) but it
-    deletes sub-2δ features by definition, so opt-in + pre/post
-    validation only. Never: vertex-normal displacement, voxel morphs.
+11. **M124 — print fit-mode** (parametric δ at export). [rank 8]
+    SHIPPED (v1). Research (`print_fit_mode.md`) settled the design; a
+    live test then CORRECTED two of its proposals: (a) a full-solid
+    ball offset (`minkowski_sum/difference`) was proven unable to grow
+    a hole — morphology can't move a wall larger than the ball, it only
+    rounds rims (genus even dropped 1→0 on a Ø10 hole). So v1 rewrites
+    the parametric HOLE radius inside a context manager instead
+    (analytic to the micron, document restored byte-for-byte, refuses
+    holes under 2δ, skips threads/pins honestly). (b) the change-log
+    went to the message log, not 3MF metadata (deferred). δ defaults 0
+    with label-only mode speaking the sourced deviations; the
+    double-compensation + SuperSlicer-inverted-sign trap is surfaced in
+    the 3D Print dialog. Deferred to M125+: per-material δ presets,
+    3MF metadata, pin −δ and planar elephant-foot compensation.
 - Tail (queued by matrix order, unnumbered): construction-geo batch,
   browser polish, radial marking wheel, nav presets, single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings

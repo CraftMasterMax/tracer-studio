@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M123**
+**Status: M124**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -68,7 +68,14 @@ independent project with no Autodesk assets or affiliation.)
   if any table ships uncited or stops corroborating its neighbours
   (ISO 7089 washer IDs ARE the ISO 273 close holes, all seven sizes;
   the verified sweep that moved these tables corrected seven cells that
-  had drifted into shop-table folklore)**
+  had drifted into shop-table folklore)**,
+  **print fit-mode (M124): the 3D Print dialog carries an honest δ knob —
+  holes enlarge by exactly δ in the EXPORTED mesh only (parametric radius
+  rewrite inside a context manager, analytic to the micron), the document
+  itself never knows; δ defaults 0, label-only mode states the sourced
+  expected FDM deviations (holes print small, elephant-foot +0.15–0.2),
+  and the double-compensation trap the slicers call a convention war —
+  SuperSlicer even inverts the hole sign — gets said out loud**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -249,7 +256,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1301 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1311 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
