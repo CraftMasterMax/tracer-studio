@@ -33,7 +33,8 @@ def test_initial_file_ignores_strangers_and_ghosts(tmp_path):
 
 
 def test_desktop_template_is_installer_ready():
-    desk = (ROOT / "packaging/linux/tracer-studio.desktop").read_text()
+    desk = (ROOT / "packaging/linux/tracer-studio.desktop").read_text(
+        encoding="utf-8")
     assert "Exec=@PREFIX@/.venv/bin/tracer %f" in desk
     assert "Icon=tracer-studio" in desk
     assert "MimeType=application/x-tracer;" in desk
@@ -41,7 +42,8 @@ def test_desktop_template_is_installer_ready():
 
 
 def test_mime_package_claims_the_extension():
-    xml = (ROOT / "packaging/linux/tracer-studio.xml").read_text()
+    xml = (ROOT / "packaging/linux/tracer-studio.xml").read_text(
+        encoding="utf-8")
     assert 'type="application/x-tracer"' in xml
     assert 'pattern="*.tracer"' in xml
 

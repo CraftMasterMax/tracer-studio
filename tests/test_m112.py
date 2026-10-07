@@ -91,7 +91,9 @@ def test_no_ui_module_spells_a_colour():
     for py in UI_DIR.glob("*.py"):
         if py.name == "theme.py":
             continue
-        text = py.read_text()
+        # Python source files are UTF-8 by spec (PEP 3120) — never the
+        # platform default, which is cp1252 on Windows
+        text = py.read_text(encoding="utf-8")
         bad += [f"{py.name}: {m.group(0)}"
                 for m in re.finditer(r"#[0-9a-fA-F]{6}\b", text)]
         bad += [f"{py.name}: numeric QColor"
