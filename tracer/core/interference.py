@@ -34,3 +34,16 @@ def pairs(solids: dict, *, tol: float = 1e-6) -> list[dict]:
                 out.append({"a": a, "b": b, "volume": v})
     out.sort(key=lambda r: -r["volume"])
     return out
+
+
+def audit_doc(doc, *, tol: float = 1e-6) -> list[dict]:
+    """Pairs among the bodies that can LEGITIMATELY clash: derived
+    interference bodies are excluded, because a clash lens sits inside
+    its own parents by definition — counting it would snowball a new
+    body on every re-run of the command. Duck-typed (body_solids +
+    features) so this module never imports Document."""
+    derived = {f.body for f in getattr(doc, "features", [])
+               if type(f).__name__ == "InterferenceFeature" and f.body}
+    solids = {n: s for n, s in doc.body_solids().items()
+              if n not in derived}
+    return pairs(solids, tol=tol)

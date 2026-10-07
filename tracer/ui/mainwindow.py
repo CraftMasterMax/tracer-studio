@@ -2595,7 +2595,7 @@ class MainWindow(QMainWindow):
                 "CLASH. Model a pair (Body ▸ New Body) first.")
             return
         from ..core import interference
-        hits = interference.pairs(self.doc.body_solids())
+        hits = interference.audit_doc(self.doc)
         if not hits:
             QMessageBox.information(
                 self, "Interference",

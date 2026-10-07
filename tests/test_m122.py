@@ -93,6 +93,28 @@ def test_repeat_runs_get_numbered_bodies():
     assert b2["name"] == b1["name"] + " 2"
 
 
+def test_re_running_the_audit_never_snowballs():
+    """The red lens sits INSIDE its parents by definition — a naive
+    re-run of Tools ▸ Interference would flag lens∩parent as fresh
+    clashes and breed a new body every click. audit_doc excludes
+    derived bodies, so the answer is stable."""
+    from tracer.core import interference
+    d = _two_overlapping()
+    d.add_interference("A", "B")
+    d.recompute()
+    for _ in range(3):                       # click it three more times
+        hits = interference.audit_doc(d)
+        assert len(hits) == 1                # still just the honest pair
+        assert {hits[0]["a"], hits[0]["b"]} == {"A", "B"}
+        b, _f = d.add_interference(hits[0]["a"], hits[0]["b"])
+        d.recompute()
+    # pairs() itself stays geometrically honest (lens DOES overlap its
+    # parents, and other lenses) — purity of the raw audit vs the
+    # curated one the command uses: raw grows, curated never does.
+    raw = interference.pairs(d.body_solids())
+    assert len(raw) > len(interference.audit_doc(d)) == 1
+
+
 def test_source_names_are_checked_early():
     d = _two_overlapping()
     import pytest
