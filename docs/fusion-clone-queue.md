@@ -1309,17 +1309,14 @@ history.*
    `snap_geometry.md` + `planegcs_embeddability.md`]
 10. **M121 — interlock family** (Snap Fit/Boss/Rest/Lip + Emboss
     text via QRawFont — zero new deps). [ranks 7 + 24]
-11. **M123 — fastener library** + **M124 print fit-mode** (parametric δ
-    at export). [ranks 10 + 8] — [H] rows SWEPT: heat-set M5/M6 drills
-    corrected 7.0→6.7 / 8.5→8.2, and the ISO 273 clearance table itself
-    lost SEVEN cells to shop folklore (M4 4.1/4.3/4.6→4.3/4.5/4.8,
-    M5 close+medium→5.3/5.5, M6 coarse→7.0, M8 coarse→10.0) once the
-    official ISO 273:1979 preview PDF was reached
-    (`iso273_washers_verify.md`); both corrections shipped pinned.
-    ISO 7089 (normal) + ISO 7092 (small/narrow) washer tables fully
-    verified and waiting in that report — fold them in when the JSON
-    provenance schema lands. Still ahead: per-standard JSON tables +
-    provenance-validator schema so no value ships uncited.
+11. **M124 — print fit-mode** (parametric δ at export). [rank 8] —
+    the fastener-library half of this item shipped early as **M123**
+    (provenance JSON + validator shipped; washer tables folded in; the
+    sweep it mandated corrected seven ISO 273 cells + the heat-set
+    M5/M6 drills — see `iso273_washers_verify.md`,
+    `fastener_tables_verify.md`). What remains: lift δ from the
+    interlock grammar to a document-level print-mode knob the export
+    pipeline applies honestly (STL/3MF shrinkage + line-fit).
 - Tail (queued by matrix order, unnumbered): construction-geo batch,
   browser polish, radial marking wheel, nav presets, single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
