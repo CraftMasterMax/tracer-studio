@@ -1710,9 +1710,59 @@ class MainWindow(QMainWindow):
         menu = QMenu(self)
         menu.addAction("Activate " + name,
                        lambda checked=False: self.action_activate_body(name))
+        menu.addAction("Paint " + name + "…",
+                       lambda checked=False: self.action_paint_body(name))
         menu.addAction(("Hide" if vis else "Show") + " " + name,
                        lambda checked=False: self._toggle_body_visible(name))
         menu.exec_(pos)
+
+    def action_paint_body(self, name):
+        """M106: give ONE body its own material (Fusion's Appearance can
+        target a body).  This is the per-body layer; the whole-part doc
+        appearance (M52) stays the default for bodies that carry none."""
+        if self.doc is None:
+            return
+        b = next((x for x in self.doc.body_list()
+                  if x["name"] == name), None)
+        if b is None:
+            return
+        from ..core.appearance import MATERIALS, appearance
+        cur = (b.get("appearance") or {}).get("name", "(default)")
+        choices = ["(default)", "Custom…", *MATERIALS]
+        v = cmddialog.ask(self, f"Paint {name}", [
+            dict(key="preset", label="Material", kind="combo",
+                 choices=choices,
+                 default=cur if cur in choices else "(default)",
+                 group=name)], remember_key=f"paint:{name}")
+        if v is None:
+            return
+        preset = v["preset"]
+        self._capture()
+        if preset == "(default)":
+            self.doc.set_body_appearance(name, None)
+            msg = f"{name}: default appearance"
+        elif preset == "Custom…":
+            from PySide6.QtGui import QColor
+            from PySide6.QtWidgets import QColorDialog
+            old = (b.get("appearance") or {}).get("color")
+            init = QColor(*(int(round(c * 255)) for c in old)) \
+                if old else QColor(160, 160, 165)
+            col = QColorDialog.getColor(init, self, f"{name} colour")
+            if not col.isValid():
+                self._undo.pop()
+                return
+            app = {"name": "Custom",
+                   "color": [col.red() / 255, col.green() / 255,
+                             col.blue() / 255], "opacity": 1.0}
+            self.doc.set_body_appearance(name, app)
+            msg = f"{name} painted: Custom"
+        else:
+            self.doc.set_body_appearance(name, appearance(preset, 1.0))
+            msg = f"{name} painted: {preset}"
+        self._unsaved = True
+        self.rail.tree.reload()
+        self.viewport.refresh()
+        self.status.showMessage(msg, 4000)
 
     def _toggle_body_visible(self, name):
         doc = self.doc

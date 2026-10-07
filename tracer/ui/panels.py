@@ -124,8 +124,11 @@ class FeatureTree(QTreeWidget):
         for nm in names:
             entry = next((b for b in listed if b["name"] == nm), None)
             vis = True if entry is None else bool(entry.get("visible", True))
-            body_item = QTreeWidgetItem([("\u25a3 " + nm) if vis
-                                         else f"\u25a3 {nm}  (hidden)"])
+            mat = ((entry or {}).get("appearance") or {}).get("name")
+            tag = f"  \u00b7 {mat}" if mat else ""   # painted → name it
+            body_item = QTreeWidgetItem(
+                [("\u25a3 " + nm + tag) if vis
+                 else f"\u25a3 {nm}{tag}  (hidden)"])
             body_item.setData(0, Qt.UserRole, ("body", nm))
             if self._doc.active_body == nm:
                 fnt = body_item.font(0)

@@ -700,31 +700,82 @@ class Document:
                 out.append((b["name"], s))
         return out
 
+    def set_body_appearance(self, name: str, app) -> bool:
+        """Paint ONE body (M106): ``app`` is an appearance record
+        ({"name", "color", "opacity"}) or None to unpaint.  This rides in
+        the body dict, so it saves, round-trips and undoes for free.  The
+        whole-part doc.appearance (M52) stays the default for bodies that
+        carry none of their own."""
+        for b in self.body_list():
+            if b["name"] == name:
+                if app:
+                    b["appearance"] = dict(app)
+                else:
+                    b.pop("appearance", None)
+                self.dirty = True
+                return True
+        return False
+
+    def painted_bodies(self) -> bool:
+        """True when any body carries its own colour (M106) — the signal
+        that the viewport should shade per-body instead of by the uniform."""
+        return any((b.get("appearance") or {}).get("color")
+                   for b in self.body_list())
+
+    def _visible_solids(self) -> list:
+        """[(body, Solid)] that are visible and built, browser order."""
+        self.result
+        out = []
+        for b in self.body_list():
+            if not b.get("visible", True):
+                continue
+            s = (self._body_solids or {}).get(b["name"])
+            if s is not None:
+                out.append((b, s))
+        return out
+
+    def _stitch(self, colours: bool, default_color):
+        """Concatenate visible bodies into (v, n, f[, face_colors])."""
+        parts = self._visible_solids()
+        if not parts:
+            return None
+        vs, ns, fs, cs = [], [], [], []
+        painted = any((b.get("appearance") or {}).get("color")
+                      for b, _ in parts)
+        off = 0
+        for b, s in parts:
+            v, n, f = s.to_render_arrays()
+            vs.append(v)
+            ns.append(n)
+            fs.append(f + off if off else f)
+            off += len(v)
+            if colours and painted:
+                col = (b.get("appearance") or {}).get("color")
+                col = col if col is not None else (
+                    default_color if default_color is not None
+                    else (0.70, 0.70, 0.72))
+                cs.append(np.tile(np.asarray(col, np.float32), (len(f), 1)))
+        if len(vs) == 1:
+            v, n, f = vs[0], ns[0], fs[0]
+        else:
+            v, n, f = np.vstack(vs), np.vstack(ns), np.vstack(fs)
+        if not colours:
+            return v, n, f
+        return v, n, f, (np.vstack(cs) if painted else None)
+
     def display_arrays(self):
         """The viewport mesh: visible bodies STITCHED (concatenated,
         never booleaned), so hiding a body lifts exactly its triangles
         and a wall shared by two touching bodies stays drawn — Fusion.
         One visible body returns that solid's own arrays: the exact
         pixels the single-body world drew before M104."""
-        self.result
-        vs, ns, fs = [], [], []
-        off = 0
-        for b in self.body_list():
-            if not b.get("visible", True):
-                continue
-            s = (self._body_solids or {}).get(b["name"])
-            if s is None:
-                continue
-            v, n, f = s.to_render_arrays()
-            vs.append(v)
-            ns.append(n)
-            fs.append(f + off if off else f)
-            off += len(v)
-        if not vs:
-            return None
-        if len(vs) == 1:
-            return vs[0], ns[0], fs[0]
-        return np.vstack(vs), np.vstack(ns), np.vstack(fs)
+        return self._stitch(colours=False, default_color=None)
+
+    def display_stitched(self, default_color=None):
+        """As display_arrays, but a 4-tuple ``(v, n, f, face_colors)``
+        where face_colors is per-face sRGB when any body is painted
+        (M106), else None so the renderer keeps its uniform base colour."""
+        return self._stitch(colours=True, default_color=default_color)
 
     # ---- construction planes --------------------------------------------------
     def add_plane(self, base: str, offset: float) -> dict:

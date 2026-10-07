@@ -135,13 +135,15 @@ def test_body_node_menu_activates_and_hides_its_body(win, monkeypatch):
     monkeypatch.setattr(QMenu, "exec_", lambda menu, pos: menus.append(menu))
     win._body_menu("Body 1", win.geometry().center())
     assert [a.text() for a in menus[-1].actions()] == ["Activate Body 1",
+                                                       "Paint Body 1…",
                                                        "Hide Body 1"]
-    menus[-1].actions()[1].trigger()                  # the per-body bulb
+    menus[-1].actions()[2].trigger()                  # the per-body bulb
     assert win.doc.bodies[0]["visible"] is False
     win._body_menu("Body 1", win.geometry().center())
     assert [a.text() for a in menus[-1].actions()] == ["Activate Body 1",
+                                                       "Paint Body 1…",
                                                        "Show Body 1"]
-    menus[-1].actions()[1].trigger()
+    menus[-1].actions()[2].trigger()
     assert win.doc.bodies[0]["visible"] is True
 
 

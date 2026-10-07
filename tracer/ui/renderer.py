@@ -20,6 +20,7 @@ in vec3 in_nrm;
 in vec3 in_bary;
 in vec3 in_mask;
 in float in_hi;
+in vec3 in_base;             // M106: this body's colour (per-body paint)
 uniform mat4 u_view;
 uniform mat4 u_proj;
 uniform vec3 u_off;              // live Move preview: slide the body
@@ -29,6 +30,7 @@ out vec3 v_world;
 out vec3 v_bary;
 out vec3 v_mask;
 out float v_hi;
+out vec3 v_base;
 void main() {
     vec3 wp = (u_xform * vec4(in_pos, 1.0)).xyz + u_off;
     v_world = wp;
@@ -36,6 +38,7 @@ void main() {
     v_bary = in_bary;
     v_mask = in_mask;
     v_hi = in_hi;
+    v_base = in_base;
     gl_Position = u_proj * u_view * vec4(wp, 1.0);
 }
 """
@@ -47,9 +50,11 @@ in vec3 v_world;
 in vec3 v_bary;
 in vec3 v_mask;
 in float v_hi;
+in vec3 v_base;
 uniform vec3 u_eye;
 uniform mat4 u_view;
 uniform vec3 u_base;
+uniform int u_vcolor;            // M106: 1 → shade by per-vertex body colour
 uniform vec3 u_edge_col;
 uniform vec3 u_hi_hover;
 uniform vec3 u_hi_sel;
@@ -74,6 +79,8 @@ void main() {
         discard;                                    // Section Analysis clip
     vec3 N = normalize(v_nrm);
     vec3 V = normalize(u_eye - v_world);
+    vec3 base = (u_vcolor == 1) ? v_base : u_base;   // M106 gate: when nothing
+    // is painted u_vcolor is 0 and base == u_base, exactly the old shade path
     // Blender solid-mode studio: the lights are viewport-fixed, so the
     // model reads the same from every orbit angle. Work in view space.
     vec3 Nv = normalize(mat3(u_view) * N);
@@ -81,13 +88,13 @@ void main() {
     vec3 L2 = normalize(vec3(0.65, -0.10, 0.42));    // wide soft side fill
     float d1 = max(dot(Nv, L1), 0.0);
     float d2 = max(dot(Nv, L2), 0.0);
-    vec3 hemi = mix(u_base * 0.36, u_base * 0.78, Nv.y * 0.5 + 0.5);
-    vec3 bounce = u_base * max(-Nv.y, 0.0) * 0.10;  // Blender's ground bounce
+    vec3 hemi = mix(base * 0.36, base * 0.78, Nv.y * 0.5 + 0.5);
+    vec3 bounce = base * max(-Nv.y, 0.0) * 0.10;  // Blender's ground bounce
     vec3 Hv = normalize(L1 + vec3(0.0, 0.0, 1.0));   // eye sits at +Z in view space
     float spec = pow(max(dot(Nv, Hv), 0.0), 30.0) * 0.20    // soft studio gloss
                + pow(d1, 4.0) * 0.06;                        // broad sheen
-    vec3 col = hemi + bounce + u_base * d1 * 0.35
-             + u_base * d2 * vec3(0.15, 0.15, 0.17)
+    vec3 col = hemi + bounce + base * d1 * 0.35
+             + base * d2 * vec3(0.15, 0.15, 0.17)
              + vec3(0.95, 0.96, 1.0) * spec;
     col += vec3(0.06, 0.07, 0.09)
          * pow(1.0 - max(dot(N, V), 0.0), 3.0);              // faint edge light
@@ -183,6 +190,7 @@ class SceneRenderer:
         self.clip = None             # Section Analysis: {normal, origin}
         self._base_override = None   # Appearance: painted body colour
         self._base_alpha = 1.0       # Appearance: body opacity
+        self._vcolor = 0             # M106: per-body colour path on?
         self._mesh_off = (0.0, 0.0, 0.0)   # live Move preview offset
         self._preview_rot = None           # live Rotate preview mat4
         self._style = "shaded with edges"  # Fusion visual style (M54)
@@ -225,12 +233,17 @@ class SceneRenderer:
             self._resolve.release()
             self._resolve = None
 
-    def set_mesh(self, verts: np.ndarray, normals: np.ndarray, faces: np.ndarray):
+    def set_mesh(self, verts: np.ndarray, normals: np.ndarray,
+                 faces: np.ndarray, face_colors: np.ndarray | None = None):
         """Expand to unindexed triangles + barycentric attrs for edge AA.
 
         Only *feature* edges (dihedral angle > CREASE_DEG) and silhouette
         (boundary) edges get an edge mask; coplanar triangulation seams are
         suppressed so flat faces render clean.
+
+        ``face_colors`` (len(faces), 3, sRGB 0..1) paints each face its
+        body's colour (M106 per-body paint); omitted → the body shades by
+        the ``u_base`` uniform exactly as before, path gated off.
         """
         self._mesh_off = (0.0, 0.0, 0.0)   # fresh mesh: preview offset spent
         self._preview_rot = None
@@ -292,7 +305,14 @@ class SceneRenderer:
                        (n_tri, 1))
         m_flat = mask.repeat(3, axis=0)   # constant across each face's 3 corners
         hi = np.zeros((len(idx), 1), np.float32)   # per-vertex highlight weight
-        data = np.hstack([pos, nrm, bary, m_flat, hi]).astype(np.float32)
+        if face_colors is not None:               # M106: broadcast face→vertex
+            bcol = np.asarray(face_colors, np.float32).reshape(-1, 3)
+            if len(bcol) == len(faces):
+                bcol = bcol.repeat(3, axis=0)
+        else:
+            bcol = np.zeros((len(idx), 3), np.float32)   # gated off: unused
+        self._vcolor = 1 if face_colors is not None else 0
+        data = np.hstack([pos, nrm, bary, m_flat, hi, bcol]).astype(np.float32)
         c = self.ctx
         if self._solid_vao is not None:
             self._solid_vao.release()
@@ -302,8 +322,8 @@ class SceneRenderer:
         self._solid_ntri = n_tri
         self._solid_vao = c.vertex_array(
             self._solid_prog,
-            [(buf, "3f 3f 3f 3f 1f",
-              "in_pos", "in_nrm", "in_bary", "in_mask", "in_hi")])
+            [(buf, "3f 3f 3f 3f 1f 3f",
+              "in_pos", "in_nrm", "in_bary", "in_mask", "in_hi", "in_base")])
         self._solid_count = len(idx)
 
     def set_base_color(self, rgb, opacity: float = 1.0):
@@ -558,6 +578,7 @@ class SceneRenderer:
             u["u_proj"].write(proj.tobytes())
             u["u_eye"].value = tuple(np.asarray(camera.position, "f4"))
             u["u_base"].value = base or p["solid_base"]
+            u["u_vcolor"].value = self._vcolor      # M106 gate
             u["u_edge_col"].value = p["solid_edge"]
             u["u_hi_hover"].value = p["hi_hover"]
             u["u_hi_sel"].value = p["hi_sel"]

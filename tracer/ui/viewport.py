@@ -92,7 +92,12 @@ class Viewport(QWidget):
         self.refresh(fit=True)
 
     def refresh(self, fit: bool = False):
-        arrays = self._doc.display_arrays() if self._doc else None
+        doc = self._doc
+        default = ((doc.appearance or {}).get("color")
+                   if doc and doc.painted_bodies() else None)
+        stitched = doc.display_stitched(default) if doc else None
+        arrays = None if stitched is None else stitched[:3]
+        face_colors = None if stitched is None else stitched[3]
         had_sel = bool(self._sel)
         self._hover, self._sel = None, []
         self._pp, self._pp_drag = None, False
@@ -109,7 +114,7 @@ class Viewport(QWidget):
             self._tm = self._gid = None
         else:
             v, n, f = arrays
-            self._r.set_mesh(v, n, f)
+            self._r.set_mesh(v, n, f, face_colors=face_colors)
             # Pick mesh shares the uploaded (needle-filtered) index space,
             # so raycast face ids map 1:1 onto highlight rows.  M104:
             # the mesh is the STITCHED visible bodies, so the index

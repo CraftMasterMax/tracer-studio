@@ -890,12 +890,30 @@ means teaching the compiled OCCT bridge to accept many solids at once
 (and it is untestable where OpenCascade isn't installed), so per-body
 STEP rides with the bridge work below.
 
+**M106 — per-body appearance: paint a single body.** ✓
+SHIPPED.  M104 gave bodies their own geometry, M105 their own place in
+the file; now they get their own LOOK.  Right-click a body → Paint and
+pick a shop material (steel → brass → anodised blue); it rides in the
+body dict (so it saves, round-trips and undoes for free), the browser
+row names it, and the viewport shades that body — and only that body —
+by its colour, under the SAME studio lighting as before, so a brass
+boss catches the light brassily next to a blue plate.  The M52 whole-part
+Appearance is untouched: it stays the default every body follows.
+The shader change is deliberately ADDITIVE and gated: the solid gained a
+per-vertex base-colour attribute + a ``u_vcolor`` flag, and while no body
+is painted the flag is 0 so the fragment shades by ``u_base`` exactly as
+it always did (M52's pixel-exact grey-restore test is the proof — the
+buffer and the math are byte-identical); the moment a body is painted the
+viewport stitches a per-face colour array and flips the flag.  Honest
+scope: per-body COLOUR only — opacity stays a whole-part/disp setting (a
+ghosted body can't yet sit beside a solid one), and the wireframe/x-ray
+visual styles keep their uniform tint.
+
 **Later candidates (researched, deferred):** multi-body phase 2c —
 per-body STEP compound (needs the C++ OCCT bridge to take a compound)
-+ per-body appearances in the viewport (vertex-coloured stitch),
-cross-body feature sources; then Draft, per-view rotation, sheet metal,
-assemblies/joints, and a section cutting-plane arrow on the drawing.
-Re-evaluate after M105.
++ per-body opacity + cross-body feature sources; then Draft, per-view
+rotation, sheet metal, assemblies/joints, and a section cutting-plane
+arrow on the drawing. Re-evaluate after M106.
 
 ## Oct 2026 research sweep — the landscape and the ranked backlog
 
