@@ -1,7 +1,9 @@
 """File I/O: mesh export/import (trimesh) and JSON documents."""
 from __future__ import annotations
 
+import gzip
 import json
+import os
 from pathlib import Path
 
 import trimesh
@@ -11,6 +13,44 @@ from .geometry import Solid
 
 MESH_EXPORT_FORMATS = {".stl": "stl", ".obj": "obj", ".3mf": "3mf", ".ply": "ply"}
 MESH_IMPORT_EXTS = {".stl", ".obj", ".ply", ".3mf", ".gltf", ".glb"}
+
+
+def write_json_atomic(obj, path: str | Path, *, indent: int | None = None,
+                      gz: bool = False) -> Path:
+    """Write JSON so a crash can never leave a half-file (M111).
+
+    The bytes go to a sibling ``.tmp``, reach the disk (flush + fsync),
+    and only then hop over the target in one ``os.replace`` — atomic
+    inside a filesystem.  A power cut therefore leaves either the old
+    file or the new one, never a truncated JSON: the promise that even
+    cloud CAD prints in its docs ("a save that began is not lost"),
+    kept at filesystem level.  Used for the .tracer document AND every
+    sidecar (autosave, versions) — the safety net must be safer than
+    what it protects.
+    """
+    path = Path(path)
+    data = json.dumps(obj, indent=indent).encode("utf-8")
+    if gz:
+        data = gzip.compress(data, 1)
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        with open(tmp, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)     # the failed attempt leaves no corpse
+        raise
+    return path
+
+
+def load_json(path: str | Path):
+    """Read JSON written by write_json_atomic; gzip is sniffed, not asked."""
+    raw = Path(path).read_bytes()
+    if raw[:2] == b"\x1f\x8b":
+        raw = gzip.decompress(raw)
+    return json.loads(raw.decode("utf-8"))
 
 
 def export_solids(solids, path: str | Path) -> Path:
@@ -67,7 +107,7 @@ def import_mesh(path: str | Path) -> Solid:
 
 def save_document(doc: Document, path: str | Path) -> Path:
     path = Path(path)
-    path.write_text(json.dumps(doc.to_dict(), indent=1), encoding="utf-8")
+    write_json_atomic(doc.to_dict(), path, indent=1)
     return path
 
 

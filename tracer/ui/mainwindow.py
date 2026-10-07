@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import math
+import time
 
 import numpy as np
 import trimesh
@@ -458,6 +459,10 @@ class MainWindow(QMainWindow):
         self.act_save_as = QAction("Save &As…", self,
                                    shortcut=QKeySequence.SaveAs,
                                    triggered=lambda: self.action_save(as_new=True))
+        self.act_versions = QAction("Saved &Versions…", self,
+                                    triggered=self.action_versions)
+        self.act_revert = QAction("Revert to &Saved", self,
+                                  triggered=self.action_revert_saved)
         self.act_open = QAction("&Open…", self, shortcut=QKeySequence.Open,
                                 triggered=self.action_open)
         self.act_import = QAction("&Import body…", self,
@@ -466,6 +471,7 @@ class MainWindow(QMainWindow):
         self.m_recent = m_file.addMenu("Recent Files")
         self._rebuild_recents()
         m_file.addActions([self.act_save, self.act_save_as])
+        m_file.addActions([self.act_versions, self.act_revert])
         m_file.addSeparator()
         m_file.addAction(self.act_import)
         self.act_import_profile = QAction(
@@ -3385,6 +3391,7 @@ class MainWindow(QMainWindow):
     def new_document(self, doc: Document | None = None):
         self.doc = doc or Document("Untitled")
         self.file_path = None
+        self._saved_mtime = None          # M111: on-disk conflict guard
         self._editing_sid = None
         self._unsaved = False
         self._undo.clear()
@@ -3407,51 +3414,178 @@ class MainWindow(QMainWindow):
         return d
 
     def _autosave_file(self) -> Path:
+        """The NEWEST autosave for this document (M111 rolling set).
+        With none on disk, hands back a well-formed but absent path,
+        so callers can keep asking ``.exists()`` (M67's contract)."""
         stem = self.file_path.stem if self.file_path else "untitled"
-        return self._recovery_dir() / f"{stem}.autosave.tracer"
+        files = sorted(self._recovery_dir().glob(f"{stem}.*.autosave.tracer"))
+        return files[-1] if files else (
+            self._recovery_dir() / f"{stem}.none.autosave.tracer")
 
     def _autosave(self):
         """Every successful recompute mirrors the document to disk, so a
-        crash loses at most the last unsaved edit."""
+        crash loses at most the last unsaved edit.  M111: the mirrors are
+        timestamped, keep the last five, and reach disk atomically — the
+        safety net cannot itself be caught half-written."""
         if self.doc is None:
             return
         try:
             from datetime import datetime
-            self._autosave_file().write_text(json.dumps(dict(
+            stem = self.file_path.stem if self.file_path else "untitled"
+            t = time.time()
+            stamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime(t)) \
+                + f"-{int(t * 1000) % 1000:03d}"
+            f = self._recovery_dir() / f"{stem}.{stamp}.autosave.tracer"
+            fio.write_json_atomic(dict(
                 path=str(self.file_path) if self.file_path else None,
                 saved=datetime.now().isoformat(timespec="seconds"),
-                doc=self.doc.to_dict())))
+                doc=self.doc.to_dict()), f)
+            for old in sorted(self._recovery_dir()
+                              .glob(f"{stem}.*.autosave.tracer"))[:-5]:
+                old.unlink(missing_ok=True)
         except Exception:                 # the safety net never bites
             pass
 
     def _clear_autosave(self):
+        """Save/open/new: drop this document's autosaves — and the
+        pre-save ``untitled.*`` mirrors of it, which the old single-file
+        scheme missed entirely, haunting the next launch with a recovery
+        prompt for work that was already saved."""
         try:
-            p = self._autosave_file()
-            if p.exists():
-                p.unlink()
+            stem = self.file_path.stem if self.file_path else "untitled"
+            for p in self._recovery_dir().glob("*.autosave.tracer"):
+                if p.name.startswith(stem + ".") or (
+                        self.file_path is not None
+                        and p.name.startswith("untitled.")):
+                    p.unlink(missing_ok=True)
         except Exception:
             pass
+
+    # ---- versions (M111) ---------------------------------------------------
+    def _record_version(self):
+        """A Save IS a version (the cloud semantic, adopted offline): an
+        auto point beside the file, rolling at 25 — undo is RAM, this is
+        disk.  Version trouble must never make a save look doubtful, so
+        it passes quietly; the written document is already safe."""
+        if self.doc is None or self.file_path is None:
+            return
+        try:
+            from ..core import versions
+            versions.append(self.file_path, self.doc.to_dict())
+        except Exception:
+            pass
+
+    def _changed_on_disk_prompt(self) -> str:
+        """'go', 'cancel' or 'new': if the file moved under our hands
+        since the last save (a second copy of Tracer, a sync tool, a
+        git checkout), a plain save would silently eat those changes —
+        ask instead.  Half a second of tolerance; never silent."""
+        if self._saved_mtime is None or self.file_path is None \
+                or not self.file_path.exists():
+            return "go"
+        try:
+            mt = self.file_path.stat().st_mtime
+        except OSError:
+            return "go"
+        if mt <= self._saved_mtime + 0.5:
+            return "go"
+        box = QMessageBox(QMessageBox.Warning, "File changed on disk",
+                          f"{self.file_path.name} was modified outside "
+                          "Tracer since your last save.\nOverwrite it "
+                          "anyway, or keep both?",
+                          QMessageBox.NoButton, self)
+        over = box.addButton("Overwrite", QMessageBox.AcceptRole)
+        keep = box.addButton("Save to a new file…", QMessageBox.ActionRole)
+        box.addButton("Cancel", QMessageBox.RejectRole)
+        box.exec_()
+        hit = box.clickedButton()
+        if hit is over:
+            return "go"
+        if hit is keep:
+            return "new"
+        return "cancel"
+
+    def action_revert_saved(self):
+        """The File-menu verb cloud products never needed and local
+        first does: throw the in-memory changes away and re-read the
+        file (the dialog-free inverse of dirty)."""
+        if self.doc is None or self.file_path is None \
+                or not self.file_path.exists():
+            self.status.showMessage("Nothing saved to revert to", 4000)
+            return
+        if QMessageBox.question(
+                self, "Revert to Saved",
+                "Discard the changes in memory and reopen "
+                f"{self.file_path.name}?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No) \
+                != QMessageBox.StandardButton.Yes:
+            return
+        self._open_path(self.file_path)
+        self.status.showMessage("Reverted to the saved file", 5000)
+
+    def action_versions(self):
+        if self.doc is None or self.file_path is None:
+            self.status.showMessage("Save the document first — versions "
+                                    "live beside the file", 5000)
+            return
+        from .versionsdlg import VersionsDialog
+        VersionsDialog(self.file_path, parent=self,
+                       on_restore=self._load_version).exec_()
+
+    def _load_version(self, data: dict, detach: bool = False) -> bool:
+        """Restore is NON-destructive: the snapshot becomes unsaved
+        working state — the file and the version chain wait, untouched,
+        for the user's next Save.  ``detach`` (Open as Copy) drops the
+        file link so the next Save necessarily starts a new document."""
+        path = None if detach else self.file_path
+        try:
+            doc = Document.from_dict(data)
+            doc.recompute()
+        except Exception as e:
+            QMessageBox.warning(self, "Version unreadable", str(e))
+            return False
+        self.new_document(doc)
+        self.file_path = path
+        if path is not None:
+            self.doc.title = path.stem
+            self._saved_mtime = float(path.stat().st_mtime)
+        self._unsaved = True
+        self._update_title()
+        self.status.showMessage("Version loaded — review it; saving "
+                                "makes it the newest", 6000)
+        return True
 
     def maybe_recover(self) -> bool:
         """Startup offer: an autosave from a previous crash can be
         restored, or thrown away. Called by tracer.app.main(), not by
-        the constructor, so headless tests never see the prompt."""
-        best = None
-        for p in self._recovery_dir().glob("*.autosave.tracer"):
+        the constructor, so headless tests never see the prompt.
+        M111's gate, earned from FreeCAD's proven recovery: an autosave
+        older than the file it mirrors is not a rescue — it is a
+        ghost, and ghosts are eaten silently."""
+        cand: Path | None = None
+        payload: dict | None = None
+        for p in sorted(self._recovery_dir().glob("*.autosave.tracer"),
+                        key=lambda q: q.stat().st_mtime, reverse=True):
             try:
-                mt = p.stat().st_mtime
-            except OSError:
+                data = json.loads(p.read_text())
+            except Exception:
+                p.unlink(missing_ok=True)
                 continue
-            if best is None or mt > best[0]:
-                best = (mt, p)
-        if best is None:
+            sp = data.get("path")
+            if sp:
+                f = Path(sp)
+                try:
+                    if f.exists() and p.stat().st_mtime <= f.stat().st_mtime:
+                        p.unlink(missing_ok=True)      # file already has it
+                        continue
+                except OSError:
+                    pass
+            cand, payload = p, data
+            break
+        if cand is None or payload is None:
             return False
-        p = best[1]
-        try:
-            payload = json.loads(p.read_text())
-        except Exception:
-            p.unlink(missing_ok=True)
-            return False
+        p = cand
         where = (f" for {payload['path']}" if payload.get("path")
                  else " (unsaved document)")
         ans = QMessageBox.question(
@@ -3496,17 +3630,25 @@ class MainWindow(QMainWindow):
                 return
             self.file_path = Path(path)
             self.doc.title = self.file_path.stem
+        else:
+            ans = self._changed_on_disk_prompt()        # M111, never silent
+            if ans == "cancel":
+                return
+            if ans == "new":
+                return self.action_save(as_new=True)
         try:
             fio.save_document(self.doc, self.file_path)
         except Exception as e:
             QMessageBox.critical(self, "Save failed", str(e))
-            return
+            return                                      # dirty flag stays: honest
         self.status.showMessage(f"Saved {self.file_path}", 5000)
         self.doc.dirty = False
         self._unsaved = False
+        self._saved_mtime = float(self.file_path.stat().st_mtime)
         self._update_title()
         self._note_recent(self.file_path)
         self._clear_autosave()
+        self._record_version()                          # M111: save = version
 
     # ---- recent files (M58) -------------------------------------------------------
     def _recents(self):
@@ -3548,13 +3690,48 @@ class MainWindow(QMainWindow):
             doc = fio.load_document(path)
         except Exception as e:
             QMessageBox.critical(self, "Open failed", str(e))
-            return
-        self.new_document(doc)
+            return self._offer_autosave_for(path)      # M111: broken file
+        self.new_document(doc)                         # is not the end of
         self.file_path = Path(path)
+        self._saved_mtime = float(self.file_path.stat().st_mtime)
         self._note_recent(path)
         self._clear_autosave()
         self._update_title()
         self.status.showMessage(f"Opened {Path(path).name}", 5000)
+        return True
+
+    def _offer_autosave_for(self, path) -> bool:
+        """A corrupted document should still not be the end of the work:
+        if an autosave of it exists, offer to open THAT (the recovery
+        pattern FreeCAD ships, mirrored).  Deliberately not consumed —
+        the autosave survives until a real Save clears it."""
+        stem = Path(path).stem
+        files = sorted(self._recovery_dir().glob(f"{stem}.*.autosave.tracer"),
+                       key=lambda q: q.stat().st_mtime, reverse=True)
+        if not files:
+            return False
+        p = files[0]
+        try:
+            payload = json.loads(p.read_text())
+            doc = Document.from_dict(payload["doc"])
+            doc.recompute()
+        except Exception:
+            return False
+        if QMessageBox.question(
+                self, "Open autosave instead?",
+                f"{Path(path).name} could not be read. Open its autosave "
+                f"from {payload.get('saved', 'earlier')}?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes) \
+                != QMessageBox.StandardButton.Yes:
+            return False
+        self.new_document(doc)
+        self.file_path = Path(path)
+        self._unsaved = True
+        self._update_title()
+        self.status.showMessage("Opened autosave — save it somewhere "
+                                "safe right away", 8000)
+        return True
 
     def action_open(self):
         start = str(self.file_path.parent if self.file_path else Path.home())

@@ -5,10 +5,17 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M110**
+**Status: M111**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
-  full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open too)
+  full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
+  too) — and the save itself is crash-honest: writes land atomically
+  (a crash mid-save leaves the OLD file intact), every Save keeps a
+  **version** auto point beside the document (named versions are kept
+  forever; restoring never truncates the chain, it loads unsaved work),
+  autosave mirrors roll the last five with a startup recovery offer,
+  a file changed on disk is never silently overwritten, and
+  **Revert to Saved** re-reads the file
 - 2D constraint sketcher: line/rect/circle/**arc**/**slot** (3-click,
   tangent-locked)/**regular polygon** (Y: 3–9 sides, parametrically locked
   regular — drag spins it, edit R resizes it, the circumring is guide
@@ -171,7 +178,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1118 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1140 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
