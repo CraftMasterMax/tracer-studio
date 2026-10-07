@@ -1258,8 +1258,12 @@ constraints, typed glyphs + Alt-suppress; the snap_geometry.md beat
 shipped); M121 interlock family (test_m121, suite
 1278 — Boss · Snap fit · Rest · Lip, Fusion's Plastic-extension family
 shipped FREE, one interface-plane grammar, and the suite measures the
-mated pair's interference volume to pin the zero). The live queue starts
-at M122; items 1-10 below are history.*
+mated pair's interference volume to pin the zero); M122 assembly phase 1
+— interference solids (test_m122, suite 1287 — jumped from the tail per
+wave-3 rank (a), "the natural opener": the clash becomes a live BODY
+that re-solves on recompute, kinematic placement included — what Fusion's
+throwaway InterferenceResults can never be). The live queue starts at
+M123 (fastener library); items 1-10 below are history.*
 1. **M112 — theme tokens** (`ui/theme.py` + single QSS: darkBlue
    surfaces, autodeskBlue accent, hover/select trio; no-px rule from
    `a11y_precision_cad.md`). [matrix rank 5]
@@ -1300,12 +1304,18 @@ at M122; items 1-10 below are history.*
    `snap_geometry.md` + `planegcs_embeddability.md`]
 10. **M121 — interlock family** (Snap Fit/Boss/Rest/Lip + Emboss
     text via QRawFont — zero new deps). [ranks 7 + 24]
-11. **M122 — fastener library** ([H] rows verified first) +
-    **M123 print fit-mode** (parametric δ at export). [ranks 10 + 8]
+11. **M123 — fastener library** + **M124 print fit-mode** (parametric δ
+    at export). [ranks 10 + 8] — [H] heat-set row swept 2026-10-07
+    (`fastener_tables_verify.md`): M5/M6 drills corrected 7.0→6.7 /
+    8.5→8.2 (old values exceeded every reachable modern chart; pinned by
+    test); ISO 261/tap-drill/DIN 912 heads confirmed ✓✓; ISO 273 clearances
+    canonical-but-unverified (needs a physical EN ISO 273 copy to lift the
+    [?]). Still ahead: per-standard JSON tables + a provenance-validator
+    schema so no value ships uncited.
 - Tail (queued by matrix order, unnumbered): construction-geo batch,
   browser polish, radial marking wheel, nav presets, single-HTML
-  share viewer, STEP `[step]` OCP extra, assembly phase 1 (collision
-  first!), per-config BOM-diff, drawings quick set, version-diff
+  share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
+  quick set, version-diff
   overlay, coil/pipe/geometric-pattern/scale, LOD + GPU picking,
   prefs two-pane (re-verify landing), `tracer merge3`, DXF curve-fit,
   exact HLR, truss sim-lite.
