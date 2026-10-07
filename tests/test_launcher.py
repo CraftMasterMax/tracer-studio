@@ -4,6 +4,7 @@ Pins the contract tools/install-linux.sh builds on: the CLI takes a
 document argument, the .desktop template carries the %f slot, the MIME
 package claims *.tracer, and the committed icon is a real PNG.
 """
+import os
 from pathlib import Path
 
 import pytest
@@ -52,8 +53,14 @@ def test_committed_icon_is_a_real_png():
 
 
 def test_install_script_survives_bash_syntax_check():
+    # the installer is Linux-only plumbing — syntax-check it where it
+    # runs (and where a CRLF-mangled checkout would actually matter)
+    if os.name != "posix":
+        pytest.skip("linux installer")
     import subprocess
     for name in ("install-linux.sh", "uninstall-linux.sh"):
+        raw = (ROOT / "tools" / name).read_bytes()
+        assert b"\r\n" not in raw, name      # .gitattributes keeps LF
         r = subprocess.run(["bash", "-n", str(ROOT / "tools" / name)])
         assert r.returncode == 0, name
 
