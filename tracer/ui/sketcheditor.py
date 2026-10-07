@@ -28,6 +28,7 @@ from ..core.sketch.entities import (Arc, Circle, Ellipse, Line, Point,
 from ..core.sketch.model import (_dim_tag, SketchModel, math_dist,
                                  model_from_dict, model_to_dict)
 from ..core.sketch.profile import regions
+from ..core import snaps
 from . import theme
 from .cmddialog import Shell
 from .commands import SKETCH_KEYS
@@ -128,6 +129,8 @@ class SketchCanvas(QWidget):
         self._preview: tuple | None = None  # tool drag preview
         self._band: list | None = None      # select marquee (2 QPoints)
         self._snap_hint: Point | tuple | None = None
+        self._snap_obj = None                    # M120: typed Snap (glyph)
+        self._no_snap = False                    # M120: Alt suppresses snaps
         self._snap_grid = bool(QSettings().value("sketch/grid_snap",
                                                  False, type=bool))
         self._last_result = None
@@ -211,6 +214,7 @@ class SketchCanvas(QWidget):
         self._preview = None
         self._band = None
         self._snap_hint = None
+        self._snap_obj = None                    # M120: stale magnet glyph
         self.setCursor(Qt.ArrowCursor if tool == "select"
                        else Qt.CrossCursor)    # Fusion's drafting cursor
         self.update()
@@ -255,35 +259,44 @@ class SketchCanvas(QWidget):
         return best
 
     def _snap_target(self, q: QPointF, skip=None):
-        """Fusion's drawing magnet: an existing point first, the sketch
-        origin next, then (when the toggle is on) grid intersections.
-        Returns the existing Point, an (x, y) candidate that would have
-        to be minted, or None for free space.  skip= excludes a point
-        (the drag must not snap to its own cursor)."""
-        p = self._snap_point(q, skip=skip)
-        if p is not None:
-            return p
+        """The typed magnet (M120): every kind core/snaps.py knows —
+        endpoints, intersections, midpoints, quadrants, centres — with
+        projected refs, the origin and (when toggled) grid points as
+        minted extras.  Returns the reusable Point, an (x, y) to mint,
+        or None; the full Snap lands in _snap_obj for the glyph."""
+        self._snap_obj = None
+        if self._no_snap:                        # Alt = suppress, always
+            return None
         wp = self._world(q)
+        tol = _HIT_PX / max(self._scale, 1e-6)
+        extra = [(0.0, 0.0, "origin")]
         for r in getattr(self.model, "refs", []):       # M82: projected
             for x, y in np.asarray(r["pts"], float):    # edges magnetize
-                if math.hypot(x - wp[0], y - wp[1]) * self._scale <= _HIT_PX:
-                    return (float(x), float(y))
-        if math.hypot(wp[0], wp[1]) * self._scale <= _HIT_PX:
-            return (0.0, 0.0)                      # the sketch origin
+                extra.append((float(x), float(y), "reference"))
         if self._snap_grid:
             s = self._grid_step()
-            gx, gy = round(wp[0] / s) * s, round(wp[1] / s) * s
-            if math.hypot(gx - wp[0], gy - wp[1]) * self._scale <= _HIT_PX:
-                return (gx, gy)
-        return None
+            extra.append((round(wp[0] / s) * s, round(wp[1] / s) * s,
+                          "grid"))
+        sn = snaps.best(self.model.sketch, wp[0], wp[1], tol, extra=extra,
+                        skip=skip)
+        self._snap_obj = sn
+        if sn is None:
+            return None
+        return sn.pt if sn.pt is not None else (sn.x, sn.y)
 
     def _place_point(self, q: QPointF) -> Point:
         """_snap_target made real: reuse the existing Point, or mint it
-        at the origin/grid candidate / free-world position."""
+        — and bind the mint to what the snap IMPLIED (live auto-constrain,
+        free; theirs is batch and premium-gated [ui_sketchmode])."""
         t = self._snap_target(q)
         if isinstance(t, Point):
-            return t
-        return self.model.point(*(t if t is not None else self._world(q)))
+            return t                             # identity IS coincidence
+        pt = self.model.point(*(t if t is not None else self._world(q)))
+        sn = self._snap_obj
+        if t is not None and sn is not None and sn.pt is None:
+            for c in snaps.autolink(sn, pt):
+                self.model.sketch.constraints.append(c)
+        return pt
 
     def _band_select(self, a: QPointF, b: QPointF, additive: bool):
         """Everything the marquee TOUCHES (window + crossing at once,
@@ -398,6 +411,7 @@ class SketchCanvas(QWidget):
 
     # ---- mouse -----------------------------------------------------------
     def mousePressEvent(self, ev: QMouseEvent):
+        self._no_snap = bool(ev.modifiers() & Qt.AltModifier)
         if (ev.button() == Qt.LeftButton
                 and self._pending is not None):        # M90: new stroke
             self._pending = None                       # drops the type-in
@@ -605,6 +619,7 @@ class SketchCanvas(QWidget):
 
     def mouseMoveEvent(self, ev: QMouseEvent):
         q = ev.position()
+        self._no_snap = bool(ev.modifiers() & Qt.AltModifier)
         self._cursor = self._world(q)
         self.update()                    # keep the readout live
         if self._pan_from is not None:
@@ -1710,7 +1725,32 @@ class SketchCanvas(QWidget):
             s = 3.8 if selected else 2.6
             p.drawRect(QRectF(pos.x() - s, pos.y() - s, 2 * s, 2 * s))
         p.setBrush(Qt.NoBrush)
-        if self._snap_hint is not None:
+        sn = self._snap_obj                        # M120: typed magnet glyph
+        if sn is not None:
+            pos = self.w2s(sn.x, sn.y)
+            p.setPen(QPen(INFER, 1.6))
+            k = sn.kind
+            if k in ("intersection",):             # ×  = exact crossing
+                for dx, dy in ((6, 6), (6, -6)):
+                    p.drawLine(QPointF(pos.x() - dx, pos.y() - dy),
+                               QPointF(pos.x() + dx, pos.y() + dy))
+            elif k in ("midpoint", "quadrant"):    # +  = marked station
+                p.drawLine(QPointF(pos.x() - 6, pos.y()),
+                           QPointF(pos.x() + 6, pos.y()))
+                p.drawLine(QPointF(pos.x(), pos.y() - 6),
+                           QPointF(pos.x(), pos.y() + 6))
+            elif k == "grid":                      # ▫ = lattice
+                p.drawRect(QRectF(pos.x() - 4, pos.y() - 4, 8, 8))
+            elif k == "onentity":                  # ··· curve slide, small
+                p.drawEllipse(pos, 4, 4)
+            else:                                  # endpoint/centre/origin:
+                p.drawEllipse(pos, 7, 7)           # the classic open ring
+            f = p.font()
+            f.setPointSize(7)
+            p.setFont(f)
+            p.drawText(QPointF(pos.x() + 9, pos.y() + 14), k.upper())
+            p.setFont(self._font)
+        elif self._snap_hint is not None:
             hx, hy = ((self._snap_hint.x, self._snap_hint.y)
                       if isinstance(self._snap_hint, Point)
                       else self._snap_hint)

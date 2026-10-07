@@ -1251,8 +1251,11 @@ feature, the timeline badges it red, and a log double-click selects it —
 the deep-link Fusion's docs never shipped); M119 degrees-of-freedom
 overlay (test_m119, suite 1244 — the kernel report's verified beat:
 null-space analysis projected per point, crosses and slide-arrows on
-the canvas, the view Fusion's forums begged for). The live queue starts
-at M120; items 1-8 below are history.*
+the canvas, the view Fusion's forums begged for); M120 object snaps +
+live auto-constrain (test_m120, suite 1258 — core/snaps.py typed
+candidates with tiered resolution, drop-time binds as first-class
+constraints, typed glyphs + Alt-suppress; the snap_geometry.md beat
+shipped). The live queue starts at M121; items 1-9 below are history.*
 1. **M112 — theme tokens** (`ui/theme.py` + single QSS: darkBlue
    surfaces, autodeskBlue accent, hover/select trio; no-px rule from
    `a11y_precision_cad.md`). [matrix rank 5]
@@ -1282,12 +1285,15 @@ at M120; items 1-8 below are history.*
    the DOF projection needed no C++ and demos against Fusion today;
    the embed it displaced folds into M120, the milestone whose UX it
    serves). [was rank 9's item; `fusion_kernel_architecture` §3]
-9. **M120 — sketch muscle**: `core/snaps.py` object snaps +
-   **auto-constrain-on-drop live and free** (theirs is batch +
-   premium-gated) + 2D spline + **planegcs embed** behind the solver
-   iface (absorbed from old M119; the DOF overlay already rides the
-   iface and survives a backend swap); `core/spline3d.py` next enables
-   3D-path sweep. [ranks 15 + 9 + `snap_geometry.md`]
+9. **M120 — sketch muscle** (shipped in part): object snaps +
+   **auto-constrain-on-drop live and free** landed; the **planegcs
+   embed** this item also carried is now OPTIONAL (lane-B audit:
+   FreeCAD/planegcs repo is a phantom, PyPI wheels skip our Py 3.14,
+   dev box lacks cmake/Eigen/Boost) — the pure-Python LM stays the
+   shipping engine; embed ships later as an optional accelerator
+   behind the solver iface. 2D spline + `core/spline3d.py` (3D-path
+   sweep) remain here, renumbered into M121+. [rank 15 + 9 +
+   `snap_geometry.md` + `planegcs_embeddability.md`]
 10. **M121 — interlock family** (Snap Fit/Boss/Rest/Lip + Emboss
     text via QRawFont — zero new deps). [ranks 7 + 24]
 11. **M122 — fastener library** ([H] rows verified first) +

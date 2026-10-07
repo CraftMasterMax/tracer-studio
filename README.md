@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M119**
+**Status: M120**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -42,7 +42,13 @@ independent project with no Autodesk assets or affiliation.)
   point still floats free, a double-headed arrow along the only motion
   a 1-DOF point has, locks stay bare — the view Fusion's forums begged
   for and never shipped; it reads the Jacobian's null space, so the
-  arrows are kinematic truth, not decoration**
+  arrows are kinematic truth, not decoration**,
+  **object snaps + live auto-constrain (M120): the magnet is typed —
+  endpoints, exact intersections, midpoints, quadrants, centres — and
+  the drop BINDS what it implies (PointOnLine, PointOnCircle, Midpoint)
+  as a visible constraint, free and live where Fusion gates batch
+  AutoConstrain behind premium; typed glyphs name the kind under the
+  cursor, Alt suppresses everything, drags can't eat themselves**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -223,7 +229,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1244 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1258 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
