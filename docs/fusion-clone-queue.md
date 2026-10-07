@@ -1419,6 +1419,78 @@ feed the sheet-metal v2 slice and drawings v2 when they come up the
 matrix, and the T1–T13 list joins the export-test backlog. Fleet is
 mid-wave-3 (joint engine, parameters engine).
 
+### Wave-3 research addendum (2026-10-07; four reports, ~17.5k words)
+
+`fusion_joint_engine.md` (7079 w FINAL, after the double lane-death and
+refire), `fusion_parameters_engine.md` (4915 w + a 898 w actionable
+extract), `planegcs_embeddability.md` (2569 w embed audit harvested
+from the main agent's probes), `fusion_materials_appearance.md`
+(4525 w, 21 cites — its digger also caught a live bug in OUR repo,
+below).
+
+- **Joint: the layering is validated and half-banked.** Collision →
+  placement → joints matches Fusion's own stack, and the report's
+  cornerstone rule — *component moves are kinematic STATE, not
+  timeline features* — shipped before the report even landed
+  (`0666ab9`, suite 1265). Next steal is **[S] interference as
+  `(a & b).volume()`**: per-pair interference SOLIDS in a parametric
+  file, which their API provably cannot make (InterferenceResults is
+  throwaway), with a coincident-faces-don't-count default. The joint
+  model itself waits: JCS-pair frames, DOF-set = driveable-value set,
+  as-built capture before any global drag solver. [S→M]
+- **Their grounding is a footgun cluster — we design it away.** Fusion
+  grounds the first component *by creation order*, grounding does not
+  survive an insert, patterned components cannot be grounded at all,
+  and the first comp you *joint* auto-un-grounds. Our answer is one
+  explicit `pinned` flag on the placement store, persisted, no
+  selection-order magic. Same for their two relationship subsystems
+  (grounding + joints) with ZERO over-constraint diagnostics: we ship
+  honest conflicting/redundant reporting from day one. [S, doctrine]
+- **Parameters v2 has a grammar law now: ONE AST, one grammar
+  everywhere.** Fusion runs two divergent parsers (CAD `if(a;b;c)` vs
+  CAM `a?b:c`) and stores expression TEXT, which is how renames eat
+  values. We store a lossless AST + pretty text, unify M89
+  `dim_exprs` into first-class renameable parameter records, ship the
+  minimum credible design-scope named-scalar table [M] with
+  `name=value` on-the-fly creation in every numeric field [S],
+  dimension-checked units where `3mm + 2in` just works (and NO `/1mm`
+  stripping ritual — an explicit `tonum()` instead), DAG cycle checks
+  that PRINT the cycle path, and — the killer feature Fusion's `if`
+  can't express — **conditional feature presence** (`suppress =
+  if(...)`), so nobody ever hacks a 0.0001 mm cut again. [L, but the
+  seam costs nothing]
+- **planegcs: demoted from milestone to optional accelerator.** The
+  embed audit's decisive fact is our Python 3.14 — PyPI 0.8.0 ships
+  wheels only for cp312/313, so the pip route silently becomes
+  sdist-compile-on-every-user's-machine. The pure-Python LM solver
+  (with M119 null-space DOF) STAYS the shipping engine; a vendored
+  C++ planegcs behind the solver iface is a later accelerator if
+  sketch scale ever demands it (LGPL-2.1-or-later, GPL-3-compatible —
+  clean when it happens).
+- **Materials: the digger found the bug in OUR house.** The print
+  dialog's hand-typed `_MATERIAL_DENSITIES` had drifted from
+  `core/materials.py` (Stainless 8.00 vs 7.90, Nylon 1.14 vs 1.13,
+  Titanium 4.50 vs 4.43) — actionable #2 is **already shipped** in
+  this wave: labels now DERIVE from the core table and a test pins it
+  so drift cannot return. Doctrine adopted: physical material = fact
+  about a body; appearance *shadows, never mutates*; assignment stays
+  OUT of the timeline ("features build geometry; materials/paint are
+  facts about bodies"). Next: material SNAPSHOT on the body
+  (`{name, density, lib}`) so an unknown library still yields honest
+  mass — their cloud-asset "missing materials" support queue is the
+  cautionary tale; then mass-properties/print-dialog read the body's
+  material instead of a chooser constant. No PBR, no textures, no
+  cloud libraries, no .tracerlib in v1. [M]
+
+Queue impact: **M121 (interlock family) stands.** Wave 3 adds three
+ranked candidates behind it, by value/effort: (a) interference solids
+`{a&b}` per pair — small, always-parametric, and the natural opener
+for the assembly phase now that placement is banked; (b) parameters v2
+minimum engine (named scalars + expression fields everywhere + one
+AST); (c) materials snapshot + body-aware dialogs. Fleet is idle —
+wave 3 was the last scheduled lane; next probes fire per milestone
+need, not by default.
+
 ### Strategic frame, upgraded
 The matrix turned positioning into inventory: **16 verified
 advantages** (offline versions where their own docs lose them, live
