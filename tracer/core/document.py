@@ -917,6 +917,10 @@ class Document:
         buckets: dict[str, Solid | None] = {}
         by_uid: dict[str, Solid] = {}
         for pos, f in enumerate(self.features):
+            # M118: the log bridge's "who broke" — whichever feature the
+            # loop was building when an exception escapes is the guilty
+            # one. No try/except needed inside the loop itself.
+            self._in_feature = (pos, f)
             if self.rollback_to is not None and pos >= self.rollback_to:
                 continue                      # M88: past the rubber band
             if f.suppressed:
@@ -999,8 +1003,31 @@ class Document:
             self._result = solids[0]          # the single-body world:
         else:                                 # the very solid it always was
             self._result = Solid.batch_union(solids)   # the PART is the union
+        # M118: a clean pass wipes every failure badge and pointer
+        self._in_feature = None
+        self.failed_feature = None
+        for f in self.features:
+            if getattr(f, "error", None):
+                f.error = None
         self.dirty = False
         return self._result
+
+    def record_failure(self, message: str) -> tuple[int, str] | None:
+        """Called by the recompute bridge after an exception escaped
+        recompute(): stamps the feature that was mid-build with the
+        error badge and remembers it for the log's click-to-select.
+        Returns (pos, name) — or None if no feature was in flight."""
+        info = getattr(self, "_in_feature", None)
+        for f in self.features:
+            f.error = None
+        if info is None:
+            self.failed_feature = None
+            return None
+        pos, f = info
+        f.error = str(message)
+        self.failed_feature = (pos, f.name)
+        self._in_feature = None
+        return pos, f.name
 
     @property
     def result(self) -> Solid | None:

@@ -19,6 +19,7 @@ from ..core import import2d
 from ..core import export2d
 from ..core import fits as iso_fits
 from ..core import io as fio
+from ..core import logservice
 from ..core import params
 from ..core import printcheck
 from ..core import step
@@ -46,6 +47,7 @@ from .commands import MODEL_KEYS, collect_commands
 from .palette import CommandPalette
 from .hole import HoleDialog
 from .loft import LoftDialog
+from .messagelog import MessageLog
 from .renderer import SceneRenderer
 from .panels import LeftRail
 from .ribbon import RibbonBar
@@ -135,6 +137,12 @@ class MainWindow(QMainWindow):
         self._rotate_radius = 40.0
         self.viewport.selection_changed.connect(self._on_face_selection)
         cl.addWidget(self.timeline)
+        # M118: the Message Log — Fusion's bottom dock, with the one
+        # thing Fusion never had: rows carry the feature that spoke
+        self._log_panel = MessageLog(self)
+        self._log_panel.setVisible(False)
+        self._log_panel.goto_feature.connect(self._goto_logged_feature)
+        cl.addWidget(self._log_panel)
         self.setCentralWidget(center)
 
         self._make_actions()
@@ -146,6 +154,19 @@ class MainWindow(QMainWindow):
         self._coords.setMinimumWidth(170)
         self._coords.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.status.addPermanentWidget(self._coords)
+        # M118: the always-visible error/warning counter — the log's
+        # front door, one click from anywhere
+        self._log_chip = QPushButton("", self.status)
+        self._log_chip.setFlat(True)
+        self._log_chip.setCursor(Qt.PointingHandCursor)
+        self._log_chip.setToolTip("Message Log \u2014 click to "
+                                  "show / hide")
+        self._log_chip.clicked.connect(self._toggle_message_log)
+        self.status.addPermanentWidget(self._log_chip)
+        logservice.subscribe(self._update_log_chip)
+        self.destroyed.connect(
+            lambda: logservice.unsubscribe(self._update_log_chip))
+        self._update_log_chip()
         self.status.showMessage("Ready — F fit · G grid · E edges · 0/1/2/3 views")
         self.new_document(demo_document())
 
@@ -614,6 +635,12 @@ class MainWindow(QMainWindow):
                 QAction(label, self, shortcut=key,
                         triggered=lambda checked=False, w=what:
                         self._layout_toggle(w)))
+        m_view.addSeparator()
+        # M118: the log's menu door — stays honest with the chip toggle
+        ml = QAction("Message Log", self, checkable=True)
+        ml.toggled.connect(self._log_panel.setVisible)
+        self._log_menu = ml
+        m_view.addAction(ml)
 
         m_tools = self.menuBar().addMenu("&Tools")
         m_tools.addAction("Document Measures…",
@@ -3907,9 +3934,21 @@ class MainWindow(QMainWindow):
         self._open_path(path)
 
     def recompute(self):
+        was_bad = getattr(self.doc, "failed_feature", None) is not None
         try:
             self.doc.recompute()
         except Exception as e:  # kernel error must not kill the app
+            # M118: stamp the guilty feature (red badge on its chip),
+            # say it in the log WITH its name, then the modal — Fusion
+            # order, deep-linked. Views must follow the doc even when
+            # the build failed — an opened-broken file still badges.
+            where = self.doc.record_failure(str(e))
+            logservice.error(str(e), source="kernel",
+                             feature=where[1] if where else None,
+                             pos=where[0] if where else None)
+            if self.timeline.bar.doc is not self.doc:
+                self.timeline.set_document(self.doc)
+            self.timeline.bar.update()
             QMessageBox.warning(self, "Recompute failed", str(e))
             return
         # Keep every view following self.doc, even if a host code swapped
@@ -3933,6 +3972,31 @@ class MainWindow(QMainWindow):
         self._update_status()
         self._autosave()
         self._on_face_selection()
+        if was_bad:                     # M118: recovery is news too
+            logservice.info("recompute clean again", source="kernel")
+            self.timeline.bar.update()  # badges were wiped by the pass
+
+    def _toggle_message_log(self):
+        self._log_menu.toggle()       # menu check IS the truth
+
+    def _update_log_chip(self):
+        err, warn = logservice.counts()
+        self._log_chip.setText(f"\u26d4 {err}  \u26a0 {warn}")
+        self._log_chip.setStyleSheet(
+            "border: none; color: " + (
+                DARK["danger"] if err else
+                DARK["warn"] if warn else DARK["fg_faint"]))
+
+    def _goto_logged_feature(self, pos: int):
+        """M118 BEAT: the log row Fusion could never click."""
+        if self.doc is None or not 0 <= pos < len(self.doc.features):
+            return
+        f = self.doc.features[pos]
+        self.timeline.bar.select_feature(f)
+        msg = f"{f.name}"
+        if getattr(f, "error", None):
+            msg += f" \u2014 {f.error}"
+        self.status.showMessage(msg, 6000)
 
     def _update_status(self):
         n = len(self.doc.features) if self.doc else 0

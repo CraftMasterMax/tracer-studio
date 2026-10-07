@@ -1245,8 +1245,11 @@ it); M115 native 3MF (test_m115, suite 1197 — rank 3 closed, the
 writer audit's four gaps fixed); M116 the topology classifier
 (test_m116, suite 1206 — the fillet/selection/HLR unblocker lands);
 M117 measure win-pack (test_m117, suite 1220 — ranks 11+12 closed,
-inertia/extents/section properties shipped). The live queue starts at
-M118; items 1-6 below are history.*
+inertia/extents/section properties shipped); M118 Message Log (test_m118,
+suite 1236 — rank 6's item jumped the queue: failures now NAME their
+feature, the timeline badges it red, and a log double-click selects it —
+the deep-link Fusion's docs never shipped). The live queue starts at
+M119; items 1-7 below are history.*
 1. **M112 — theme tokens** (`ui/theme.py` + single QSS: darkBlue
    surfaces, autodeskBlue accent, hover/select trio; no-px rule from
    `a11y_precision_cad.md`). [matrix rank 5]
@@ -1267,14 +1270,17 @@ M118; items 1-6 below are history.*
    Show-Extents, physical-props dialog, shoelace section
    area/perimeter/centroid — "strongest single differentiator").
    [ranks 11 + 12]
-7. **M118 — planegcs embed** behind the solver iface. [rank 9; wave-1
+7. **M118 — message log + timeline status glyphs + click-to-select**
+   (shipped as the log's debut: Qt-free bus in `core/logservice.py`,
+   panel with filter/Copy/Save/Clear, dedupe-at-tail, session chip —
+   out of rank order because every later failure-UX milestone stands
+   on it). [was rank 6's item]
+8. **M119 — planegcs embed** behind the solver iface. [rank 9; wave-1
    M115]
-8. **M119 — sketch muscle**: `core/snaps.py` object snaps +
+9. **M120 — sketch muscle**: `core/snaps.py` object snaps +
    **auto-constrain-on-drop live and free** (theirs is batch +
    premium-gated) + 2D spline; `core/spline3d.py` next enables
    3D-path sweep. [rank 15 + `snap_geometry.md`]
-9. **M120 — message log + timeline status glyphs + click-to-select**
-   from failures (deep-link their docs never shipped). [rank 6]
 10. **M121 — interlock family** (Snap Fit/Boss/Rest/Lip + Emboss
     text via QRawFont — zero new deps). [ranks 7 + 24]
 11. **M122 — fastener library** ([H] rows verified first) +

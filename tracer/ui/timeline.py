@@ -47,6 +47,14 @@ class TimelineBar(QWidget):
             return
         super().keyPressEvent(ev)
 
+    def select_feature(self, f) -> None:
+        """M118: select a chip from outside — the Message Log's answer
+        to the question Fusion never let you ask ('which feature broke?')."""
+        if self.doc is None or f not in self.doc.features:
+            return
+        self._sel = self.doc.features.index(f)
+        self.update()
+
     def set_document(self, doc: Document):
         self.doc = doc
         self._sel = -1
@@ -124,6 +132,10 @@ class TimelineBar(QWidget):
                 p.setFont(self._glyph_font)
                 p.setPen(QColor(D["fg_faint"]) if dim else QColor(D["fg"]))
                 p.drawText(r, Qt.AlignCenter, self._glyph(f))
+                if getattr(f, "error", None):        # M118: red badge —
+                    p.setPen(Qt.PenStyle.NoPen)      # the feature that
+                    p.setBrush(QColor(D["danger"]))  # broke the last
+                    p.drawEllipse(r.topRight() - QPointF(7, 7), 3, 3)
                 self._chips.append((x, 30, f))
                 if rb is not None and i + 1 == rb:
                     mx = x + 32                # rubber band after this chip
