@@ -34,7 +34,9 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              SweepFeature,
                              ThickenFeature,
                              ThreadFeature)
-from ..core.measure import describe, face_stats, mass_properties
+from ..core.measure import (describe, face_stats, mass_properties,
+                            principal_inertia, section_properties)
+from ..core.measure import extents as solid_extents
 from ..core import units
 from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
                                  model_to_dict, plane_uv)
@@ -620,6 +622,9 @@ class MainWindow(QMainWindow):
         m_tools.addAction("Mass properties…",
                           lambda checked=False:
                           self.action_mass_properties())
+        m_tools.addAction("Show Extents…",
+                          lambda checked=False:
+                          self.action_show_extents())
         m_tools.addAction("3D Print…",
                           lambda checked=False: self.action_3d_print())
         m_tools.addAction("Configurations…",
@@ -1287,8 +1292,23 @@ class MainWindow(QMainWindow):
         g["sections"] = secs
         self.doc.dirty = True
         self.drawing.update()
-        self.status.showMessage(
-            f"Section {name} ({axis} = {float(v['at']):.2f} mm)", 4000)
+        msg = f"Section {name} ({axis} = {float(v['at']):.2f} mm)"
+        # M117: the cut carries numbers too — area, boundary perimeter,
+        # holes. Fusion's Section Analysis has none of this [—V]: the
+        # shoelace readout is pure beat.
+        try:
+            from ..core import drawing as _dr
+            sp = section_properties(
+                _dr.section(self.doc.result, axis,
+                            float(v["at"]))["cut"])
+        except Exception:
+            sp = None
+        if sp:
+            msg += (f" \u00b7 {sp['area_mm2']:.2f} mm\u00b2, perimeter "
+                    f"{sp['perimeter_mm']:.2f} mm")
+            if sp["holes"]:
+                msg += f", {sp['holes']} hole"
+        self.status.showMessage(msg, 6000)
 
     def action_title_block(self):
         """M108: fill the sheet's ISO title block.  Only the human fields
@@ -2531,19 +2551,53 @@ class MainWindow(QMainWindow):
         s.setValue("materials/density", mat)
         dens = float(mat.split("(")[1].rstrip(")"))
         p = mass_properties(self.doc.result, dens)
+        ext = solid_extents(self.doc.result)
+        pr = principal_inertia(self.doc.result, dens)
         u = self.doc.units if self.doc.units in units.LABEL else "mm"
+        ex = ext["size_mm"]
         box = QMessageBox(self)
         box.setWindowTitle("Mass Properties")
+        # kg·cm²: g·mm² ÷ 1e5 (what SolidWorks shows; Fusion has no
+        # dialog page at all — this is the beat, not the clone)
+        kgcm = [i / 100000.0 for i in pr["moments_g_mm2"]]
         box.setText(
             f"Volume:          {units.V(p['volume_mm3'], u)}\n"
             f"Surface area:    {units.A(p['area_mm2'], u)}\n"
             f"Material:        {mat}\n"
             f"Mass:            {p['mass_g']:,.2f} g\n"
             f"Centre of mass:  ({units.L(p['com'][0], u)}, "
-            f"{units.L(p['com'][1], u)}, {units.L(p['com'][2], u)})")
+            f"{units.L(p['com'][1], u)}, {units.L(p['com'][2], u)})\n"
+            f"Extents:         {units.L(ex[0], u)} \u00d7 "
+            f"{units.L(ex[1], u)} \u00d7 {units.L(ex[2], u)}\n"
+            f"Inertia (COG):   {kgcm[0]:.3g} / {kgcm[1]:.3g} / "
+            f"{kgcm[2]:.3g} kg\u00b7cm\u00b2")
         box.exec()
         self.status.showMessage(f"Mass {p['mass_g']:,.2f} g — {mat}",
                                 5000)
+
+    def action_show_extents(self):
+        """M117 Show Extents: the overall size of the part, in the
+        document's units — Fusion has no overall-extents readout at
+        all [—V]; SolidWorks does. Beat, not clone."""
+        if self.doc is None or self.doc.result is None:
+            QMessageBox.information(self, "Nothing to measure",
+                                    "Add a feature first.")
+            return
+        ext = solid_extents(self.doc.result)
+        u = self.doc.units if self.doc.units in units.LABEL else "mm"
+        sx, sy, sz = ext["size_mm"]
+        lo, hi = ext["min_mm"], ext["max_mm"]
+        QMessageBox.information(
+            self, "Show Extents",
+            f"Bounding box:    {units.L(sx, u)} \u00d7 "
+            f"{units.L(sy, u)} \u00d7 {units.L(sz, u)}\n"
+            f"Diagonal:        {units.L(ext['diagonal_mm'], u)}\n"
+            f"From:            ({units.L(lo[0], u)}, "
+            f"{units.L(lo[1], u)}, {units.L(lo[2], u)})\n"
+            f"To:              ({units.L(hi[0], u)}, "
+            f"{units.L(hi[1], u)}, {units.L(hi[2], u)})")
+        self.status.showMessage(
+            f"Extents {sx:.1f} \u00d7 {sy:.1f} \u00d7 {sz:.1f} mm", 4000)
 
     def action_document_measures(self):
         """Fusion Tools ▸ Document Measures (M60): choose the

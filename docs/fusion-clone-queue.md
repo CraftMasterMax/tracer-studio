@@ -1207,6 +1207,14 @@ consequence.
   face-pair → edge-token lookup ready for the fillet dialog — one
   classifier for selection kinds, crossing windows and drawing-line
   quality. Suite now 1206.
+- **M117**: the measure win-pack — Mass Properties grows the numbers
+  Fusion's dialog never shows (extents + principal inertia about the
+  COG, tensor-by-tetrahedra, cube/cylinder/sphere pinned to textbook
+  values); Tools ▸ Show Extents reads the honest bounding box; and a
+  Section view now speaks cut area, wetted perimeter, hole count and
+  centroid (shoelace with nesting-depth holes — Fusion's Section
+  Analysis has NO properties readout [—V], so every line is a beat).
+  Suite now 1220.
 
 ### Corrections wave 2 bought us
 - **Fusion HAS a 3D sketch mode now** (triad, per-point plane
@@ -1235,8 +1243,10 @@ matrix's #1 gap is CLOSED); M114 ISO 286 fit callouts (test_m114,
 suite 1182 — matrix rank 2 closed, drawing keys D/B/F/Esc shipped with
 it); M115 native 3MF (test_m115, suite 1197 — rank 3 closed, the
 writer audit's four gaps fixed); M116 the topology classifier
-(test_m116, suite 1206 — the fillet/selection/HLR unblocker lands).
-The live queue starts at M117; items 1-5 below are history.*
+(test_m116, suite 1206 — the fillet/selection/HLR unblocker lands);
+M117 measure win-pack (test_m117, suite 1220 — ranks 11+12 closed,
+inertia/extents/section properties shipped). The live queue starts at
+M118; items 1-6 below are history.*
 1. **M112 — theme tokens** (`ui/theme.py` + single QSS: darkBlue
    surfaces, autodeskBlue accent, hover/select trio; no-px rule from
    `a11y_precision_cad.md`). [matrix rank 5]
