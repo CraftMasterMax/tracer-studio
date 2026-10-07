@@ -1354,11 +1354,29 @@ M125; items 1-11 below are history.*
     reselect beats fake healing, as in Fusion). Grammar still open:
     dashed datum edges and renderer-side name labels (datums ship in
     the construction colour, solid).
-- Tail (queued by matrix order, unnumbered): construction-geo batch,
-  browser polish, radial marking wheel, nav presets, single-HTML
+13. **M126 — transform-lattice batch: geometric pattern + scale**
+    [from wave-4 `coil_geometric_pattern.md`, disk-verified 72l/1534w].
+    v1 = GeometricPatternFeature: per-copy T·R·S affine lattice (two
+    directions × counts, per-step rotate/scale), direction references
+    resolved BY NAME through the M125 datum store — that synergy is
+    what ranks it over the two UI ladders from the same wave; boolean-
+    free New-Body mode first, capped Join/Cut second. ScaleFeature =
+    its N=1 degenerate (base point, uniform or xyz, winding fix for
+    negative factors) — same PR, effort 0.4+1.0 per the probe. DEFER:
+    coil-v1 (2–3×; the ring-loft reuses the loft engine + THIS PR's
+    transform util, so it queues right after), feature-level patterns,
+    fill/boundary patterns. Next in rank, both fully probed: browser
+    polish (in-place rename + "(1)" suffix, tree↔canvas cross-
+    highlight, isolate/show-all — ladder in `browser_conventions.md`),
+    then nav (quaternion named views, turntable + Shift+MBB re-pivot,
+    direction-encoded marquee, 4-wedge hold-wheel — ladder in
+    `marking_wheel_nav.md`); zoom-to-selection is an UPSTREAM gap
+    (requested since 2015, unimplemented) — cheap ours-first
+    differentiator when nav lands.
+- Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff
-  overlay, coil/pipe/geometric-pattern/scale, LOD + GPU picking,
+  overlay, LOD + GPU picking,
   prefs two-pane (re-verify landing), `tracer merge3`, DXF curve-fit,
   exact HLR, truss sim-lite.
 
