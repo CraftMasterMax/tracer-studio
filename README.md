@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M122**
+**Status: M123**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -60,7 +60,15 @@ independent project with no Autodesk assets or affiliation.)
   each clash into a live BODY — a red solid that RE-SOLVES when you move
   a part (kinematic placement included), the collision map Fusion's
   throwaway Interference command can't leave you behind; touching faces
-  correctly interfere zero**
+  correctly interfere zero**,
+  **provenance-carrying fastener library (M123): every hole/washer/
+  insert dimension lives in a JSON data file stamped with its standard,
+  edition, sources and verification date — the Hole dialog names where
+  its auto-filled numbers came from, and a CI validator fails the build
+  if any table ships uncited or stops corroborating its neighbours
+  (ISO 7089 washer IDs ARE the ISO 273 close holes, all seven sizes;
+  the verified sweep that moved these tables corrected seven cells that
+  had drifted into shop-table folklore)**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -241,7 +249,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1289 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1301 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

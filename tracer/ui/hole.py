@@ -88,6 +88,11 @@ class HoleDialog(QDialog):
         self._cs_rows = (r, r + 1)
         lay.addLayout(form)
 
+        self._prov = QLabel("")                 # M123: where numbers come from
+        self._prov.setObjectName("dim")
+        self._prov.setWordWrap(True)
+        lay.addWidget(self._prov)
+
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
@@ -100,16 +105,32 @@ class HoleDialog(QDialog):
         self.size.currentIndexChanged.connect(self._apply_std)
         self._sync_rows()
 
+    def _provenance_line(self, kind: str) -> str:
+        """M123: name the standard behind the auto-filled numbers, so a
+        preset is never an unsourced magic Ø. Empty for Custom."""
+        key = {"clearance": "clearance", "socket head": "shcs_head",
+               "heat-set insert": "insert"}.get(kind)
+        if key is None:
+            return ""
+        p = _F.provenance(key)
+        std = p["standard"]
+        if kind == "socket head":
+            c = _F.provenance("clearance")
+            std += f" head + {c['standard']} hole"
+        return f"{std} ({p['edition']}) · verified {p['verified']}"
+
     def _apply_std(self):
         """M107: a named fastener fills the dialog from the library.  "Custom"
         clears the Ø override and leaves every field to the user, so the
         pre-library behaviour (and its tests) is untouched."""
         if self.std.currentIndex() == 0:
             self._drill = None
+            self._prov.setText("")
             self._sync_head()
             return
         size = self.size.currentText()
         kind = _STD_KIND[self.std.currentText()]
+        self._prov.setText(self._provenance_line(kind))
         try:
             p = _F.hole_for(size, kind)
         except KeyError:

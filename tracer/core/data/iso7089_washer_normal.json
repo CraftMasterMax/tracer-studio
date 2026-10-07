@@ -1,0 +1,27 @@
+{
+  "$schema": "tracer-fastener-table-v1",
+  "key": "washer_normal",
+  "standard": "ISO 7089",
+  "edition": "2000 (confirmed 2021; rev-3 CD in development 2026)",
+  "title": "Plain washers, normal series, product grade A",
+  "unit": "mm",
+  "columns": ["id", "od", "thickness"],
+  "series": "normal",
+  "verified": "2026-10-07",
+  "provenance": [
+    "Official ISO 7089:2000 preview PDF (Table 1 preferred sizes recovered)",
+    "AmesWeb ISO 7089 washer dimension chart (incl. limits)",
+    "Letfix ISO 7089 catalogue (DIN 125 Form A equivalence)"
+  ],
+  "notes": "= DIN 125 Form A family. ISO 273 medium clearance is the matching bolt hole; washer ID tracks it (see validator cross-check). M3.5/M14 are Table 2 (non-preferred) and omitted.",
+  "license": "Dimensional values are facts, not copyrightable expression; re-keyed by hand with no source table prose or layout reproduced.",
+  "data": {
+    "M3":  [3.2, 7.0, 0.5],
+    "M4":  [4.3, 9.0, 0.8],
+    "M5":  [5.3, 10.0, 1.0],
+    "M6":  [6.4, 12.0, 1.6],
+    "M8":  [8.4, 16.0, 1.6],
+    "M10": [10.5, 20.0, 2.0],
+    "M12": [13.0, 24.0, 2.5]
+  }
+}

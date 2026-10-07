@@ -1262,8 +1262,13 @@ mated pair's interference volume to pin the zero); M122 assembly phase 1
 — interference solids (test_m122, suite 1287 — jumped from the tail per
 wave-3 rank (a), "the natural opener": the clash becomes a live BODY
 that re-solves on recompute, kinematic placement included — what Fusion's
-throwaway InterferenceResults can never be). The live queue starts at
-M123 (fastener library); items 1-10 below are history.*
+throwaway InterferenceResults can never be); M123 fastener library with
+PROVENANCE (test_m123, suite 1301 — data/*.json tables each stamped with
+standard + edition + sources + verified date; Hole dialog names its
+sources live; the CI validator cross-checks neighbours — washer ID ==
+ISO 273 close — and the sweep it enabled corrected 7 clearance cells).
+The live queue starts at M124 (print fit-mode); items 1-10 below are
+history.*
 1. **M112 — theme tokens** (`ui/theme.py` + single QSS: darkBlue
    surfaces, autodeskBlue accent, hover/select trio; no-px rule from
    `a11y_precision_cad.md`). [matrix rank 5]

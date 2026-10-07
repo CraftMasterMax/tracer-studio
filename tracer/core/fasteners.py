@@ -1,4 +1,4 @@
-"""Fastener hole library (M107): the numbers a maker shouldn't look up.
+"""Fastener hole library (M107 tables, M123 provenance layer).
 
 Tracer's HoleFeature can already cut a tap-drilled, counterbored,
 countersunk or threaded hole — the kernel is not the gap.  The gap is
@@ -9,73 +9,83 @@ turns a named fastener (M3, kind=clearance) into exactly the parameters
 ``HoleDialog`` / ``HoleFeature`` consume, so a single combo pick fills
 the dialog and the sketch circle drops to being PLACEMENT ONLY.
 
-Every table is plain, sourced data so it is trivially testable and
-auditable.  Thread pitch + tap drill are reused verbatim from
-``thread.ISO_COARSE`` (the tap path already trusts those figures).
+M123 moved the numbers out of Python literals and into `data/*.json`:
+every table now carries its own PROVENANCE (standard + edition, what
+verified it and when, and a licensing note) beside the values, so no
+figure ships uncited.  ``provenance(key)`` hands that record to the UI
+(a tooltip, an audit view); a CI validator (test_m123) fails the build
+if any table is missing provenance or breaks an internal cross-check
+with a neighbouring standard.  The numbers are facts — re-keyed by hand
+from public sources, never scraped, with no source layout reproduced.
 
-Sources (nominal dimensions, mm) — re-keyed by hand, never copied:
-  * Clearance holes — EN ISO 273 close/medium/coarse (H12/H13/H14).
-    ✓✓ VERIFIED 2026-10-07 against the official ISO 273:1979 preview
-    PDF plus three reprints; 7 shop-folklore cells corrected in the
-    sweep (see the CLEARANCE table notes).
-  * Tapped holes    — ISO 261 pitch (✓✓ verified), ISO 724 tap drill
-    (✓✓ verified vs four charts) via ISO_COARSE.
-  * Socket head cap screws (SHCS) — DIN 912 / ISO 4762 head Ø + height
-    (✓✓ verified 14/14, 2026-10-07); the counterbore is the head Ø opened
-    up ~0.5 mm, depth = head height +0.2 — a Tracer design margin, not a
-    standards figure.
-  * Heat-set inserts — brand-dependent; values re-swept 2026-10-07
-    against reachable datasheets (see the INSERT table notes).
+The public API is unchanged from M107: the same SIZES/FIT/KINDS, the
+same ``hole_for`` bundles, and washers newly alongside them.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from .thread import ISO_COARSE
+
+_DATA_DIR = Path(__file__).parent / "data"
+
+# table key -> data file. The validator walks this; nothing loads without
+# a registered, provenance-carrying file.
+TABLES = {
+    "clearance":     "iso273_clearance.json",
+    "shcs_head":     "iso4762_din912_shcs_head.json",
+    "insert":        "heatset_inserts.json",
+    "washer_normal": "iso7089_washer_normal.json",
+    "washer_small":  "iso7092_washer_small.json",
+}
+
+_PROV: dict[str, dict] = {}
+_TABLE: dict[str, dict[str, list[float]]] = {}
+
+
+def _load(key: str) -> dict[str, list[float]]:
+    if key not in _TABLE:
+        raw = json.loads((_DATA_DIR / TABLES[key]).read_text(encoding="utf-8"))
+        _PROV[key] = raw
+        _TABLE[key] = {s: [float(x) for x in vals]
+                       for s, vals in raw["data"].items()}
+    return _TABLE[key]
+
+
+def provenance(key: str) -> dict:
+    """The full source record for a table (standard/edition/provenance/
+    verified/license/notes) — data the UI can show so a value is never
+    an unsourced magic number."""
+    if key not in TABLES:
+        raise KeyError(f"no such fastener table {key!r}")
+    _load(key)
+    return _PROV[key]
+
 
 # ISO metric coarse sizes the library speaks (matches ISO_COARSE).
 SIZES = tuple(ISO_COARSE)                     # M3..M12
 
-# ISO 273 clearance-hole diameters: size -> (close, medium, coarse)
-CLEARANCE = {
-    # EN ISO 273:1979 (fine/H12, medium/H13, coarse/H14) — verified
-    # 2026-10-07 cell-by-cell against the official ISO preview PDF
-    # (text layer + OCR) and three independent reprints
-    # [iso273_washers_verify.md].  Seven cells were corrected: the old
-    # M4/M5 close-medium pairs and coarse M6/M8 were shop-table
-    # folklore (nominal+0.1 style), not the standard.
-    "M3":  (3.2, 3.4, 3.6),
-    "M4":  (4.3, 4.5, 4.8),      # was 4.1 / 4.3 / 4.6
-    "M5":  (5.3, 5.5, 5.8),      # was 5.1 / 5.3 / 5.8
-    "M6":  (6.4, 6.6, 7.0),      # was 6.4 / 6.6 / 7.1
-    "M8":  (8.4, 9.0, 10.0),     # was 8.4 / 9.0 / 9.5
-    "M10": (10.5, 11.0, 12.0),
-    "M12": (13.0, 13.5, 14.5),
-}
-FIT = ("close", "medium", "coarse")           # index into a CLEARANCE row
+# ISO 273 clearance-hole diameters: size -> (close, medium, coarse).
+# Corrected 2026-10-07 against the official ISO 273:1979 preview + 3
+# reprints; seven cells had drifted into nominal+0.1 shop folklore.
+CLEARANCE = {s: tuple(v) for s, v in _load("clearance").items()}
+FIT = tuple(_PROV["clearance"]["columns"])    # ("close","medium","coarse")
 
-# DIN 912 / ISO 4762 socket head cap screws: size -> (head Ø, head height).
-# Counterbore = head Ø + 0.5 clearance, depth = head height + 0.2.
-SHCS_HEAD = {
-    "M3":  (5.5, 3.0),
-    "M4":  (7.0, 4.0),
-    "M5":  (8.5, 5.0),
-    "M6":  (10.0, 6.0),
-    "M8":  (13.0, 8.0),
-    "M10": (16.0, 10.0),
-    "M12": (18.0, 12.0),
-}
+# DIN 912 / ISO 4762 socket head cap screws: size -> (head Ø, head h).
+# Counterbore = head Ø + 0.5 clearance, depth = head height + 0.2 — a
+# Tracer design margin on top of the standard head, not a standards figure.
+SHCS_HEAD = {s: tuple(v) for s, v in _load("shcs_head").items()}
 
-# Common heat-set (brass) insert recommended drill Ø.  Brand-dependent —
-# treat as a starting point and check the datasheet.  M5/M6 corrected
-# 2026-10-07 after a source sweep: the old 7.0/8.5 were "large-barrel"
-# folklore and exceed every reachable modern compact-series chart
-# (CNC Kitchen 6.5/8.1, aggregators 6.0–6.8/8.2); 6.7/8.2 sit at the top
-# of that band so a standard insert still seats without a loose bore.
-INSERT = {
-    "M3": 4.0,      # ✓✓ two brands agree (CNC Kitchen, Accu)
-    "M4": 5.6,      # ✓? CNCK 5.7 — within one print step; series ambiguity
-    "M5": 6.7,      # was 7.0 — above every reachable chart
-    "M6": 8.2,      # was 8.5 — likewise large-barrel-only
-}
+# Common heat-set (brass) insert recommended drill Ø (single column).
+# Brand-dependent — a starting point, not gospel; see provenance notes.
+INSERT = {s: v[0] for s, v in _load("insert").items()}
+
+# Plain washers, size -> (ID, OD, thickness). "normal" = ISO 7089
+# (= DIN 125A); "small" = ISO 7092 (= DIN 433) — the low-profile washer
+# that clears an SHCS head recess.
+WASHERS = {"normal": {s: tuple(v) for s, v in _load("washer_normal").items()},
+           "small": {s: tuple(v) for s, v in _load("washer_small").items()}}
 
 # The kinds a preset can produce (drives the dialog's Fastener combo).
 KINDS = ("clearance", "tapped", "socket head", "heat-set insert")
@@ -97,6 +107,16 @@ def clearance(size: str, fit: str = "medium") -> float:
     if size not in CLEARANCE:
         raise KeyError(f"no clearance data for {size!r}")
     return CLEARANCE[size][FIT.index(fit)]
+
+
+def washer(size: str, series: str = "normal") -> tuple[float, float, float]:
+    """(ID, OD, thickness) for a plain washer, ISO 7089 (normal) or
+    ISO 7092 (small)."""
+    if series not in WASHERS:
+        raise KeyError(f"no washer series {series!r} (normal|small)")
+    if size not in WASHERS[series]:
+        raise KeyError(f"no washer data for {size!r}")
+    return WASHERS[series][size]
 
 
 def cbore(size: str) -> tuple[float, float]:

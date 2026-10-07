@@ -1,0 +1,23 @@
+{
+  "$schema": "tracer-fastener-table-v1",
+  "key": "insert",
+  "standard": "Brand datasheets — no single standard",
+  "edition": "compact-series consensus 2026",
+  "title": "Heat-set (brass) insert recommended drill diameter",
+  "unit": "mm",
+  "columns": ["drill_dia"],
+  "verified": "2026-10-07",
+  "provenance": [
+    "CNC Kitchen heat-set insert design-guidelines PDF (chart downloaded and parsed)",
+    "Accu threaded-insert hole-size chart (archived copy; M3 4.0 sentence)",
+    "InsertGuide brand-spread aggregator (ranges, search-result extract)"
+  ],
+  "notes": "Brand-dependent: check the datasheet of the insert you buy. M5/M6 corrected 2026-10-07 — the old 7.0/8.5 were large-barrel folklore exceeding every reachable modern compact-series chart (CNCK 6.5/8.1, aggregators 6.0-6.8/8.2); 6.7/8.2 sit at the top of the sourced band. M4: CNCK prints 5.7 — within one print step of 5.6; series ambiguity noted. MKS, Ultracraft, FDS and Bossard charts were unreachable; that gap is recorded, not hidden.",
+  "license": "Datasheet numbers restated with citation is fact use; the source PDFs are not mirrored into this repo.",
+  "data": {
+    "M3": [4.0],
+    "M4": [5.6],
+    "M5": [6.7],
+    "M6": [8.2]
+  }
+}

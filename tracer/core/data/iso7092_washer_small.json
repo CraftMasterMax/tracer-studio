@@ -1,0 +1,26 @@
+{
+  "$schema": "tracer-fastener-table-v1",
+  "key": "washer_small",
+  "standard": "ISO 7092",
+  "edition": "2000",
+  "title": "Plain washers, small series, product grade A",
+  "unit": "mm",
+  "columns": ["id", "od", "thickness"],
+  "series": "small",
+  "verified": "2026-10-07",
+  "provenance": [
+    "Official ISO 7092:2000 preview PDF (Table 1 recovered)",
+    "Letfix ISO 7092 catalogue (DIN 433 equivalence)"
+  ],
+  "notes": "The true narrow/small series (= DIN 433), the low-profile washer that fits under a socket head cap screw where a normal-series washer would foul the head recess. Not to be confused with ISO 7089 (normal) or ISO 7093 (large) / ISO 7094 (extra-large).",
+  "license": "Dimensional values are facts, not copyrightable expression; re-keyed by hand with no source table prose or layout reproduced.",
+  "data": {
+    "M3":  [3.2, 6.0, 0.5],
+    "M4":  [4.3, 8.0, 0.5],
+    "M5":  [5.3, 9.0, 1.0],
+    "M6":  [6.4, 11.0, 1.6],
+    "M8":  [8.4, 15.0, 1.6],
+    "M10": [10.5, 18.0, 1.6],
+    "M12": [13.0, 20.0, 2.0]
+  }
+}

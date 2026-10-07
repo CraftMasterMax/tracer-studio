@@ -1,0 +1,27 @@
+{
+  "$schema": "tracer-fastener-table-v1",
+  "key": "clearance",
+  "standard": "ISO 273",
+  "edition": "1979",
+  "title": "Clearance holes for metric screws, bolts and studs",
+  "unit": "mm",
+  "columns": ["close", "medium", "coarse"],
+  "tolerance_fields": {"close": "H12", "medium": "H13", "coarse": "H14"},
+  "verified": "2026-10-07",
+  "provenance": [
+    "Official ISO 273:1979 preview PDF (text layer + local OCR of the p.2 clause-2 table)",
+    "DIN EN 20273:1992-02 reprint (H12/H13/H14 min/max, internally consistent with ISO 286)",
+    "Independent German DIN-ISO-273 fein/mittel/grob table"
+  ],
+  "notes": "Seven cells were corrected 2026-10-07: M4 and M5 close/medium plus coarse M6/M8 had drifted into shop-table (nominal+0.1) folklore; these values are the standard.",
+  "license": "Dimensional values are facts, not copyrightable expression; re-keyed by hand with no source table prose, annotations, column structure or layout reproduced.",
+  "data": {
+    "M3":  [3.2, 3.4, 3.6],
+    "M4":  [4.3, 4.5, 4.8],
+    "M5":  [5.3, 5.5, 5.8],
+    "M6":  [6.4, 6.6, 7.0],
+    "M8":  [8.4, 9.0, 10.0],
+    "M10": [10.5, 11.0, 12.0],
+    "M12": [13.0, 13.5, 14.5]
+  }
+}
