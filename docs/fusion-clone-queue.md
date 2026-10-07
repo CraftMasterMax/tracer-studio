@@ -1068,3 +1068,70 @@ watertightness, genus) + UI tests driving real widgets headless + a
 screenshot proof in /tmp/opencode/shots + README/status bump + commit —
 then straight to the next.  No permission asks; stop only if the user
 redirects.
+
+## 2026-10-07 — Research-fleet synthesis (wave 1 landed)
+
+A bounded 3-deep research fleet (100-topic queue, provider-capped) has
+been banking verified reports to `/tmp/opencode/research/` (see its
+`QUEUE.md` tracker; ~23 landed as of writing, each with [V]-verified
+findings + sources + ranked actions).  The build queue below is
+re-ranked from that corpus; reports by name are the evidence file.
+
+### Corrections the fleet bought us
+- Fusion re-themed (Oct-2025): clone target = the **unified darkBlue
+  theme**, not 2019 gray (`ui_colors.md` — exact HIG token hexes +
+  viewport semantic tokens: hover `#E3AD79`, select `#0696d7`…).
+- Fusion has **no default view-orientation shortcuts** and **no sketch
+  grid** (`hotkeys.md`, `ui_canvas.md`) — both are FREE differentiators
+  for us, not parity obligations.
+- Our solver question is answered: **embed planegcs** (PyPI, LGPL)
+  behind a thin interface; scipy-LM as MVP/fallback (`solvers.md`) —
+  supersedes the old M87 "solver intelligence" entry.
+- 2026 product energy at Autodesk is in BOM/data + UI, not geometry —
+  our mesh kernel is not the handicap we feared (`updates_2026.md`).
+
+### Ranked queue (fleet-informed)
+1. **M110 — Parts list (BOM) + balloons.** ISO 7573 columns
+   (item/description/qty/reference/material), ISO 6433 balloons tied to
+   BOM rows, mass = volume × ρ from `material_density_db.md`; sheet
+   furniture per ISO 5457 (20 mm filing margin, 0.7 mm frame) as
+   paint-only layer.  Includes `core/units.py` (unit_handling.md
+   doctrine) as step 0.  Paper-only: never in DXF (M108 rule).
+2. **M111 — Data-safety sweep:** atomic save NOW, autosave sidecar +
+   restore prompt, version-history panel (`file_locking.md` actions).
+3. **M112 — `ui/theme.py`:** HIG token table + single QSS → browser/
+   timeline/panels adopt darkBlue surfaces, autodeskBlue accent, status
+   trio (`ui_colors.md` actions 1–3).
+4. **M113 — Key layer:** verified single-keys (E/H/Q/F/M/V/S/A/J…),
+   `S`+`/` command-search popup, Ctrl+Alt show/hide set, drawing-mode
+   keys incl. **B=balloon** (`hotkeys.md` actions 1–4).
+5. **M114 — Limits & Fits on dimensions** (+ hole callouts) — data
+   tables already transcribed (`gdt_tolerances_iso.md`; their Nov-2025
+   feature, `updates_2025.md` action 1).
+6. **M115 — planegcs embed** behind `core/solver.py` iface; DOF colour
+   contract blue→white (`solvers.md`; `sketch_constraints.md` tiers
+   1–2 ride on it).
+7. **M116 — Fastener data library:** vendor cq-fasteners dicts →
+   `tracer-fastener-table-v1` JSON; own CC0 heat-set insert chart
+   (`fasteners_iso_din.md` — verify its [H] tables first).
+8. **M117 — Interlock family: Snap Fit / Boss / Rest / Lip / Emboss**
+   — pure 2D+boolean, zero B-rep disadvantage, direct 3D-print maker
+   value (`solid_cmds.md` action 2 — the fleet's top differentiator
+   find).
+9. **View quality v2:** feature-edge classification (crease+n·v) +
+   RDP→spline + reversed-Z preview depth pass (`hlr.md` 2-step).
+10. **Construction-geometry batch:** pattern/offset/mirror/resize
+    construction geo — their Jan/Apr/Jul-2026 focus area
+    (`updates_2026.md`, `solid_cmds.md`).
+11. **Timeline status glyphs + message log** (red/orange blocks,
+    dimmed dependents — `ui_timeline.md`; contract in
+    `history_kernel.md`).
+12. **Nav presets + orbit-around-point + window/crossing boxes**
+    (`mouse_nav.md`; `ui_navcube.md` landing pending).
+
+### Strategic frame (from `oss_cad_2026.md`)
+Beat FreeCAD on **reliability/speed**, not feature count; keep a
+Python API warm to fence off code-CAD; treat **2027-02-06** (Autodesk
+price-lock expiry) as our marketing horizon — credible STEP-in/DXF-out
+plus a "your file still opens in 2029" promise captures the refugee
+wave FreeCAD historically churns back.
