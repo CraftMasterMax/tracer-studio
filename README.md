@@ -168,7 +168,20 @@ That builds a private `.venv`, puts **`tracer`** on your PATH
 app launcher grid, and associates **`.tracer` files** so they open
 with a double-click. Removing it: `./tools/uninstall-linux.sh`.
 
-**From source (or Windows):**
+**Windows — one installer, then just `tracer`:**
+
+```powershell
+git clone https://github.com/CraftMasterMax/tracer-studio; cd tracer-studio
+powershell -ExecutionPolicy Bypass -File tools\install-windows.ps1
+```
+
+That builds a private `.venv`, puts **`tracer`** on your PATH
+(`tracer part.tracer` opens a file), adds **Tracer Studio** to the Start
+Menu, and associates **`.tracer` files** so they open with a
+double-click. No admin rights needed. Removing it:
+`tools\uninstall-windows.ps1`.
+
+**From source:**
 
 ```bash
 python3 -m venv .venv
