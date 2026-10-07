@@ -372,3 +372,22 @@ def test_balloon_pin_is_undoable(win, qapp):
     _pin(cv, qapp, "top", (10.0, 5.0))
     win.undo()
     assert not win.doc.drawings[-1].get("balloons")
+
+
+def test_material_assigns_weighs_and_undoes(win, qapp):
+    win.new_document()
+    win.doc.features.append(PrimitiveFeature(
+        name="Slab", kind="box",
+        dims={"dx": 20.0, "dy": 10.0, "dz": 10.0}))
+    win.recompute()
+    win._set_body_material(win.doc.body_list()[0]["name"], "Steel")
+    assert win.doc.body_list()[0]["material"] == "Steel"
+    rows = drawing.parts_list(win.doc.body_list(),
+                              win.doc.body_solids())
+    assert rows[0]["mass"] == "15.7 g"        # 2000 mm3 steel
+    win.undo()                                # undo returns a NEW doc
+    assert "material" not in win.doc.body_list()[0]
+    name = win.doc.body_list()[0]["name"]
+    win._set_body_material(name, "Steel")
+    win._set_body_material(name, None)
+    assert "material" not in win.doc.body_list()[0]

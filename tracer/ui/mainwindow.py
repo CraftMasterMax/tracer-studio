@@ -8,7 +8,7 @@ import math
 import numpy as np
 import trimesh
 from PySide6.QtCore import QSize, Qt, QSettings
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, 
                                QLabel, QMainWindow, QMenu, QMessageBox,
                                QPushButton, QSplitter, QStackedWidget,
@@ -1864,7 +1864,41 @@ class MainWindow(QMainWindow):
                        lambda checked=False: self.action_paint_body(name))
         menu.addAction(("Hide" if vis else "Show") + " " + name,
                        lambda checked=False: self._toggle_body_visible(name))
+        mat = menu.addMenu("Material")
+        from ..core.materials import NAMES as MAT_NAMES
+        cur = (entry or {}).get("material") if entry else None
+        grp = QActionGroup(mat)
+        for choice, label in ((None, "None"),
+                              *[(m, m) for m in MAT_NAMES]):
+            act = QAction(label, mat)
+            act.setCheckable(True)
+            act.setChecked((cur or None) == choice)
+            grp.addAction(act)
+            act.triggered.connect(lambda checked=False, c=choice:
+                                  self._set_body_material(name, c))
+            mat.addAction(act)
         menu.exec_(pos)
+
+    def _set_body_material(self, name, material):
+        """M110: the physical material behind the parts list.  'Paint'
+        (M106) is how a body LOOKS; this is what it's MADE OF — mass on
+        the BOM follows this one, and the name ships in the JSON."""
+        if self.doc is None:
+            return
+        b = next((x for x in self.doc.body_list()
+                  if x["name"] == name), None)
+        if b is None:
+            return
+        if (b.get("material") or None) == (material or None):
+            return
+        self._capture()
+        if material:
+            b["material"] = material
+        else:
+            b.pop("material", None)
+        self.doc.dirty = True
+        if self._drawing_page is not None:
+            self.drawing.update()          # a live parts list re-weighs
 
     def action_paint_body(self, name):
         """M106: give ONE body its own material (Fusion's Appearance can
