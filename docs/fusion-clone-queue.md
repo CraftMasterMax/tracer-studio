@@ -1365,6 +1365,54 @@ selector-based fillet re-bind are the two new items for the next
 re-rank; nothing shipped is invalidated, and three beats (load tiers,
 DOF overlay, reliability wedge) gained hard citations.
 
+### Wave-2 research addendum (2026-10-07; two engine autopsies, ~13k words)
+
+`fusion_drawing_engine.md` (7423 w, ~35 cloudhelp pages walked by GUID
++ 2 AU handouts) and `fusion_sheetmetal_engine.md` (5651 w, 68 cites,
+AU PDFs cached in `/tmp/opencode/research/pdfs/`).
+
+- **A drawing stores a design REFERENCE at a VERSION, not geometry** —
+  views re-harvest on Update. And the workspace is reportedly built on
+  the AutoCAD core; the smoking gun is Autodesk's own export page:
+  "AutoCAD DWG" emits every sheet as **paperspace-only Layouts with an
+  empty model space** — one fact explains the whole blank-DWG complaint
+  genre. Our paperspace-free drawing design is a *validated
+  counter-position*, market it as such. [confirms v2 drawings plan]
+- **Title-block "fields don't update" is documented behaviour**: only
+  Paper Size + Sheet Number ever re-update; Drawing Scale is a
+  one-time capture of the FIRST view placed. Ours derives scale/size
+  at draw time (M108) — already better; when drawings v2 ships, make
+  every field live and say so in the release note. [S, marketing edge]
+- **Export de-association is POLICY** ("Dimensions are no longer
+  associative" — their page), DXF got real splines only May-2026,
+  lineweights still aren't exported, dims lie at scale ≠ 1:1. The
+  report's **T1–T13 fidelity taxonomy is our exporter's acceptance
+  checklist** — adopt as tests when STEP/DXF export work lands. [M]
+- **Fusion has NO bend table.** The sheet-metal "rule" is a flat
+  material×thickness record (6 generic ones ship), bend DEDUCTION is
+  not enterable (staff: "calculate backwards and come up with a
+  K-Factor"). But the rule fields are **expressions of thickness**
+  (`relief depth = t*0.5`) — steal that mechanic; it is free for us
+  since expressions already live in our dimension layer. [S]
+- **Two flatteners, two contracts**: Unfold keeps reliefs fold-
+  consistent so refold round-trips; Flat Pattern resolves cut-ready
+  corners — including 3-bend patches that exist ONLY in the flat. And
+  non-developable lofts are FACETED into discrete planar bends
+  (chord/angle/count knobs), never faked. Both are honest-engineering
+  patterns we copy. [M, flange engine]
+- **Failure timing is our beat**: Autodesk's KB error catalogue
+  ("Collisions found while flattening", zero-gap face fusion → "leave
+  a 0.001 gap") is all flat-pattern-stage pain that arrives at the
+  worst moment — validate flange collisions at FEATURE time. DXF flat
+  export ships four knobs, ALL layers continuous-line (open ticket
+  FUS-190565): our unfold→DXF inherits their users' punch list —
+  bend lines on their own layer + direction arrows + annotations. [M]
+
+Queue impact: M120 (sketch muscle) unaffected. The two engine reports
+feed the sheet-metal v2 slice and drawings v2 when they come up the
+matrix, and the T1–T13 list joins the export-test backlog. Fleet is
+mid-wave-3 (joint engine, parameters engine).
+
 ### Strategic frame, upgraded
 The matrix turned positioning into inventory: **16 verified
 advantages** (offline versions where their own docs lose them, live
