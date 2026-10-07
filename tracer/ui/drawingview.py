@@ -15,6 +15,7 @@ from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
 from ..core import drawing
+from ..core import fits
 from .theme import DRAWING
 
 # the sheet is paper: its inks never follow the UI theme (a drawing
@@ -45,6 +46,7 @@ def scale_label(factor: float) -> str:
 class DrawingCanvas(QWidget):
     dim_added = Signal(str, tuple, tuple, dict)  # view, a, b, opts (M94/95)
     balloon_added = Signal(str, tuple, int)      # view, model xy, item (M110)
+    fit_requested = Signal(str, int)             # M114: view, dim index
     view_drag_begin = Signal()                   # M96: undo capture hook
     view_scale_requested = Signal(str)           # M100: Scale dialog ask
 
@@ -59,6 +61,7 @@ class DrawingCanvas(QWidget):
         self._dim_mode = False                 # M94: bubble tool armed?
         self._dim_first = None                 # first endpoint (view, xy)
         self._balloon_mode = False             # M110: balloon tool armed?
+        self._fit_mode = False                 # M114: fit-callout armed?
         self._view_drag = None                 # M96: (view, start, base)
         self.setMinimumSize(320, 240)
         self.setMouseTracking(True)
@@ -242,6 +245,7 @@ class DrawingCanvas(QWidget):
         self._dim_first = None
         if on:
             self._balloon_mode = False        # M110: one tool at a time
+            self._fit_mode = False            # M114
         self.update()
 
     def set_balloon_mode(self, on: bool):
@@ -252,7 +256,60 @@ class DrawingCanvas(QWidget):
         if on:
             self._dim_mode = False
             self._dim_first = None
+            self._fit_mode = False            # M114
         self.update()
+
+    def set_fit_mode(self, on: bool):
+        """M114: arm the fit-callout click — one click NEAR a dimension
+        bubble opens the ISO 286 class picker for that dim."""
+        self._fit_mode = bool(on)
+        if on:
+            self._dim_mode = False
+            self._balloon_mode = False
+            self._dim_first = None
+        self.update()
+
+    def _dim_disp(self, d) -> str:
+        """Bubble text plus its ISO 286 callout, if the draughtsman
+        pinned one (M114). Paper furniture: the geometry and the DXF
+        stay nominal — a dimension carries truth, a class carries fit."""
+        cls = d.get("fit")
+        if not cls:
+            return d["text"]
+        try:
+            return f"{d['text']} {fits.callout(d.get('fit_nom', 0.0), cls)}"
+        except ValueError:                  # stale class on new geometry
+            return f"{d['text']} {cls}"
+
+    def _dim_at(self, page_pt, placed):
+        """(view, index) of the dim whose leader passes nearest this
+        sheet point (~14 screen px of slack); None when nothing is close."""
+        best, best_d = None, 14.0 / max(self._zoom, 1e-6)
+        for i, d in enumerate(self.sheet().get("dims", [])):
+            fr = placed.get(d["view"])
+            if fr is None:
+                continue
+            if d.get("diameter") or d.get("radius"):
+                c = self.s2p(*self._m2p(fr, d.get("center", (0, 0))))
+                rim = self.s2p(*self._m2p(fr, (float(d["center"][0])
+                                               + float(d.get("r", 0.0)),
+                                               float(d["center"][1]))))
+                r_px = math.hypot(rim.x() - c.x(), rim.y() - c.y())
+                dist = abs(math.hypot(page_pt[0] - c.x(),
+                                      page_pt[1] - c.y()) - r_px)
+            else:
+                A = self.s2p(*self._m2p(fr, d["a"]))
+                B = self.s2p(*self._m2p(fr, d["b"]))
+                dx, dy = B.x() - A.x(), B.y() - A.y()
+                L2 = dx * dx + dy * dy
+                t = (0.0 if L2 < 1e-12 else
+                     max(0.0, min(1.0, ((page_pt[0] - A.x()) * dx
+                                        + (page_pt[1] - A.y()) * dy) / L2)))
+                dist = math.hypot(page_pt[0] - (A.x() + t * dx),
+                                  page_pt[1] - (A.y() + t * dy))
+            if dist < best_d:
+                best, best_d = (d["view"], i), dist
+        return best
 
     def _view_at(self, page_pt, placed, slack=3.0):
         """Which view's frame (with draughting slack) holds this click?
@@ -706,7 +763,8 @@ class DrawingCanvas(QWidget):
                 p.setPen(ink)
                 p.setBrush(Qt.NoBrush)
             fm = p.fontMetrics()
-            br = fm.boundingRect(d["text"])
+            disp = self._dim_disp(d)
+            br = fm.boundingRect(disp)
             gap = QRectF(mid.x() + n.x() * od - br.width() / 2 - 3,
                          mid.y() + n.y() * od - br.height() / 2 - 2,
                          br.width() + 6, br.height() + 4)
@@ -716,7 +774,7 @@ class DrawingCanvas(QWidget):
             p.setBrush(Qt.NoBrush)
             p.setPen(QPen(_RED))
             p.setFont(f)
-            p.drawText(gap, Qt.AlignCenter, d["text"])
+            p.drawText(gap, Qt.AlignCenter, disp)
 
     def _draw_diameter(self, p: QPainter, f, ink, d, fr):
         """A Ø bubble spans the whole circle: from the far rim through
@@ -756,7 +814,8 @@ class DrawingCanvas(QWidget):
             p.setPen(ink)
             p.setBrush(Qt.NoBrush)
         fm = p.fontMetrics()
-        br = fm.boundingRect(d["text"])
+        disp = self._dim_disp(d)
+        br = fm.boundingRect(disp)
         mid = QPointF(0.5 * (far.x() + near.x()),
                       0.5 * (far.y() + near.y()))
         gap = QRectF(mid.x() - br.width() / 2 - 3,
@@ -768,7 +827,7 @@ class DrawingCanvas(QWidget):
         p.setBrush(Qt.NoBrush)
         p.setPen(QPen(_RED))
         p.setFont(f)
-        p.drawText(gap, Qt.AlignCenter, d["text"])
+        p.drawText(gap, Qt.AlignCenter, disp)
 
     def _draw_radius(self, p: QPainter, f, ink, d, fr):
         """M103: an R leader runs from the arc's centre out to the rim,
@@ -802,7 +861,8 @@ class DrawingCanvas(QWidget):
         p.drawPath(path)
         p.setBrush(Qt.NoBrush)
         fm = p.fontMetrics()
-        br = fm.boundingRect(d["text"])
+        disp = self._dim_disp(d)
+        br = fm.boundingRect(disp)
         mid = QPointF(0.5 * (centre.x() + rim.x()) + n.x() * 9,
                       0.5 * (centre.y() + rim.y()) + n.y() * 9)
         gap = QRectF(mid.x() - br.width() / 2 - 3,
@@ -814,7 +874,7 @@ class DrawingCanvas(QWidget):
         p.setBrush(Qt.NoBrush)
         p.setPen(QPen(_RED))
         p.setFont(f)
-        p.drawText(gap, Qt.AlignCenter, d["text"])
+        p.drawText(gap, Qt.AlignCenter, disp)
 
     def page_scale(self) -> float:
         views = self.views()
@@ -832,6 +892,13 @@ class DrawingCanvas(QWidget):
     def mousePressEvent(self, ev):
         if self._balloon_mode and ev.button() == Qt.LeftButton:
             self._balloon_click(ev)          # M110: pin, don't pan
+            return
+        if self._fit_mode and ev.button() == Qt.LeftButton:
+            placed = self.placed()                      # M114: annotate
+            if placed:
+                hit = self._dim_at(self.p2s(ev.position()), placed)
+                if hit is not None:
+                    self.fit_requested.emit(*hit)
             return
         if self._dim_mode and ev.button() == Qt.LeftButton:
             self._dim_click(ev)          # M94: bubbles, not panning

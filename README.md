@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M113**
+**Status: M114**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -194,12 +194,14 @@ ellipse/arc/polygon/slot · **Enter** finish → extrude · **Shift+R** revolve 
 **D** dimension · **H/V/F/G/Shift+P/Q/T/I/J/M/2** constraints ·
 **P** project model edges · **T** trim corner ·
 **O** offset · **X** construction toggle · **Ctrl+Z** undo.
+Drawing: **D** dimension · **B** balloon · **F** fit callout (ISO 286 —
+Ø30 H7 (+0.021/0) on paper, the model stays nominal) · **Esc** stand down.
 Full list: **?** / the Shortcuts tab.
 
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1171 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1182 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

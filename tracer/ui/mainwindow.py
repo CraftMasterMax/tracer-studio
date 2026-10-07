@@ -9,7 +9,7 @@ import time
 import numpy as np
 import trimesh
 from PySide6.QtCore import QPoint, QSize, Qt, QSettings
-from PySide6.QtGui import QAction, QActionGroup, QKeySequence
+from PySide6.QtGui import (QAction, QActionGroup, QKeySequence, QShortcut)
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, 
                                QLabel, QMainWindow, QMenu, QMessageBox,
                                QPushButton, QSplitter, QStackedWidget,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout,
 
 from ..core import import2d
 from ..core import export2d
+from ..core import fits as iso_fits
 from ..core import io as fio
 from ..core import params
 from ..core import printcheck
@@ -1126,8 +1127,22 @@ class MainWindow(QMainWindow):
         bomb.toggled.connect(self._toggle_bom)
         bl.addWidget(bomb)
         self._bom_btn = bomb
+        fitb = QPushButton("Fit\u2026")                # M114 callout
+        fitb.setProperty("tb", True)
+        fitb.setCheckable(True)
+        fitb.setToolTip("Click a dimension bubble to attach an ISO 286 "
+                        "fit class — Ø30 H7 (+0.021/0) on paper; the "
+                        "model stays nominal: a dimension carries truth")
+        fitb.toggled.connect(
+            lambda on: (self.drawing.set_fit_mode(on),
+                        on and dimb.setChecked(False),
+                        on and balb.setChecked(False)))
+        bl.addWidget(fitb)
+        self._fit_btn = fitb
         dimb.toggled.connect(                          # M110: one tool
             lambda on: on and balb.setChecked(False))
+        dimb.toggled.connect(lambda on: on and fitb.setChecked(False))
+        balb.toggled.connect(lambda on: on and fitb.setChecked(False))
         bl.addStretch(1)
         lay.addWidget(bar)
         from .drawingview import DrawingCanvas
@@ -1135,12 +1150,28 @@ class MainWindow(QMainWindow):
         self.drawing.dim_added.connect(self._add_dim)     # M94 bubbles
         self.drawing.balloon_added.connect(               # M110 pins
             self._add_balloon)
+        self.drawing.fit_requested.connect(               # M114 ISO 286
+            self._annotate_fit)
         self.drawing.view_drag_begin.connect(            # M96 undo capture
             self._capture)
         self.drawing.view_scale_requested.connect(       # M100 scales
             self._on_view_scale)
         lay.addWidget(self.drawing, 1)
+        # M113 queue-closer: the sheet's own voices — D dimension, B
+        # balloon, F fit callout, Esc stands every tool down (Fusion
+        # drawing keys; page-scoped so they sleep outside the sheet)
+        for seq, fn in (("D", dimb.click), ("B", balb.click),
+                        ("F", fitb.click)):
+            QShortcut(QKeySequence(seq), page, activated=fn)
+        QShortcut(QKeySequence(Qt.Key_Escape), page,
+                  activated=self._stand_down_drawing)
         return page
+
+    def _stand_down_drawing(self):
+        """Esc on the sheet: every armed tool back in its rack."""
+        for b in (self._dim_btn, self._balloon_btn, self._fit_btn):
+            if b.isChecked():
+                b.setChecked(False)
 
     def _toggle_sheet(self):
         if self.doc is None or not self.doc.drawings:
@@ -1415,6 +1446,60 @@ class MainWindow(QMainWindow):
         self.drawing.update()
         self.status.showMessage(
             f"Dimension {entry['text']} \u00b7 {view} view", 4000)
+
+    def _annotate_fit(self, view: str, idx: int):
+        """M114: the ISO 286 class picker for one dimension bubble —
+        paper furniture over nominal geometry (Fusion keeps the model
+        true and lets the sheet carry the fit)."""
+        from . import cmddialog
+        if self.doc is None or not self.doc.drawings:
+            return
+        g = self.drawing.sheet()
+        dims = g.get("dims", [])
+        if not 0 <= idx < len(dims):
+            return
+        d = dims[idx]
+        if d.get("radius"):
+            self.status.showMessage("Fit classes are diameters — an R "
+                                    "bubble can't wear one", 4000)
+            return
+        nom = (2.0 * float(d["r"]) if d.get("diameter")
+               else math.dist(d["a"], d["b"]))
+        v = cmddialog.ask(self, "Fit callout \u2014 ISO 286", [
+            dict(key="cls", kind="combo", label=f"Class on \u00d8{nom:.2f}",
+                 choices=["(none \u2014 plain dimension)",
+                          "H7", "H8", "H9", "h6", "h7", "h8",
+                          "g6", "k6", "n6", "p6",
+                          "H7/g6", "H7/h6", "H7/k6", "H7/n6", "H7/p6",
+                          "Custom\u2026"])])
+        if v is None:
+            return
+        cls = str(v["cls"]).strip()
+        if cls == "Custom\u2026":
+            v = cmddialog.ask(self, "Fit class", [
+                dict(key="cls", kind="text", label="Class (hole H7, "
+                     "shaft g6, or a pair H7/g6)", default="H7")])
+            if v is None:
+                return
+            cls = str(v["cls"]).strip()
+        self._capture()
+        if cls.startswith("(none"):
+            d.pop("fit", None)
+            d.pop("fit_nom", None)
+            msg = "fit callout removed"
+        else:
+            try:
+                text = iso_fits.callout(nom, cls)
+            except ValueError as e:
+                self._undo.pop()             # rejected: no edit happened
+                QMessageBox.warning(self, "ISO 286", str(e))
+                return
+            d["fit"] = cls
+            d["fit_nom"] = round(nom, 3)
+            msg = f"\u00d8{nom:.2f} {text}"
+        self.doc.dirty = True
+        self.drawing.update()
+        self.status.showMessage(msg, 4000)
 
     def _open_drawing(self, idx: int):
         if self.doc is None or not (0 <= idx < len(self.doc.drawings)):

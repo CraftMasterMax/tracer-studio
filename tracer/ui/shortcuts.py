@@ -115,6 +115,15 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("D", "Distance dimension (1 line, 2 points, or pick)", True),
         ("Delete", "Delete selected entities", True),
     ]),
+    ("Drawing sheet (while the sheet is focused)", [
+        ("D", "Toggle the dimension tool — click two view points", True),
+        ("B", "Toggle balloons — one click pins the next item number",
+         True),
+        ("F", "Fit callout (ISO 286): click a dimension bubble, pick H7, "
+              "g6, H7/g6… — paper carries the fit, model stays nominal",
+         True),
+        ("Esc", "Stand every sheet tool down", True),
+    ]),
     ("Document & features", [
         ("Ctrl + N", "New document", True),
         ("Ctrl + O", "Open document…", True),

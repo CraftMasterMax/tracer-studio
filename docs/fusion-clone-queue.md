@@ -1177,6 +1177,14 @@ consequence.
   compute, Ctrl+4-7 styles, Ctrl+Alt layout layers. Also fixes a real
   latent bug: window-scoped menu shortcuts used to steal keys from the
   sketch editor. Suite now 1171.
+- **M114**: Limits & Fits on paper — `core/fits.py` carries the
+  ISO 286 maker slice as pure data (IT5-IT9 to Ø120, holes H, shafts
+  h g k n p, fine deviation bands so Ø25 g6 differs from Ø30 g6) and
+  every published anchor reproduces to the micron; a Fit tool (or **F**
+  on the sheet — the drawing now answers D/B/F/Esc) clicks a dimension
+  bubble into "Ø40.00 H7 (+0.025/0)" per ISO 129; fit pairs analyse
+  clearance/transition/interference; the model and the DXF stay
+  nominal — paper carries the fit. Suite now 1182.
 
 ### Corrections wave 2 bought us
 - **Fusion HAS a 3D sketch mode now** (triad, per-point plane
@@ -1201,8 +1209,9 @@ consequence.
 ### Ranked queue v2 (matrix-informed; supersession noted)
 *Shipped since this ranking: M112 theme tokens (test_m112, suite
 1159); M113 key layer + command search (test_m113, suite 1171 — the
-matrix's #1 gap is CLOSED). The live queue starts at M114; items 1-2
-below are history.*
+matrix's #1 gap is CLOSED); M114 ISO 286 fit callouts (test_m114,
+suite 1182 — matrix rank 2 closed, drawing keys D/B/F/Esc shipped with
+it). The live queue starts at M115; items 1-3 below are history.*
 1. **M112 — theme tokens** (`ui/theme.py` + single QSS: darkBlue
    surfaces, autodeskBlue accent, hover/select trio; no-px rule from
    `a11y_precision_cad.md`). [matrix rank 5]
