@@ -645,7 +645,9 @@ class Document:
             while f"Body {k}" in taken:
                 k += 1
             name = f"Body {k}"
-        b = {"name": name, "visible": True}
+        b = {"name": name, "visible": True,
+             "placement": [0.0, 0.0, 0.0],   # kinematic STATE, not a
+             "rot": None}                    # feature (Placement≠Feature)
         self.bodies.append(b)
         self.active_body = name
         self.dirty = True
@@ -656,10 +658,91 @@ class Document:
         before M104 (features appended without bodies) materializes the
         implicit Body 1 the moment anyone asks — the browser never lies."""
         if not self.bodies and self.features:
-            self.bodies = [{"name": "Body 1", "visible": True}]
+            self.bodies = [{"name": "Body 1", "visible": True,
+                            "placement": [0.0, 0.0, 0.0], "rot": None}]
             if self.active_body is None:
                 self.active_body = "Body 1"
         return self.bodies
+
+    # ---- kinematic body placement (Placement ≠ Feature) -------------------
+    @staticmethod
+    def _apply_placement(body: dict | None, solid):
+        """Rotate (state matrix) then translate (state vector): pure
+        kinematic transforms applied outside the feature timeline."""
+        if body is None:
+            return solid
+        rot = body.get("rot")
+        if rot is not None:
+            solid = solid.transformed(np.asarray(rot, float).reshape(4, 4))
+        pos = body.get("placement") or (0.0, 0.0, 0.0)
+        if any(pos):
+            solid = solid.translated(tuple(float(v) for v in pos))
+        return solid
+
+    def _body(self, name: str) -> dict:
+        for b in self.body_list():
+            if b["name"] == name:
+                return b
+        raise KeyError(f"no body {name!r}")
+
+    def move_body(self, name: str, dx: float, dy: float, dz: float) -> dict:
+        """Slide a body WITHOUT a timeline feature — Fusion's kinematic
+        component move, as data model.  Accumulates."""
+        b = self._body(name)
+        p = b.setdefault("placement", [0.0, 0.0, 0.0])
+        b["placement"] = [p[0] + dx, p[1] + dy, p[2] + dz]
+        self.dirty = True
+        return b
+
+    def rotate_body(self, name: str, angle_deg: float,
+                    axis=(0.0, 0.0, 1.0), center=(0.0, 0.0, 0.0)) -> dict:
+        """Spin a body without a feature; composes onto the state matrix
+        (world-space rotation_about the given centre)."""
+        from .geometry import rotation_about
+        b = self._body(name)
+        m = rotation_about(tuple(float(c) for c in center),
+                           tuple(float(a) for a in axis),
+                           np.deg2rad(float(angle_deg)))
+        prev = (np.asarray(b.get("rot"), float).reshape(4, 4)
+                if b.get("rot") is not None else np.eye(4))
+        b["rot"] = (m @ prev).ravel().tolist()
+        self.dirty = True
+        return b
+
+    def reset_body_placement(self, name: str) -> dict:
+        b = self._body(name)
+        b["placement"] = [0.0, 0.0, 0.0]
+        b["rot"] = None
+        self.dirty = True
+        return b
+
+    def capture_body_placement(self, name: str):
+        """Capture Position: bake the kinematic state into real timeline
+        features (Rotate then Move — same order state applies in) and
+        zero the state.  After capture the placement is parametric and
+        survives anything that reads features, not body dicts."""
+        b = self._body(name)
+        pos = list(b.get("placement") or (0.0, 0.0, 0.0))
+        made = []
+        if b.get("rot") is not None:
+            r3 = np.asarray(b["rot"], float).reshape(4, 4)[:3, :3]
+            from scipy.spatial.transform import Rotation
+            rv = Rotation.from_matrix(r3).as_rotvec()
+            ang = float(np.linalg.norm(rv))
+            if ang > 1e-12:
+                ax = (rv / ang).tolist()
+                rf = RotateFeature(name="Capture Rot",
+                                   center=(0.0, 0.0, 0.0),
+                                   axis=tuple(ax),
+                                   angle_deg=float(np.rad2deg(ang)))
+                rf.body = name                   # NOT the active body!
+                made.append(self.add(rf))
+        if any(abs(v) > 1e-12 for v in pos):
+            mf = MoveFeature(name="Capture Move", vec=tuple(pos))
+            mf.body = name
+            made.append(self.add(mf))
+        self.reset_body_placement(name)
+        return made
 
     def set_active_body(self, name: str) -> bool:
         for b in self.body_list():
@@ -994,8 +1077,18 @@ class Document:
                 buckets[key] = acc.subtract(solid)
             else:
                 buckets[key] = acc.intersect(solid)
-        self._body_solids = {k: v for k, v in buckets.items()
-                             if v is not None}
+        # Placement ≠ Feature (architecture [S]; kernel report actionable,
+        # joint report §1 by name): a body's placement is KINEMATIC STATE,
+        # applied AFTER its feature stream — moving a body creates no
+        # timeline feature and no recompute dependency, exactly as Fusion
+        # documents for components. Capture bakes it into features.
+        placed = {}
+        for k, v in buckets.items():
+            if v is None:
+                continue
+            b = next((x for x in self.bodies if x["name"] == k), None)
+            placed[k] = self._apply_placement(b, v)
+        self._body_solids = placed
         solids = list(self._body_solids.values())
         if not solids:
             self._result = None
