@@ -20,6 +20,7 @@ from ..core import export2d
 from ..core import fits as iso_fits
 from ..core import io as fio
 from ..core import logservice
+from ..core.materials import MATERIALS as _MAT
 from ..core import params
 from ..core import printcheck
 from ..core import step
@@ -71,13 +72,31 @@ def demo_document() -> Document:
     return doc
 
 
+def _density_labels(order):
+    """"Name (ρ)" labels straight from core MATERIALS — the print check
+    and the BOM can never disagree again.  Water (1.00) is the print
+    check's sink-or-float reference, not a material."""
+    out = []
+    for name in order:
+        rho = _MAT.get(name)
+        if rho is None and name != "Water":
+            continue                       # core no longer lists it
+        out.append(f"{name} ({rho if rho is not None else 1.0:.2f})")
+    return out
+
+
 class MainWindow(QMainWindow):
-    _MATERIAL_DENSITIES = [        # label carries g/cm³ (parsed back)
-        "PLA (1.24)", "PETG (1.27)", "ABS (1.04)", "Nylon (1.14)",
-        "TPU (1.20)", "Resin (1.10)", "Water (1.00)", "Aluminium (2.70)",
-        "Steel (7.85)", "Stainless (8.00)", "Brass (8.50)",
-        "Titanium (4.50)", "Copper (8.96)",
+    # Density labels DERIVED from core.materials (single source of
+    # truth — the materials report flagged the old hand-typed list for
+    # drifting: it invented Stainless 8.00 / Nylon 1.14 / Titanium 4.50
+    # that the BOM itself refuses to print).  "Name (ρ)" format stays
+    # stable so QSettings values round-trip.
+    _PRINT_ORDER = [                       # filaments first — maker CAD
+        "PLA", "PETG", "ABS", "Nylon PA6", "TPU", "Tough resin",
+        "Water", "Aluminium", "Steel", "Stainless 304", "Brass",
+        "Titanium Ti-6Al-4V", "Copper",
     ]
+    _MATERIAL_DENSITIES = _density_labels(_PRINT_ORDER)  # g/cm³ in label
 
     def __init__(self, renderer: SceneRenderer | None = None):
         super().__init__()

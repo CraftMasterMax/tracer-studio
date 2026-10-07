@@ -391,3 +391,21 @@ def test_material_assigns_weighs_and_undoes(win, qapp):
     win._set_body_material(name, "Steel")
     win._set_body_material(name, None)
     assert "material" not in win.doc.body_list()[0]
+
+
+def test_print_dialog_labels_cannot_drift_from_core():
+    """The 3D-print dialog once carried a hand-typed density list that
+    invented values the BOM refused to print (Stainless 8.00 vs the
+    core's Stainless 304 7.90).  Labels are now DERIVED: every
+    "Name (ρ)" the UI offers must agree with core.materials — Water
+    (the sink-or-float reference) is the sole sanctioned exception."""
+    from tracer.ui.mainwindow import MainWindow
+    for label in MainWindow._MATERIAL_DENSITIES:
+        name, _, rho = label.rpartition(" (")
+        rho = float(rho.rstrip(")"))
+        if name == "Water":
+            assert rho == 1.00
+        else:
+            assert materials.MATERIALS[name] == rho, label
+    # and the canonical filament default survived the relabelling
+    assert "PLA (1.24)" in MainWindow._MATERIAL_DENSITIES
