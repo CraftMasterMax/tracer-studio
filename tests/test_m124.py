@@ -122,3 +122,30 @@ def test_label_notes_advertise_the_drift():
     pl = printfit.plan(d, 0.2)
     text = " ".join(pl["expected"])
     assert "holes" in text.lower() and "elephant-foot" in text
+
+
+def test_cmddialog_honours_combo_defaults():
+    """The bug M124 tripped over: ask() silently ignored `default` for
+    combos — every multi-combo dialog opened on item 0. The δ menu
+    depends on defaults actually landing where the caller says."""
+    from PySide6.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+    from tracer.ui import cmddialog
+    captured = {}
+
+    def fake_exec(self):
+        captured["d"] = self
+        return cmddialog.QDialog.DialogCode.Rejected
+
+    monkey = cmddialog.CommandDialog
+    real, monkey.exec_ = monkey.exec_, fake_exec
+    try:
+        cmddialog.ask(None, "t", [
+            dict(key="a", kind="combo", label="A",
+                 choices=("x", "y", "z"), default="y"),
+            dict(key="b", kind="combo", label="B", choices=("p", "q")),
+        ])
+    finally:
+        monkey.exec_ = real
+    assert captured["d"]._fields["a"].currentText() == "y"
+    assert captured["d"]._fields["b"].currentText() == "p"   # no default = item 0

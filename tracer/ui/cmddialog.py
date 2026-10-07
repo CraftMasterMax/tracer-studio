@@ -239,6 +239,14 @@ def ask(parent, title, fields, remember_key=None) -> dict | None:
             d.add_combo(f["key"], f["label"], f["choices"], g)
             if len(combo_keys) == 1:      # convenience: single choice list
                 d._fields[f["key"]].setCurrentIndex(0)
+            # …and an explicit default is law for EVERY combo — ask()
+            # used to ignore it (M124: dialogs with several combos —
+            # 3D Print among them — silently opened on item 0 instead)
+            if "default" in f and f["default"] is not None:
+                w = d._fields[f["key"]]
+                i = w.findText(str(f["default"]))
+                if i >= 0:
+                    w.setCurrentIndex(i)
         elif kind == "double":
             d.add_double(f["key"], f["label"], f.get("default", 0.0),
                          f.get("min", -1e6), f.get("max", 1e6),
