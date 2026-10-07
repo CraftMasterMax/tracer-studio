@@ -1973,12 +1973,15 @@ class MainWindow(QMainWindow):
         thread = opts.get("thread", "None")
         tap_pitch, tap_dia = ((0.0, 0.0) if thread == "None"
                               else ISO_COARSE[thread])
+        drill = opts.get("drill")          # M107 preset Ø; the circle places only
         payload = model_to_dict(m)
         owned = [f for f in self.doc.features
                  if isinstance(f, HoleFeature) and f.sid == m.sid]
         for i, c in enumerate(circles):
             w = origin + u * float(c.c.x) + v * float(c.c.y)
-            rad = tap_dia / 2 if tap_pitch else float(c.r)   # tapped: tap-drill core
+            rad = (drill / 2 if drill                  # M107 preset → circle places
+                   else tap_dia / 2 if tap_pitch       # tapped: tap-drill core
+                   else float(c.r))
             L = (diag + 4 * max(rad, cb_r, cs_r)) if through else depth
             tlen = L if tap_pitch else 0.0                   # thread the full depth
             kind = (" counterbore" if cb_r > rad else

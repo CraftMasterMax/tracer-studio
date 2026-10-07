@@ -12,9 +12,17 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog,
                                QLabel, QVBoxLayout)
 
 from ..core.thread import ISO_COARSE
+from ..core import fasteners as _F
 
 TYPES = ("Simple", "Counterbore", "Countersink")
 THREADS = ("None",) + tuple(ISO_COARSE)      # None + ISO metric coarse
+# The Fastener presets: "Custom" keeps today's hand-typed behaviour (the
+# sketch circle sets Ø); the rest look a named fastener up in the library
+# (M107), at which point the circle only PLACES the hole.
+STDS = ("Custom (Ø from sketch)", "Clearance", "Tapped",
+        "Socket head (cbore)", "Heat-set insert")
+_STD_KIND = {STDS[1]: "clearance", STDS[2]: "tapped",
+             STDS[3]: "socket head", STDS[4]: "heat-set insert"}
 
 
 def _spin(value: float, lo: float = 0.01, hi: float = 1e5,
@@ -43,6 +51,13 @@ class HoleDialog(QDialog):
         form = QFormLayout()
         form.setSpacing(6)
         self._form = form
+        self._drill = None                 # fastener preset Ø override (M107)
+        self.size = QComboBox()
+        self.size.addItems(_F.SIZES)
+        self.size.setCurrentText("M4")
+        self.std = QComboBox()
+        self.std.addItems(STDS)
+        self.std.setCurrentIndex(0)        # Custom → identical to today
         self.type = QComboBox()
         self.type.addItems(TYPES)
         self.thread = QComboBox()
@@ -57,6 +72,8 @@ class HoleDialog(QDialog):
         for a in (82.0, 90.0, 120.0):
             self.cs_angle.addItem(f"{a:g}°", a)
         self.cs_angle.setCurrentIndex(1)          # 90° default
+        form.addRow("Fastener", self.std)
+        form.addRow("Size", self.size)
         form.addRow("Type", self.type)
         form.addRow("Thread", self.thread)
         form.addRow("Depth", self.depth)
@@ -79,7 +96,40 @@ class HoleDialog(QDialog):
         self.type.currentIndexChanged.connect(self._sync_rows)
         self.through.toggled.connect(self.depth.setDisabled)
         self.thread.currentIndexChanged.connect(self._sync_head)
+        self.std.currentIndexChanged.connect(self._apply_std)
+        self.size.currentIndexChanged.connect(self._apply_std)
         self._sync_rows()
+
+    def _apply_std(self):
+        """M107: a named fastener fills the dialog from the library.  "Custom"
+        clears the Ø override and leaves every field to the user, so the
+        pre-library behaviour (and its tests) is untouched."""
+        if self.std.currentIndex() == 0:
+            self._drill = None
+            self._sync_head()
+            return
+        size = self.size.currentText()
+        kind = _STD_KIND[self.std.currentText()]
+        try:
+            p = _F.hole_for(size, kind)
+        except KeyError:
+            self._drill = None
+            self.head.setText(f"{size} {kind}: no library data — "
+                              "check a datasheet, or pick another size")
+            return
+        self.thread.setCurrentText(p["thread"])   # → _sync_head, then we win
+        self.type.setCurrentText(p["type"].capitalize())
+        if p["type"] == "counterbore":
+            self.cb_dia.setValue(p["cb_dia"])
+            self.cb_depth.setValue(p["cb_depth"])
+        self._drill = p["drill"]
+        if kind == "tapped":
+            return                               # head already shows tap drill
+        dia = f"Ø {self._drill:g}" if self._drill else "Ø from sketch"
+        note = (f"cbore Ø {p['cb_dia']:g} × {p['cb_depth']:g}"
+                if p["type"] == "counterbore" else "")
+        self.head.setText(f"{len(self._diam)} circle(s) place — {size} "
+                          f"{kind}: drill {dia} {note}".rstrip())
 
     def _sync_head(self):
         """Show what a tapped hole will actually drill: tap-drill Ø and
@@ -119,6 +169,7 @@ class HoleDialog(QDialog):
                 ang = 90.0
         return {"type": self.type.currentText().lower(),
                 "thread": self.thread.currentText(),
+                "drill": self._drill,
                 "depth": float(self.depth.value()),
                 "through": bool(self.through.isChecked()),
                 "cb_dia": float(self.cb_dia.value()),

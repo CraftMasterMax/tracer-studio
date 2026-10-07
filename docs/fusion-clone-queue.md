@@ -909,11 +909,31 @@ scope: per-body COLOUR only — opacity stays a whole-part/disp setting (a
 ghosted body can't yet sit beside a solid one), and the wireframe/x-ray
 visual styles keep their uniform tint.
 
+**M107 — the fastener hole library: name a screw, get the right hole.** ✓
+SHIPPED.  A research re-rank (the subagent fleet was back) put this top:
+not a kernel gap — HoleFeature already taps, counterbores and countersinks
+— but a KNOWLEDGE gap.  Makers kept having to look up (or mistype) that
+an M3 clearance is Ø3.4, an M4 socket head wants a Ø9 counterbore ~5.2
+deep, and an M3 heat-set insert presses into Ø4.  A pure, sourced table
+(core/fasteners.py) turns a named fastener + kind into exactly the
+parameters the Hole dialog consumes: ISO 273 clearance (close/medium/
+coarse), DIN 912 socket-head counterbores, and typical heat-set-insert
+drills — with tap pitch/Ø reused VERBATIM from ISO_COARSE so the tap path
+can't drift from the thread it models.  Pick a Fastener + Size and the
+dialog fills drill/type/counterbore and the head reads what it will
+actually cut; the sketch circle drops to PLACEMENT ONLY.  The change is
+strictly OPT-IN: the dialog's first entry is "Custom (Ø from sketch)",
+which clears the drill override and leaves every field to the user, so
+the pre-library behaviour (and all four hole test files) is byte-for-byte
+unchanged — only the verb learned "drill overrides the circle."
+
 **Later candidates (researched, deferred):** multi-body phase 2c —
 per-body STEP compound (needs the C++ OCCT bridge to take a compound)
-+ per-body opacity + cross-body feature sources; then Draft, per-view
-rotation, sheet metal, assemblies/joints, and a section cutting-plane
-arrow on the drawing. Re-evaluate after M106.
++ per-body opacity + cross-body feature sources; the fastener library's
+own tail (more threads/fine-pitch, more insert brands, a modelled external
+thread on a stud); then Draft, per-view rotation, sheet metal,
+assemblies/joints, and a section cutting-plane arrow on the drawing.
+Re-evaluate after M107.
 
 ## Oct 2026 research sweep — the landscape and the ranked backlog
 
