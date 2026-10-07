@@ -145,6 +145,21 @@ def _sweep(p: QPainter):
     p.drawLine(QPointF(12, 20), QPointF(25, 16))
 
 
+def _interlock(p: QPainter):
+    """A snap joint — the tab of the lower body in the window of the
+    upper one. One glyph for the whole family (M121)."""
+    p.drawPolyline(QPolygonF([QPointF(5, 26), QPointF(5, 17),
+                              QPointF(12, 17), QPointF(12, 13),
+                              QPointF(20, 13), QPointF(20, 17),
+                              QPointF(27, 17), QPointF(27, 26),
+                              QPointF(5, 26)]))
+    p.drawPolyline(QPolygonF([QPointF(5, 6), QPointF(27, 6),
+                              QPointF(27, 17), QPointF(20, 17),
+                              QPointF(20, 12), QPointF(12, 12),
+                              QPointF(12, 17), QPointF(5, 17),
+                              QPointF(5, 6)]))
+
+
 def _loft(p: QPainter):
     p.drawRect(QRectF(12, 7, 8, 6))
     p.drawRect(QRectF(7, 20, 18, 6))
@@ -414,6 +429,7 @@ def _dimension(p: QPainter):
 
 
 _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
+              "interlock": _interlock,
               "shell": _shell, "new": _new, "open": _open, "save": _save,
               "undo": _undo, "redo": _redo, "line": _line, "rect": _rect,
               "circle": _circle, "slot": _slot, "poly": _poly,

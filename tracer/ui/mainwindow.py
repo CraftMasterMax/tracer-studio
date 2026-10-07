@@ -360,6 +360,10 @@ class MainWindow(QMainWindow):
           lambda checked=False: self.action_text())
         d("hole", "Hole — drill every sketch circle (Ctrl+H)",
           lambda checked=False: self.action_hole())
+        d("interlock",
+          "Interlock — boss / snap fit / rest / lip "
+          "(Fusion's Plastic family, free here)",
+          lambda checked=False: self.action_interlock())
         r.design_sep()
         d("pattern", "Rectangular pattern — grid-copy a feature",
           lambda checked=False: self.action_linear_pattern())
@@ -2960,6 +2964,104 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             f"Added {str(v['kind']).lower()} — placement is the box "
             "corner / cylinder-cone base / sphere-torus centre", 5000)
+
+    _INTERLOCK_KINDS = {          # dialog labels -> core kinds (M121)
+        "Boss — post joining two bodies": "boss",
+        "Snap fit — hook + window (press fit)": "snapfit",
+        "Rest — flat stepped shelf for a part": "rest",
+        "Lip — rim bead riding in a channel": "lip",
+    }
+
+    def action_interlock(self):
+        """Fusion's Plastic-extension family as ONE free command (M121):
+        boss · snap fit · rest · lip.  Two dialogs mirror the family's
+        shared grammar — the Side 1 / Side 2 / Flip / offset shape
+        first, then the kind's analytic vocabulary.  The tools are
+        dry-run validated BEFORE the undo snapshot, so a nonsense
+        parameter leaves the timeline untouched."""
+        if self.doc is None:
+            return
+        bodies = [b["name"] for b in self.doc.body_list()]
+        if not bodies:
+            return
+        u = self.doc.units if self.doc.units in units.LABEL else "mm"
+        f = units.PER_MM[u]
+        lab = units.LABEL[u]
+
+        def num(key, label, mm, dec=2, mn=0.0):
+            return dict(key=key, label=f"{label} ({lab})", kind="double",
+                        default=round(mm / f, 6), decimals=dec, min=mn)
+        v = cmddialog.ask(self, "Interlock", [
+            dict(key="kind", label="Family member", kind="combo",
+                 choices=list(self._INTERLOCK_KINDS), group="Kind"),
+            dict(key="carry", label="Body below the interface",
+                 kind="combo", choices=bodies, default=bodies[0],
+                 group="Bodies"),
+            dict(key="mate", label="Body above (unused for Rest)",
+                 kind="combo", choices=bodies,
+                 default=bodies[1] if len(bodies) > 1 else bodies[0],
+                 group="Bodies"),
+            dict(key="flip", label="Flip across the interface plane",
+                 kind="check", default=False, group="Bodies"),
+            num("x", "Interface point X", 0.0, mn=-1e6),
+            num("y", "Interface point Y", 0.0, mn=-1e6),
+            num("z", "Interface plane height", 0.0, mn=-1e6),
+            num("clearance", "Clearance δ (print gap)", 0.2, dec=3),
+        ])
+        if v is None:
+            return
+        kind = self._INTERLOCK_KINDS[str(v["kind"])]
+        geom = {
+            "boss": [num("shaft_d", "Post diameter", 8.0),
+                     num("height1", "Anchor below interface", 5.0),
+                     num("height2", "Reach above interface", 7.0)],
+            "snapfit": [num("length", "Hook length", 10.0),
+                        num("width", "Hook width", 6.0),
+                        num("height", "Hook height", 2.0),
+                        num("lead", "Lead-in chamfer", 1.0),
+                        num("depth", "Window depth", 2.2, dec=3)],
+            "rest": [num("seat_d", "Seat diameter", 10.0),
+                     num("hole_d", "Pilot hole diameter", 6.0),
+                     num("depth", "Seat depth", 3.0),
+                     num("reach", "Pilot reach", 12.0)],
+            "lip": [num("outer_w", "Rim width X", 30.0),
+                    num("outer_d", "Rim depth Y", 20.0),
+                    num("thickness", "Wall thickness", 2.0),
+                    num("height", "Lip height", 4.0),
+                    num("depth", "Channel depth", 4.2, dec=3)],
+        }[kind]
+        g = cmddialog.ask(self, f"Interlock — {kind.title()}", geom)
+        if g is None:
+            return
+        carry, mate = str(v["carry"]), str(v["mate"])
+        if kind != "rest" and carry == mate:
+            QMessageBox.warning(
+                self, "Interlock",
+                "This member mates TWO bodies — pick different ones "
+                "(Body ▸ New Body first).")
+            return
+        params = {fd["key"]: float(g[fd["key"]]) * f for fd in geom}
+        from ..core import interlock
+        try:                                # dry-run: refuse before undo
+            interlock.tools(kind, clearance=float(v["clearance"]) * f,
+                            **params)
+        except ValueError as e:
+            QMessageBox.warning(self, "Interlock", str(e))
+            return
+        self._capture()
+        feats = self.doc.add_interlock(
+            kind, carry, mate if kind != "rest" else None,
+            x=float(v["x"]) * f, y=float(v["y"]) * f,
+            z0=float(v["z"]) * f,
+            clearance=float(v["clearance"]) * f,
+            flip=bool(v["flip"]), **params)
+        self.doc.dirty = True
+        self.recompute()
+        self.viewport.refresh()
+        self.status.showMessage(
+            f"{kind.title()} ×{len(feats)} at ({float(v['x']):g}, "
+            f"{float(v['y']):g}) {lab} — mated pair, δ = "
+            f"{float(v['clearance']):g} {lab}", 5000)
 
     def action_text(self):
         """Fusion's Sketch Text + Extrude as one honest command (M76):

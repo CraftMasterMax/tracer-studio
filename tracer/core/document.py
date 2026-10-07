@@ -609,6 +609,38 @@ class LoftFeature(Feature):
         return loft(secs, n=96, caps=not self.closed, loop=self.closed)
 
 
+@dataclass
+class InterlockFeature(Feature):
+    """M121 — one side of an interlock pair: Fusion's Plastic-extension
+    family (Boss · Snap Fit · Rest · Lip) shipped free.  `role` 'carry'
+    unions the feature into the body that CARRIES it, below the
+    interface plane; 'mate' subtracts the mating tool from the partner
+    body above it (Rest is one-sided: a stepped seat only).  The
+    interface plane is local z=0 raised to `plane_z` at (x, y);
+    `flip` mirrors it across that plane — Fusion's Flip checkbox, and
+    the two bodies' roles are exchanged with it.  `params` is the
+    kind's analytic vocabulary, the same keywords core/interlock.py
+    takes (shaft_d, length, outer_w … plus clearance)."""
+    kind: str = "boss"
+    role: str = "carry"
+    center: tuple = (0.0, 0.0)
+    plane_z: float = 0.0
+    flip: bool = False
+    params: dict = field(default_factory=dict)
+
+    def build(self) -> Solid:
+        from . import interlock
+        tool = interlock.tools(self.kind, **self.params)[self.role]
+        if tool is None:
+            raise ValueError(f"{self.name}: {self.kind} has no "
+                             f"{self.role} tool")
+        if self.flip:
+            tool = tool.mirror((0.0, 0.0, 1.0))
+        return tool.translated((float(self.center[0]),
+                                float(self.center[1]),
+                                float(self.plane_z)))
+
+
 class Document:
     # Origin-plane normals with in-plane bases chosen so u × v = n:
     # a sketch drawn on such a plane extrudes along its own normal.
@@ -921,6 +953,52 @@ class Document:
             name=name, op=op, kind="cylinder",
             dims={"radius": radius, "height": height},
             placement=(center[0], center[1], z)))
+
+    _INTERLOCK_NAMES = {                   # M121, per role
+        "boss": {"carry": "Boss post", "mate": "Boss clearance"},
+        "snapfit": {"carry": "Snap-fit hook", "mate": "Snap-fit window"},
+        "rest": {"carry": None, "mate": "Rest seat"},
+        "lip": {"carry": "Lip bead", "mate": "Lip channel"},
+    }
+
+    def add_interlock(self, kind, body_carry, body_mate=None, *, x=0.0,
+                      y=0.0, z0=0.0, clearance=0.2, flip=False, **geometry):
+        """M121 interlock family: append the feature pair that mates two
+        bodies across the interface plane z = z0 at (x, y).  body_carry
+        gets the joining feature below the plane; body_mate receives the
+        matching clearance cut above it — None for the one-sided Rest,
+        which simply cuts its body's flat shelf.  flip mirrors the pair
+        across the plane and exchanges the bodies (Fusion's Flip
+        checkbox).  Every parameter is validated BEFORE anything
+        changes: a nonsense geometry touches no stream.  Returns the
+        appended features."""
+        from . import interlock
+        if kind not in interlock.KINDS:
+            raise ValueError(f"unknown interlock kind: {kind!r}")
+        params = dict(geometry, clearance=float(clearance))
+        built = interlock.tools(kind, **params)   # fail before mutating
+        carry_body, mate_body = body_carry, body_mate
+        if flip:
+            carry_body, mate_body = mate_body, carry_body
+        out = []
+        names = self._INTERLOCK_NAMES[kind]
+        if built["carry"] is not None:
+            if carry_body is None:
+                raise ValueError(f"{kind} mates two bodies — name both")
+            out.append(self.add(InterlockFeature(
+                name=names["carry"], op="union", kind=kind,
+                role="carry", center=(float(x), float(y)),
+                plane_z=float(z0), flip=bool(flip), params=params,
+                body=carry_body)))
+        if built["mate"] is not None:
+            target = mate_body if kind != "rest" else body_carry
+            if target is None:
+                raise ValueError(f"{kind} mates two bodies — name both")
+            out.append(self.add(InterlockFeature(
+                name=names["mate"], op="subtract", kind=kind, role="mate",
+                center=(float(x), float(y)), plane_z=float(z0),
+                flip=bool(flip), params=params, body=target)))
+        return out
 
     def add_linear_pattern(self, name, source: Feature, vector, count, op=None):
         return self.add(LinearPatternFeature(
@@ -1242,6 +1320,11 @@ class Document:
                          radius=float(f.radius),
                          pitch=float(f.pitch),
                          length=float(f.length))
+            elif isinstance(f, InterlockFeature):
+                d.update(kind=f.kind, role=f.role,
+                         center=list(map(float, f.center)),
+                         plane_z=float(f.plane_z), flip=bool(f.flip),
+                         params={k: float(v) for k, v in f.params.items()})
             d["bindings"] = dict(f.bindings)     # every lever, one line
             return d
         return {"format": "tracer/document", "version": 2,
@@ -1406,6 +1489,14 @@ class Document:
                     center=tuple(fd["center"]), axis=tuple(fd["axis"]),
                     radius=float(fd["radius"]), pitch=float(fd["pitch"]),
                     length=float(fd["length"]), **base))
+            elif t == "InterlockFeature":
+                doc.features.append(InterlockFeature(
+                    name=fd["name"], kind=fd["kind"], role=fd["role"],
+                    center=tuple(fd["center"]),
+                    plane_z=float(fd["plane_z"]),
+                    flip=bool(fd.get("flip", False)),
+                    params={k: float(v) for k, v in fd["params"].items()},
+                    **base))
             elif t == "BodyFilletFeature":
                 doc.features.append(BodyFilletFeature(
                     name=fd["name"], radius=float(fd["radius"]),

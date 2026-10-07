@@ -1255,7 +1255,11 @@ the canvas, the view Fusion's forums begged for); M120 object snaps +
 live auto-constrain (test_m120, suite 1258 — core/snaps.py typed
 candidates with tiered resolution, drop-time binds as first-class
 constraints, typed glyphs + Alt-suppress; the snap_geometry.md beat
-shipped). The live queue starts at M121; items 1-9 below are history.*
+shipped); M121 interlock family (test_m121, suite
+1278 — Boss · Snap fit · Rest · Lip, Fusion's Plastic-extension family
+shipped FREE, one interface-plane grammar, and the suite measures the
+mated pair's interference volume to pin the zero). The live queue starts
+at M122; items 1-10 below are history.*
 1. **M112 — theme tokens** (`ui/theme.py` + single QSS: darkBlue
    surfaces, autodeskBlue accent, hover/select trio; no-px rule from
    `a11y_precision_cad.md`). [matrix rank 5]

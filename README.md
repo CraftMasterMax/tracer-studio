@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M120**
+**Status: M121**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -48,7 +48,13 @@ independent project with no Autodesk assets or affiliation.)
   the drop BINDS what it implies (PointOnLine, PointOnCircle, Midpoint)
   as a visible constraint, free and live where Fusion gates batch
   AutoConstrain behind premium; typed glyphs name the kind under the
-  cursor, Alt suppresses everything, drags can't eat themselves**
+  cursor, Alt suppresses everything, drags can't eat themselves**,
+  **interlock family (M121): Boss · Snap fit · Rest · Lip — Fusion
+  gates all four behind the paid Plastic extension; here they are free,
+  pure profile+boolean pairs where the join grows on one body and its
+  clearance is cut from the mate — printed pairs assemble with ZERO
+  interference (the suite measures a∩b and pins it), across a shared
+  interface-plane grammar of side 1 / side 2 / flip / δ**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -229,7 +235,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1266 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1278 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
