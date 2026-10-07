@@ -8,7 +8,7 @@ import time
 
 import numpy as np
 import trimesh
-from PySide6.QtCore import QSize, Qt, QSettings
+from PySide6.QtCore import QPoint, QSize, Qt, QSettings
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, 
                                QLabel, QMainWindow, QMenu, QMessageBox,
@@ -39,6 +39,8 @@ from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
                                  model_to_dict, plane_uv)
 from . import icons
 from . import cmddialog
+from .commands import MODEL_KEYS, collect_commands
+from .palette import CommandPalette
 from .hole import HoleDialog
 from .loft import LoftDialog
 from .renderer import SceneRenderer
@@ -133,6 +135,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(center)
 
         self._make_actions()
+        self._make_command_search()
         self._make_toolbar()
         self.status = self.statusBar()
         self._coords = QLabel("x 0.00   y 0.00   z 0.00")
@@ -507,11 +510,11 @@ class MainWindow(QMainWindow):
         m_sk = self.menuBar().addMenu("S&ketch")
         self.act_new_sketch = QAction("&New sketch", self, shortcut="N",
                                       triggered=lambda checked=False: self.action_new_sketch())
-        self.act_extrude = QAction("&Extrude profile…", self, shortcut="X",
+        self.act_extrude = QAction("&Extrude profile…\tE", self,
                                    triggered=lambda: self.sketch.finish())
         self.act_revolve = QAction("&Revolve profile…", self, shortcut="Shift+R",
                                    triggered=lambda: self.sketch.finish(revolve=True))
-        self.act_hole = QAction("&Hole…", self, shortcut="Ctrl+H",
+        self.act_hole = QAction("&Hole…\tH", self,
                                 triggered=lambda checked=False: self.action_hole())
         self.act_sweep = QAction("S&weep…", self, shortcut="W",
                                  triggered=lambda checked=False: self.action_sweep())
@@ -540,7 +543,7 @@ class MainWindow(QMainWindow):
                        lambda checked=False: self.action_new_drawing())
 
         m_mo = self.menuBar().addMenu("Mo&dify")
-        self.act_fillet = QAction("&Fillet body edges…", self,
+        self.act_fillet = QAction("&Fillet body edges…\tF", self,
                                   triggered=lambda checked=False: self._body_fillet(False))
         self.act_chamfer = QAction("C&hamfer body edges…", self,
                                    triggered=lambda checked=False: self._body_fillet(True))
@@ -552,7 +555,7 @@ class MainWindow(QMainWindow):
                        lambda checked=False: self.action_change_params())
         m_mo.addAction("User Parameters…", self.action_user_parameters)
         m_mo.addAction("Configurations…", self.action_configurations)
-        m_mo.addAction("Move body…",
+        m_mo.addAction("Move body…\tM",
                        lambda checked=False: self.action_move_body())
         m_mo.addAction("Rotate body…",
                        lambda checked=False: self.action_rotate_body())
@@ -562,31 +565,52 @@ class MainWindow(QMainWindow):
                                 triggered=self.undo)
         self.act_redo = QAction("&Redo", self, shortcut="Ctrl+Shift+Z",
                                 triggered=self.redo)
+        self.act_compute = QAction("Compute All", self, shortcut="Ctrl+B",
+                                   triggered=self.action_recompute)
         m_edit.addAction(self.act_undo)
         m_edit.addAction(self.act_redo)
+        m_edit.addAction(self.act_compute)
 
         m_view = self.menuBar().addMenu("&View")
         view_acts = []
         for label, key, view in (("Front", "1", "front"), ("Top", "2", "top"),
-                                 ("Right", "3", "right"), ("Isometric", "0", "iso"),
-                                 ("Fit view", "F", "fit")):
-            a = QAction(label, self, shortcut=key,
-                        triggered=lambda checked=False, v=view: self.action_view(v))
+                                 ("Right", "3", "right"),
+                                 ("Isometric", "0", "iso"),
+                                 ("Fit view", "F6", "fit")):
+            a = QAction(f"{label}\t{key}", self,
+                        triggered=lambda checked=False, v=view:
+                        self.action_view(v))
             m_view.addAction(a)
             view_acts.append(a)
         m_view.addSeparator()
-        self.act_grid = QAction("Toggle grid", self, shortcut="G",
+        self.act_grid = QAction("Toggle grid\tG", self,
                                 triggered=self.action_toggle_grid)
-        self.act_edges = QAction("Toggle edges", self, shortcut="E",
+        self.act_edges = QAction("Toggle edges", self,
                                  triggered=self.action_toggle_edges)
         m_view.addAction(self.act_grid)
         m_view.addAction(self.act_edges)
         m_vs = m_view.addMenu("Visual Styles")
+        _STYLE_KEYS = {"Shaded": "Ctrl+4", "Shaded with edges": "Ctrl+5",
+                       "Ghosted": "Ctrl+6", "Wireframe": "Ctrl+7"}
         for _label in ("Wireframe", "Ghosted", "Shaded",
                        "Shaded with edges", "X-ray"):
-            m_vs.addAction(
-                _label, lambda checked=False, lb=_label:
-                self.action_visual_style(lb))
+            a = QAction(_label, self,
+                        triggered=lambda checked=False, lb=_label:
+                        self.action_visual_style(lb))
+            if _label in _STYLE_KEYS:
+                a.setShortcut(_STYLE_KEYS[_label])
+            m_vs.addAction(a)
+        # M113 layout layer — Fusion's Ctrl+Alt panel voices
+        m_view.addSeparator()
+        for label, key, what in (
+                ("Show/hide ViewCube", "Ctrl+Alt+V", "cube"),
+                ("Show/hide Browser", "Ctrl+Alt+B", "browser"),
+                ("Show/hide Navigation bar", "Ctrl+Alt+N", "nav"),
+                ("Reset panel layout", "Ctrl+Alt+R", "reset")):
+            m_view.addAction(
+                QAction(label, self, shortcut=key,
+                        triggered=lambda checked=False, w=what:
+                        self._layout_toggle(w)))
 
         m_tools = self.menuBar().addMenu("&Tools")
         m_tools.addAction("Document Measures…",
@@ -3786,6 +3810,115 @@ class MainWindow(QMainWindow):
     def action_new(self):
         self.new_document()
         self._clear_autosave()
+
+    # ---- M113: command search + the model-context key layer -------------------
+    def _make_command_search(self):
+        self._palette = CommandPalette(self)
+        self._palette.picked.connect(lambda: self.viewport.setFocus())
+        # Fusion's two voices for the toolbox — S anywhere, / as command
+        # line.  Text fields claim these first (Qt shortcut override),
+        # matching Fusion's "keys sleep while you type" rule.
+        for key in ("S", "/"):
+            self.addAction(QAction("Command search", self, shortcut=key,
+                                   triggered=self.open_command_search))
+
+    def open_command_search(self):
+        self._palette.set_commands(collect_commands(self))
+        g = self.viewport.mapToGlobal(QPoint(0, 0))
+        self._palette.open_at(g.x() + self.viewport.width() // 2, g.y() + 72)
+
+    def keyPressEvent(self, ev):
+        if self._dispatch_key(ev.key(), ev.modifiers()):
+            return
+        super().keyPressEvent(ev)
+
+    @staticmethod
+    def _key_str(key: int, mods) -> str:
+        parts = []
+        if mods & Qt.ControlModifier:
+            parts.append("Ctrl")
+        if mods & Qt.AltModifier:
+            parts.append("Alt")
+        if mods & Qt.ShiftModifier:
+            parts.append("Shift")
+        base = QKeySequence(key).toString()
+        return "+".join([*parts, base]) if parts else base
+
+    def _dispatch_key(self, key: int, mods) -> bool:
+        """Model-layer single keys — the one table (commands.MODEL_KEYS).
+        The sketch widget claims its own letters before we ever see
+        them; what bubbles up here is the model's to answer."""
+        if mods & Qt.MetaModifier or self._palette.isVisible():
+            return False
+        hit = MODEL_KEYS.get(self._key_str(key, mods))
+        return self._run_command(hit[1]) if hit else False
+
+    def _run_command(self, target: str) -> bool:
+        kind, sep, arg = target.partition(":")
+        if sep and kind == "view":
+            self.action_view(arg)
+            return True
+        if sep and kind == "style":
+            self.action_visual_style(arg)
+            return True
+        if sep and kind == "viewport":
+            m = getattr(self.viewport, arg, None)
+            if m is None:
+                return False
+            m()
+            return True
+        if sep and kind == "layout":
+            return self._layout_toggle(arg)
+        obj = getattr(self, target, None)
+        if obj is None:
+            return False
+        if isinstance(obj, QAction):
+            if not obj.isEnabled():
+                return False
+            obj.trigger()
+            return True
+        obj()
+        return True
+
+    def _layout_toggle(self, what: str) -> bool:
+        if what == "browser":
+            self.rail.setVisible(not self.rail.isVisible())
+            return True
+        if what in ("cube", "nav"):
+            attr = "show_" + what
+            setattr(self.viewport, attr, not getattr(self.viewport, attr))
+            self.viewport.update()
+            return True
+        if what == "reset":
+            self.rail.setVisible(True)
+            self.viewport.show_cube = True
+            self.viewport.show_nav = True
+            self.action_view("fit")
+            return True
+        return False
+
+    def action_extrude_key(self):
+        """E — Fusion extrudes from anywhere: it finishes the active
+        sketch profile, and asks for one when there is none."""
+        if (self.stack.currentWidget() is self._sketch_page
+                and self.sketch.model is not None):
+            self.sketch.finish()
+        else:
+            self.status.showMessage(
+                "Extrude wants a profile — press N, draw a closed "
+                "sketch, then E")
+
+    def action_toggle_active_visible(self):
+        if self.doc is None or not self.doc.active_body:
+            return
+        self._toggle_body_visible(self.doc.active_body)
+
+    def action_recompute(self):
+        """Ctrl+B — Fusion's Compute All: rebuild every feature now."""
+        if self.doc is not None:
+            self.doc.recompute()
+            self.viewport.refresh()
+            self.status.showMessage("Computed all", 2000)
 
     def action_view(self, kind: str):
         if kind == "fit":

@@ -231,13 +231,13 @@ def test_key_T_toggles_tangent_on_canvas(win, qapp):
     cir = m.add_circle(m.point(5, 6), 2.0)
     m.constrain(Fixed(a, x=0, y=0), Fixed(b, x=10, y=0), Radius(cir, 2.0))
     cv._sel = [ln, cir]
-    QTest.keyClick(cv, Qt.Key_T)
+    QTest.keyClick(cv, Qt.Key_T, Qt.ShiftModifier)
     qapp.processEvents()
     tans = [c for c in m.sketch.constraints if isinstance(c, Tangent)]
     assert len(tans) == 1
     assert abs(cir.c.y - 2.0) < 1e-6               # solved on the spot
     # same key again removes it (toggle)
-    QTest.keyClick(cv, Qt.Key_T)
+    QTest.keyClick(cv, Qt.Key_T, Qt.ShiftModifier)
     qapp.processEvents()
     assert not [c for c in m.sketch.constraints if isinstance(c, Tangent)]
 
@@ -248,7 +248,7 @@ def test_line_line_selection_is_ignored(win, qapp):
     l1 = m.add_line(m.point(0, 0), m.point(10, 0))
     l2 = m.add_line(m.point(0, 5), m.point(10, 5))
     cv._sel = [l1, l2]
-    QTest.keyClick(cv, Qt.Key_T)
+    QTest.keyClick(cv, Qt.Key_T, Qt.ShiftModifier)
     qapp.processEvents()
     assert not [c for c in m.sketch.constraints if isinstance(c, Tangent)]
 

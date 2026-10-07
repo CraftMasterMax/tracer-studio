@@ -1167,6 +1167,16 @@ consequence.
   with SP-rhythm sizes, styled inputs/tooltips and blue list
   selection. "No UI module spells a colour" is pinned by test_m112.
   Suite now 1159.
+- **M113**: the key layer + command search — S// opens a fuzzy toolbox
+  fed live from the menu tree (104 commands, self-searchable),
+  commands.MODEL_KEYS is the one keyboard truth, and the sketch canvas
+  claims its alphabet via shortcut override while model keys bubble to
+  the window. Fusion-owned keys now behave as Fusion [V]: E extrude,
+  F fillet, H hole, M move, A appearance, V visibility, F6 fit,
+  Enter finish, X construction, T trim, O offset, P project, Ctrl+B
+  compute, Ctrl+4-7 styles, Ctrl+Alt layout layers. Also fixes a real
+  latent bug: window-scoped menu shortcuts used to steal keys from the
+  sketch editor. Suite now 1171.
 
 ### Corrections wave 2 bought us
 - **Fusion HAS a 3D sketch mode now** (triad, per-point plane
@@ -1190,7 +1200,9 @@ consequence.
 
 ### Ranked queue v2 (matrix-informed; supersession noted)
 *Shipped since this ranking: M112 theme tokens (test_m112, suite
-1159). The live queue starts at M113; item 1 below is history.*
+1159); M113 key layer + command search (test_m113, suite 1171 — the
+matrix's #1 gap is CLOSED). The live queue starts at M114; items 1-2
+below are history.*
 1. **M112 — theme tokens** (`ui/theme.py` + single QSS: darkBlue
    surfaces, autodeskBlue accent, hover/select trio; no-px rule from
    `a11y_precision_cad.md`). [matrix rank 5]

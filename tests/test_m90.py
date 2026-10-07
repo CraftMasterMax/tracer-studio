@@ -185,7 +185,10 @@ def test_next_stroke_abandons_pending(sketch, qapp):
 def test_enter_with_empty_buffer_is_harmless(sketch, qapp):
     _draw_line(sketch, qapp)
     _type(sketch, qapp, "")                     # just the Enter
-    assert sketch._pending is not None          # still armed, no crash
+    # M113: an empty Enter lets the type-in go and is still heard as
+    # Finish Sketch — an open line has no profile, so it warns, no crash
+    assert sketch._pending is None
+    assert "No closed profile" in (sketch._warn_text or "")
     assert not [c for c in sketch.model.sketch.constraints
                 if isinstance(c, Distance)]
 

@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M112**
+**Status: M113**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -174,25 +174,32 @@ python3 -m venv .venv
 
 ## Using it
 
-3D: **click a face** to select (whole faces; **Ctrl+click** adds/
-removes; rubber band left→right windows, right→left crosses,
-Ctrl+drag adds) · **drag a face** to Press-Pull (+Esc to
-cancel, release to commit) · **double-click a face** to sketch on it ·
+**S** (or **/**) opens command search — type to run any command.
+3D: **click a face** to select (whole faces; **Ctrl+click** adds/removes;
+rubber band left→right windows, right→left crosses, Ctrl+drag adds) ·
+**drag a face** to Press-Pull (+Esc to cancel, release to commit) ·
+**double-click a face** to sketch on it ·
 **Move/Rotate body** spawn a triad — drag an arrow to slide, a ring to
 spin, **Ctrl = copy** (Fusion's Move/Copy) ·
 **MMB** orbit · **Shift+MMB** pan · **RMB-drag** orbit · **RMB-click**
 marking menu · **wheel** zoom toward cursor ·
 **drag on empty space** selects (left→right window, right→left crossing) ·
-**F** fit ·
-**G** grid · **E** edges · **0/1/2/3** iso/front/top/right.
-Sketch: **N** new sketch · **S/L/R/C/O/Y/A** line/rect/circle/slot/polygon/arc · **D**
-dimension · **H/V/F/G/T/I/J/M/2** constraints · **/** trim-to-corner · **X** extrude · **Ctrl+Z** undo.
+**F6** fit · **Z** zoom to selection ·
+**G** grid · **0/1/2/3** iso/front/top/right ·
+**E/H/F/M/A/V** extrude/hole/fillet/move/appearance/visibility ·
+**Ctrl+4-7** visual styles · **Ctrl+B** compute all ·
+**Ctrl+Alt+V/B/N/R** show/hide cube/browser/nav, reset layout.
+Sketch: **N** new sketch · **L/R/C/Shift+C/A/Y/K** line/rect/circle/
+ellipse/arc/polygon/slot · **Enter** finish → extrude · **Shift+R** revolve ·
+**D** dimension · **H/V/F/G/Shift+P/Q/T/I/J/M/2** constraints ·
+**P** project model edges · **T** trim corner ·
+**O** offset · **X** construction toggle · **Ctrl+Z** undo.
 Full list: **?** / the Shortcuts tab.
 
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1159 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1171 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

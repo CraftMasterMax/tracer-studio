@@ -75,12 +75,12 @@ def canvas(qapp):
     cv.close()
 
 
-def test_key_K_toggles_construction_and_finish_uses_it(canvas, qapp):
+def test_key_X_toggles_construction_and_finish_uses_it(canvas, qapp):
     m = SketchModel()
     *_, diag = _box(m)
     canvas.set_model(m)
     canvas._sel = [diag]
-    QTest.keyPress(canvas, Qt.Key_K)
+    QTest.keyPress(canvas, Qt.Key_X)             # M113: Fusion's toggle key
     assert diag.construction
     spy = QSignalSpy(canvas.profiles_ready)
     canvas.finish()
@@ -96,8 +96,8 @@ def test_key_P_perpendicular_solves(canvas, qapp):
     l2 = m.add_line(a, m.point(28, 8))              # clearly not 90 deg
     canvas.set_model(m)
     canvas._sel = [l1, l2]
-    QTest.keyPress(canvas, Qt.Key_P)
-    assert any(isinstance(c, Perpendicular) for c in m.sketch.constraints)
+    QTest.keyPress(canvas, Qt.Key_P, Qt.ShiftModifier)   # M113: perp took
+    assert any(isinstance(c, Perpendicular) for c in m.sketch.constraints)  # the Shift
     d1 = np.array([l1.b.x - l1.a.x, l1.b.y - l1.a.y])
     d2 = np.array([l2.b.x - l2.a.x, l2.b.y - l2.a.y])
     assert abs(float(d1 @ d2) / (np.linalg.norm(d1) * np.linalg.norm(d2))) < 1e-6

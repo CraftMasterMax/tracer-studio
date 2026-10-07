@@ -75,6 +75,8 @@ class Viewport(QWidget):
         self._hover: list[int] | None = None
         self._sel: list[int] = []
         self._pp = None                    # press-pull drag state
+        self.show_cube = True              # Ctrl+Alt+V (M113 layout layer)
+        self.show_nav = True               # Ctrl+Alt+N
         self._pp_drag = False
         self._box: list | None = None      # rubber-band select [p0, p1]
         self._box_drag = False
@@ -201,9 +203,11 @@ class Viewport(QWidget):
             p.drawRect(QRect(self._box[0], self._box[1]).normalized())
         draw_triad(p, self._cam, self.width(), self.height(), self._r.palette)
         self._cube.place(self.width(), self.height())
-        self._cube.draw(p, self._cam, self._cube_hover)
+        if self.show_cube:
+            self._cube.draw(p, self._cam, self._cube_hover)
         self._nav.place(self.width(), self._cube.rect.bottom() + 8)
-        self._nav.draw(p)
+        if self.show_nav:
+            self._nav.draw(p)
         p.end()
 
     @staticmethod
@@ -385,13 +389,13 @@ class Viewport(QWidget):
         return (pts.min(axis=0), pts.max(axis=0))
 
     def mousePressEvent(self, ev):
-        hit = self._cube.hit(ev.position())
+        hit = self._cube.hit(ev.position()) if self.show_cube else None
         if hit:
             self._cam.set_view(hit)
             self.update()
             ev.accept()
             return
-        nav = self._nav.hit(ev.position())
+        nav = self._nav.hit(ev.position()) if self.show_nav else None
         if nav:
             if nav == "home":
                 self.home()
@@ -479,8 +483,9 @@ class Viewport(QWidget):
     def mouseMoveEvent(self, ev):
         if not self._buttons:
             self._hover_update(ev.position())
-            hk = self._cube.hit(ev.position())
-            nav_changed = self._nav.set_hover(ev.position())
+            hk = self._cube.hit(ev.position()) if self.show_cube else None
+            nav_changed = (self._nav.set_hover(ev.position())
+                           if self.show_nav else False)
             if hk != self._cube_hover:
                 self._cube_hover = hk
                 if hk is not None:
@@ -859,6 +864,12 @@ class Viewport(QWidget):
         pts = np.asarray(self._tm.vertices, float)[tris].reshape(-1, 3)
         return (pts.min(axis=0), pts.max(axis=0))
 
+    def zoom_to_selection(self):
+        """M113: Z, callable from anywhere (viewport-local or the
+        window's key table)."""
+        if self._sel and self.selection_bbox() is not None:
+            self.zoom_selection.emit()
+
     def keyPressEvent(self, ev):
         k = ev.key()
         if k == Qt.Key_Escape:
@@ -883,27 +894,21 @@ class Viewport(QWidget):
                 if had:
                     self.selection_changed.emit(0)
             return
-        if k == Qt.Key_F:
-            if self._bbox is not None:
-                self._cam.fit(self._bbox)
-        elif k == Qt.Key_Z:                     # Fusion: zoom to selection
-            if self._sel and self.selection_bbox() is not None:
-                self.zoom_selection.emit()
-        elif k == Qt.Key_G:
-            self._r.show_grid = not self._r.show_grid
-        elif k == Qt.Key_E:
-            self._r.show_edges = not self._r.show_edges
-        elif k == Qt.Key_0:
-            self._cam.set_view("iso")
-        elif k == Qt.Key_1:
-            self._cam.set_view("front")
-        elif k == Qt.Key_2:
-            self._cam.set_view("top")
-        elif k == Qt.Key_3:
-            self._cam.set_view("right")
-        else:
-            super().keyPressEvent(ev)
-        self.update()
+        _VIEWS = {Qt.Key_0: "iso", Qt.Key_1: "front",
+                  Qt.Key_2: "top", Qt.Key_3: "right"}
+        if k in _VIEWS:                 # our documented BEAT: Fusion
+            self._cam.set_view(_VIEWS[k])   # ships no orientation keys
+            self.update()
+            return
+        # M113: everything else answers from the one model table
+        # (MainWindow's commands.MODEL_KEYS) — F fillets, E extrudes,
+        # Z zooms to the pick, Ctrl+Alt toggles panels. Nothing here.
+        w = self.window()
+        if hasattr(w, "_dispatch_key") and w._dispatch_key(
+                k, ev.modifiers()):
+            self.update()
+            return
+        super().keyPressEvent(ev)
 
     # ---- helpers ------------------------------------------------------------
     def camera(self) -> Camera:

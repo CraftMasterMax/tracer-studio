@@ -165,7 +165,7 @@ def test_O_key_and_three_clicks_build_a_clean_slot(win, qapp):
     win.action_new_sketch()
     qapp.processEvents()
     cv = win.sketch
-    QTest.keyClick(cv, Qt.Key_O)
+    QTest.keyClick(cv, Qt.Key_K)
     qapp.processEvents()
     assert cv._tool == "slot"
     n_before = len(cv.model.sketch.points)
@@ -187,7 +187,7 @@ def test_tiny_slot_click_is_dropped_not_degenerate(win, qapp):
     win.action_new_sketch()
     qapp.processEvents()
     cv = win.sketch
-    QTest.keyClick(cv, Qt.Key_O)
+    QTest.keyClick(cv, Qt.Key_K)
     _click(cv, qapp, 0, 0)
     _click(cv, qapp, 30, 0)
     _click(cv, qapp, 15, 0.2)                   # width near-zero on screen
@@ -200,7 +200,7 @@ def test_slot_paints_live_capsule_preview(win, qapp):
     win.action_new_sketch()
     qapp.processEvents()
     cv = win.sketch
-    QTest.keyClick(cv, Qt.Key_O)
+    QTest.keyClick(cv, Qt.Key_K)
     _click(cv, qapp, 0, 0)
     _click(cv, qapp, 30, 0)
     assert len(cv._slot) == 2                     # awaiting the width click

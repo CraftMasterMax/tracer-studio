@@ -180,12 +180,12 @@ def test_click_the_curve_selects_it_and_delete_removes_it(win, qapp):
     assert m.sketch.ellipses == []
 
 
-def test_E_key_and_the_toolbar_agree(win, qapp):
+def test_shift_C_and_the_toolbar_agree(win, qapp):
     cv = _cv(win, qapp)
-    QTest.keyClick(cv, Qt.Key_E)
-    qapp.processEvents()
+    QTest.keyClick(cv, Qt.Key_C, Qt.ShiftModifier)   # M113: ellipse is the
+    qapp.processEvents()                             # circle family, Shift
     assert cv._tool == "ellipse"
-    QTest.keyClick(cv, Qt.Key_S)
+    QTest.keyClick(cv, Qt.Key_Escape)                # Esc = back to select
     qapp.processEvents()
     assert cv._tool == "select"
     win._tool_btns["ellipse"].click()

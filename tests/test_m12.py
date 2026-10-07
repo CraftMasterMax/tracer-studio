@@ -159,7 +159,7 @@ def test_revolve_reedit_keeps_type(win, qapp):
     # stretch the profile: add a second rect higher (v to 8)
     QTest.keyPress(win.sketch, Qt.Key_Escape)      # select mode
     _drag_rect(win.sketch, 11, 0, 13, 8)
-    QTest.keyPress(win.sketch, Qt.Key_X)           # plain finish -> UPDATE
+    QTest.keyPress(win.sketch, Qt.Key_Return)    # plain finish -> UPDATE
     qapp.processEvents()
     assert win.doc.features[0].sid == sid
     assert isinstance(win.doc.features[0], RevolveFeature)

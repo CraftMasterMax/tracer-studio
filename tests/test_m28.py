@@ -197,7 +197,7 @@ def test_slash_key_closes_a_corner_and_merges_points(win, qapp):
     LA = m.add_line(m.point(0, 0), m.point(10, 0.3))
     LB = m.add_line(m.point(9.6, 6), m.point(10.1, 0.1))
     cv._sel = [LA, LB]
-    QTest.keyClick(cv, Qt.Key_Slash)
+    QTest.keyClick(cv, Qt.Key_T)
     qapp.processEvents()
     assert any(pa is pb for pa in (LA.a, LA.b) for pb in (LB.a, LB.b))
     assert len(m.sketch.points) == 3                # orphan dropped
@@ -209,7 +209,7 @@ def test_slash_undo_restores_both_loose_ends(win, qapp):
     LA = m.add_line(m.point(0, 0), m.point(10, 0.3))
     LB = m.add_line(m.point(9.6, 6), m.point(10.1, 0.1))
     cv._sel = [LA, LB]
-    QTest.keyClick(cv, Qt.Key_Slash)
+    QTest.keyClick(cv, Qt.Key_T)
     qapp.processEvents()
     assert len(m.sketch.points) == 3
     cv.undo_op()
@@ -228,7 +228,7 @@ def test_slash_refusal_warns_and_changes_nothing(win, qapp):
     p1 = m.add_line(m.point(0, 0), m.point(10, 0))
     p2 = m.add_line(m.point(0, 5), m.point(10, 5))
     cv._sel = [p1, p2]
-    QTest.keyClick(cv, Qt.Key_Slash)
+    QTest.keyClick(cv, Qt.Key_T)
     qapp.processEvents()
     assert "parallel" in (getattr(cv, "_warn_text", "") or "")
     assert len(m.sketch.points) == 4                # untouched
@@ -241,9 +241,9 @@ def test_slash_without_a_line_pair_is_left_alone(win, qapp):
     L = m.add_line(m.point(0, 0), m.point(10, 0))
     c = m.add_circle(m.point(5, 5), 2.0)
     cv._sel = [L]
-    QTest.keyClick(cv, Qt.Key_Slash)
+    QTest.keyClick(cv, Qt.Key_T)
     cv._sel = [L, c]
-    QTest.keyClick(cv, Qt.Key_Slash)
+    QTest.keyClick(cv, Qt.Key_T)
     qapp.processEvents()
     assert len(m.sketch.points) == 3                # nothing merged
 

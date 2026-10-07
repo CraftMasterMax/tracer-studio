@@ -11,7 +11,7 @@ import json
 import math
 
 import numpy as np
-from PySide6.QtCore import QPointF, QSettings, QRectF, Qt, Signal
+from PySide6.QtCore import QEvent, QPointF, QSettings, QRectF, Qt, Signal
 from PySide6.QtGui import (QColor, QFont, QKeyEvent, QMouseEvent, QPainter,
                            QPen, QWheelEvent)
 from PySide6.QtWidgets import QWidget
@@ -30,6 +30,13 @@ from ..core.sketch.model import (_dim_tag, SketchModel, math_dist,
 from ..core.sketch.profile import regions
 from . import theme
 from .cmddialog import Shell
+from .commands import SKETCH_KEYS
+
+# keys the canvas owns (M113): plain printables from the command table,
+# claimed from Qt's shortcut-override system so the global layer can't
+# steal them; anything else bubbles to the window's model dispatch
+_CLAIM_TEXT = {c.lower() for c in SKETCH_KEYS
+               if "+" not in c and c not in ("Enter", "Esc")}
 
 ACCENT = QColor(theme.SKETCH["under"])       # unconstrained / active blue
 SEL = QColor(theme.SKETCH["sel"])            # picked geometry
@@ -1134,6 +1141,23 @@ class SketchCanvas(QWidget):
                 menu.addAction(label, lambda t=t: self.set_tool(t))
         return menu
 
+    def event(self, ev):
+        """Claim our letters against the global command layer (M113).
+
+        Fusion truth: keys sleep while a text field types, and a sketch
+        answers its own alphabet while the model layer answers the rest
+        — E extrudes FROM a sketch precisely because it is not one of
+        these letters."""
+        if ev.type() == QEvent.Type.ShortcutOverride:
+            mods = ev.modifiers()
+            if not (mods & (Qt.ControlModifier | Qt.AltModifier
+                            | Qt.MetaModifier)):
+                txt = ev.text()
+                if txt and txt.lower() in _CLAIM_TEXT:
+                    ev.accept()
+                    return True
+        return super().event(ev)
+
     def keyPressEvent(self, ev: QKeyEvent):
         k = ev.key()
         if self.model is None:
@@ -1149,7 +1173,7 @@ class SketchCanvas(QWidget):
                 self._num_buf = self._num_buf[:-1]
                 self.update()
                 return
-            if k in (Qt.Key_Return, Qt.Key_Enter):
+            if k in (Qt.Key_Return, Qt.Key_Enter) and self._num_buf:
                 self._commit_typed()
                 return
             self._pending = None                    # any other key lets go
@@ -1172,35 +1196,40 @@ class SketchCanvas(QWidget):
         if k == Qt.Key_Y and ev.modifiers() & Qt.ControlModifier:
             self.redo_op()
             return
-        if k == Qt.Key_S:
-            self.set_tool("select")
+        if k == Qt.Key_R and ev.modifiers() & Qt.ShiftModifier:
+            self.finish(revolve=True)
+            return
         elif k == Qt.Key_L and self.collinear_ok(sel):
             self.act_collinear()
         elif k == Qt.Key_L:
-            self.set_tool("line")
-        elif k == Qt.Key_R and ev.modifiers() & Qt.ShiftModifier:
-            self.finish(revolve=True)
-            return
+            self.set_tool("line")                 # Fusion: L is the line
         elif k == Qt.Key_R and not sel:
             self.set_tool("rect")
+        elif k == Qt.Key_C and ev.modifiers() & Qt.ShiftModifier:
+            self.set_tool("ellipse")              # circle family, Shift
         elif k == Qt.Key_C and not sel:
             self.set_tool("circle")
-        elif k == Qt.Key_E and not sel:
-            self.set_tool("ellipse")
         elif k == Qt.Key_A and not sel:
             self.set_tool("arc")
-        elif k == Qt.Key_O and not sel:
-            self.set_tool("slot")
         elif k == Qt.Key_Y and not sel:
             self.set_tool("poly")
-        elif k == Qt.Key_U and not sel:
-            self.act_offset()
+        elif k == Qt.Key_K and not sel:
+            self.set_tool("slot")                 # slot moved to K (free)
+        elif k in (Qt.Key_O, Qt.Key_U):
+            self.act_offset()                     # Fusion: O offsets
+        elif k == Qt.Key_T and ev.modifiers() & Qt.ShiftModifier:
+            self.act_tangent()                    # tangent took the Shift
+        elif k == Qt.Key_T and len(sel) == 2 and \
+                all(isinstance(e, Line) for e in sel):
+            self.act_trim()                       # Fusion: T trims corners
         elif k == Qt.Key_Return and self._tool == "line":
             self._line_start = None
             self.set_tool("select")
-        elif k == Qt.Key_X:
-            self.finish()
+        elif k == Qt.Key_Return:
+            self.finish()                         # Finish Sketch: Enter
             return
+        elif k == Qt.Key_X:
+            self.act_construction()               # Fusion: X toggles
         elif k == Qt.Key_Delete:
             self.act_delete()
         elif k == Qt.Key_H:
@@ -1215,19 +1244,18 @@ class SketchCanvas(QWidget):
         elif k == Qt.Key_G and len(sel) == 2 and \
                 all(isinstance(e, Line) for e in sel):
             self.act_chamfer()                    # G = the corner's flat twin
-        elif k == Qt.Key_Slash and len(sel) == 2 and \
-                all(isinstance(e, Line) for e in sel):
-            self.act_trim()                       # / closes a sloppy corner
         elif k == Qt.Key_Period and self.on_ok(sel):
             self.act_on()                         # . pins a point on a curve
         elif k == Qt.Key_D:
             self.act_dim()
+        elif k == Qt.Key_P and ev.modifiers() & Qt.ShiftModifier:
+            self.act_perp()                       # perpendicular took Shift
         elif k == Qt.Key_P:
-            self.act_perp()
+            proj = getattr(self.window(), "_project_model_edges", None)
+            if proj is not None:                  # Fusion: P projects
+                proj()
         elif k == Qt.Key_Q:
             self.act_equal()
-        elif k == Qt.Key_T:
-            self.act_tangent()
         elif k == Qt.Key_I:
             self.act_angle()
         elif k == Qt.Key_2 and len(sel) == 2 and \
@@ -1240,8 +1268,6 @@ class SketchCanvas(QWidget):
             self.act_symmetry()
         elif k == Qt.Key_J:
             self.act_midpoint()
-        elif k == Qt.Key_K:
-            self.act_construction()
         else:
             return super().keyPressEvent(ev)
         self.update()
@@ -1822,8 +1848,8 @@ class SketchCanvas(QWidget):
         if self._cursor is not None:
             cx, cy = self._cursor
             lines.append((f"X {cx:.2f}   Y {cy:.2f} mm", HUD))
-        tool = {"select": ("Select (S/L/R/C/E/O/Y/A) · H/V/F/D/Q/T/I/J/M "
-                           "constraints · / trim · . on-curve · X extrude"),
+        tool = {"select": ("Select · L/R/C/A/Y/K draw · H/V/F/D/Q/T "
+                           "constraints · Enter finish · . on-curve"),
                 "line": "Line — click points, Enter/Esc stops",
                 "rect": "Rectangle — drag corners or click · move · click",
                 "circle": "Circle — drag from center or click · move · click",
