@@ -1135,3 +1135,94 @@ Python API warm to fence off code-CAD; treat **2027-02-06** (Autodesk
 price-lock expiry) as our marketing horizon — credible STEP-in/DXF-out
 plus a "your file still opens in 2029" promise captures the refugee
 wave FreeCAD historically churns back.
+
+## 2026-10-07 late — Research-fleet synthesis (wave 2: the corpus lands)
+
+Sixty report files, 84 of 100 topics resolved, and the capstone:
+**`feature_gap_matrix.md`** — 840 parity cells across 12 domains, every
+non-obvious one inline-cited with its [V]/[H] tag, plus 16 honest
+**Tracer-BEATS**, a 34-item catch-up ranking (relevance ÷ effort), and
+a 20-entry **never-list** that doubles as the anti-roadmap marketing
+asset. The full grid lives in the research corpus; this is the build
+consequence.
+
+### Shipped since wave 1
+- **M110 + M110.1** (`a2a6251`, `dad3e8f`): parts list + balloons,
+  ISO 7573/6433, masses from published densities, body ▸ Material
+  submenu — all paper furniture, never in the DXF.
+- **M111** (`e4790a9`): the data-safety sweep, spec'd from the fleet's
+  own file-menu research the same day — atomic saves, save=version
+  sidecar (named points forever, non-destructive restore), rolling
+  ×5 autosave with ghost-eating recovery, corrupted-file fallback,
+  never-silent conflict guard, Revert to Saved. Suite now 1140.
+
+### Corrections wave 2 bought us
+- **Fusion HAS a 3D sketch mode now** (triad, per-point plane
+  switching) but with zero 3D dimensions — our planar-only solver is
+  parity, not gap (`sketch_3d.md`). Spatial mode joins the never-list.
+- **No selection filter bar exists** in Fusion — tool-declared
+  receptivity is the model; the crown went to **one feature-edge
+  classifier module** (`selection_filter.md` + `hlr.md`) that feeds
+  drawings, 3D selection, face appearance AND fillet re-identity.
+- **QAT / Ctrl+F1 lore busted** (undocumented; "Add or Remove Buttons"
+  was Inventor vocabulary) — our compact-ribbon toggle is ours by
+  right (`ui_ribbon.md`).
+- **Autodesk REMOVED thickness analysis**, and their sections expose
+  zero properties — the measure/analyze gap-swipe is free wins
+  (`ui_measure_tool.md`).
+- Colour priority chain settled (appearance override > physical >
+  default, occurrence-only) — M112+ appearance work inherits it
+  (`ui_appearance_panel.md`).
+- Positioning line, keeper-grade: *"Onshape's free tier costs your
+  privacy; Tracer's history lives in a file you own."*
+
+### Ranked queue v2 (matrix-informed; supersession noted)
+1. **M112 — theme tokens** (`ui/theme.py` + single QSS: darkBlue
+   surfaces, autodeskBlue accent, hover/select trio; no-px rule from
+   `a11y_precision_cad.md`). [matrix rank 5]
+2. **M113 — key layer + command search**: verified single-keys,
+   **S + / search** (matrix's #1 gap overall), Ctrl+Alt layers,
+   drawing keys incl. B=balloon. [ranks 1 + 4]
+3. **M114 — Limits & Fits callouts** — `core/fits.py` over the
+   transcribed ISO 286 tables; ± and fit rendering per ISO 129.
+   [rank 2; model stays nominal — `tolerance_modeling.md`]
+4. **M115 — 3MF print-ready export** — stdlib zipfile+xml writer,
+   zero new deps, per-body names/materials, print checks. [rank 3]
+5. **M116 — `core/topology.py`**: the crowned module — crease-edge
+   graph + union-find face grouping per solid. Unblocks edge tokens
+   in fillet dialogs, face-level appearance, crossing-window
+   classification, 3D face snap, fillet re-bind identity. [rank 27's
+   blocker; `selection_filter.md` action 1]
+6. **M117 — measure win-pack + section properties** (multi-measure,
+   Show-Extents, physical-props dialog, shoelace section
+   area/perimeter/centroid — "strongest single differentiator").
+   [ranks 11 + 12]
+7. **M118 — planegcs embed** behind the solver iface. [rank 9; wave-1
+   M115]
+8. **M119 — sketch muscle**: `core/snaps.py` object snaps +
+   **auto-constrain-on-drop live and free** (theirs is batch +
+   premium-gated) + 2D spline; `core/spline3d.py` next enables
+   3D-path sweep. [rank 15 + `snap_geometry.md`]
+9. **M120 — message log + timeline status glyphs + click-to-select**
+   from failures (deep-link their docs never shipped). [rank 6]
+10. **M121 — interlock family** (Snap Fit/Boss/Rest/Lip + Emboss
+    text via QRawFont — zero new deps). [ranks 7 + 24]
+11. **M122 — fastener library** ([H] rows verified first) +
+    **M123 print fit-mode** (parametric δ at export). [ranks 10 + 8]
+- Tail (queued by matrix order, unnumbered): construction-geo batch,
+  browser polish, radial marking wheel, nav presets, single-HTML
+  share viewer, STEP `[step]` OCP extra, assembly phase 1 (collision
+  first!), per-config BOM-diff, drawings quick set, version-diff
+  overlay, coil/pipe/geometric-pattern/scale, LOD + GPU picking,
+  prefs two-pane (re-verify landing), `tracer merge3`, DXF curve-fit,
+  exact HLR, truss sim-lite.
+
+### Strategic frame, upgraded
+The matrix turned positioning into inventory: **16 verified
+advantages** (offline versions where their own docs lose them, live
+collision, free live AutoConstrain, thickness/section properties
+Fusion deleted, no-NURBS honesty…) — each citable to a report, ready
+for a comparison page that never lies. The **never-list is publishable
+as-is**: "we ship less, truer." And the reliability wedge now has code
+behind it — M111 made "your file still opens" a *tested promise*
+eleven months before the 2027-02-06 cliff.
