@@ -148,13 +148,15 @@ def test_circular_pattern_is_one_dialog(win, monkeypatch):
     win.doc.add_cylinder("lug", 3, 8, center=(30, 20), op="union")
     win.recompute()
     calls = _capture_asks(win, monkeypatch, {
-        "src": "lug", "cx": 0.0, "cy": 0.0, "ang": 360.0, "count": 6})
+        "src": "lug", "axis": "+Z (through center)", "cx": 0.0, "cy": 0.0,
+        "ang": 360.0, "count": 6})
     win.action_circular_pattern()
     assert len(calls) == 1, calls
     title, keys, groups = calls[0]
     assert title == "Circular Pattern"
-    assert keys == ["src", "cx", "cy", "ang", "count"]      # five, together
-    assert groups == ["Object", "Axis", "Axis", "Pattern", "Pattern"]
+    assert keys == ["src", "axis", "cx", "cy", "ang", "count"]  # six, joint
+    assert groups == ["Object", "Axis", "Axis", "Axis",
+                      "Pattern", "Pattern"]
     assert len([f for f in win.doc.features
                 if type(f).__name__ == "CircularPatternFeature"]) == 1
 

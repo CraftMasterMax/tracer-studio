@@ -32,6 +32,17 @@ def _rodrigues(axis, theta):
     return np.eye(3) * c + s * K + (1.0 - c) * np.outer(k, k)
 
 
+def _rot_about_line(origin, direction, theta) -> np.ndarray:
+    """4x4 homogeneous rotation by theta about an arbitrary line —
+    the matrix form of p ↦ o + R(p − o)."""
+    R = _rodrigues(direction, theta)
+    m = np.eye(4)
+    m[:3, :3] = R
+    o = np.asarray(origin, float)
+    m[:3, 3] = o - R @ o
+    return m
+
+
 @dataclass
 class Feature:
     name: str
@@ -99,13 +110,17 @@ class LinearPatternFeature(Feature):
 
 @dataclass
 class CircularPatternFeature(Feature):
-    """Copies of the source solid rotated CCW about +Z through `center`.
-    angle=360 spaces copies evenly without a wrap duplicate; a partial
-    angle spans its copies inclusive (Fusion's circular pattern)."""
+    """Copies of the source solid rotated CCW about +Z through `center`
+    — or about any NAMED datum axis (M125: `axis` carries "X"/"Y"/"Z" or
+    a work axis from the browser; when set, the axis line itself is the
+    pivot and `center` steps aside). angle=360 spaces copies evenly
+    without a wrap duplicate; a partial angle spans its copies inclusive
+    (Fusion's circular pattern)."""
     source_uid: str = ""
     center: tuple = (0.0, 0.0)
     angle: float = 360.0
     count: int = 6
+    axis: str = ""
 
 
 @dataclass
@@ -1212,11 +1227,11 @@ class Document:
             vector=tuple(float(v) for v in vector), count=int(count)))
 
     def add_circular_pattern(self, name, source: Feature, center=(0, 0),
-                             angle=360.0, count=6, op=None):
+                             angle=360.0, count=6, op=None, axis=""):
         return self.add(CircularPatternFeature(
             name=name, op=op or source.op, source_uid=source.uid,
             center=(float(center[0]), float(center[1])),
-            angle=float(angle), count=int(count)))
+            angle=float(angle), count=int(count), axis=axis))
 
     def add_mirror(self, name, source: Feature, plane="YZ", offset=0.0,
                    op=None):
@@ -1319,19 +1334,25 @@ class Document:
                 ang = float(f.angle)
                 full = abs(abs(ang) - 360.0) < 1e-9
                 step = ang / (n if full else max(n - 1, 1))
-                solid = Solid.batch_union(
-                    [src.transformed(self._rotz_about(f.center[0],
-                                                      f.center[1],
-                                                      math.radians(step * k)))
-                     for k in range(n)])
+                if f.axis:                      # M125: named datum pivot
+                    ao, ad = self.axis_frame(f.axis)
+                    xf = [_rot_about_line(ao, ad, math.radians(step * k))
+                          for k in range(n)]
+                else:                           # legacy: +Z through center
+                    xf = [self._rotz_about(f.center[0], f.center[1],
+                                           math.radians(step * k))
+                          for k in range(n)]
+                solid = Solid.batch_union([src.transformed(m) for m in xf])
             elif isinstance(f, MirrorFeature):
                 src = by_uid.get(f.source_uid)
                 if src is None:
                     continue
                 n = MirrorFeature.NORMALS.get(f.plane)
-                if n is None:
-                    raise ValueError(f"unknown mirror plane {f.plane!r}")
-                shift = tuple(v * f.offset for v in n)
+                p0 = (0.0, 0.0, 0.0)
+                if n is None:                   # M125: custom datum plane
+                    p0, _, _, nf = self.plane_frame(f.plane)
+                    n = tuple(float(v) for v in nf)
+                shift = tuple(p0[i] + n[i] * f.offset for i in range(3))
                 solid = src.translated((-shift[0], -shift[1], -shift[2])) \
                             .mirror(n).translated(shift)
             elif isinstance(f, InterferenceFeature):
@@ -1470,7 +1491,8 @@ class Document:
             elif isinstance(f, CircularPatternFeature):
                 d.update(source_uid=f.source_uid,
                          center=list(map(float, f.center)),
-                         angle=float(f.angle), count=int(f.count))
+                         angle=float(f.angle), count=int(f.count),
+                         axis=f.axis)
             elif isinstance(f, MirrorFeature):
                 d.update(source_uid=f.source_uid, plane=f.plane,
                          offset=float(f.offset))
@@ -1630,7 +1652,8 @@ class Document:
                 doc.features.append(CircularPatternFeature(
                     name=fd["name"], source_uid=fd["source_uid"],
                     center=tuple(fd["center"]), angle=float(fd["angle"]),
-                    count=int(fd["count"]), **base))
+                    count=int(fd["count"]), axis=fd.get("axis", ""),
+                    **base))
             elif t == "MirrorFeature":
                 doc.features.append(MirrorFeature(
                     name=fd["name"], source_uid=fd["source_uid"],

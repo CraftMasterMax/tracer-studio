@@ -117,7 +117,7 @@ def test_mirror_unknown_plane_raises():
                            placement=(5, 0, 0)))
     d.features[-1] = MirrorFeature(name="bad", op="union",
                                    source_uid=base.uid, plane="QW")
-    with pytest.raises(ValueError, match="mirror plane"):
+    with pytest.raises(ValueError, match="no plane named"):
         d.recompute()
 
 

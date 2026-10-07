@@ -4583,9 +4583,14 @@ class MainWindow(QMainWindow):
                                     "Create a feature first.")
             return
         names = [f.name for f in cands]
+        axes = ["+Z (through center)"] + ["X (origin)", "Y (origin)",
+                                          "Z (origin)"] \
+            + [a["name"] for a in self.doc.axes]
         v = cmddialog.ask(self, "Circular Pattern", [
             dict(key="src", label="Feature to pattern", kind="combo",
                  choices=names, group="Object"),
+            dict(key="axis", label="Axis", kind="combo", choices=axes,
+                 group="Axis"),
             dict(key="cx", label="Center X", kind="double", default=0.0,
                  min=-1e5, max=1e5, group="Axis"),
             dict(key="cy", label="Center Y", kind="double", default=0.0,
@@ -4601,14 +4606,18 @@ class MainWindow(QMainWindow):
         src = cands[names.index(v["src"])]
         cx, cy = v["cx"], v["cy"]
         ang, count = v["ang"], v["count"]
+        axsel = v["axis"]
+        axis = "" if axsel.startswith("+Z") else \
+            axsel[0] if "(origin)" in axsel else axsel
         self._capture()
         self.doc.add_circular_pattern(f"Circle of {src.name}", src,
-                                      (cx, cy), ang, count)
+                                      (cx, cy), ang, count, axis=axis)
         self.recompute()
         self.viewport.refresh(fit=True)
+        pivot = f"axis {axis!r}" if axis else f"({cx:g}, {cy:g})"
         self.status.showMessage(
             f"Patterned {src.name}: {count}x over {ang:g}° about "
-            f"({cx:g}, {cy:g})", 6000)
+            f"{pivot}", 6000)
 
     def action_linear_pattern(self):
         if self.doc is None:
@@ -4645,20 +4654,23 @@ class MainWindow(QMainWindow):
             f"Patterned {src.name}: {count}x at ({dx:g}, {dy:g}, {dz:g}) mm", 6000)
 
     def _mirror_feature(self, src, plane=None, off=None):
-        """Symmetric twin of ``src`` across a datum plane offset from the
-        origin. Mirroring the part's mid-plane reproduces Fusion's most
-        common mirror (e.g. a one-sided lug on a bracket).  Whatever the
-        caller already knows (plane from a menu, values from the ribbon
-        dialog) skips the prompt — what's missing lands in ONE dialog."""
+        """Symmetric twin of ``src`` across a datum plane — an origin
+        plane or any M125 construction plane. Mirroring the part's
+        mid-plane reproduces Fusion's most common mirror (e.g. a
+        one-sided lug on a bracket).  Whatever the caller already knows
+        (plane from a menu, values from the ribbon dialog) skips the
+        prompt — what's missing lands in ONE dialog."""
         known = plane is not None
+        is_origin = plane in MirrorFeature.NORMALS
         if off is None:
             fields = [] if known else [
                 dict(key="plane", label="Mirror plane", kind="combo",
-                     choices=["YZ", "XZ", "XY"], group="Plane")]
+                     choices=["YZ", "XZ", "XY"] +
+                     [p["name"] for p in self.doc.planes], group="Plane")]
             default_off = 0.0
-            if known and self.doc.result is not None:
+            if known and is_origin and self.doc.result is not None:
                 # default to the model's own mid-plane along that normal
-                n0 = np.array(MirrorFeature.NORMALS[plane[:2]], float)
+                n0 = np.array(MirrorFeature.NORMALS[plane], float)
                 bb = self.doc.result.bounding_box
                 default_off = float((bb.mean(0) * n0).sum())
             fields.append(dict(key="off", label="Plane offset",
@@ -4669,9 +4681,6 @@ class MainWindow(QMainWindow):
                 return
             plane = plane if known else v["plane"]
             off = v["off"]
-        else:
-            plane = plane[:2]
-        n = np.array(MirrorFeature.NORMALS[plane], float)
         self._capture()
         self.doc.add_mirror(f"Mirror of {src.name}", src, plane, off)
         self.recompute()
@@ -4688,11 +4697,12 @@ class MainWindow(QMainWindow):
                                     "Create a feature first.")
             return
         names = [f.name for f in cands]
+        planes = ["YZ", "XZ", "XY"] + [p["name"] for p in self.doc.planes]
         v = cmddialog.ask(self, "Mirror", [
             dict(key="src", label="Feature to mirror", kind="combo",
                  choices=names, group="Object"),
             dict(key="plane", label="Mirror plane", kind="combo",
-                 choices=["YZ", "XZ", "XY"], group="Plane"),
+                 choices=planes, group="Plane"),
             dict(key="off", label="Plane offset", kind="double",
                  default=0.0, min=-1e6, max=1e6, group="Plane"),
         ], remember_key="mirror")

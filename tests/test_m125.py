@@ -239,6 +239,142 @@ def test_axis_delete_via_handler(win, qapp):
     qapp.processEvents()
 
 
+# ---- M125 part 2: named datums drive transforms --------------------------
+
+def _source_box(d, at=(10.0, 5.0, 0.0)):
+    from tracer.core.document import PrimitiveFeature
+    f = PrimitiveFeature(name="lug", kind="box",
+                         dims={"dx": 2, "dy": 2, "dz": 2},
+                         placement=at)
+    d.add(f)
+    d.recompute()
+    return f
+
+
+def test_circular_pattern_about_named_work_axis():
+    d = Document()
+    src = _source_box(d)
+    a = d.add_axis_2pt((5, 5, 0), (5, 5, 10))      # vertical line at (5,5)
+    d.add_circular_pattern("ring", src, axis=a["name"],
+                           angle=360.0, count=4)
+    d.recompute()
+    assert d.result.volume == pytest.approx(4 * 8, rel=1e-6)
+    bb = np.asarray(d.result.bounding_box, float)
+    assert np.allclose(bb[0], [-2, -2, 0], atol=1e-6)   # 4-fold symmetric
+    assert np.allclose(bb[1], [12, 12, 2], atol=1e-6)
+
+
+def test_named_Z_axis_pattern_matches_the_legacy_center_pattern():
+    d = Document()
+    src = _source_box(d)
+    d.add_circular_pattern("legacy", src, center=(0, 0), angle=360.0,
+                           count=4)
+    d.recompute()
+    v_legacy = d.result.volume
+    bb_legacy = np.asarray(d.result.bounding_box, float)
+    d2 = Document()
+    src2 = _source_box(d2)
+    d2.add_circular_pattern("named", src2, angle=360.0, count=4, axis="Z")
+    d2.recompute()
+    assert d2.result.volume == pytest.approx(v_legacy, rel=1e-9)
+    assert np.allclose(d2.result.bounding_box, bb_legacy, atol=1e-6)
+
+
+def test_mirror_across_named_offset_plane():
+    d = Document()
+    src = _source_box(d, at=(0.0, 0.0, 0.0))       # z in [0, 2]
+    p = d.add_plane("XY", 10.0)                    # z = 10
+    d.add_mirror("twin", src, plane=p["name"])
+    d.recompute()
+    bb = np.asarray(d.result.bounding_box, float)
+    assert np.allclose(bb[0], [0, 0, 0], atol=1e-6)
+    assert np.allclose(bb[1], [2, 2, 20], atol=1e-6)  # twin at z in [18,20]
+    assert d.result.volume == pytest.approx(16, rel=1e-6)
+
+
+def test_mirror_across_tilted_three_point_plane():
+    d = Document()
+    src = _source_box(d, at=(0.0, 0.0, 0.0))       # x in [0, 2]
+    p = d.add_plane_3pt((10, 0, 0), (10, 10, 0), (10, 0, 10))
+    d.add_mirror("twin", src, plane=p["name"])
+    d.recompute()
+    bb = np.asarray(d.result.bounding_box, float)
+    assert abs(bb[1][0] - 20.0) < 1e-6              # twin x in [18, 20]
+    assert abs(bb[0][0]) < 1e-6
+
+
+def test_pattern_and_mirror_datum_names_survive_io():
+    import tempfile
+    from pathlib import Path
+    from tracer.core.io import save_document, load_document
+    d = Document()
+    src = _source_box(d)
+    a = d.add_axis_2pt((0, 0, 0), (0, 0, 9))
+    d.add_circular_pattern("ring", src, axis=a["name"], angle=180.0,
+                           count=3)
+    d.add_mirror("twin", src, plane="XY", offset=7.0)
+    with tempfile.TemporaryDirectory() as t:
+        pth = Path(t) / "p.tracer"
+        save_document(d, pth)
+        r = load_document(pth)
+    from tracer.core.document import CircularPatternFeature, MirrorFeature
+    cp = next(f for f in r.features if isinstance(f, CircularPatternFeature))
+    assert cp.axis == "Axis 1"
+    mf = next(f for f in r.features if isinstance(f, MirrorFeature))
+    assert mf.plane == "XY" and mf.offset == 7.0
+    r.recompute()                                # resolves against reloaded
+    assert r.result.volume > 0
+
+
+def test_unknown_datum_names_raise_not_silently():
+    d = Document()
+    src = _source_box(d)
+    f = d.add_circular_pattern("ghost", src, axis="Axis 99")
+    with pytest.raises(params.ParamError):
+        d.recompute()
+    f.axis = ""                                   # back to legacy: fine
+    d.recompute()
+    d2 = Document()
+    s2 = _source_box(d2)
+    d2.add_mirror("ghost", s2, plane="Plane 77")
+    with pytest.raises(params.ParamError):
+        d2.recompute()
+
+
+def test_circular_dialog_passes_named_axis(win, monkeypatch):
+    from tracer.core.document import PrimitiveFeature, \
+        CircularPatternFeature
+    win.doc.add(PrimitiveFeature(name="lug", kind="box",
+                                 dims={"dx": 2, "dy": 2, "dz": 2},
+                                 placement=(10, 5, 0)))
+    win.recompute()
+    win.doc.add_axis_2pt((5, 5, 0), (5, 5, 9))
+    _dialog_answers(monkeypatch, {"src": "lug", "axis": "Axis 1",
+                                  "cx": 0.0, "cy": 0.0, "ang": 360.0,
+                                  "count": 4})
+    win.action_circular_pattern()
+    cp = [f for f in win.doc.features
+          if isinstance(f, CircularPatternFeature)][0]
+    assert cp.axis == "Axis 1"
+
+
+def test_circular_dialog_default_is_the_legacy_plus_z(win, monkeypatch):
+    from tracer.core.document import PrimitiveFeature, \
+        CircularPatternFeature
+    win.doc.add(PrimitiveFeature(name="lug", kind="box",
+                                 dims={"dx": 2, "dy": 2, "dz": 2},
+                                 placement=(10, 5, 0)))
+    win.recompute()
+    _dialog_answers(monkeypatch, {"src": "lug",
+                                  "axis": "+Z (through center)",
+                                  "cx": 0.0, "cy": 0.0, "ang": 360.0,
+                                  "count": 6})
+    win.action_circular_pattern()
+    cp = [f for f in win.doc.features
+          if isinstance(f, CircularPatternFeature)][0]
+    assert cp.axis == ""
+
+
 # ---- renderer: axes flow to the line mesh (GL-gated) ---------------------
 
 def test_renderer_draws_axes_without_any_plane(qapp):

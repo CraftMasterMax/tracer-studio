@@ -93,7 +93,8 @@ def test_circular_pattern_dialog_and_undo(win, monkeypatch):
     win.doc.add_cylinder("bolt hole", 2, 10, center=(32, 20), z=-2.5,
                          op="subtract")
     win.recompute()
-    script_cmd(monkeypatch, {"src": "bolt hole", "cx": 20.0, "cy": 20.0,
+    script_cmd(monkeypatch, {"src": "bolt hole", "axis": "+Z (through center)",
+                             "cx": 20.0, "cy": 20.0,
                              "ang": 360.0, "count": 5})
     win.action_circular_pattern()
     pats = [f for f in win.doc.features
