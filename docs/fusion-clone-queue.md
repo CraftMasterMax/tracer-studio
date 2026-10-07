@@ -1329,21 +1329,31 @@ M125; items 1-11 below are history.*
     the 3D Print dialog. Deferred to M125+: per-material δ presets,
     3MF metadata, pin −δ and planar elephant-foot compensation.
 12. **M125 — construction-geo batch** [from `fusion_construction_geo.md`,
-    probed + repo-grounded 2026-10-07]. v1 = the usage-weighted cheap
-    set: (1) named DATUM store under a browser "Construction" bulb
-    (planes/axes as first-class, visible, selectable buckets);
-    (2) plane methods beyond offset — At Angle, Through Three Points,
-    Midplane (mesh-plane-fit), offset To-Object; (3) axis methods —
-    Through Two Points, Through Two Planes (intersection);
-    (4) circular pattern about any NAMED AXIS + mirror across any NAMED
-    PLANE — killing the +Z/+YZ hardcoding (document.py:91/:1052);
-    (5) datum-aware errors: yellow/red timeline + sketch-plane
-    re-host (Fusion heals nothing either — honest reselect beats fake
-    healing). DEFER (expensive without B-rep face identity): tangent/
-    perpendicular-at-point on curved faces, along-path, UCS, pattern/
-    mirror OF construction geo, proximity re-matching. Grammar notes:
-    dashed/faded datums, no auto-hide (X toggles sketch construction —
-    already ours), plane name labels renderer-side.
+    probed + repo-grounded 2026-10-07]. (v1) SHIPPED — all five scope
+    items in three gated commits (1/3 store, 2/3 transforms, 3/3
+    errors): (1) named DATUM store under the browser Construction
+    bulb — planes+axes share one name pool, key-agnostic persistence,
+    legacy files load clean; (2) plane methods offset / At-Angle
+    (hinge u|v through a point) / Three-Point / Midplane — pure frame
+    algebra, non-parallel refused honestly; (3) axis methods Two-Point
+    / Two-Plane (closest-point solve); (4) circular patterns pivot
+    about ANY named axis (Rodrigues about the datum line; "+Z through
+    center" stays the dialog default so legacy docs recompute
+    identically), mirrors sweep across any construction plane
+    (frame-aware reflection); (5) datum-aware errors — resolvers name
+    the missing datum AND its cure, deleting a referenced datum warns
+    listing dependents (core datum_references), and proceed-then-fail
+    lands on the M118 badge: my own test caught a raw-exception crash
+    here (the deleter's viewport.refresh recomputed outside the safe
+    wrapper), fixed by routing deleters through recompute().
+    DEFER (expensive without B-rep face identity): To-Object,
+    mesh-plane-fit midplane (ours splits two PLANES), tangent /
+    perpendicular-at-point on curved faces, along-path, UCS,
+    pattern/mirror OF construction geo, proximity re-matching,
+    sketch-plane re-host (sketches carry a frozen frame copy —
+    reselect beats fake healing, as in Fusion). Grammar still open:
+    dashed datum edges and renderer-side name labels (datums ship in
+    the construction colour, solid).
 - Tail (queued by matrix order, unnumbered): construction-geo batch,
   browser polish, radial marking wheel, nav presets, single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings

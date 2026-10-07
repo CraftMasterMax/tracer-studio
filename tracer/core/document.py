@@ -1073,7 +1073,10 @@ class Document:
         for p in self.planes:
             if p["name"] == ref:
                 return p["origin"], p["u"], p["v"], p["n"]
-        raise params.ParamError(f"no plane named {ref!r}")
+        raise params.ParamError(
+            f"no plane named {ref!r} — it may have been deleted; recreate "
+            "it with Construction Plane (Ctrl+Shift+P) or point the "
+            "feature at a surviving datum")
 
     def add_axis_2pt(self, p1, p2) -> dict:
         p1, p2 = np.asarray(p1, float), np.asarray(p2, float)
@@ -1121,6 +1124,20 @@ class Document:
             return True
         return False
 
+    def datum_references(self, name: str) -> list[str]:
+        """M125 part 3: names of features that bind to datum `name` BY
+        NAME at recompute — mirrors (plane) and named-axis circular
+        patterns (axis).  Sketches and derived planes store a frozen
+        frame copy, so they survive deletion of the datum that seeded
+        them; these two do not, which is exactly why the UI warns."""
+        out: list[str] = []
+        for f in self.features:
+            if isinstance(f, MirrorFeature) and f.plane == name:
+                out.append(f.name)
+            elif isinstance(f, CircularPatternFeature) and f.axis == name:
+                out.append(f.name)
+        return out
+
     def axis_frame(self, ref: str):
         """(origin, dir) for X/Y/Z or a stored work axis."""
         w = {"X": [1.0, 0.0, 0.0], "Y": [0.0, 1.0, 0.0],
@@ -1130,7 +1147,10 @@ class Document:
         for a in self.axes:
             if a["name"] == ref:
                 return a["origin"], a["dir"]
-        raise params.ParamError(f"no axis named {ref!r}")
+        raise params.ParamError(
+            f"no axis named {ref!r} — it may have been deleted; recreate "
+            "it with Work Axis (Ctrl+Shift+O) or point the feature at a "
+            "surviving datum")
 
     # ---- editing -------------------------------------------------------
     def add(self, feature: Feature) -> Feature:

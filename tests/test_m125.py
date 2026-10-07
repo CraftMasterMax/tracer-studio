@@ -375,6 +375,73 @@ def test_circular_dialog_default_is_the_legacy_plus_z(win, monkeypatch):
     assert cp.axis == ""
 
 
+# ---- M125 part 3: datum-aware errors ------------------------------------
+
+def test_datum_references_names_only_real_name_bindings():
+    d = Document()
+    src = _source_box(d)
+    a = d.add_axis_2pt((0, 0, 0), (0, 0, 5))
+    p = d.add_plane("XY", 8.0)
+    d.add_circular_pattern("ring", src, axis=a["name"], angle=360.0,
+                           count=4)
+    d.add_circular_pattern("plain", src, center=(0, 0), count=3)
+    d.add_mirror("twin", src, plane=p["name"])
+    assert d.datum_references(a["name"]) == ["ring"]      # named pivot
+    assert d.datum_references(p["name"]) == ["twin"]      # named plane
+    assert d.datum_references("XY") == []     # legacy paths bind nothing
+    assert d.datum_references("Plane 77") == []
+
+
+def test_resolver_errors_teach_the_cure():
+    d = Document()
+    with pytest.raises(params.ParamError, match=r"Ctrl\+Shift\+O"):
+        d.axis_frame("Axis 42")
+    with pytest.raises(params.ParamError, match=r"Ctrl\+Shift\+P"):
+        d.plane_frame("Plane 42")
+
+
+def test_delete_datum_with_a_dependent_asks_first(win, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    from tracer.core.document import PrimitiveFeature
+    win.doc.add(PrimitiveFeature(name="lug", kind="box",
+                                 dims={"dx": 2, "dy": 2, "dz": 2}))
+    p = win.doc.add_plane("XY", 6.0)
+    win.doc.add_mirror("twin", win.doc.features[-1], plane=p["name"])
+    asked = []
+
+    def fake_question(*a, **k):
+        asked.append(a[2])                      # the informative text
+        return QMessageBox.No
+
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(fake_question))
+    win._delete_plane(p["name"])
+    assert asked and "twin" in asked[0]         # warning named the feature
+    assert len(win.doc.planes) == 1             # NO kept the datum alive
+    assert "kept" in win.status.currentMessage()
+    monkeypatch.setattr(QMessageBox, "question",
+                        staticmethod(lambda *a, **k: QMessageBox.Yes))
+    warned = []
+    monkeypatch.setattr(
+        QMessageBox, "warning",
+        staticmethod(lambda parent, title, text, *a, **k:
+                     warned.append(text) or QMessageBox.Ok))
+    win._delete_plane(p["name"])
+    assert win.doc.planes == []                 # YES deleted it
+    assert warned and "Plane 1" in warned[0]    # M118 modal told the user
+    assert getattr(win.doc, "failed_feature", None) is not None  # badged
+
+
+def test_delete_unreferenced_datum_never_asks(win, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    called = []
+    monkeypatch.setattr(
+        QMessageBox, "question",
+        staticmethod(lambda *a, **k: called.append(1) or QMessageBox.Yes))
+    win.doc.add_axis_2pt((0, 0, 0), (0, 0, 4))
+    win._delete_axis("Axis 1")
+    assert win.doc.axes == [] and not called    # no references, no ceremony
+
+
 # ---- renderer: axes flow to the line mesh (GL-gated) ---------------------
 
 def test_renderer_draws_axes_without_any_plane(qapp):

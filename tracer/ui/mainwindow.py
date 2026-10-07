@@ -2030,10 +2030,11 @@ class MainWindow(QMainWindow):
             f"{say} — patterns and mirrors can reference it by name", 6000)
 
     def _delete_axis(self, name):
-        if self.doc and self.doc.remove_axis(name):
+        if self.doc and self._datum_delete_ok(name) and \
+                self.doc.remove_axis(name):
             self._unsaved = True
             self.rail.tree.reload()
-            self.viewport.refresh()
+            self.recompute()
             self.status.showMessage(f"Deleted {name}", 3000)
 
     def _caxis_menu(self, name, pos):
@@ -2289,12 +2290,36 @@ class MainWindow(QMainWindow):
             f"{b['name']} is now active — the next feature builds there",
             5000)
 
+    def _datum_delete_ok(self, name: str) -> bool:
+        """M125 part 3: deleting a datum that features bind BY NAME is
+        Fusion territory for silent corruption — we warn first and name
+        every feature that will fail at recompute.  No references, no
+        ceremony."""
+        if self.doc is None:
+            return False
+        refs = self.doc.datum_references(name)
+        if not refs:
+            return True
+        ans = QMessageBox.question(
+            self, "Datum still referenced",
+            f"{name} is used by {len(refs)} feature(s):\n  "
+            + "\n  ".join(refs)
+            + "\n\nDeleting it makes them fail at recompute until they "
+              "are edited or removed.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if ans != QMessageBox.Yes:
+            self.status.showMessage(
+                f"{name} kept — {refs[0]} still depends on it", 5000)
+            return False
+        return True
+
     def _delete_plane(self, name):
-        if self.doc and self.doc.remove_plane(name):
+        if self.doc and self._datum_delete_ok(name) and \
+                self.doc.remove_plane(name):
             self._unsaved = True
             self.rail.tree.reload()
-            self.viewport.refresh()
-            self.status.showMessage(f"Deleted {name}", 3000)
+            self.recompute()      # M125: may now fail honestly — the
+            self.status.showMessage(f"Deleted {name}", 3000)  # M118 badge
 
     def action_new_sketch(self, plane: str = "XY"):
         if self.doc is None or not self._discard_guard():

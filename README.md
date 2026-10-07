@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M124**
+**Status: M125**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -75,7 +75,16 @@ independent project with no Autodesk assets or affiliation.)
   itself never knows; δ defaults 0, label-only mode states the sourced
   expected FDM deviations (holes print small, elephant-foot +0.15–0.2),
   and the double-compensation trap the slicers call a convention war —
-  SuperSlicer even inverts the hole sign — gets said out loud**
+  SuperSlicer even inverts the hole sign — gets said out loud**,
+  **construction geometry (M125): work planes and work axes are named
+  first-class datums — planes by offset, at-angle about a hinge through
+  a point, three points, or midplane (non-parallel refused honestly);
+  axes by two points or where two planes meet; circular patterns now
+  pivot about ANY named axis (datum-line Rodrigues math, "+Z through
+  center" stays the default), mirrors sweep across any construction
+  plane, and deleting a referenced datum warns naming every dependent
+  feature — proceed anyway and the M118 red badge tells, never a raw
+  exception**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -256,7 +265,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1335 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1339 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
