@@ -1310,13 +1310,19 @@ history.*
 10. **M121 — interlock family** (Snap Fit/Boss/Rest/Lip + Emboss
     text via QRawFont — zero new deps). [ranks 7 + 24]
 11. **M124 — print fit-mode** (parametric δ at export). [rank 8] —
-    the fastener-library half of this item shipped early as **M123**
-    (provenance JSON + validator shipped; washer tables folded in; the
-    sweep it mandated corrected seven ISO 273 cells + the heat-set
-    M5/M6 drills — see `iso273_washers_verify.md`,
-    `fastener_tables_verify.md`). What remains: lift δ from the
-    interlock grammar to a document-level print-mode knob the export
-    pipeline applies honestly (STL/3MF shrinkage + line-fit).
+    researched 2026-10-07 (`print_fit_mode.md`): the design is settled.
+    v1 ships (a) HOLE/FIT-FACE-ONLY compensation — rewrite cylindrical
+    face radii at export (hole +δ, pin −δ), no topology change, refuse
+    features under 2δ, emit a face→Δ change-log into 3MF metadata;
+    (b) LABEL-ONLY default mode annotating expected deviation (holes
+    −0.1…−0.2, elephant-foot +0.15/0.2 from Prusa's own factory
+    profiles) so unset δ never silently lies; (c) δ default 0 with a
+    double-compensation warning naming each slicer's knob — and
+    SuperSlicer's OPPOSITE hole-sign convention. Staged beta: full-solid
+    ball offset via manifold3d ≥3.4 `minkowski_sum/difference` (proven
+    in the probe: shrinks a Ø5 hole by exactly δ, watertight) but it
+    deletes sub-2δ features by definition, so opt-in + pre/post
+    validation only. Never: vertex-normal displacement, voxel morphs.
 - Tail (queued by matrix order, unnumbered): construction-geo batch,
   browser polish, radial marking wheel, nav presets, single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
