@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M114**
+**Status: M115**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -132,7 +132,11 @@ independent project with no Autodesk assets or affiliation.)
    triangles while the fused part (measure, drawings, export) stays whole.
    **Exports speak per body**: a multi-body design saves to 3MF/OBJ as
    separate named objects (a slicer opens Body 1, Body 2, …) and to STL
-   as every shell; one body exports exactly as before. **Per-body
+   as every shell; one body exports exactly as before. **3MF is written
+   natively** — document provenance (title, designer, app, date), the
+   body's painted material as a slicer colour slot (`basematerials`),
+   part labels, and the whole build grounded on the plate; the model
+   itself is never moved. **Per-body
    appearance**: right-click a body to paint it its own material (brass
    boss beside a blue plate), while the whole-part paint stays the default
 - UX: Fusion mouse grammar — MMB orbits, Shift+MMB pans, RMB orbit, wheel zooms
@@ -201,7 +205,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1182 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1197 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

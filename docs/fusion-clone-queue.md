@@ -1185,6 +1185,18 @@ consequence.
   bubble into "Ø40.00 H7 (+0.025/0)" per ISO 129; fit pairs analyse
   clearance/transition/interference; the model and the DXF stay
   nominal — paper carries the fit. Suite now 1182.
+- **M115**: 3MF speaks. The audit of trimesh's writer found valid bytes
+  but no voice — zero document metadata, colours and materials lost,
+  six namespaces re-declared per build item — so the format now leaves
+  through `core/threemf.py`: pure stdlib, Core-1.4 exact (the
+  translation-LAST transform trap pinned by test, explicit
+  unit="millimeter", metadata→resources→build order, `<base>` with
+  both required attrs), carrying provenance (Title/Designer/Application/
+  CreationDate), painted bodies as real slicer colour slots
+  (basematerials, deduped, sRGB #RRGGBBAA), BOM materials as
+  tracer:-prefixed metadata, part labels, and the whole build grounded
+  on the plate without touching a vertex. STL/OBJ/PLY keep the trimesh
+  road untouched. Suite now 1197.
 
 ### Corrections wave 2 bought us
 - **Fusion HAS a 3D sketch mode now** (triad, per-point plane
@@ -1211,7 +1223,9 @@ consequence.
 1159); M113 key layer + command search (test_m113, suite 1171 — the
 matrix's #1 gap is CLOSED); M114 ISO 286 fit callouts (test_m114,
 suite 1182 — matrix rank 2 closed, drawing keys D/B/F/Esc shipped with
-it). The live queue starts at M115; items 1-3 below are history.*
+it); M115 native 3MF (test_m115, suite 1197 — rank 3 closed, the
+writer audit's four gaps fixed). The live queue starts at M116; items
+1-4 below are history.*
 1. **M112 — theme tokens** (`ui/theme.py` + single QSS: darkBlue
    surfaces, autodeskBlue accent, hover/select trio; no-px rule from
    `a11y_precision_cad.md`). [matrix rank 5]

@@ -53,7 +53,8 @@ def load_json(path: str | Path):
     return json.loads(raw.decode("utf-8"))
 
 
-def export_solids(solids, path: str | Path) -> Path:
+def export_solids(solids, path: str | Path, *, meta: dict | None = None,
+                  appearances: dict | None = None) -> Path:
     """Write each ``(name, Solid)`` as its OWN object (M105 multi-body).
 
     Two or more bodies become a named scene: 3MF/OBJ keep every body as
@@ -62,6 +63,12 @@ def export_solids(solids, path: str | Path) -> Path:
     formats (STL/PLY) get all the shells concatenated.  One body writes
     exactly the mesh it always did — the single-body file is byte-for-byte
     what Tracer produced before per-body export existed.
+
+    M115: ``.3mf`` leaves through Tracer's own spec-exact writer —
+    ``meta`` (title/designer/…) and ``appearances`` (body name →
+    {"color", "opacity", "material", "name"}) then survive into the
+    file: slicer colour slots, part labels and provenance included.
+    The other formats keep taking the trimesh road.
     """
     path = Path(path)
     ext = path.suffix.lower()
@@ -77,6 +84,13 @@ def export_solids(solids, path: str | Path) -> Path:
         parts.append((name or f"Body {len(parts) + 1}", mesh))
     if not parts:
         raise ValueError("nothing to export")
+    if ext == ".3mf":
+        from . import threemf
+        bodies = [dict(name=n, vertices=m.vertices, faces=m.faces,
+                       **{k: (appearances or {}).get(n, {}).get(k)
+                          for k in ("appearance", "material")})
+                  for n, m in parts]
+        return threemf.write(path, bodies, meta)
     if len(parts) == 1:
         parts[0][1].export(str(path), file_type=MESH_EXPORT_FORMATS[ext])
         return path

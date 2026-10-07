@@ -722,6 +722,23 @@ class Document:
         return any((b.get("appearance") or {}).get("color")
                    for b in self.body_list())
 
+    def export_appearances(self) -> dict:
+        """M115: body name → print-appearance record for the 3MF writer,
+        resolving the same chain the viewport honours — the body's own
+        paint (M106), else the whole-part uniform (M52).  A body's BOM
+        material name rides along; bodies with neither yield nothing."""
+        out = {}
+        for b in self.body_list():
+            app = b.get("appearance") or self.appearance
+            rec = {}
+            if app and app.get("color"):
+                rec["appearance"] = dict(app)
+            if b.get("material"):
+                rec["material"] = b["material"]
+            if rec:
+                out[b["name"]] = rec
+        return out
+
     def _visible_solids(self) -> list:
         """[(body, Solid)] that are visible and built, browser order."""
         self.result

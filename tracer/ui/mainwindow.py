@@ -4035,7 +4035,17 @@ class MainWindow(QMainWindow):
         if not Path(path).suffix:
             path += ext
         try:
-            out = fio.export_solids(self.doc.export_solids(), path)
+            from .. import __version__
+            meta = {"title": self.doc.title or name,
+                    "application": f"Tracer Studio {__version__}"}
+            for g in reversed(self.doc.drawings or []):
+                author = (g.get("block") or {}).get("author")
+                if author:                       # the title block knows
+                    meta["designer"] = author
+                    break                        # who drew this
+            out = fio.export_solids(self.doc.export_solids(), path,
+                                    meta=meta,
+                                    appearances=self.doc.export_appearances())
             self.status.showMessage(f"Exported {out}", 6000)
         except Exception as e:
             QMessageBox.critical(self, "Export failed", str(e))
