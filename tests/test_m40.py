@@ -95,7 +95,8 @@ def dialogs(monkeypatch):
     getDouble patch still feeds the classic prompts (extrude height)."""
     def install(base="XY", *distances):
         dist = distances[0] if distances else 12.0
-        script_cmd(monkeypatch, {"base": base, "dist": dist})
+        script_cmd(monkeypatch, {"how": "Offset from origin plane",
+                                 "base": base, "dist": dist})
         monkeypatch.setattr(Shell, "getDouble",
                             staticmethod(lambda *a, **k: (12.0, True)))
     return install

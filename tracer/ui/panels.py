@@ -52,6 +52,7 @@ def _sketch_label(sk: dict) -> str:
 class FeatureTree(QTreeWidget):
     feature_menu = Signal(object, object)   # Feature, global QPoint
     cplane_menu = Signal(str, object)       # plane name, global QPoint
+    caxis_menu = Signal(str, object)        # M125 work axis, same grammar
     body_menu = Signal(object, object)        # body name, global QPoint
     feature_delete = Signal(object)         # Feature (Del key, M72)
     feature_rename = Signal(object)         # Feature (F2 key, M72)
@@ -77,6 +78,8 @@ class FeatureTree(QTreeWidget):
                                        self.viewport().mapToGlobal(pos))
         elif role and role[0] == "cplane":
             self.cplane_menu.emit(role[1], self.viewport().mapToGlobal(pos))
+        elif role and role[0] == "caxis":
+            self.caxis_menu.emit(role[1], self.viewport().mapToGlobal(pos))
         elif role and role[0] == "body":
             self.body_menu.emit(role[1], self.viewport().mapToGlobal(pos))
 
@@ -195,15 +198,21 @@ class FeatureTree(QTreeWidget):
             sketches.addChild(it)
 
         # ---- Construction (n): Fusion parks construction planes here ------
+        # (M125: work axes joined the same bulb — one datum family)
         planes = getattr(self._doc, "planes", [])
-        constr = QTreeWidgetItem([f"Construction ({len(planes)})"])
+        axes = getattr(self._doc, "axes", [])
+        constr = QTreeWidgetItem([f"Construction ({len(planes) + len(axes)})"])
         constr.setData(0, Qt.UserRole, ("folder", "construction"))
         root.addChild(constr)
         for pl in planes:
-            it = QTreeWidgetItem(["\u25ad " + pl["name"]])
+            it = QTreeWidgetItem(["\u25ad " + pl["name"]])   # ▭
             it.setData(0, Qt.UserRole, ("cplane", pl["name"]))
             constr.addChild(it)
-        constr.setExpanded(bool(planes))
+        for ax in axes:
+            it = QTreeWidgetItem(["\u2225 " + ax["name"]])   # ∥
+            it.setData(0, Qt.UserRole, ("caxis", ax["name"]))
+            constr.addChild(it)
+        constr.setExpanded(bool(planes or axes))
 
         # ---- Sheets (n): M96 drawings ride the tree like everything else --
         # (Fusion only shows the folder once drawings exist)

@@ -267,6 +267,15 @@ def _plane(p: QPainter):
     p.drawLine(QPointF(13, 10), QPointF(20, 22))
 
 
+def _axis(p: QPainter):
+    """Work axis: a datum line with an arrowhead and end ticks."""
+    p.drawLine(QPointF(6, 26), QPointF(24, 8))
+    p.drawLine(QPointF(24, 8), QPointF(20.5, 9))
+    p.drawLine(QPointF(24, 8), QPointF(23, 11.5))
+    p.drawLine(QPointF(4.5, 23), QPointF(8.5, 28))
+    p.drawLine(QPointF(19, 13), QPointF(23, 18))
+
+
 def _constrain(p: QPainter):
     """Two lines joined by a link pin: geometry tied together."""
     p.drawLine(QPointF(7, 7), QPointF(7, 25))
@@ -435,6 +444,7 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "circle": _circle, "slot": _slot, "poly": _poly,
               "arc": _arc, "trim": _trim, "offset": _offset,
               "construction": _construction, "plane": _plane,
+              "axis": _axis,
               "constrain": _constrain, "dimension": _dimension,
               "launcher": _launcher, "section": _section,
               "thread": _thread, "split": _split,

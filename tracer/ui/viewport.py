@@ -129,7 +129,8 @@ class Viewport(QWidget):
             self._r._grid_auto(self._bbox)
             if fit:
                 self._cam.fit(self._bbox)
-        self._r.set_planes(self._doc.planes if self._doc else [])
+        self._r.set_planes(self._doc.planes if self._doc else [],
+                           self._doc.axes if self._doc else [])
         self.update()
 
     def pick_mesh(self):

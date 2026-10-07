@@ -118,6 +118,7 @@ class MainWindow(QMainWindow):
         self.rail.tree.itemDoubleClicked.connect(self._tree_activated)
         self.rail.tree.feature_menu.connect(self._feature_menu)
         self.rail.tree.cplane_menu.connect(self._cplane_menu)
+        self.rail.tree.caxis_menu.connect(self._caxis_menu)
         self.rail.tree.body_menu.connect(self._body_menu)
         self.rail.tree.feature_delete.connect(self._delete_feature)
         self.rail.tree.feature_rename.connect(self._rename_feature)
@@ -395,6 +396,9 @@ class MainWindow(QMainWindow):
         r.design_sep()
         d("plane", "Construction plane — offset work plane (Ctrl+Shift+P)",
           lambda checked=False: self.action_construction_plane())
+        d("axis", "Work axis — datum line for patterns & mirrors "
+                  "(Ctrl+Shift+O)",
+          lambda checked=False: self.action_work_axis())
         d("section", "Section analysis — clip the body on a plane",
           menu_actions=[
               ("Section on XY plane",
@@ -575,9 +579,12 @@ class MainWindow(QMainWindow):
                                  shortcut="Ctrl+Shift+P",
                                  triggered=lambda checked=False:
                                  self.action_construction_plane())
+        self.act_axis = QAction("Work &axis…", self, shortcut="Ctrl+Shift+O",
+                                triggered=lambda checked=False:
+                                self.action_work_axis())
         m_sk.addActions([self.act_new_sketch, self.act_extrude,
                          self.act_revolve, self.act_hole, self.act_sweep,
-                         self.act_loft, self.act_plane])
+                         self.act_loft, self.act_plane, self.act_axis])
 
         m_cr = self.menuBar().addMenu("C&reate")
         self.act_linpat = QAction("&Linear pattern…", self,
@@ -738,6 +745,10 @@ class MainWindow(QMainWindow):
             self.action_new_sketch(arg)
         elif kind == "cplane":
             self.action_sketch_on_plane(arg)
+        elif kind == "caxis":
+            self.status.showMessage(
+                f"{arg}: a work axis — patterns and mirrors take it by "
+                "name; right-click to delete", 5000)
         elif kind == "sketch":
             self._feature_activated(self.doc.features[arg])
         elif kind == "sheet":                 # M96: double-click a sheet
@@ -1906,27 +1917,129 @@ class MainWindow(QMainWindow):
         self._show_page(self._sketch_page)
         self._pick_tool("rect")     # most sketches start with a rectangle
 
+    # ---- construction geometry (M125) — planes get methods, axes join ------
+    @staticmethod
+    def _pt(txt) -> list[float]:
+        """Parse a 'x,y,z' dialog field; refuse anything else loudly."""
+        try:
+            vals = [float(t) for t in str(txt).replace(";", ",").split(",")]
+        except ValueError:
+            raise params.ParamError(f"points are 'x,y,z' — got {txt!r}")
+        if len(vals) != 3:
+            raise params.ParamError(f"points are 'x,y,z' — got {txt!r}")
+        return vals
+
     def action_construction_plane(self):
-        """Fusion's Construct ▸ Plane: an offset copy of an origin plane,
-        ready to sketch on."""
+        """Fusion's Construct ▸ Plane, unified dialog (M125): offset, at
+        angle, through three points, or midplane between two planes."""
         if self.doc is None:
             return
+        names = ["XY", "XZ", "YZ"] + [p["name"] for p in self.doc.planes]
         v = cmddialog.ask(self, "Construction Plane", [
-            dict(key="base", label="Offset from", kind="combo",
+            dict(key="how", label="Method", kind="combo", group="Method",
+                 choices=("Offset from origin plane", "At angle about hinge",
+                          "Through three points", "Midplane between two")),
+            dict(key="base", label="Offset from / rotate", kind="combo",
                  choices=["XY", "XZ", "YZ"], group="Plane"),
-            dict(key="dist", label="Distance", kind="double",
+            dict(key="dist", label="Distance (offset)", kind="double",
                  default=10.0, min=-1e5, max=1e5, group="Plane"),
+            dict(key="angle", label="Angle (at angle)", kind="double",
+                 default=45.0, min=-359.9, max=359.9, suffix="°",
+                 group="Plane"),
+            dict(key="hinge", label="Hinge (at angle)", kind="combo",
+                 choices=("u — plane's own X", "v — plane's own Y"),
+                 group="Plane"),
+            dict(key="p1", label="Point 1", kind="text", default="0,0,0",
+                 group="Three points"),
+            dict(key="p2", label="Point 2", kind="text", default="10,0,0",
+                 group="Three points"),
+            dict(key="p3", label="Point 3", kind="text", default="0,10,10",
+                 group="Three points"),
+            dict(key="pa", label="Plane A (midplane)", kind="combo",
+                 choices=names, group="Midplane"),
+            dict(key="pb", label="Plane B (midplane)", kind="combo",
+                 choices=names[1:] + names[:1], group="Midplane"),
         ], remember_key="construction_plane")
         if v is None:
             return
-        base, dist = v["base"], v["dist"]
-        p = self.doc.add_plane(base, dist)
+        how = v["how"]
+        try:
+            if how.startswith("Offset"):
+                p = self.doc.add_plane(v["base"], v["dist"])
+                say = f"{p['name']} at {v['dist']:+g} mm from {v['base']}"
+            elif how.startswith("At angle"):
+                p = self.doc.add_plane_angle(
+                    v["base"], v["angle"],
+                    "u" if v["hinge"].startswith("u") else "v")
+                say = (f"{p['name']} — {v['base']} tipped {v['angle']:g}° "
+                       f"about its {p['hinge']}")
+            elif how.startswith("Through"):
+                p = self.doc.add_plane_3pt(self._pt(v["p1"]),
+                                           self._pt(v["p2"]),
+                                           self._pt(v["p3"]))
+                say = f"{p['name']} through the three picked points"
+            else:
+                p = self.doc.add_plane_mid(v["pa"], v["pb"])
+                say = f"{p['name']} midway between {v['pa']} and {v['pb']}"
+        except params.ParamError as exc:
+            self.status.showMessage(f"Plane refused: {exc}", 6000)
+            return
         self._unsaved = True
         self.rail.tree.reload()
         self.viewport.refresh()
         self.status.showMessage(
-            f"{p['name']} at {dist:+g} mm from {base} — double-click it in "
-            "the browser to sketch on it", 6000)
+            f"{say} — double-click it in the browser to sketch on it", 6000)
+
+    def action_work_axis(self):
+        """Fusion's Construct ▸ Axis, the cheap-half v1 (M125): through
+        two points, or where two planes meet. Axes are named, first-class
+        datums — patterns and mirrors take them by name at recompute."""
+        if self.doc is None:
+            return
+        names = ["XY", "XZ", "YZ"] + [p["name"] for p in self.doc.planes]
+        v = cmddialog.ask(self, "Work Axis", [
+            dict(key="how", label="Method", kind="combo", group="Method",
+                 choices=("Through two points",
+                          "Intersection of two planes")),
+            dict(key="p1", label="Point 1", kind="text", default="0,0,0",
+                 group="Two points"),
+            dict(key="p2", label="Point 2", kind="text", default="0,0,10",
+                 group="Two points"),
+            dict(key="pa", label="Plane A", kind="combo", choices=names,
+                 group="Two planes"),
+            dict(key="pb", label="Plane B", kind="combo",
+                 choices=names[1:] + names[:1], group="Two planes"),
+        ], remember_key="work_axis")
+        if v is None:
+            return
+        try:
+            if v["how"].startswith("Through"):
+                a = self.doc.add_axis_2pt(self._pt(v["p1"]),
+                                          self._pt(v["p2"]))
+                say = f"{a['name']} from ({v['p1']}) to ({v['p2']})"
+            else:
+                a = self.doc.add_axis_2planes(v["pa"], v["pb"])
+                say = f"{a['name']} — where {v['pa']} and {v['pb']} meet"
+        except params.ParamError as exc:
+            self.status.showMessage(f"Axis refused: {exc}", 6000)
+            return
+        self._unsaved = True
+        self.rail.tree.reload()
+        self.viewport.refresh()
+        self.status.showMessage(
+            f"{say} — patterns and mirrors can reference it by name", 6000)
+
+    def _delete_axis(self, name):
+        if self.doc and self.doc.remove_axis(name):
+            self._unsaved = True
+            self.rail.tree.reload()
+            self.viewport.refresh()
+            self.status.showMessage(f"Deleted {name}", 3000)
+
+    def _caxis_menu(self, name, pos):
+        menu = QMenu(self)
+        menu.addAction("Delete work axis", lambda: self._delete_axis(name))
+        menu.exec_(pos)
 
     def action_thread(self):
         """Fusion Thread (M49b v1): click a cylindrical boss face and

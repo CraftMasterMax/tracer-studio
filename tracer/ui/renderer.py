@@ -182,6 +182,7 @@ class SceneRenderer:
         self._grid_vao: moderngl.VertexArray | None = None
         self._grid_count = 0
         self._planes: list[dict] = []
+        self._axes: list[dict] = []       # M125 work axes (datum store)
         self._plane_vao: moderngl.VertexArray | None = None
         self._plane_count = 0
         self.show_grid = True
@@ -486,10 +487,11 @@ class SceneRenderer:
         self._rebuild_planes()
 
     # ---- construction planes ---------------------------------------------------
-    def set_planes(self, planes: list[dict]):
+    def set_planes(self, planes: list[dict], axes: list[dict] = ()):
         """Construction-plane quads (outline + faint cross), sized to the
         model like the grid. Each dict carries origin/u/v axes."""
         self._planes = list(planes)
+        self._axes = list(axes)
         self._rebuild_planes()
 
     def _rebuild_planes(self):
@@ -497,7 +499,7 @@ class SceneRenderer:
             self._plane_vao.release()
             self._plane_vao = None
             self._plane_count = 0
-        if not self._planes:
+        if not self._planes and not self._axes:
             return
         e = max(self._grid_extent * 0.35, 20.0)     # quarter-grid squares
         pr, pg, pb = self.palette["plane_line"]
@@ -516,6 +518,10 @@ class SceneRenderer:
                 add(c[i], c[(i + 1) % 4], (pr, pg, pb, 0.85))
             add(c[0], c[2], (pr, pg, pb, 0.35))       # diagonals, faint
             add(c[1], c[3], (pr, pg, pb, 0.35))
+        for ax in self._axes:                         # M125: work axes,
+            o = np.asarray(ax["origin"], float)       # one full-span line
+            dd = np.asarray(ax["dir"], float)
+            add(o - e * dd, o + e * dd, (pr, pg, pb, 0.85))
         arr = np.array(lines, np.float32)
         buf = self.ctx.buffer(arr.tobytes())
         self._plane_vao = self.ctx.vertex_array(

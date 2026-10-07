@@ -21,6 +21,17 @@ from .sketch.model import frame_matrix, plane_matrix, revolve_matrix
 CombineOp = Literal["union", "subtract", "intersect"]
 
 
+def _rodrigues(axis, theta):
+    """Rotation matrix about an axis by theta (radians) — Rodrigues'
+    formula. Frame algebra for datum creation; no scipy needed."""
+    k = np.asarray(axis, float)
+    k = k / np.linalg.norm(k)
+    c, s = math.cos(theta), math.sin(theta)
+    K = np.array([[0.0, -k[2], k[1]], [k[2], 0.0, -k[0]],
+                  [-k[1], k[0], 0.0]])
+    return np.eye(3) * c + s * K + (1.0 - c) * np.outer(k, k)
+
+
 @dataclass
 class Feature:
     name: str
@@ -672,6 +683,7 @@ class Document:
         self.units = "mm"
         self.features: list[Feature] = []
         self.planes: list[dict] = []      # construction planes (Construct ▸)
+        self.axes: list[dict] = []        # work axes (M125 datum store)
         self.appearance: dict | None = None   # Appearance ▸ material paint
         self.params: dict = {}                # user parameters (M81)
         self.configs: dict = {}               # M91: name -> {param: raw}
@@ -926,16 +938,106 @@ class Document:
         (M106), else None so the renderer keeps its uniform base colour."""
         return self._stitch(colours=True, default_color=default_color)
 
-    # ---- construction planes --------------------------------------------------
+    # ---- construction geometry (M125) — named datum planes & work axes ------
+    # A datum is a frame, nothing more: planes carry (origin, u, v, n),
+    # axes carry (origin, dir). Creation methods are pure frame algebra —
+    # no face identity is required anywhere, which is exactly what a
+    # mesh-timeline kernel can honour forever. Names are the handle:
+    # sketches host on planes, patterns spin about axes, mirrors across
+    # planes, all by name resolved at recompute.
+
+    def _next_name(self, prefix: str) -> str:
+        taken = {p["name"] for p in self.planes} | \
+                {a["name"] for a in self.axes}
+        k = 1
+        while f"{prefix} {k}" in taken:
+            k += 1
+        return f"{prefix} {k}"
+
+    @staticmethod
+    def _frame(p1, p2, p3):
+        """Orthonormal frame through three points (Fusion's Plane ▸
+        Through Three Points); raises rather than accept a collapsed
+        pick triangle."""
+        p1, p2, p3 = (np.asarray(q, float) for q in (p1, p2, p3))
+        n = np.cross(p2 - p1, p3 - p1)
+        if np.linalg.norm(n) < 1e-9:
+            raise params.ParamError(
+                "three points must not be collinear — no plane to fit")
+        n /= np.linalg.norm(n)
+        u = p2 - p1
+        u /= np.linalg.norm(u)
+        v = np.cross(n, u)
+        return (p1 + p2 + p3) / 3.0, u, v, n
+
     def add_plane(self, base: str, offset: float) -> dict:
         """Offset copy of an origin plane (Fusion's Construct ▸ Plane)."""
         n, u, v = self._PLANE_BASES[base]
-        k, taken = 1, {p["name"] for p in self.planes}
-        while f"Plane {k}" in taken:
-            k += 1
-        p = {"name": f"Plane {k}", "base": base, "offset": float(offset),
+        p = {"name": self._next_name("Plane"), "base": base, "method": "offset",
+             "offset": float(offset),
              "origin": [c * float(offset) for c in n],
              "u": list(u), "v": list(v), "n": list(n)}
+        self.planes.append(p)
+        self.dirty = True
+        return p
+
+    def add_plane_angle(self, base: str, angle: float,
+                        hinge: str = "u", through=(0.0, 0.0, 0.0)) -> dict:
+        """Base frame rotated `angle`° about an in-plane hinge line
+        through `through` (Fusion's Plane ▸ At Angle; our hinge is the
+        base plane's u or v axis — the pick-a-real-line version wants
+        face identity we don't have yet)."""
+        if hinge not in ("u", "v"):
+            raise params.ParamError("hinge must be 'u' or 'v'")
+        n, u, v = self._PLANE_BASES[base]
+        o = np.zeros(3)                        # origin-plane frame sits at 0
+        ax = np.asarray({"u": u, "v": v}[hinge], float)
+        t = np.asarray(through, float)
+        th = math.radians(float(angle))
+        R = _rodrigues(ax, th)
+        origin = t + R @ (o - t)               # rotate the base origin
+        p = {"name": self._next_name("Plane"), "base": base,
+             "method": "angle", "angle": float(angle), "hinge": hinge,
+             "through": list(map(float, t)),
+             "origin": list(map(float, origin)),
+             "u": list(map(float, R @ np.asarray(u))),
+             "v": list(map(float, R @ np.asarray(v))),
+             "n": list(map(float, R @ np.asarray(n)))}
+        self.planes.append(p)
+        self.dirty = True
+        return p
+
+    def add_plane_3pt(self, p1, p2, p3) -> dict:
+        o, u, v, n = self._frame(p1, p2, p3)
+        p = {"name": self._next_name("Plane"), "method": "three-points",
+             "points": [list(map(float, q)) for q in (p1, p2, p3)],
+             "origin": list(map(float, o)), "u": list(map(float, u)),
+             "v": list(map(float, v)), "n": list(map(float, n))}
+        self.planes.append(p)
+        self.dirty = True
+        return p
+
+    def add_plane_mid(self, a: str, b: str) -> dict:
+        """Midplane between two named planes (origin or custom). The
+        honest refusal when they aren't parallel is the whole point:
+        no silent best-fit lie."""
+        oa, ua, va, na = self.plane_frame(a)
+        ob, ub, vb, nb = self.plane_frame(b)
+        na, nb = np.asarray(na), np.asarray(nb)
+        if abs(abs(float(np.dot(na, nb))) - 1.0) > 1e-6:
+            raise params.ParamError(
+                f"midplane needs parallel planes — {a!r} and {b!r} "
+                "are not")
+        n = na if float(np.dot(na, nb)) > 0 else -na
+        u = np.asarray(ua, float)             # keep A's in-plane x; rebuild
+        v = np.cross(n, u)                    # a right-handed v either way
+        d = float(np.dot(np.asarray(ob, float) - np.asarray(oa, float), n))
+        origin = np.asarray(oa, float) + n * (d / 2.0)
+        p = {"name": self._next_name("Plane"), "method": "midplane",
+             "between": [a, b],
+             "origin": list(map(float, origin)),
+             "u": list(map(float, u)), "v": list(map(float, v)),
+             "n": list(map(float, n))}
         self.planes.append(p)
         self.dirty = True
         return p
@@ -947,6 +1049,73 @@ class Document:
             self.dirty = True
             return True
         return False
+
+    def plane_frame(self, ref: str):
+        """(origin, u, v, n) for an origin plane name or a stored one."""
+        if ref in self._PLANE_BASES:
+            n, u, v = self._PLANE_BASES[ref]
+            return [0.0, 0.0, 0.0], list(u), list(v), list(n)
+        for p in self.planes:
+            if p["name"] == ref:
+                return p["origin"], p["u"], p["v"], p["n"]
+        raise params.ParamError(f"no plane named {ref!r}")
+
+    def add_axis_2pt(self, p1, p2) -> dict:
+        p1, p2 = np.asarray(p1, float), np.asarray(p2, float)
+        d = p2 - p1
+        if np.linalg.norm(d) < 1e-9:
+            raise params.ParamError("two points must differ to define "
+                                    "an axis")
+        d /= np.linalg.norm(d)
+        a = {"name": self._next_name("Axis"), "method": "two-points",
+             "points": [list(p1), list(p2)],
+             "origin": list(p1), "dir": list(d)}
+        self.axes.append(a)
+        self.dirty = True
+        return a
+
+    def add_axis_2planes(self, a: str, b: str) -> dict:
+        """Intersection axis of two planes; origin is the intersection
+        line's point closest to the world origin."""
+        oa, _, _, na = self.plane_frame(a)
+        ob, _, _, nb = self.plane_frame(b)
+        na, nb = np.asarray(na, float), np.asarray(nb, float)
+        d = np.cross(na, nb)
+        if np.linalg.norm(d) < 1e-9:
+            raise params.ParamError(
+                f"{a!r} and {b!r} do not intersect in an axis (parallel)")
+        d /= np.linalg.norm(d)
+        try:
+            o = np.linalg.solve(np.vstack([na, nb, d]),
+                                [float(na @ np.asarray(oa, float)),
+                                 float(nb @ np.asarray(ob, float)), 0.0])
+        except np.linalg.LinAlgError:
+            raise params.ParamError("no intersection axis for those planes")
+        ax = {"name": self._next_name("Axis"), "method": "two-planes",
+              "between": [a, b],
+              "origin": list(map(float, o)), "dir": list(map(float, d))}
+        self.axes.append(ax)
+        self.dirty = True
+        return ax
+
+    def remove_axis(self, name: str) -> bool:
+        before = len(self.axes)
+        self.axes = [x for x in self.axes if x["name"] != name]
+        if len(self.axes) != before:
+            self.dirty = True
+            return True
+        return False
+
+    def axis_frame(self, ref: str):
+        """(origin, dir) for X/Y/Z or a stored work axis."""
+        w = {"X": [1.0, 0.0, 0.0], "Y": [0.0, 1.0, 0.0],
+             "Z": [0.0, 0.0, 1.0]}.get(ref)
+        if w:
+            return [0.0, 0.0, 0.0], w
+        for a in self.axes:
+            if a["name"] == ref:
+                return a["origin"], a["dir"]
+        raise params.ParamError(f"no axis named {ref!r}")
 
     # ---- editing -------------------------------------------------------
     def add(self, feature: Feature) -> Feature:
@@ -1390,6 +1559,7 @@ class Document:
                 "active_body": self.active_body,
                 "features": [_feat(f) for f in self.features],
                 "planes": [dict(p) for p in self.planes],
+                "axes": [dict(a) for a in self.axes],   # M125
                 "appearance": (dict(self.appearance)
                                if self.appearance else None)}
 
@@ -1573,9 +1743,10 @@ class Document:
                     f.body = doc.active_body or "Body 1"
         for p in data.get("planes", []):          # pre-M40 files have none
             if p.get("name") and p.get("origin"):
-                doc.planes.append({k: p[k] for k in
-                                   ("name", "base", "offset", "origin",
-                                    "u", "v", "n") if k in p})
+                doc.planes.append(dict(p))   # M125: every key survives —
+        for a in data.get("axes", []):            # methods carry payloads
+            if a.get("name") and a.get("origin") and a.get("dir"):
+                doc.axes.append(dict(a))
         app = data.get("appearance")              # pre-M52 files have none
         doc.appearance = dict(app) if app else None
         for f, fd in zip(doc.features, data.get("features", [])):

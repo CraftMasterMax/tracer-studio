@@ -55,7 +55,10 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("Ctrl + L", "Loft — blend one sketch's profile into another's",
          True),
         ("Ctrl + Shift + P",
-         "Construction plane — offset copy of an origin plane", True),
+         "Construction plane — offset / at-angle / 3-point / midplane",
+         True),
+        ("Ctrl + Shift + O",
+         "Work axis — two points or the join of two planes", True),
         ("Press-pull", "drag a flat face with the left button", False),
     ]),
     ("Panels, styles & compute", [
