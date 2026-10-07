@@ -1273,11 +1273,14 @@ class Document:
         for f in self.features:
             if (isinstance(f, HoleFeature) and f.thread_pitch > 0
                     and f.thread_mode == "cosmetic" and not f.suppressed):
+                from .thread import major as _major
+                m = _major(f.thread_size or "")
+                r = (m / 2.0 if m > 0
+                     else float(f.radius) + float(f.thread_pitch) / 2.0)
                 out.append(dict(
                     center=tuple(float(v) for v in f.center),
                     axis=tuple(float(v) for v in f.normal),
-                    radius=float(f.radius) + float(f.thread_pitch) / 2.0,
-                    label=f.designation))
+                    radius=r, label=f.designation))
         return out
 
     def _dir(self, ref) -> np.ndarray:

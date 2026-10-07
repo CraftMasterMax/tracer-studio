@@ -101,9 +101,13 @@ def test_decals_ring_only_the_cosmetic_holes():
     dc = d.thread_decals()
     assert len(dc) == 1
     assert dc[0]["label"] == "M8-6H"
-    assert dc[0]["radius"] == pytest.approx(3.4 + 1.25 / 2.0)  # major Ø/2
+    assert dc[0]["radius"] == pytest.approx(4.0)     # TRUE ISO major Ø
     assert dc[0]["center"] == (10.0, 10.0, 8.0)
     assert _plate_two_holes("modeled").thread_decals() == []
+    # legacy hole with no size name: tap-drill + pitch/2 fallback
+    d2 = _plate_two_holes("cosmetic")
+    d2.features[-1].thread_size = ""
+    assert d2.thread_decals()[0]["radius"] == pytest.approx(3.4 + 0.625)
 
 
 def test_suppressed_cosmetic_hole_decals_nothing():

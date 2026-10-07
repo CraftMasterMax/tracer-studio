@@ -51,6 +51,19 @@ def coarse_size(pitch: float) -> str:
     return ""
 
 
+def major(size: str) -> float:
+    """Nominal ISO major diameter encoded in the size name (M8 -> 8.0;
+    the M-number IS the major). 0.0 for absent/malformed names, whose
+    callers fall back to the tap-drill estimate."""
+    s = str(size)
+    if s.startswith("M"):
+        try:
+            return float(s[1:])
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
 def designation(size: str, pitch: float, internal: bool = True,
                 cls: str = "") -> str:
     """ISO metric thread designation (M128): the coarse pitch is
