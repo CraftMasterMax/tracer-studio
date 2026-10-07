@@ -226,6 +226,29 @@ class ScaleFeature(Feature):
 
 
 @dataclass
+class CoilFeature(Feature):
+    """M127 coil-v1: a helical ridge (spring, boss thread) — circular
+    or square section riding a helix about a NAMED axis (M125 store),
+    lofted through dense ring stations with honest abrupt ends. Size
+    schema is the vendor's classic two-of-three solved forward: height
+    is turns x pitch. Internal modeled cut-threads are deliberately
+    NOT offered: standards tooling itself recommends decoration there,
+    and near-tangent helical booleans are how kernels die."""
+    axis: str = "Z"                  # helix axis (named datum)
+    base: tuple = (0.0, 0.0, 0.0)    # helix start point
+    diameter: float = 8.0            # helix CENTER diameter (on-center)
+    pitch: float = 1.25
+    turns: float = 6.0
+    hand: str = "right"              # or "left"
+    section: str = "circular"        # or "square"
+    size: float = 1.0                # section circumscribed diameter
+
+    @property
+    def height(self) -> float:
+        return self.turns * self.pitch
+
+
+@dataclass
 class BodyFilletFeature(Feature):
     """Round (or bevel) every sharp edge of the body built so far.  Two
     engines: circular rims (hole openings, boss tops/bases) are revolved
@@ -1212,6 +1235,8 @@ class Document:
             elif isinstance(f, GeometricPatternFeature) and \
                     name in (f.axis, f.d1, f.d2):
                 out.append(f.name)      # pivot or either lattice rail
+            elif isinstance(f, CoilFeature) and f.axis == name:
+                out.append(f.name)      # the helix spins on this line
         return out
 
     def _dir(self, ref) -> np.ndarray:
@@ -1372,6 +1397,16 @@ class Document:
             base=tuple(float(v) for v in base),
             factors=tuple(float(v) for v in k)))
 
+    def add_coil(self, name, *, axis="Z", base=(0.0, 0.0, 0.0),
+                 diameter=8.0, pitch=1.25, turns=6.0, hand="right",
+                 section="circular", size=1.0, op="union"):
+        return self.add(CoilFeature(
+            name=name, op=op, axis=axis,
+            base=tuple(float(v) for v in base),
+            diameter=float(diameter), pitch=float(pitch),
+            turns=float(turns), hand=str(hand), section=str(section),
+            size=float(size)))
+
     @staticmethod
     def _rotz_about(cx, cy, t) -> "np.ndarray":
         c, s = np.cos(t), np.sin(t)
@@ -1518,6 +1553,12 @@ class Document:
                 if not np.all(k):
                     raise params.ParamError("scale factors cannot be zero")
                 solid = src.transformed(_scale_about(f.base, k))
+            elif isinstance(f, CoilFeature):
+                ao, ad = self.axis_frame(f.axis or "Z")
+                from .coil import coil_solid
+                solid = coil_solid(ao, ad, float(f.diameter) / 2.0,
+                                   f.pitch, f.turns, f.section, f.size,
+                                   f.hand)
             elif isinstance(f, InterferenceFeature):
                 # a clash AS A BODY: intersect two source streams exactly
                 # as their users see them — placement state included.
@@ -1674,6 +1715,12 @@ class Document:
                 d.update(source_uid=f.source_uid,
                          base=list(map(float, f.base)),
                          factors=list(map(float, f.factors)))
+            elif isinstance(f, CoilFeature):
+                d.update(axis=f.axis, base=list(map(float, f.base)),
+                         diameter=float(f.diameter),
+                         pitch=float(f.pitch), turns=float(f.turns),
+                         hand=f.hand, section=f.section,
+                         size=float(f.size))
             elif isinstance(f, BodyFilletFeature):
                 d.update(radius=float(f.radius), chamfer=bool(f.chamfer),
                          n_rims=int(f.n_rims), src_key=f.src_key,
@@ -1854,6 +1901,15 @@ class Document:
                     name=fd["name"], source_uid=fd["source_uid"],
                     base=tuple(fd.get("base", (0.0, 0.0, 0.0))),
                     factors=tuple(fd["factors"]), **base))
+            elif t == "CoilFeature":
+                doc.features.append(CoilFeature(
+                    name=fd["name"], axis=fd.get("axis", "Z"),
+                    base=tuple(fd.get("base", (0.0, 0.0, 0.0))),
+                    diameter=float(fd["diameter"]),
+                    pitch=float(fd["pitch"]), turns=float(fd["turns"]),
+                    hand=fd.get("hand", "right"),
+                    section=fd.get("section", "circular"),
+                    size=float(fd["size"]), **base))
             elif t == "LoftFeature":
                 doc.features.append(LoftFeature(
                     name=fd["name"], closed=bool(fd.get("closed", False)),

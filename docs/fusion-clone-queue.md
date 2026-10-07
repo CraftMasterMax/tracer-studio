@@ -1364,7 +1364,12 @@ M125; items 1-11 below are history.*
     caught a real reload bug mid-build (from_dict silently defaulted
     n2/t2 when the branch was retyped — now pinned with non-defaults).
     coil-v1 RE-RANKED as M127 (2–3×; ring-loft reuses the loft engine
-    + this PR's transform util). DEFER: feature-level patterns,
+    + this PR's transform util). M127 SINCE SHIPPED: coil.py lofted
+    ring-chain about a named axis, circular/square on-center sections,
+    hand + pitch-swallow guards, Pappus-pinned volumes, bolt/spring
+    dialog, suite 1367. Still deferred: taper, Spiral type, Inside/
+    Outside section positioning, runout ends, internal modeled
+    threads (cosmetic-thread wedge M128+). DEFER: feature-level patterns,
     boundary/fill patterns, spiral-type coil, internal modeled
     threads (cosmetic-thread story later with drawings).
     Next in rank, both fully probed: browser

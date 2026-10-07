@@ -26,7 +26,7 @@ from ..core import printcheck
 from ..core import step
 from ..core.thread import ISO_COARSE
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
-                             CombineFeature,
+                             CoilFeature, CombineFeature,
                              Document, ExtrudeFeature, GeometricPatternFeature,
                              HoleFeature,
                              ImportedFeature, LinearPatternFeature,
@@ -391,6 +391,8 @@ class MainWindow(QMainWindow):
           lambda checked=False: self.action_shell())
         d("thread", "Thread — cut a bolt thread on a cylindrical boss face",
           lambda checked=False: self.action_thread())
+        d("coil", "Coil — helical ridge: spring or boss thread",
+          lambda checked=False: self.action_coil())
         d("split", "Split body — trim the solid flush with a plane",
           lambda checked=False: self.action_split_body())
         d("move", "Move body — drag the triad to slide it (Ctrl = copy)",
@@ -1005,8 +1007,16 @@ class MainWindow(QMainWindow):
             for i, axl in enumerate("XYZ"):
                 dbl(f"k{i}", f"factor {axl}", feature.factors[i], dec=3,
                     mn=None, plain=True)
+        elif isinstance(feature, CoilFeature):
+            dbl("diam", "centre diameter", feature.diameter)
+            dbl("pitch", "pitch", feature.pitch, dec=3)
+            dbl("turns", "turns", feature.turns, dec=1, mn=0.5,
+                plain=True)
+            dbl("size", "section size", feature.size, dec=3, mn=0.01)
         elif isinstance(feature, MirrorFeature):
-            combo("plane", "mirror plane", ("YZ", "XZ", "XY"),
+            combo("plane", "mirror plane",
+                  ("YZ", "XZ", "XY") + tuple(p["name"]
+                                             for p in self.doc.planes),
                   feature.plane)
             dbl("offset", "offset", feature.offset, mn=None)
         elif isinstance(feature, SplitFeature):
@@ -1112,6 +1122,11 @@ class MainWindow(QMainWindow):
             feature.k1, feature.k2 = float(v["k1"]), float(v["k2"])
         elif isinstance(feature, ScaleFeature):
             feature.factors = tuple(float(v[f"k{i}"]) for i in range(3))
+        elif isinstance(feature, CoilFeature):
+            feature.diameter = mm("diam")
+            feature.pitch = mm("pitch")
+            feature.turns = float(v["turns"])
+            feature.size = mm("size")
         elif isinstance(feature, MirrorFeature):
             feature.plane = str(v["plane"])
             feature.offset = mm("offset")
@@ -4870,6 +4885,57 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             f"Scaled {src.name} by "
             f"{'x'.join(f'{f:g}' for f in factors)} about ({v['base']})",
+            6000)
+
+    def action_coil(self):
+        """Fusion's Coil (M127 v1), on-center and honest: a circular or
+        square section riding a helix about a NAMED axis; height is
+        turns x pitch (the classic two-of-three forward). Springs and
+        boss threads; internal cut-threads deliberately aren't offered
+        — decoration serves them better on any kernel."""
+        if self.doc is None:
+            return
+        dirs = ["X", "Y", "Z"] + [a["name"] for a in self.doc.axes]
+        v = cmddialog.ask(self, "Coil", [
+            dict(key="axis", label="Helix axis", kind="combo",
+                 choices=dirs, default="Z", group="Axis"),
+            dict(key="base", label="Start point", kind="text",
+                 default="0,0,0", group="Axis"),
+            dict(key="diam", label="Centre diameter", kind="double",
+                 default=8.0, min=0.001, max=1e5, group="Helix"),
+            dict(key="pitch", label="Pitch", kind="double", default=1.5,
+                 min=0.01, max=1e4, group="Helix"),
+            dict(key="turns", label="Turns", kind="double", default=6.0,
+                 min=0.5, max=2000.0, decimals=1, group="Helix"),
+            dict(key="hand", label="Hand", kind="combo",
+                 choices=("Right", "Left"), group="Helix"),
+            dict(key="section", label="Section", kind="combo",
+                 choices=("Circular", "Square"), group="Section"),
+            dict(key="size", label="Section size", kind="double",
+                 default=1.2, min=0.01, max=1e4, group="Section"),
+        ], remember_key="coil")
+        if v is None:
+            return
+        try:
+            base = self._pt(v["base"])
+        except params.ParamError as exc:
+            self.status.showMessage(f"Coil refused: {exc}", 6000)
+            return
+        self._capture()
+        f = self.doc.add_coil(
+            f"Coil {v['turns']:g}x{v['pitch']:g}", axis=v["axis"],
+            base=base, diameter=v["diam"], pitch=v["pitch"],
+            turns=v["turns"], hand=v["hand"].lower(),
+            section=v["section"].lower(), size=v["size"])
+        self.recompute()
+        ff = getattr(self.doc, "failed_feature", None)
+        if ff is not None and ff[1] == f.name:
+            return                          # M118 badge + modal already
+        self.viewport.refresh(fit=True)
+        self.status.showMessage(
+            f"{f.name} — {v['turns']:g} turns x {v['pitch']:g} mm pitch "
+            f"= {f.height:g} mm tall, {v['section'].lower()} section "
+            f"{v['size']:g} mm, {v['hand'].lower()}-handed on {v['axis']}",
             6000)
 
     def action_mirror(self):

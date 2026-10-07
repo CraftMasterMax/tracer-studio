@@ -285,6 +285,19 @@ def _geopattern(p: QPainter):
     p.drawLine(QPointF(27, 10), QPointF(30, 7))
 
 
+def _coil(p: QPainter):
+    """Coil: a helix seen from the side — crests with return rungs."""
+    import math as _m
+    pts = [QPointF(4 + 24 * i / 96.0,
+                   16 + 8 * _m.sin(2 * _m.pi * 2.5 * i / 96.0))
+           for i in range(97)]
+    p.drawPolyline(QPolygonF(pts))
+    p.setPen(QPen(_COL, 1.2))
+    for i in (19, 39, 59, 79):                     # rungs at crests
+        y = 16 + 8 * _m.sin(2 * _m.pi * 2.5 * i / 96.0)
+        p.drawLine(pts[i], QPointF(pts[i].x(), 16 - (y - 16) * 0.55))
+
+
 def _scale(p: QPainter):
     """Scale: a small square growing about its base point."""
     p.drawEllipse(QPointF(5, 26), 1.6, 1.6)
@@ -465,6 +478,7 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "arc": _arc, "trim": _trim, "offset": _offset,
               "construction": _construction, "plane": _plane,
               "axis": _axis, "geopattern": _geopattern, "scale": _scale,
+              "coil": _coil,
               "constrain": _constrain, "dimension": _dimension,
               "launcher": _launcher, "section": _section,
               "thread": _thread, "split": _split,

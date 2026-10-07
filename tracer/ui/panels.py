@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QTreeWidget, QTreeWidgetItem, QLabel, QVBoxLayout
 
 from ..core import units
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
-                             CombineFeature,
+                             CoilFeature, CombineFeature,
                              Document, ExtrudeFeature, GeometricPatternFeature,
                              HoleFeature,
                              ImportedFeature, LinearPatternFeature,
@@ -169,6 +169,7 @@ class FeatureTree(QTreeWidget):
                                                     CircularPatternFeature,
                                                     GeometricPatternFeature))
                     else "\u25f1" if isinstance(f, ScaleFeature)  # ◱
+                    else "\u2307" if isinstance(f, CoilFeature)  # ⌇ bolt
                     else "\u2935" if isinstance(f, PathPatternFeature)
                     else "\u25a1")
             label = (f"{glyph} {f.name}" if fillet

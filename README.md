@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M126**
+**Status: M127**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -94,7 +94,14 @@ independent project with no Autodesk assets or affiliation.)
   for left-hand twins); refusals stay honest (a zero factor collapses
   nothing, 4096-copy lattices bounce), Change Parameters round-trips
   every lever, and lattice/scale features register in the
-  datum_references ledger so the delete-warning still catches them**
+  datum_references ledger so the delete-warning still catches them**,
+  **coil (M127): the helical ridge — circular or square section riding
+  a helix about a NAMED axis, lofted through dense ring stations with
+  honest abrupt ends and the vendor's two-of-three size schema solved
+  forward (height = turns x pitch); right/left hand, spring or boss
+  thread, Pappus-true volumes; internal modeled cut-threads
+  deliberately NOT offered — decoration serves them better, as the
+  standards tooling itself admits**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -275,7 +282,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1355 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1367 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
