@@ -1070,6 +1070,12 @@ class MainWindow(QMainWindow):
                        "and sheet number are added for you)")
         tbb.clicked.connect(self.action_title_block)
         bl.addWidget(tbb)
+        rotb = QPushButton("Rotate\u2026")                # M109 view spin
+        rotb.setProperty("tb", True)
+        rotb.setToolTip("Rotate one view about its centre (display only — "
+                        "every dimension still measures true millimetres)")
+        rotb.clicked.connect(self.action_rotate_view)
+        bl.addWidget(rotb)
         bl.addStretch(1)
         lay.addWidget(bar)
         from .drawingview import DrawingCanvas
@@ -1235,6 +1241,45 @@ class MainWindow(QMainWindow):
         self.doc.dirty = True
         self.drawing.update()
         self.status.showMessage("Title block updated", 3000)
+
+    def action_rotate_view(self):
+        """M109: spin one view on the sheet about its own centre.  This is
+        pure PRESENTATION — the model is untouched, so every dimension on
+        the view keeps measuring the true millimetres (bubbles live in
+        model space and re-project through the rotation).  0° hands the
+        view back to the layout assistant; the angle rides undo + save."""
+        if self.doc is None or not self.doc.drawings:
+            self.status.showMessage("Create a drawing first", 3000)
+            return
+        names = list(self.drawing.views().keys())
+        if not names:
+            self.status.showMessage("The sheet has no views to rotate", 5000)
+            return
+        g = self.drawing.sheet() or self.doc.drawings[-1]
+        rots = g.get("rot") or {}
+        from . import cmddialog
+        v = cmddialog.ask(self, "Rotate view", [
+            dict(key="view", kind="combo", label="View", choices=names),
+            dict(key="angle", kind="double", label="Angle", default=0.0,
+                 min=-360.0, max=360.0, decimals=1, suffix="\u00b0")])
+        if v is None:
+            return
+        view = str(v["view"])
+        deg = float(v["angle"]) % 360.0
+        if deg > 180.0:
+            deg -= 360.0
+        self._capture()
+        rots = g.setdefault("rot", {})
+        if abs(deg) < 1e-6:
+            rots.pop(view, None)
+        else:
+            rots[view] = deg
+        if not rots:
+            g.pop("rot", None)
+        self.doc.dirty = True
+        self.drawing.update()
+        shown = "reset to 0\u00b0" if abs(deg) < 1e-6 else f"{deg:g}\u00b0"
+        self.status.showMessage(f"{view} view rotated {shown}", 4000)
 
     def _add_dim(self, view: str, a: tuple, b: tuple, opts: dict = None):
         """A finished bubble (M94/M95): undo-captured, stored in MODEL

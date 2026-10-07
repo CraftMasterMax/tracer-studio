@@ -119,31 +119,96 @@ class DrawingCanvas(QWidget):
 
     def cuts_page(self) -> dict:
         """M102: section name -> closed cut-face loops in sheet-mm page
-        coords (moves and per-view scales ride the frame)."""
+        coords (moves and per-view scales ride the frame). M109: a view
+        rotated for display carries its hatch around with it."""
         srcs = self._sources()
         out: dict = {}
-        fr = self.frames()
+        placed = self.placed()
         for sec in self.sections():
             name = sec["name"]
-            if name not in srcs or name not in fr:
+            if name not in srcs or name not in placed:
                 continue
             d = drawing.section(self.doc.result, sec["axis"],
                                 float(sec["at"]))
-            sc, off = fr[name]
-            out[name] = [[(float(p[0] * sc + off[0]),
-                           float(p[1] * sc + off[1])) for p in L]
+            out[name] = [[self._m2p(placed[name], p) for p in L]
                          for L in d["cut"]]
         return out
 
     def placed(self, views: dict | None = None) -> dict:
-        """Per view: {sc, off, min, max, chains} — the shared M94
-        placement (page = model * sc + off, y-up sheet mm). M96: the
-        draughtsman's per-view moves ride on the assistant's slots.
-        Pass `views` to reuse a fresh projection instead of redoing it."""
+        """Per view: {sc, off, min, max, chains, rot, ctr} — the shared
+        M94 placement (page = model * sc + off, y-up sheet mm). M96: the
+        draughtsman's per-view moves ride on the assistant's slots. M109:
+        a per-view display rotation (deg, about the view's own centre) is
+        attached as `rot` (radians) + `ctr` (its page centre); it is a
+        PRESENTATION transform only — the model-space chains/dims the
+        numbers are measured from are never touched, and rot = 0 makes
+        every map below the exact identity it always was. Pass `views` to
+        reuse a fresh projection instead of redoing it."""
         views = self.views() if views is None else views
-        return drawing.place(views, page=self.page,
-                             moves=self.sheet().get("move"),
-                             scales=self.sheet().get("vscale"))
+        placed = drawing.place(views, page=self.page,
+                               moves=self.sheet().get("move"),
+                               scales=self.sheet().get("vscale"))
+        rots = self.sheet().get("rot") or {}
+        for name, p in placed.items():
+            try:
+                deg = float(rots.get(name, 0.0))
+            except (TypeError, ValueError):
+                deg = 0.0
+            p["rot"] = math.radians(deg)
+            p["ctr"] = (p["off"][0] + 0.5 * (p["min"][0] + p["max"][0]),
+                        p["off"][1] + 0.5 * (p["min"][1] + p["max"][1]))
+        return placed
+
+    # ---- M109: per-view rotation (a page-space spin about the view ctr) --
+    @staticmethod
+    def _spin(fr: dict, pt, neg: bool = False):
+        """Rotate a page point about the view's centre by +/- its rot.
+        A no-op (identity) when the view is unrotated."""
+        a = fr.get("rot", 0.0)
+        if not a:
+            return (float(pt[0]), float(pt[1]))
+        if neg:
+            a = -a
+        cx, cy = fr["ctr"]
+        ca, sa = math.cos(a), math.sin(a)
+        dx, dy = pt[0] - cx, pt[1] - cy
+        return (cx + dx * ca - dy * sa, cy + dx * sa + dy * ca)
+
+    def model_to_page(self, view: str, model_pt) -> tuple:
+        """model (view 2D mm) -> DISPLAYED page mm, rotation applied last."""
+        p = self.placed().get(view)
+        if p is None:
+            return (float(model_pt[0]), float(model_pt[1]))
+        return self._m2p(p, model_pt)
+
+    def page_to_model(self, view: str, page_pt) -> tuple:
+        """DISPLAYED page mm -> model, de-rotating the click first so the
+        dim tool sees true model coordinates whatever the view's angle."""
+        p = self.placed().get(view)
+        if p is None:
+            return (float(page_pt[0]), float(page_pt[1]))
+        return self._p2m(p, page_pt)
+
+    @classmethod
+    def _m2p(cls, fr: dict, model_pt) -> tuple:
+        """model -> displayed page, straight from a placed frame (the hot
+        paint path holds frames already, so skip the name lookup)."""
+        sc, off = fr["sc"], fr["off"]
+        return cls._spin(fr, (model_pt[0] * sc + off[0],
+                              model_pt[1] * sc + off[1]))
+
+    @classmethod
+    def _p2m(cls, fr: dict, page_pt) -> tuple:
+        """displayed page -> model: un-rotate about ctr, then the plain
+        inverse of page = model * sc + off."""
+        sc, off = fr["sc"], fr["off"]
+        cx, cy = cls._spin(fr, page_pt, neg=True)
+        return ((cx - off[0]) / sc, (cy - off[1]) / sc)
+
+    def _cm(self, fr: dict, canon_page) -> tuple:
+        """CANONICAL page (place()'s own space, pre-rotation) -> model."""
+        sc, off = fr["sc"], fr["off"]
+        return ((canon_page[0] - off[0]) / sc, (canon_page[1] - off[1]) / sc)
 
     def layout(self) -> dict:
         """Page-coordinate chains (mm, y-up, origin lower-left)."""
@@ -151,16 +216,8 @@ class DrawingCanvas(QWidget):
 
     def frames(self) -> dict:
         """view -> (scale, off): the page point of model (0, 0) is off,
-        so page_to_model is the exact inverse (M94 dim tool)."""
+        so the CANONICAL map is page_to_model's inverse before rotation."""
         return {v: (p["sc"], p["off"]) for v, p in self.placed().items()}
-
-    def page_to_model(self, view: str, page_pt) -> tuple:
-        sc, off = self.frames()[view]
-        return ((page_pt[0] - off[0]) / sc, (page_pt[1] - off[1]) / sc)
-
-    def model_to_page(self, view: str, model_pt) -> tuple:
-        sc, off = self.frames()[view]
-        return (model_pt[0] * sc + off[0], model_pt[1] * sc + off[1])
 
     # ---- dimensions (M94) -------------------------------------------------
     def set_dim_mode(self, on: bool):
@@ -169,12 +226,15 @@ class DrawingCanvas(QWidget):
         self.update()
 
     def _view_at(self, page_pt, placed, slack=3.0):
-        """Which view's frame (with draughting slack) holds this click?"""
+        """Which view's frame (with draughting slack) holds this click?
+        The click is in DISPLAYED sheet mm; un-rotate it into each view's
+        canonical page space first (identity when that view is upright)."""
         best = None
         for name, p in placed.items():
             lo = np.asarray(p["min"]) - slack
             hi = np.asarray(p["max"]) + slack
-            q = np.asarray(page_pt) - np.asarray(p["off"])
+            click = self._spin(p, page_pt, neg=True)
+            q = np.asarray(click) - np.asarray(p["off"])
             if np.all(q >= lo) and np.all(q <= hi):
                 # nearest frame centre wins if two overlap in the slack
                 d = np.linalg.norm(q - 0.5 * (np.asarray(p["min"])
@@ -184,18 +244,18 @@ class DrawingCanvas(QWidget):
         return best[0] if best else None
 
     def _snap(self, view, page_pt, placed, radius=3.0):
-        """Grab the nearest projected chain endpoint (model space)."""
+        """Grab the nearest projected chain endpoint (model space). Chains
+        live in canonical page space, so the displayed click is un-rotated
+        in and the answer mapped canonical -> model."""
         p = placed[view]
-        sc, off = p["sc"], np.asarray(p["off"])
-        q = np.asarray(page_pt)
-        best, bd = page_pt, radius
+        q = np.asarray(self._spin(p, page_pt, neg=True))
+        best, bd = q, radius
         for c in p["chains"]:
             for pt in c:
                 d = float(np.linalg.norm(np.asarray(pt) - q))
                 if d < bd:
                     best, bd = pt, d
-        return self.page_to_model(view, best) if bd < radius \
-            else self.page_to_model(view, page_pt)
+        return self._cm(p, best) if bd < radius else self._cm(p, q)
 
     def rel_anchor(self, view: str, model_pt) -> list | None:
         """The endpoint as a fraction of the view's model-space extent
@@ -424,7 +484,7 @@ class DrawingCanvas(QWidget):
             for c in view["chains"]:
                 if len(c) < 2:
                     continue
-                pts = [self.s2p(x, y) for x, y in c]
+                pts = [self.s2p(*self._spin(view, (x, y))) for x, y in c]
                 for i in range(len(pts) - 1):
                     p.drawLine(pts[i], pts[i + 1])
         cuts = self.cuts_page()
@@ -444,10 +504,7 @@ class DrawingCanvas(QWidget):
                 if src is None:
                     continue
                 for c in drawing.project_hidden(src[0], view=src[1]):
-                    pts = [self.s2p(p2[0] * placed[name]["sc"]
-                                    + placed[name]["off"][0],
-                                    p2[1] * placed[name]["sc"]
-                                    + placed[name]["off"][1])
+                    pts = [self.s2p(*self._m2p(placed[name], p2))
                            for p2 in c]
                     for i in range(len(pts) - 1):
                         p.drawLine(pts[i], pts[i + 1])
@@ -468,9 +525,10 @@ class DrawingCanvas(QWidget):
                     bits.append(scale_label(float(fac)))
                 if not bits:
                     continue
-                c0 = self.s2p(
-                    fr["off"][0] + 0.5 * (fr["min"][0] + fr["max"][0]),
-                    fr["off"][1] + fr["min"][1] - 3.0)
+                # caption sits below the view centre; M109 rotates that
+                # anchor with the view (its own spin, text stays upright)
+                c0 = self.s2p(*self._spin(
+                    fr, (fr["ctr"][0], fr["off"][1] + fr["min"][1] - 3.0)))
                 p.setPen(QPen(QColor(90, 94, 100)))
                 p.drawText(QRectF(c0.x() - 40, c0.y(), 80,
                                   14 * self._zoom),
@@ -494,9 +552,7 @@ class DrawingCanvas(QWidget):
         if self._dim_first is not None:                   # pending pick
             view = placed.get(self._dim_first[0])
             if view is not None:
-                sc, off = view["sc"], view["off"]
-                q = self.s2p(self._dim_first[1][0] * sc + off[0],
-                             self._dim_first[1][1] * sc + off[1])
+                q = self.s2p(*self._m2p(view, self._dim_first[1]))
                 p.setPen(QPen(QColor(78, 161, 255), 1.6))
                 p.setBrush(Qt.NoBrush)
                 p.drawEllipse(q, 5, 5)
@@ -504,17 +560,14 @@ class DrawingCanvas(QWidget):
             view = placed.get(d["view"])
             if view is None:
                 continue
-            sc, off = view["sc"], view["off"]
             if d.get("diameter"):                          # M95 Ø style
-                self._draw_diameter(p, f, ink, d, sc, off)
+                self._draw_diameter(p, f, ink, d, view)
                 continue
             if d.get("radius"):            # M103: R, centre to rim
-                self._draw_radius(p, f, ink, d, sc, off)
+                self._draw_radius(p, f, ink, d, view)
                 continue
-            A = self.s2p(d["a"][0] * sc + off[0],
-                         d["a"][1] * sc + off[1])
-            B = self.s2p(d["b"][0] * sc + off[0],
-                         d["b"][1] * sc + off[1])
+            A = self.s2p(*self._m2p(view, d["a"]))
+            B = self.s2p(*self._m2p(view, d["b"]))
             v = B - A
             L = math.hypot(v.x(), v.y())
             if L < 1e-6:
@@ -522,9 +575,10 @@ class DrawingCanvas(QWidget):
             u = QPointF(v.x() / L, v.y() / L)             # along the dim
             n = QPointF(-u.y(), u.x())                    # perpendicular
             # offset the dim line AWAY from the view's centre, draughting-
-            # like, then lay extension lines and arrows along it
-            ctr = self.s2p(off[0] + 0.5 * (view["min"][0] + view["max"][0]),
-                           off[1] + 0.5 * (view["min"][1] + view["max"][1]))
+            # like, then lay extension lines and arrows along it.  ctr is
+            # the view centre; a spin (M109) leaves it fixed, so a plain
+            # s2p of it is correct at any angle.
+            ctr = self.s2p(*view["ctr"])
             mid = QPointF(0.5 * (A.x() + B.x()), 0.5 * (A.y() + B.y()))
             if ((mid.x() - ctr.x()) * n.x()
                     + (mid.y() - ctr.y()) * n.y()) < 0:     # side test
@@ -566,20 +620,20 @@ class DrawingCanvas(QWidget):
             p.setFont(f)
             p.drawText(gap, Qt.AlignCenter, d["text"])
 
-    def _draw_diameter(self, p: QPainter, f, ink, d, sc, off):
+    def _draw_diameter(self, p: QPainter, f, ink, d, fr):
         """A Ø bubble spans the whole circle: from the far rim through
         the centre to the near rim, arrowheads at both, text in the
         middle. Endpoints come from centre + dir*r, so the span follows
-        the live circle resolve_dims just re-found."""
+        the live circle resolve_dims just re-found (M109: the whole span
+        is mapped through _m2p so a spun view carries its bubble with
+        it, while the text stays upright)."""
         cx, cy = d["a"]
         ux, uy = d.get("dir", (1.0, 0.0))
         r = float(d.get("r", math.dist(d["a"], d["b"])))
         if r < 1e-9:
             return
-        far = self.s2p((cx - ux * r) * sc + off[0],
-                       (cy - uy * r) * sc + off[1])
-        near = self.s2p((cx + ux * r) * sc + off[0],
-                        (cy + uy * r) * sc + off[1])
+        far = self.s2p(*self._m2p(fr, (cx - ux * r, cy - uy * r)))
+        near = self.s2p(*self._m2p(fr, (cx + ux * r, cy + uy * r)))
         p.setPen(ink)
         p.drawLine(far, near)
         v = near - far
@@ -618,19 +672,19 @@ class DrawingCanvas(QWidget):
         p.setFont(f)
         p.drawText(gap, Qt.AlignCenter, d["text"])
 
-    def _draw_radius(self, p: QPainter, f, ink, d, sc, off):
+    def _draw_radius(self, p: QPainter, f, ink, d, fr):
         """M103: an R leader runs from the arc's centre out to the rim,
         one arrowhead on the rim, text on the paper just past the tip.
         Endpoints ride centre + dir*r so the leader follows the live
-        arc resolve_dims re-found (a redrilled scallop moves alone)."""
+        arc resolve_dims re-found (a redrilled scallop moves alone).
+        M109 maps both through _m2p so a spun view carries its leader."""
         cx, cy = d["a"]
         ux, uy = d.get("dir", (1.0, 0.0))
         r = float(d.get("r", math.dist(d["a"], d["b"])))
         if r < 1e-9:
             return
-        centre = self.s2p(cx * sc + off[0], cy * sc + off[1])
-        rim = self.s2p((cx + ux * r) * sc + off[0],
-                       (cy + uy * r) * sc + off[1])
+        centre = self.s2p(*self._m2p(fr, (cx, cy)))
+        rim = self.s2p(*self._m2p(fr, (cx + ux * r, cy + uy * r)))
         p.setPen(ink)
         p.drawLine(centre, rim)
         v = rim - centre

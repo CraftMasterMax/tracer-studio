@@ -951,14 +951,38 @@ text dialog prefilled from the current block; blanks are stripped, an
 all-empty block is dropped, and the dict rides the document's undo stack
 and JSON save for free — no new serialisation.
 
+**M109 — rotate a view on the sheet (display-only spin).** ✓
+SHIPPED.  A draughtsman spins a view to stand a slanted part straight or
+set a section upright.  The danger in Tracer is that the bubbles must not
+change their minds — our dimensions are measured LIVE off the model
+(M94/M95), so baking rotation into the projection would move the very
+geometry the bubbles re-measure from and the numbers could drift.  So
+rotation is a PURE PRESENTATION transform: a page-space spin about the
+view's own centre, applied LAST on the way out (model -> canonical page
+-> rotated page) and UN-applied FIRST on the way back (a click is
+un-rotated into true model space before it reaches the circle/arc
+finder).  The layout core `place()` never learns about it — which is why
+every pre-M109 drawing test is byte-for-byte untouched — and `rot = 0` is
+the exact identity the sheet used before (the same "gate off, stay
+identical" discipline as M106's shader).  It lives entirely in the
+canvas: `placed()` tags each frame with `rot` + `ctr`, two helpers
+(`_m2p`/`_p2m`) compose and de-compose the spin, and every model->page
+paint site (visible chains, hidden ink, section hatch, the Ø/R bubbles,
+even the scale caption) routes through them.  Rotation is stored per view
+as `sheet["rot"]` and rides undo + the JSON save for free.  The verb is a
+**Rotate…** button (view picker + angle) that leaves the M100 double-click
+scale dialog alone; angles fold to (-180, 180] and 0 hands the view back
+to the layout assistant.  Proof: a front-view bubble reads the same 81.58
+upright and at +30 deg while the geometry visibly turns.  13 new tests;
+suite 1073 -> 1086.
+
 **Later candidates (researched, deferred):** the rest of backlog #2 — a
 drawing parts-list BOM table + balloons wired to it; multi-body phase 2c —
 per-body STEP compound (needs the C++ OCCT bridge to take a compound)
 + per-body opacity + cross-body feature sources; the fastener library's
 own tail (more threads/fine-pitch, more insert brands, a modelled external
-thread on a stud); then Draft, per-view rotation, sheet metal,
-assemblies/joints, and a section cutting-plane arrow on the drawing.
-Re-evaluate after M108.
+thread on a stud); then Draft, sheet metal, assemblies/joints, and a
+section cutting-plane arrow on the drawing.  Re-evaluate after M109.
 
 ## Oct 2026 research sweep — the landscape and the ranked backlog
 
