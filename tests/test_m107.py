@@ -71,6 +71,16 @@ def test_insert_sizes_are_the_small_common_ones():
         assert dia > float(s[1:])                        # insert body > screw
 
 
+def test_insert_drills_match_2026_source_sweep():
+    """fastener_tables_verify.md (2026-10-07): M5/M6 had been the
+    large-barrel 7.0/8.5 folklore that exceeded EVERY reachable modern
+    compact-series chart; corrected into the sourced band."""
+    assert F.INSERT["M3"] == 4.0     # ✓✓ two brands
+    assert F.INSERT["M4"] == 5.6     # ✓? within a print step of CNCK 5.7
+    assert F.INSERT["M5"] == 6.7     # was 7.0
+    assert F.INSERT["M6"] == 8.2     # was 8.5
+
+
 def test_hole_for_bundles_each_kind():
     cl = F.hole_for("M4", "clearance")
     assert cl["drill"] == pytest.approx(4.3) and cl["type"] == "simple"

@@ -13,13 +13,19 @@ Every table is plain, sourced data so it is trivially testable and
 auditable.  Thread pitch + tap drill are reused verbatim from
 ``thread.ISO_COARSE`` (the tap path already trusts those figures).
 
-Sources (nominal dimensions, mm):
-  * Clearance holes — ISO 273 (close / medium / coarse series).
-  * Tapped holes    — ISO 261 pitch, ISO 724 tap drill (via ISO_COARSE).
-  * Socket head cap screws (SHCS) — DIN 912 / ISO 4762 head Ø + height;
-    the counterbore is the head Ø opened up ~0.5 mm, depth = height +0.2.
-  * Heat-set inserts — brand-dependent; the values below are the common
-    recommended drill sizes (verify against your insert's datasheet).
+Sources (nominal dimensions, mm) — re-keyed by hand, never copied:
+  * Clearance holes — the canonical EN ISO 273 close/medium/coarse set.
+    NOT independently verified this file (no free ISO 273 reprint was
+    reachable 2026-10-07); supplier columns corroborate most cells but
+    are *recommendations*, so treat as [?] pending a checked copy.
+  * Tapped holes    — ISO 261 pitch (✓✓ verified), ISO 724 tap drill
+    (✓✓ verified vs four charts) via ISO_COARSE.
+  * Socket head cap screws (SHCS) — DIN 912 / ISO 4762 head Ø + height
+    (✓✓ verified 14/14, 2026-10-07); the counterbore is the head Ø opened
+    up ~0.5 mm, depth = head height +0.2 — a Tracer design margin, not a
+    standards figure.
+  * Heat-set inserts — brand-dependent; values re-swept 2026-10-07
+    against reachable datasheets (see the INSERT table notes).
 """
 from __future__ import annotations
 
@@ -53,12 +59,16 @@ SHCS_HEAD = {
 }
 
 # Common heat-set (brass) insert recommended drill Ø.  Brand-dependent —
-# treat as a starting point and check the datasheet.
+# treat as a starting point and check the datasheet.  M5/M6 corrected
+# 2026-10-07 after a source sweep: the old 7.0/8.5 were "large-barrel"
+# folklore and exceed every reachable modern compact-series chart
+# (CNC Kitchen 6.5/8.1, aggregators 6.0–6.8/8.2); 6.7/8.2 sit at the top
+# of that band so a standard insert still seats without a loose bore.
 INSERT = {
-    "M3": 4.0,
-    "M4": 5.6,
-    "M5": 7.0,
-    "M6": 8.5,
+    "M3": 4.0,      # ✓✓ two brands agree (CNC Kitchen, Accu)
+    "M4": 5.6,      # ✓? CNCK 5.7 — within one print step; series ambiguity
+    "M5": 6.7,      # was 7.0 — above every reachable chart
+    "M6": 8.2,      # was 8.5 — likewise large-barrel-only
 }
 
 # The kinds a preset can produce (drives the dialog's Fastener combo).
