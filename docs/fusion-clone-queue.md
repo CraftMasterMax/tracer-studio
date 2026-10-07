@@ -1378,7 +1378,14 @@ M125; items 1-11 below are history.*
     a Cosmetic mode drills only the tap-drill core, and the major-Ø
     decal ring rides the datum line buffer. Modeled groove stays the
     legacy default. Rung (b), section-triggered drawing callouts,
-    joins the drawings tail next.
+    joins the drawings tail next. HOLE NOTES SHIPPED (M129, rung b
+    wedge, suite 1389): the sheet carries a metadata-derived hole
+    table (grouped+counted, THRU, tap-drill column, cbore notes) and
+    per-hole centreline crosses + item bubbles in the bore-facing
+    view; default-ON layer with the sheet's hole_notes flag, paper-
+    only like the BOM. Rung (b) honest-now: notes ride the TABLE, no
+    section needed; a SECTION-triggered view of threaded holes joins
+    rung (a)'s mesh-cap upgrade in the drawings tail.
     Next in rank, both fully probed: browser
     polish (in-place rename + "(1)" suffix, tree↔canvas cross-
     highlight, isolate/show-all — ladder in `browser_conventions.md`),

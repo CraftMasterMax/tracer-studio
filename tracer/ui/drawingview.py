@@ -585,6 +585,7 @@ class DrawingCanvas(QWidget):
                            " \u00b7 ".join(bits))
         self._draw_dims(p, placed)
         self._draw_balloons(p, placed)               # M110 item bubbles
+        self._draw_hole_notes(p, placed)             # M129 table + marks
 
 
     def _block_meta(self) -> dict:
@@ -690,6 +691,69 @@ class DrawingCanvas(QWidget):
                 p.setBrush(Qt.NoBrush)
                 p.drawText(QRectF(c.x() - r, c.y() - r, 2 * r, 2 * r),
                            Qt.AlignCenter, str(b.get("item", "")))
+
+    def _draw_hole_notes(self, p: QPainter, placed: dict):
+        """M129: the hole story told from metadata — a counted table in
+        the sheet's free upper-left corner, a centreline cross and an
+        item bubble on every hole, in the view you look DOWN the bore
+        from.  Rows are HoleFeature fields, never mesh chords (a
+        24-gon under-reads a diameter), so the notes are as un-stale
+        as the BOM — and paper-only like it.  Opt-out is the sheet's
+        hole_notes flag; default ON: a holed part drawn without hole
+        notes is the surprise."""
+        if self.doc is None or not self.doc.drawings:
+            return
+        if not self.sheet().get("hole_notes", True):
+            return
+        rows = drawing.hole_rows(self.doc)
+        if not rows:
+            return
+        marks = drawing.hole_marks(self.doc)     # may be empty for
+        p.save()                                 # steeply tilted bores
+        f = p.font()
+        f.setPixelSize(max(8, int(5.0 * self._zoom)))
+        p.setFont(f)
+        rb = max(6.0, 3.4 * self._zoom)
+        for view, items in marks.items():
+            fr = placed.get(view)
+            if fr is None:
+                continue
+            for m in items:
+                a = self.s2p(*self._m2p(fr, (m["x"], m["y"])))
+                rp = m["r"] * fr["sc"] * self._zoom
+                L = rp + max(4.0, 1.2 * self._zoom)   # run out past
+                p.setPen(QPen(_SHEET, max(0.8, 0.25 * self._zoom),
+                              Qt.DashDotLine))         # the rim, as
+                p.drawLine(QPointF(a.x() - L, a.y()),  # centrelines do
+                           QPointF(a.x() + L, a.y()))
+                p.drawLine(QPointF(a.x(), a.y() - L),
+                           QPointF(a.x(), a.y() + L))
+                cx, cy = a.x() - 2 * rb, a.y() - 2 * rb
+                c = QPointF(cx, cy)                     # bubble up-LEFT:
+                p.setPen(QPen(_SHEET,                   # balloons own
+                              max(1.0, 0.35 * self._zoom)))
+                p.drawLine(QPointF(a.x() - rp * 0.707, # the up-right
+                                   a.y() - rp * 0.707),
+                           QPointF(cx + rb * 0.8, cy + rb * 0.8))
+                p.setBrush(_PAPER)
+                p.drawEllipse(c, rb, rb)
+                p.setBrush(Qt.NoBrush)
+                p.drawText(QRectF(c.x() - rb, c.y() - rb,
+                                  2 * rb, 2 * rb),
+                           Qt.AlignCenter, str(m["item"]))
+        t = drawing.hole_table(rows, page=self.page)
+        p.setPen(QPen(_BORDER, 1))
+        for (ax, ay), (bx, by) in t["lines"]:
+            p.drawLine(self.s2p(ax, ay), self.s2p(bx, by))
+        if t["overflow"]:
+            x0, y0, w, h = t["rect"]
+            t["cells"].append({"text": f"… {t['overflow']} more",
+                               "xa": x0, "xb": x0 + w,
+                               "y": y0 - 2.5, "size": 1.6,
+                               "align": "l"})
+        p.setPen(QPen(_SHEET))
+        self._paint_cells(p, t["cells"])
+        p.restore()
 
     def _draw_dims(self, p: QPainter, placed: dict):
         """Draughtsman bubbles: extension lines, arrowed dimension line

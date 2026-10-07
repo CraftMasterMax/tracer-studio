@@ -806,3 +806,130 @@ def parts_list_table(rows, block_rect, page: str = "A3",
     return {"rect": (x0, ybot, bw, h_used), "lines": lines,
             "cells": cells, "overflow": overflow,
             "reversed": False}
+
+
+# ---------------------------------------------------------------------------
+# M129 — holes speak on the drawing: table + marks, from metadata.
+#
+# Rows and bubbles derive straight from HoleFeature fields (M123 sizes,
+# M128 designations) — never measured off a mesh, because a 24-gon
+# under-reads a diameter. A hole is marked in the view you look INTO
+# the bore from (axis parallel to the view direction), anchored in
+# model millimetres like balloons so a dragged view carries its holes.
+
+
+HOLE_COLUMNS = (("item", 0.10, "c"), ("hole", 0.34, "l"),
+                ("qty", 0.12, "r"), ("depth", 0.22, "r"),
+                ("drill", 0.22, "r"))
+
+
+def _hole_groups(doc):
+    """(groups, per-feature item numbers) in first-appearance order.
+    Suppressed holes stay silent; identical (label, note, depth, drill)
+    holes group into one counted row — same thread, same depth, one
+    line. A plain hole's own Ø is its drill line ('' — no second
+    number to lie with)."""
+    from .document import HoleFeature
+    order: list = []
+    seen: dict = {}
+    items: list = []
+    for f in doc.features:
+        if not isinstance(f, HoleFeature) or f.suppressed:
+            continue
+        label = (f.designation or f"Ø {2 * f.radius:g}"
+                 if f.thread_pitch > 0 else f"Ø {2 * f.radius:g}")
+        if f.cb_radius > f.radius + 1e-9:
+            note = f"cbore Ø {2 * f.cb_radius:g}×{f.cb_depth:g}"
+        elif f.cs_radius > f.radius + 1e-9:
+            note = f"csink Ø {2 * f.cs_radius:g}×{f.cs_angle:g}°"
+        else:
+            note = ""
+        depth = "THRU" if f.through else f"{f.depth:g}"
+        drill = f"Ø {2 * f.radius:g}" if f.thread_pitch > 0 else ""
+        key = (label, note, depth, drill)
+        if key not in seen:
+            seen[key] = len(order)
+            order.append({"label": label, "note": note, "depth": depth,
+                          "drill": drill, "qty": 0})
+        order[seen[key]]["qty"] += 1
+        items.append((f, seen[key]))
+    rows = [{"item": i + 1,
+             "hole": g["label"] + (" " + g["note"] if g["note"] else ""),
+             "qty": g["qty"], "depth": g["depth"], "drill": g["drill"]}
+            for i, g in enumerate(order)]
+    return rows, [(f, gi + 1) for f, gi in items]
+
+
+def hole_rows(doc) -> list:
+    """Sheet rows: It. | Hole | Qty | Depth | Drill."""
+    return _hole_groups(doc)[0]
+
+
+def hole_marks(doc) -> dict:
+    """Per standard view: model-space centres to tag, keyed by view.
+    Threaded holes tag at the ISO major (the cosmetic reference
+    circle); plain holes at the drilled radius. Iso takes no marks —
+    a bore seen at an angle shows no true circle."""
+    _, items = _hole_groups(doc)
+    out: dict = {}
+    for f, item in items:
+        n = np.asarray(f.normal, float)
+        n = n / np.linalg.norm(n)
+        c = np.asarray(f.center, float)
+        if f.thread_pitch > 0:
+            from .thread import major
+            m = major(f.thread_size or "")
+            r = m / 2.0 if m > 0 else \
+                float(f.radius) + float(f.thread_pitch) / 2.0
+        else:
+            r = float(f.radius)
+        for view in ("top", "front", "right"):
+            d, x, y = _basis(view)
+            if abs(float(np.dot(n, d))) < 0.99:
+                continue                # across the sight: hidden
+                #                       # lines territory, no circle
+            out.setdefault(view, []).append(
+                {"item": item, "x": float(np.dot(c, x)),
+                 "y": float(np.dot(c, y)), "r": float(r)})
+    return out
+
+
+def hole_table(rows, page: str = "A3", margin: float = 10.0,
+               hh: float = 5.0, width: float | None = None) -> dict:
+    """The parts list's contract (rect/lines/cells, M108 painter) for
+    the hole table — but reading TOP-to-bottom from the sheet's upper
+    left, the corner the title block's BOM never claims. Overflow is
+    counted, never silent."""
+    W, H = PAGES.get(page, PAGES["A3"])
+    bw = float(width) if width else min(0.40 * W, 150.0)
+    x0 = margin
+    ytop = H - margin
+    n = max(0, int(((H - 2 * margin) * 0.5) // hh) - 1)
+    overflow = max(0, len(rows) - n)
+    shown = rows[:n]
+    h_used = (len(shown) + 1) * hh
+    ybot = ytop - h_used
+    xs = [x0]
+    for _, frac, _ in HOLE_COLUMNS:
+        xs.append(xs[-1] + bw * frac)
+    lines = [((x0, ybot + i * hh), (x0 + bw, ybot + i * hh))
+             for i in range(len(shown) + 2)]
+    lines += [((xa, ybot), (xa, ytop)) for xa in xs]
+    cells = []
+
+    def put(col_i, text, y, bold=False):
+        key, frac, align = HOLE_COLUMNS[col_i]
+        cells.append({"text": str(text), "xa": xs[col_i],
+                      "xb": xs[col_i + 1], "y": y,
+                      "size": hh * (0.52 if bold else 0.62),
+                      "align": align, "col": key, "bold": bool(bold)})
+
+    for ci, (key, _f, _a) in enumerate(HOLE_COLUMNS):
+        put(ci, {"item": "It.", "hole": "Hole", "qty": "Qty",
+                 "depth": "Depth", "drill": "Drill"}[key],
+            ytop - 0.5 * hh, bold=True)
+    for i, r in enumerate(shown):
+        for ci, (key, _f, _a) in enumerate(HOLE_COLUMNS):
+            put(ci, r.get(key, ""), ytop - (i + 1.5) * hh)
+    return {"rect": (x0, ybot, bw, h_used), "lines": lines,
+            "cells": cells, "overflow": overflow, "reversed": False}

@@ -1250,6 +1250,16 @@ class MainWindow(QMainWindow):
         bomb.toggled.connect(self._toggle_bom)
         bl.addWidget(bomb)
         self._bom_btn = bomb
+        hnb = QPushButton("Hole notes")                # M129 hole table
+        hnb.setProperty("tb", True)
+        hnb.setCheckable(True)
+        hnb.setToolTip("Tabulate every Hole feature and tag it on the "
+                       "sheet — It./Hole/Qty/Depth/Drill from feature "
+                       "metadata (never mesh chords), a centreline cross "
+                       "+ item bubble down each bore. On by default")
+        hnb.toggled.connect(self._toggle_hole_notes)
+        bl.addWidget(hnb)
+        self._hole_btn = hnb
         fitb = QPushButton("Fit\u2026")                # M114 callout
         fitb.setProperty("tb", True)
         fitb.setCheckable(True)
@@ -1323,6 +1333,8 @@ class MainWindow(QMainWindow):
                                   "dims": []})            # M94 bubbles
         self.doc.dirty = True
         self.drawing.set_document(self.doc)
+        self._sync_bom_btn()                            # new sheet state
+        self._sync_hole_btn()
         self._show_page(self._drawing_page)
         self.recompute()
         self.status.showMessage(
@@ -1517,6 +1529,31 @@ class MainWindow(QMainWindow):
         btn.setChecked(on)
         btn.blockSignals(False)
 
+    def _sync_hole_btn(self):
+        """Hole notes ride the same rails as the parts list, with one
+        difference the painter owns: the flag is default-ON, so an
+        untouched sheet shows its holes and only an explicit False (or
+        no sheet at all) dims the button."""
+        btn = getattr(self, "_hole_btn", None)
+        if btn is None:
+            return
+        on = False
+        if self.doc is not None and self.doc.drawings:
+            on = bool(self.doc.drawings[-1].get("hole_notes", True))
+        btn.blockSignals(True)
+        btn.setChecked(on)
+        btn.blockSignals(False)
+
+    def _toggle_hole_notes(self, on: bool):
+        """Hole table on/off for THIS sheet (M129): like the BOM, the
+        rows derive — the sheet only carries the decision to show."""
+        if self.doc is None or not self.doc.drawings:
+            return
+        self._capture()
+        self.doc.drawings[-1]["hole_notes"] = bool(on)
+        self.doc.dirty = True
+        self.drawing.update()
+
     def _toggle_bom(self, on: bool):
         """Parts list on/off for THIS sheet (M110): the rows themselves
         stay derived — the sheet only carries the decision to show."""
@@ -1643,6 +1680,8 @@ class MainWindow(QMainWindow):
         if self.doc is None or not (0 <= idx < len(self.doc.drawings)):
             return
         self.drawing.set_document(self.doc, idx=idx)
+        self._sync_bom_btn()                            # per-sheet flags
+        self._sync_hole_btn()
         self._show_page(self._drawing_page)
 
     def export_drawing(self, path=None, ext=".png"):
@@ -3991,6 +4030,7 @@ class MainWindow(QMainWindow):
             self.drawing.set_document(self.doc,
                                       idx=None if idx < 0 else idx)
             self._sync_bom_btn()                      # M110: paper state
+            self._sync_hole_btn()                     # M129: notes state
         self._update_status()
         self._apply_appearance()
         self._apply_units()

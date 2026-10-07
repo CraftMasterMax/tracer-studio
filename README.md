@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M128**
+**Status: M129**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -108,7 +108,15 @@ independent project with no Autodesk assets or affiliation.)
   only its tap-drill core — the major-Ø decal ring in the viewport
   replaces the helix the standards tooling itself discourages
   modeling; the M49 groove stays the legacy default, so no file on
-  disk silently changes shape**
+  disk silently changes shape**,
+  **hole notes on drawings (M129): the sheet tabulates every Hole —
+  It./Hole/Qty/Depth/Drill, identical tapped holes counted as one row,
+  through-holes reading THRU, counterbores noted — and marks each bore
+  with a centreline cross + item bubble in the view you look down its
+  axis from; every number derives from feature metadata (M123 sizes,
+  M128 designations), never a mesh chord, so the table can no more go
+  stale than the BOM — and like the BOM it is paper-only, never in
+  the DXF**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -289,7 +297,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1379 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1389 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
