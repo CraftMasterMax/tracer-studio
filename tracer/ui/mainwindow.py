@@ -672,6 +672,9 @@ class MainWindow(QMainWindow):
         m_tools.addAction("Mass properties…",
                           lambda checked=False:
                           self.action_mass_properties())
+        m_tools.addAction("Interference — where bodies clash…",
+                          lambda checked=False:
+                          self.action_interference())
         m_tools.addAction("Show Extents…",
                           lambda checked=False:
                           self.action_show_extents())
@@ -2577,6 +2580,60 @@ class MainWindow(QMainWindow):
         tm = (printcheck.drop_to_bed(self.doc.result) if drop
               else self.doc.result.to_trimesh())
         tm.export(str(path))
+
+    def action_interference(self):
+        """Tools ▸ Interference (M122, assembly phase 1): where do my
+        bodies hurt?  Every clashing PAIR is reported with its exact
+        overlap volume — and each clash can become a BODY of its own,
+        live in the timeline.  Fusion's Interference command shows the
+        clash then forgets it; ours re-solves on every recompute, so
+        move a part and the red map of the new collision follows."""
+        if self.doc is None or len(self.doc.body_list()) < 2:
+            QMessageBox.information(
+                self, "Interference",
+                "Two bodies minimum — this audit is about where parts "
+                "CLASH. Model a pair (Body ▸ New Body) first.")
+            return
+        from ..core import interference
+        hits = interference.pairs(self.doc.body_solids())
+        if not hits:
+            QMessageBox.information(
+                self, "Interference",
+                "Nothing clashes — no two bodies share a volume. "
+                "(Touching faces do not count.)")
+            return
+        lines = [f"{h['a']}  ∩  {h['b']}   —   {h['volume']:,.1f} mm³"
+                 for h in hits]
+        v = cmddialog.ask(self, "Interference", [
+            dict(key="report", kind="multiline", label="Clashing pairs",
+                 default="\n".join(lines)),
+            dict(key="make", kind="check",
+                 label="Create one interference body per clash",
+                 default=True),
+        ])
+        if v is None:
+            return
+        if not v["make"]:
+            self.status.showMessage(
+                f"{len(hits)} clashing pair(s) — largest "
+                f"{hits[0]['volume']:,.1f} mm³", 5000)
+            return
+        from ..core.appearance import appearance
+        self._capture()
+        made = []
+        for h in hits:
+            b, _f = self.doc.add_interference(h["a"], h["b"])
+            self.doc.set_body_appearance(b["name"],
+                                         appearance("Anodized red", 1.0))
+            made.append(b["name"])
+        self.recompute()
+        self.viewport.refresh()
+        logservice.info("Interference: " + "; ".join(
+            f"{h['a']}∩{h['b']} {h['volume']:.2f} mm³" for h in hits),
+            source="interference")
+        self.status.showMessage(
+            f"{len(made)} interference bod{'y' if len(made) == 1 else 'ies'}"
+            f" created — live: move a body and the clash re-solves", 6000)
 
     def action_mass_properties(self):
         """Fusion's Inspect ▸ Mass Properties (M71): volume, surface

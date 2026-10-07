@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M121**
+**Status: M122**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -54,7 +54,13 @@ independent project with no Autodesk assets or affiliation.)
   pure profile+boolean pairs where the join grows on one body and its
   clearance is cut from the mate — printed pairs assemble with ZERO
   interference (the suite measures a∩b and pins it), across a shared
-  interface-plane grammar of side 1 / side 2 / flip / δ**
+  interface-plane grammar of side 1 / side 2 / flip / δ**,
+  **interference solids (M122, assembly phase 1): Tools ▸ Interference
+  finds every clashing pair with its exact overlap volume AND can turn
+  each clash into a live BODY — a red solid that RE-SOLVES when you move
+  a part (kinematic placement included), the collision map Fusion's
+  throwaway Interference command can't leave you behind; touching faces
+  correctly interfere zero**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -235,7 +241,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1278 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1287 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

@@ -641,6 +641,23 @@ class InterlockFeature(Feature):
                                 float(self.plane_z)))
 
 
+@dataclass
+class InterferenceFeature(Feature):
+    """M122 (assembly phase 1) — a BODY made of a clash: the exact
+    intersection of two other bodies.  Fusion reports interference and
+    discards the geometry; here the clash is a first-class stream, so
+    it recomputes while the parts move (kinematic placement included)
+    and prints as a red 3D "where do I hurt" map.  Both source bodies
+    must build before this feature in the stream (add_interference
+    guarantees it).  An empty clash is an EMPTY body, never an
+    error — the part audit lives in core/interference.pairs()."""
+    body_a: str = ""
+    body_b: str = ""
+
+    def build(self) -> Solid:                 # recompute special-cases it
+        raise RuntimeError("InterferenceFeature builds from its sources")
+
+
 class Document:
     # Origin-plane normals with in-plane bases chosen so u × v = n:
     # a sketch drawn on such a plane extrudes along its own normal.
@@ -954,6 +971,26 @@ class Document:
             dims={"radius": radius, "height": height},
             placement=(center[0], center[1], z)))
 
+    def add_interference(self, body_a: str, body_b: str,
+                         name: str | None = None):
+        """M122 (assembly phase 1): make the clash between two bodies a
+        BODY of its own — the interference solid, live in the timeline
+        (this is what Fusion's Interference command cannot do).  Both
+        streams must already exist.  Returns (body dict, feature)."""
+        self._body(body_a)                    # honest KeyError early
+        self._body(body_b)
+        label = name or f"Interference {body_a} ∩ {body_b}"
+        taken = {b["name"] for b in self.body_list()}
+        k = 2
+        final = label
+        while final in taken:
+            final = f"{label} {k}"
+            k += 1
+        b = self.add_body(final)
+        f = self.add(InterferenceFeature(name=final, body=final,
+                                         body_a=body_a, body_b=body_b))
+        return b, f
+
     _INTERLOCK_NAMES = {                   # M121, per role
         "boss": {"carry": "Boss post", "mate": "Boss clearance"},
         "snapfit": {"carry": "Snap-fit hook", "mate": "Snap-fit window"},
@@ -1128,6 +1165,20 @@ class Document:
                 shift = tuple(v * f.offset for v in n)
                 solid = src.translated((-shift[0], -shift[1], -shift[2])) \
                             .mirror(n).translated(shift)
+            elif isinstance(f, InterferenceFeature):
+                # a clash AS A BODY: intersect two source streams exactly
+                # as their users see them — placement state included.
+                sides = []
+                for want in (f.body_a, f.body_b):
+                    s = buckets.get(want)
+                    if s is None:
+                        raise ValueError(
+                            f"{f.name!r}: source body {want!r} has "
+                            "nothing to interfere with yet")
+                    b = next((x for x in self.bodies
+                              if x["name"] == want), None)
+                    sides.append(self._apply_placement(b, s))
+                solid = sides[0].intersect(sides[1])
             elif isinstance(f, (BodyFilletFeature, ShellFeature,
                                 SplitFeature, MoveFeature, RotateFeature,
                                 CombineFeature)):
@@ -1325,6 +1376,8 @@ class Document:
                          center=list(map(float, f.center)),
                          plane_z=float(f.plane_z), flip=bool(f.flip),
                          params={k: float(v) for k, v in f.params.items()})
+            elif isinstance(f, InterferenceFeature):
+                d.update(body_a=str(f.body_a), body_b=str(f.body_b))
             d["bindings"] = dict(f.bindings)     # every lever, one line
             return d
         return {"format": "tracer/document", "version": 2,
@@ -1497,6 +1550,10 @@ class Document:
                     flip=bool(fd.get("flip", False)),
                     params={k: float(v) for k, v in fd["params"].items()},
                     **base))
+            elif t == "InterferenceFeature":
+                doc.features.append(InterferenceFeature(
+                    name=fd["name"], body_a=str(fd["body_a"]),
+                    body_b=str(fd["body_b"]), **base))
             elif t == "BodyFilletFeature":
                 doc.features.append(BodyFilletFeature(
                     name=fd["name"], radius=float(fd["radius"]),
