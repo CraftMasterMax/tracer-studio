@@ -1076,11 +1076,35 @@ class MainWindow(QMainWindow):
                         "every dimension still measures true millimetres)")
         rotb.clicked.connect(self.action_rotate_view)
         bl.addWidget(rotb)
+        balb = QPushButton("Balloon")                  # M110 item pin
+        balb.setProperty("tb", True)
+        balb.setCheckable(True)
+        balb.setToolTip("Click a view to pin the next item balloon — "
+                        "numbered against the parts list, travelling "
+                        "with the body through moves and spins")
+        balb.toggled.connect(
+            lambda on: (self.drawing.set_balloon_mode(on),
+                        on and dimb.setChecked(False)))
+        bl.addWidget(balb)
+        self._balloon_btn = balb
+        bomb = QPushButton("Parts list")               # M110 BOM
+        bomb.setProperty("tb", True)
+        bomb.setCheckable(True)
+        bomb.setToolTip("Dock the ISO parts list on the title block: "
+                        "item, description, qty, material, mass — "
+                        "derived live from the model (paper only)")
+        bomb.toggled.connect(self._toggle_bom)
+        bl.addWidget(bomb)
+        self._bom_btn = bomb
+        dimb.toggled.connect(                          # M110: one tool
+            lambda on: on and balb.setChecked(False))
         bl.addStretch(1)
         lay.addWidget(bar)
         from .drawingview import DrawingCanvas
         self.drawing = DrawingCanvas()
         self.drawing.dim_added.connect(self._add_dim)     # M94 bubbles
+        self.drawing.balloon_added.connect(               # M110 pins
+            self._add_balloon)
         self.drawing.view_drag_begin.connect(            # M96 undo capture
             self._capture)
         self.drawing.view_scale_requested.connect(       # M100 scales
@@ -1280,6 +1304,43 @@ class MainWindow(QMainWindow):
         self.drawing.update()
         shown = "reset to 0\u00b0" if abs(deg) < 1e-6 else f"{deg:g}\u00b0"
         self.status.showMessage(f"{view} view rotated {shown}", 4000)
+
+    def _sync_bom_btn(self):
+        """Mirror the visible sheet's parts-list flag onto the button
+        (undo, redo and sheet swaps all route through _adopt_doc)."""
+        btn = getattr(self, "_bom_btn", None)
+        if btn is None:
+            return
+        on = False
+        if self.doc is not None and self.doc.drawings:
+            on = bool(self.doc.drawings[-1].get("bom"))
+        btn.blockSignals(True)
+        btn.setChecked(on)
+        btn.blockSignals(False)
+
+    def _toggle_bom(self, on: bool):
+        """Parts list on/off for THIS sheet (M110): the rows themselves
+        stay derived — the sheet only carries the decision to show."""
+        if self.doc is None or not self.doc.drawings:
+            return
+        self._capture()
+        self.doc.drawings[-1]["bom"] = bool(on)
+        self.doc.dirty = True
+        self.drawing.update()
+
+    def _add_balloon(self, view: str, pt: tuple, item: int):
+        """A balloon pin (M110): stored in MODEL millimetres per view —
+        the same truth the bubbles measure from, so a rotated or
+        dragged view carries its balloons and the numbers still point
+        at the part they were pinned to."""
+        if self.doc is None or not self.doc.drawings:
+            return
+        self._capture()
+        g = self.doc.drawings[-1]
+        g.setdefault("balloons", {}).setdefault(view, []).append(
+            {"item": int(item), "x": float(pt[0]), "y": float(pt[1])})
+        self.doc.dirty = True
+        self.drawing.update()
 
     def _add_dim(self, view: str, a: tuple, b: tuple, opts: dict = None):
         """A finished bubble (M94/M95): undo-captured, stored in MODEL
@@ -3282,6 +3343,7 @@ class MainWindow(QMainWindow):
             idx = self.drawing.sheet_idx              # keep the same sheet
             self.drawing.set_document(self.doc,
                                       idx=None if idx < 0 else idx)
+            self._sync_bom_btn()                      # M110: paper state
         self._update_status()
         self._apply_appearance()
         self._apply_units()

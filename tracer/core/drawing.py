@@ -697,3 +697,112 @@ def layout(views: dict, page: str = "A3", margin: float = 10.0) -> dict:
     """Page-coordinate chains per view (the draughting sheet)."""
     return {name: p["chains"] for name, p in
             place(views, page, margin).items()}
+
+
+# ---------------------------------------------------------------------------
+# M110 — parts list (BOM) and balloons, per ISO 7573 / ISO 6433.
+
+
+def _stem(name: str) -> str:
+    """'Bracket 2' → 'Bracket' — the auto-suffix our body naming adds.
+    Two bodies sharing a stem AND identical volume are one part twice."""
+    out = name.rstrip()
+    i = len(out)
+    while i and out[i - 1].isdigit():
+        i -= 1
+    if i < len(out) and i and out[i - 1] in " .-_":
+        return out[:i].rstrip(" .-_")
+    return name
+
+
+def parts_list(bodies, solids, mass_unit: str = "g") -> list:
+    """Rows for the sheet's parts list (ISO 7573 columns, trimmed to
+    what a mesh document truly knows: item, description, qty, material,
+    mass).  Hidden bodies stay off the list; a body whose solid is
+    unknown still appears — with mass '—' — because the list must never
+    silently drop a part.  Masses multiply by qty (row mass, not unit
+    mass), the convention downstream spreadsheets expect."""
+    from . import materials
+    rows, order = {}, []
+    for b in bodies or []:
+        if not b.get("visible", True):
+            continue
+        name = b.get("name", "")
+        s = solids.get(name) if solids else None
+        vol = round(float(s.volume), 6) if s is not None else None
+        mat = b.get("material") or ""
+        key = (_stem(name), vol, mat)
+        if key in rows:
+            rows[key]["qty"] += 1
+            continue
+        g = materials.mass_g(vol, mat or None) \
+            if vol is not None else None
+        order.append(key)
+        rows[key] = {"name": name, "stem": _stem(name), "qty": 1,
+                     "material": mat or "—", "mass_g": g}
+    out = []
+    for i, key in enumerate(order, start=1):
+        r = rows[key]
+        q = r["qty"]
+        g = r["mass_g"]
+        out.append({"item": i,
+                    "description": r["stem"] if q > 1 else r["name"],
+                    "qty": q, "material": r["material"],
+                    "mass": materials.mass_str(
+                        None if g is None else g * q, mass_unit)})
+    return out
+
+
+BOM_COLUMNS = (("item", 0.12, "c"), ("description", 0.46, "l"),
+               ("qty", 0.10, "r"), ("material", 0.18, "l"),
+               ("mass", 0.14, "r"))
+
+
+def parts_list_table(rows, block_rect, page: str = "A3",
+                     margin: float = 10.0, hh: float = 5.0) -> dict:
+    """Resolve parts-list rows into sheet-mm geometry, ready for the
+    same cell-painter the title block uses (M108 contract: rect, lines,
+    cells).  The table docks against the title block's top edge — ISO
+    7573: when the list sits ON the drawing it reads bottom-to-top with
+    the heading adjacent to the title block — sharing its 180 mm width
+    so the sheet's right edge stays one clean line.  Rows that no
+    longer fit are counted in ``overflow`` (the painter adds a note);
+    the list never silently truncates."""
+    W, H = PAGES.get(page, PAGES["A3"])
+    bx, by, bw, bh = block_rect
+    x0, ybot = bx, by + bh
+    room = (H - margin) - ybot
+    n = int(room // hh)
+    overflow = max(0, len(rows) - n)
+    shown = rows[:n]
+    h_used = (len(shown) + 1) * hh                     # + heading row
+    xs = [x0]
+    for _, frac, _ in BOM_COLUMNS:
+        xs.append(xs[-1] + bw * frac)
+    lines = []
+    for i in range(len(shown) + 2):                    # horizontals
+        y = ybot + i * hh
+        lines.append(((x0, y), (x0 + bw, y)))
+    for xa in xs:                                      # verticals
+        lines.append(((xa, ybot), (xa, ybot + h_used)))
+    cells = []
+
+    def put(col_i, text, y, bold=False):
+        key, frac, align = BOM_COLUMNS[col_i]
+        cells.append({"text": str(text), "xa": xs[col_i], "xb": xs[col_i + 1],
+                      "y": y, "size": hh * (0.52 if bold else 0.62),
+                      "align": align, "col": key,
+                      "bold": bool(bold)})
+
+    yh = ybot + (len(shown) + 0.5) * hh                # heading centre
+    for ci, (key, _f, _a) in enumerate(BOM_COLUMNS):
+        put(ci, {"item": "It.", "description": "Description",
+                 "qty": "Qty", "material": "Material",
+                 "mass": "Mass"}[key], yh, bold=True)
+    for i, r in enumerate(shown):                      # bottom-to-top
+        y = ybot + (i + 0.5) * hh
+        for ci, (key, _f, _a) in enumerate(BOM_COLUMNS):
+            put(ci, r.get(key, ""), y)
+    return {"rect": (x0, ybot, bw, h_used), "lines": lines,
+            "cells": cells, "overflow": overflow,
+            "reversed": False}

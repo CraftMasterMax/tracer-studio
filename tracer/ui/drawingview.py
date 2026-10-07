@@ -29,6 +29,7 @@ def scale_label(factor: float) -> str:
 
 class DrawingCanvas(QWidget):
     dim_added = Signal(str, tuple, tuple, dict)  # view, a, b, opts (M94/95)
+    balloon_added = Signal(str, tuple, int)      # view, model xy, item (M110)
     view_drag_begin = Signal()                   # M96: undo capture hook
     view_scale_requested = Signal(str)           # M100: Scale dialog ask
 
@@ -42,6 +43,7 @@ class DrawingCanvas(QWidget):
         self._drag = None
         self._dim_mode = False                 # M94: bubble tool armed?
         self._dim_first = None                 # first endpoint (view, xy)
+        self._balloon_mode = False             # M110: balloon tool armed?
         self._view_drag = None                 # M96: (view, start, base)
         self.setMinimumSize(320, 240)
         self.setMouseTracking(True)
@@ -223,6 +225,18 @@ class DrawingCanvas(QWidget):
     def set_dim_mode(self, on: bool):
         self._dim_mode = bool(on)
         self._dim_first = None
+        if on:
+            self._balloon_mode = False        # M110: one tool at a time
+        self.update()
+
+    def set_balloon_mode(self, on: bool):
+        """M110: arm the balloon click — one click on a view pins the
+        next item number there, in MODEL millimetres (the bubble
+        travels with the body and survives a view spin, like a dim)."""
+        self._balloon_mode = bool(on)
+        if on:
+            self._dim_mode = False
+            self._dim_first = None
         self.update()
 
     def _view_at(self, page_pt, placed, slack=3.0):
@@ -438,44 +452,7 @@ class DrawingCanvas(QWidget):
         p.drawRect(sheet)
         p.setBrush(Qt.NoBrush)
         self._paint_block(p)                                 # M108 title block
-
-
-    def _block_meta(self) -> dict:
-        """Derived title-block strings the canvas (not the sheet) knows:
-        fitted print scale and sheet position within the drawing set."""
-        n = max(1, len(self.doc.drawings)) if self.doc else 1
-        sc = max(1, round(1 / self.page_scale())) if self.views() else 1
-        return {"scale": f"1:{sc}", "sheet": f"{self.sheet_idx + 1} / {n}"}
-
-    def _paint_block(self, p: QPainter):
-        """Draw the ISO title block bottom-right from the pure resolver.
-        It's sheet furniture, not view geometry: it paints here (and thus
-        into the PNG) but never enters the DXF line stream — and it saves /
-        restores the painter so its pen + font can't leak into the views,
-        bubbles and section hatch painted after it."""
-        p.save()
-        tb = drawing.title_block(self.sheet(), meta=self._block_meta(),
-                                 page=self.page)
-        p.setPen(QPen(QColor(70, 74, 80), 1))
-        for (ax, ay), (bx, by) in tb["lines"]:
-            p.drawLine(self.s2p(ax, ay), self.s2p(bx, by))
-        p.setPen(QPen(QColor(38, 40, 44)))
-        for c in tb["cells"]:
-            if not c["text"]:
-                continue
-            top = self.s2p(c["xa"], c["y"] + c["size"])
-            bot = self.s2p(c["xb"], c["y"] - c["size"])
-            box = QRectF(min(top.x(), bot.x()), min(top.y(), bot.y()),
-                         abs(bot.x() - top.x()), abs(bot.y() - top.y()))
-            f = p.font()
-            f.setPixelSize(max(5, int(c["size"] * self._zoom)))
-            p.setFont(f)
-            al = {"l": Qt.AlignLeft, "c": Qt.AlignHCenter,
-                  "r": Qt.AlignRight}[c["align"]]
-            p.drawText(box.adjusted(2, 0, -2, 0), al | Qt.AlignVCenter,
-                       c["text"])
-        p.restore()
-
+        self._paint_bom(p)                                   # M110 parts list
         # views + section hatch + hidden ink + bubbles (one pass)
         views = self.views()
         placed = self.placed(views)
@@ -535,6 +512,112 @@ class DrawingCanvas(QWidget):
                            Qt.AlignHCenter | Qt.AlignTop,
                            " \u00b7 ".join(bits))
         self._draw_dims(p, placed)
+        self._draw_balloons(p, placed)               # M110 item bubbles
+
+
+    def _block_meta(self) -> dict:
+        """Derived title-block strings the canvas (not the sheet) knows:
+        fitted print scale and sheet position within the drawing set."""
+        n = max(1, len(self.doc.drawings)) if self.doc else 1
+        sc = max(1, round(1 / self.page_scale())) if self.views() else 1
+        return {"scale": f"1:{sc}", "sheet": f"{self.sheet_idx + 1} / {n}"}
+
+    def _paint_block(self, p: QPainter):
+        """Draw the ISO title block bottom-right from the pure resolver.
+        It's sheet furniture, not view geometry: it paints here (and thus
+        into the PNG) but never enters the DXF line stream — and it saves /
+        restores the painter so its pen + font can't leak into the views,
+        bubbles and section hatch painted after it."""
+        p.save()
+        tb = drawing.title_block(self.sheet(), meta=self._block_meta(),
+                                 page=self.page)
+        p.setPen(QPen(QColor(70, 74, 80), 1))
+        for (ax, ay), (bx, by) in tb["lines"]:
+            p.drawLine(self.s2p(ax, ay), self.s2p(bx, by))
+        p.setPen(QPen(QColor(38, 40, 44)))
+        self._paint_cells(p, tb["cells"])
+        p.restore()
+
+    def _paint_cells(self, p: QPainter, cells):
+        """Paint resolver cells inside their column boxes (shared by the
+        title block, M108, and the parts list, M110): text is clipped to
+        its own box so a long description can never bleed across a
+        divider, and the bold flag marks a heading row."""
+        for c in cells:
+            if not c["text"]:
+                continue
+            top = self.s2p(c["xa"], c["y"] + c["size"])
+            bot = self.s2p(c["xb"], c["y"] - c["size"])
+            box = QRectF(min(top.x(), bot.x()), min(top.y(), bot.y()),
+                         abs(bot.x() - top.x()), abs(bot.y() - top.y()))
+            f = p.font()
+            f.setPixelSize(max(5, int(c["size"] * self._zoom)))
+            f.setBold(bool(c.get("bold")))
+            p.setFont(f)
+            al = {"l": Qt.AlignLeft, "c": Qt.AlignHCenter,
+                  "r": Qt.AlignRight}[c["align"]]
+            p.drawText(box.adjusted(2, 0, -2, 0), al | Qt.AlignVCenter,
+                       c["text"])
+
+    def _paint_bom(self, p: QPainter):
+        """The parts list (M110, ISO 7573): rows are DERIVED from the
+        document at paint time — bodies, volumes, materials — so the
+        list can no more go stale than the title block's scale. Docks
+        on the block's top edge; paper-only, like the block: the DXF
+        line stream never sees it."""
+        if self.doc is None or not self.doc.drawings:
+            return
+        if not self.sheet().get("bom"):
+            return
+        p.save()
+        rows = drawing.parts_list(self.doc.body_list(),
+                                  self.doc.body_solids())
+        tb = drawing.title_block(self.sheet(), meta=self._block_meta(),
+                                 page=self.page)
+        t = drawing.parts_list_table(rows, tb["rect"], page=self.page)
+        p.setPen(QPen(QColor(70, 74, 80), 1))
+        for (ax, ay), (bx, by) in t["lines"]:
+            p.drawLine(self.s2p(ax, ay), self.s2p(bx, by))
+        if t["overflow"]:
+            x0, y0, w, h = t["rect"]
+            t["cells"].append({"text": f"… {t['overflow']} more",
+                               "xa": x0, "xb": x0 + w,
+                               "y": y0 + h + 2.5, "size": 1.6,
+                               "align": "l"})
+        p.setPen(QPen(QColor(38, 40, 44)))
+        self._paint_cells(p, t["cells"])
+        p.restore()
+
+    def _draw_balloons(self, p: QPainter, placed: dict):
+        """ISO 6433 item references (M110): a leader dot on the part,
+        a circle, the item number — anchored in MODEL millimetres, so
+        a spun or dragged view carries its balloons like dimensions
+        do. Numbers speak in sheet px, staying upright and legible."""
+        g = self.sheet()
+        groups = g.get("balloons") or {}
+        if not groups:
+            return
+        f = p.font()
+        f.setPixelSize(max(8, int(5.0 * self._zoom)))
+        p.setFont(f)
+        r = max(6.0, 3.4 * self._zoom)
+        for view, items in groups.items():
+            fr = placed.get(view)
+            if fr is None:
+                continue
+            for b in items:
+                ax, ay = self._m2p(fr, (b["x"], b["y"]))
+                a = self.s2p(ax, ay)
+                cx, cy = a.x() + 2 * r, a.y() - 2 * r
+                c = QPointF(cx, cy)
+                p.setPen(QPen(QColor(38, 40, 44),
+                              max(1.0, 0.35 * self._zoom)))
+                p.drawLine(a, QPointF(cx - r * 0.8, cy + r * 0.8))
+                p.setBrush(QColor("#f5f5f2"))
+                p.drawEllipse(c, r, r)
+                p.setBrush(Qt.NoBrush)
+                p.drawText(QRectF(c.x() - r, c.y() - r, 2 * r, 2 * r),
+                           Qt.AlignCenter, str(b.get("item", "")))
 
     def _draw_dims(self, p: QPainter, placed: dict):
         """Draughtsman bubbles: extension lines, arrowed dimension line
@@ -732,6 +815,9 @@ class DrawingCanvas(QWidget):
         self.update()
 
     def mousePressEvent(self, ev):
+        if self._balloon_mode and ev.button() == Qt.LeftButton:
+            self._balloon_click(ev)          # M110: pin, don't pan
+            return
         if self._dim_mode and ev.button() == Qt.LeftButton:
             self._dim_click(ev)          # M94: bubbles, not panning
             return
@@ -788,6 +874,29 @@ class DrawingCanvas(QWidget):
         view = self._view_at(self.p2s(ev.position()), placed, slack=0.0)
         if view is not None:
             self.view_scale_requested.emit(view)
+
+    def _balloon_click(self, ev):
+        """One click, one balloon (M110): the anchor is stored in MODEL
+        millimetres like a dimension, so spins and drags carry it; the
+        item number is the next unused one across the sheet — balloons
+        count parts, and the parts list already ordered them."""
+        placed = self.placed()
+        if not placed:
+            return
+        sheet = self.p2s(ev.position())
+        view = self._view_at(sheet, placed)
+        if view is None:
+            return
+        raw = self.page_to_model(view, sheet)
+        self.balloon_added.emit(view, (float(raw[0]), float(raw[1])),
+                                self._next_balloon_item())
+        self.update()
+
+    def _next_balloon_item(self) -> int:
+        items = [b.get("item", 0)
+                 for group in (self.sheet().get("balloons") or {}).values()
+                 for b in group]
+        return max(items, default=0) + 1
 
     def _scale_dialog(self, cur):
         """Fusion's scale picker: Fit plus the standard ratios. Returns
