@@ -243,3 +243,153 @@ def test_file_round_trip_bytes_and_built_flat():
     assert st["reliefs"] == [dict(bend=0, gap=T, depth=RI + T)]
     ba_t = math.radians(90.0) * (RI + 0.5 * T)
     assert st["flat"]["flat_length"] == (60.0 + ba_t) + 40.0
+
+
+# ---- G9/G10: the dialogs and the rails (UI edge, guard-first) -----
+
+@pytest.fixture(scope="module")
+def qapp():
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    yield app
+
+
+@pytest.fixture
+def win(qapp):
+    from tracer.ui.renderer import SceneRenderer
+    from tracer.ui.mainwindow import MainWindow
+    try:
+        r = SceneRenderer()
+    except Exception as e:
+        pytest.skip(f"no headless GL available: {e}")
+    w = MainWindow(renderer=r)
+    w.resize(1200, 800)
+    w.show()
+    qapp.processEvents()
+    w.new_document()
+    qapp.processEvents()
+    yield w
+    w._unsaved = False
+    w.close()
+    qapp.processEvents()
+
+
+def _answers(monkeypatch, calls):
+    """cmddialog.ask becomes a recorder: every field answers with
+    its own default (a combo opens on its first choice, like the
+    real dialog); every question answers Yes. Which dialogs OPENED
+    is law: the guard test asserts a non-sheet never reaches one."""
+    from PySide6.QtWidgets import QMessageBox
+    from tracer.ui import cmddialog
+
+    def fake_ask(parent, title, fields, remember_key=None):
+        calls.append(title)
+        v = {}
+        for f in fields:
+            if "default" in f:
+                v[f["key"]] = f["default"]
+            elif "choices" in f:
+                v[f["key"]] = f["choices"][0]   # combo opens on first
+            else:
+                v[f["key"]] = False             # check: fresh = off
+        return v
+    monkeypatch.setattr(cmddialog, "ask", fake_ask)
+    monkeypatch.setattr(QMessageBox, "question", classmethod(
+        lambda cls, *a, **k: cls.Yes))
+    monkeypatch.setattr(QMessageBox, "information", classmethod(
+        lambda cls, *a, **k: cls.Ok))
+
+
+def _open_sheet(win, qapp, calls):
+    win.action_new_sheet()
+    qapp.processEvents()
+    return win.doc.active_body
+
+
+def test_add_flange_answers_with_status_before_dialog(qapp, win,
+                                                      monkeypatch):
+    from tracer.core.document import PrimitiveFeature
+    calls = []
+    _answers(monkeypatch, calls)
+    d = win.doc
+    d.add_body("Solid")
+    d.add(PrimitiveFeature(name="box", kind="box",
+                           dims={"dx": 30, "dy": 20, "dz": 5}))
+    d.recompute()
+    win.action_add_flange()
+    qapp.processEvents()
+    assert calls == []                       # guard, not gate
+    assert "not a parametric sheet" in win.status.currentMessage()
+
+
+def test_new_sheet_and_flange_walk_the_dialogs(qapp, win, monkeypatch):
+    calls = []
+    _answers(monkeypatch, calls)
+    body = _open_sheet(win, qapp, calls)
+    assert calls == ["New Sheet"]
+    d = win.doc
+    assert "Parametric sheet" in win.status.currentMessage()
+    st = d.sheet_states()[body]
+    assert len(st["bends"]) == 0             # base flange: leg only
+    win.action_add_flange()
+    qapp.processEvents()
+    assert calls == ["New Sheet", "Add Flange"]
+    a, r, k = d.sheet_states()[body]["bends"][0]
+    assert (a, r, k) == (90.0, 3.0, 0.33)    # table LIVE, not pinned
+    msg = win.status.currentMessage()
+    assert "Flange:" in msg and "K 0.33 (table)" in msg
+    assert sum(1 for f in d.features
+               if type(f).__name__ == "FlangeFeature") == 2
+
+
+def test_flat_pattern_briefs_the_live_sheet_no_K_prompt(qapp, win,
+                                                        monkeypatch):
+    calls = []
+    _answers(monkeypatch, calls)
+    body = _open_sheet(win, qapp, calls)
+    win.action_add_flange()
+    qapp.processEvents()
+    calls.clear()
+    win.action_flat_pattern()
+    qapp.processEvents()
+    assert calls == []                       # the sheet OWNS its numbers
+    fl = win.doc.sheet_states()[body]["flat"]["flat_length"]
+    assert f"flat {fl:.4f} mm" in win.status.currentMessage()
+    assert "_flat" not in win.doc.body_solids()   # no snapshot spawned
+
+
+def test_flat_view_labels_dxf_and_paper_travel(qapp, win, monkeypatch,
+                                               tmp_path):
+    import numpy as np
+    calls = []
+    _answers(monkeypatch, calls)
+    body = _open_sheet(win, qapp, calls)
+    win.action_add_flange()
+    qapp.processEvents()
+    win.action_new_drawing()
+    qapp.processEvents()
+    assert "Flat" in win.drawing.views()
+    chains = win.drawing.chains("Flat")
+    assert chains and any(len(c) > 3 for c in chains)
+    bends = win.doc.sheet_states()[body]["bends"]
+    segs = win.drawing.bends_page("Flat")
+    labels = win.drawing.bend_labels("Flat")
+    assert len(segs) == len(bends) == len(labels) == 1
+    assert win.drawing.bends_page("front") == []
+    (at, txt), = labels
+    assert txt == "90° ↑ R3.00 K=0.33"       # words built from params
+    bl = win.doc.sheet_flats()[body]["bend_lines"][0]
+    assert bl["band"] == 0                   # ordinal, not run index
+    sc, off = win.drawing.frames()["Flat"]
+    assert segs[0][0][0] == pytest.approx(bl["x"] * sc + off[0])
+    dxf = tmp_path / "flat.dxf"
+    win.export_drawing(str(dxf))
+    assert txt in dxf.read_text(encoding="utf-8")  # label rides DXF
+    png = tmp_path / "flat.png"
+    win.export_drawing(str(png))
+    assert png.stat().st_size > 1000         # labels paint without a fit
+    n = win.drawing.publish_pdf(str(tmp_path / "flat.pdf"))
+    assert n >= 1
+    sol = win.doc.flat_slab(body).to_trimesh().vertices
+    assert np.asarray(sol)[:, 2].max() == pytest.approx(0.01)
+    # paper, not a second part

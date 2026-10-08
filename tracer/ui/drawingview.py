@@ -813,8 +813,8 @@ class DrawingCanvas(QWidget):
             p.setFont(f3)
             p.setPen(QPen(_DETAIL))
             for at, txt in labels:
-                px, py = self.s2p(*at)
-                p.drawText(QRectF(px - 46, py - 9, 92, 16),
+                pt = self.s2p(*at)
+                p.drawText(QRectF(pt.x() - 46, pt.y() - 9, 92, 16),
                            Qt.AlignCenter, txt)
         # M100: a view on an explicit scale wears its ratio as a caption;
         # M102: a section wears its letter (A-A · 1:2 when both)

@@ -648,9 +648,10 @@ def param_flat(legs, bends, t, W, reliefs=(), seam=None) -> dict:
                 raise SheetMetalError(
                     "the seam must live on a FLAT LEG (v1): a seam "
                     "through a bend slot splits the band")
+        band_runs = [rn for rn in runs if rn["kind"] == "band"]
         lines = [dict(x=(rn["x0"] + rn["ba"] / 2.0 - s) % flat,
                       y0=0.0, y1=float(W), band=j)
-                 for j, rn in enumerate(runs) if rn["kind"] == "band"]
+                 for j, rn in enumerate(band_runs)]
         lines.sort(key=lambda d: d["x"])
         for rn in runs:                 # slots read the unwrapped x too
             if rn["kind"] == "band":
@@ -658,7 +659,8 @@ def param_flat(legs, bends, t, W, reliefs=(), seam=None) -> dict:
     else:
         lines = [dict(x=rn["x0"] + rn["ba"] / 2.0, y0=0.0, y1=float(W),
                       band=j)
-                 for j, rn in enumerate(runs) if rn["kind"] == "band"]
+                 for j, rn in enumerate(
+                     rn for rn in runs if rn["kind"] == "band")]
     outline = [(0.0, 0.0), (flat, 0.0), (flat, w), (0.0, w), (0.0, 0.0)]
     if reliefs:
         outline = _relief_outline(runs, flat, w, reliefs)
