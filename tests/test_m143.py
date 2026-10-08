@@ -99,7 +99,9 @@ def ink_fraction(img):
 
 
 def text_of(doc, i):
-    return " ".join(doc.getAllText(i).text().split())
+    # Per-glyph Td advances interleave spaces into extraction runs
+    # (contract §7's warning, reproduced page-wise) — flatten.
+    return "".join(doc.getAllText(i).text().split())
 
 
 # ---- the paper itself ------------------------------------------------
@@ -141,8 +143,8 @@ def test_each_page_carries_its_own_sheet_number(win, qapp, tmp_path):
     path = str(tmp_path / "meta.pdf")
     cvd.publish_pdf(path)
     doc = open_pdf(path)
-    assert "1 / 2" in text_of(doc, 0)
-    assert "2 / 2" in text_of(doc, 1)
+    assert "1/2" in text_of(doc, 0)
+    assert "2/2" in text_of(doc, 1)
 
 
 def test_pages_carry_real_ink_and_no_desk_ring(win, qapp, tmp_path):
