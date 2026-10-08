@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QWidget
 
 from ..core import drawing
 from ..core import fits
+from ..core.geometry import Solid
 from .theme import DRAWING
 
 # the sheet is paper: its inks never follow the UI theme (a drawing
@@ -65,6 +66,8 @@ class DrawingCanvas(QWidget):
         self._dim_first = None                 # first endpoint (view, xy)
         self._balloon_mode = False             # M110: balloon tool armed?
         self._sec_mode = False                 # M136: section-line tool
+        self._excl_src: dict = {}              # M139: (result id,
+                                               #  excludes) -> cut source
         self._sec_pts = []                     # parent MODEL xy of clicks
         self._sec_view = None
         self._sec_hover = None                 # page xy of the rubber tip
@@ -103,6 +106,38 @@ class DrawingCanvas(QWidget):
         M136 line-on-view {name, parent, p0, p1, flip})."""
         return list(self.sheet().get("sections") or [])
 
+    def _sec_src(self, sec):
+        """M139: which bodies a cut reads, and what stands in whole.
+        An entry's "exclude" filters the CUT SOURCE (the union that
+        the plane breaks, the wound that hatches); the excluded
+        bodies UNION BACK into the projected half, whole. That
+        add-back is the difference between ASME's 'drawn whole,
+        unhatched' and silent deletion: the child projects ONLY the
+        kept half, so filtering without adding back erases the body
+        outright (verified against the vendor ask, queue doc). An
+        exclude name that no body answers is inert — the M130 rename
+        law, honest degradation. The union is cached per (result
+        identity, exclude set) so paints stay cheap."""
+        exc = [str(n) for n in (sec.get("exclude") or [])]
+        if not exc:
+            return self.doc.result, []
+        bodies = self.doc.body_solids()
+        keep = [n for n in sorted(bodies) if n not in exc]
+        if not keep:
+            raise ValueError("a section must cut at least one body — "
+                             "excluded is all of them")
+        key = (id(self.doc.result), tuple(sorted(exc)))
+        hit = self._excl_src.get(key)
+        if hit is not None and hit[0] is self.doc.result:
+            src = hit[1]
+        else:
+            src = bodies[keep[0]] if len(keep) == 1 \
+                else Solid.batch_union([bodies[n] for n in keep])
+            if len(self._excl_src) > 8:
+                self._excl_src.clear()
+            self._excl_src[key] = (self.doc.result, src)
+        return src, [bodies[n] for n in sorted(bodies) if n in exc]
+
     def _sec_cut(self, sec) -> dict:
         """M136: the one place a stored section entry becomes a cut —
         the M102 axis dialog form or the two-click line on a parent;
@@ -111,23 +146,31 @@ class DrawingCanvas(QWidget):
         already carries. M138: a line entry carrying "pts" is a
         JOGGED polyline — its halves union into the one solid the
         child projects and its caps concatenate across the steps, so
-        every downstream consumer reads a jog like a straight cut."""
+        every downstream consumer reads a jog like a straight cut.
+        M139: an entry carrying "exclude" cuts a filtered source and
+        stands the excluded bodies in whole (see _sec_src); an entry
+        without the key is byte-for-byte the pre-M139 path."""
+        src, back = self._sec_src(sec)
         if "pts" in sec:
             segs, basis = drawing.plane_from_polyline(
                 sec["parent"], sec["pts"], bool(sec.get("flip")))
-            return drawing.section_jogged(
-                self.doc.result, segs, basis,
+            res = drawing.section_jogged(
+                src, segs, basis,
                 mode=str(sec.get("mode", "full")),
                 dist=sec.get("dist"))
-        if "parent" in sec:
+        elif "parent" in sec:
             o, a, dl = drawing.plane_from_line(
                 sec["parent"], sec["p0"], sec["p1"],
                 bool(sec.get("flip")))
-            return drawing.section_on(self.doc.result, o, a, right=dl,
-                                      mode=str(sec.get("mode", "full")),
-                                      dist=sec.get("dist"))
-        return drawing.section(self.doc.result, sec["axis"],
-                               float(sec["at"]))
+            res = drawing.section_on(src, o, a, right=dl,
+                                     mode=str(sec.get("mode", "full")),
+                                     dist=sec.get("dist"))
+        else:
+            res = drawing.section(src, sec["axis"], float(sec["at"]))
+        if back and res["half"] is not None:
+            res = dict(res, half=Solid.batch_union([res["half"]]
+                                                    + back))
+        return res
 
     def _sources(self) -> dict:
         """view name -> (solid to project, standard view key), live.

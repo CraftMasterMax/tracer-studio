@@ -1581,9 +1581,25 @@ class MainWindow(QMainWindow):
                  default=("" if not cur_sc else
                           f"1:{1 / float(cur_sc):g}")),
         ]
+        names = sorted(self.doc.body_solids())
+        if len(names) > 1:
+            # M139: the vendor's "Objects to Cut" tree, at our scale —
+            # an INCLUSION list, all ticked by default. Unticked bodies
+            # stand in the child WHOLE and unhatched (the ASME
+            # standard-parts look; _sec_src does the add-back).
+            fields.append(dict(
+                key="cut", kind="checks", label="Bodies to cut",
+                choices=names,
+                checked=[n for n in names
+                         if n not in (sec.get("exclude") or [])]))
         v = cmddialog.ask(self, f"Section {name}", fields)
         if v is None:
             return
+        exc = sorted(set(names) - set(v["cut"])) if "cut" in v else None
+        if exc is not None and len(v["cut"]) == 0:
+            self.status.showMessage("A section must cut at least one "
+                                    "body — nothing would hatch", 5000)
+            return                       # refuse BEFORE the capture
         self._capture()
         bits = []
         if line:
@@ -1625,6 +1641,14 @@ class MainWindow(QMainWindow):
                     g.pop("vscale", None)
             elif factor != cur_sc:
                 vs[name] = factor
+        if exc is not None and exc != sorted(
+                str(n) for n in (sec.get("exclude") or [])):
+            if exc:
+                sec["exclude"] = exc
+            else:
+                sec.pop("exclude", None)
+            bits.append(f"cutting {len(names) - len(exc)} of "
+                        f"{len(names)} bodies")
         self.doc.dirty = True
         self.drawing.update()
         self.status.showMessage(

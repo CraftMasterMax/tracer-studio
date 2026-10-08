@@ -1521,12 +1521,24 @@ M125; items 1-11 below are history.*
     ink (LibreTexts' stricter no-line law noted). The 4-cap jog
     flushed a latent M117 bug: section_properties' centroid
     broadcast mixed weights at 2 loops and crashed at 3+; fixed
-    rowwise, golden pinned. Still queued on this rung: the
-    "Bodies to Cut" picker (wave-13 banked + live-tested: a naive
-    body-minus-excluded filter is SILENT DELETION; the honest shape
-    is exclude:[names] + unhatched ADD-BACK, ~206 LOC at one
-    insertion point; fastener auto-detect deferred loudly — no
-    library, nothing to detect) and hatch avoids annotations.
+    rowwise, golden pinned. RUNG THREE-b SHIPPED (M139): the
+    "Objects to Cut" picker — a checks field on the M137 props
+    dialog, shown only when bodies>1, pre-ticked from the entry.
+    The wave-13 law held to the letter: exclusion rides body NAMES
+    as "exclude" on the entry, and unchecked bodies are ADDED BACK
+    WHOLE and unhatched behind the cut (ASME standard-parts look;
+    the naive body-minus-excluded filter is SILENT DELETION,
+    live-tested pre-build). Stale names inert; cutting nothing
+    refused BEFORE the undo capture; works on line, jog and
+    legacy-axis entries; slice mode honestly omits (no depth to
+    stand a whole body in); jog+exclude composes. Fastener
+    auto-detect stays deferred loudly — no library, nothing to
+    detect. Still queued on this rung: hatch avoids annotations.
+    The gate also flushed M139a: the occlusion sweep asked EVERY
+    front triangle about EVERY edge midpoint — a tapped plate's
+    sheet (41,766 triangles) took 91 s to draw and the suite rode
+    the 180 s timeout; 2D bbox binning made identical ink 8.1 s
+    (pre-fix baseline diffed byte-for-byte; golden pinned).
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

@@ -191,6 +191,26 @@ def project_edges(solid, view: str = "top", eps: float = 1e-6) -> dict:
             fm = facing > eps
             tri2 = v2[tm.faces[fm]]
             triD = dep[tm.faces[fm]]
+            # M139a: 2D spatial binning. The _covered maths is law (its
+            # boundary strictness decides the class of every coincident
+            # line), but interrogating every front-facing triangle about
+            # every midpoint is O(E x T): the modelled M8 threads of a
+            # small plate's drawing pushed one view to ~20 s (41k
+            # triangles) and made the suite gate itself a coin flip. A
+            # triangle can only cover a point INSIDE its 2D bbox, so
+            # register each triangle with the grid cells its bbox
+            # touches — a midpoint then talks to its own cell's handful.
+            # Identical answers, one to two orders of magnitude cheaper.
+            lo2 = tri2.min(axis=(0, 1))
+            cell = max(float(np.hypot(*np.ptp(tri2, axis=(0, 1))))
+                       / 32.0, 1e-9)
+            glo = np.floor((tri2.min(axis=1) - lo2) / cell).astype(int)
+            ghi = np.floor((tri2.max(axis=1) - lo2) / cell).astype(int)
+            grid: dict = {}
+            for t in range(len(tri2)):
+                for gx in range(glo[t, 0], ghi[t, 0] + 1):
+                    for gy in range(glo[t, 1], ghi[t, 1] + 1):
+                        grid.setdefault((gx, gy), []).append(t)
             ee = tm.face_adjacency_edges[idx]
             segs = v2[ee]
             mids = segs.mean(axis=1)
@@ -203,7 +223,15 @@ def project_edges(solid, view: str = "top", eps: float = 1e-6) -> dict:
                                   tuple(np.round(q, 6)))))
                 if k in vis:
                     continue                       # one visible copy is ink
-                if _covered(mids[i], float(mdeps[i]), tri2, triD):
+                cc = tuple(np.floor((mids[i] - lo2) / cell).astype(int))
+                cand = grid.get(cc)                # bbox law: a triangle
+                if cand is None:                   #  outside this cell
+                    hit = False                    #  cannot cover it
+                else:
+                    sel = np.fromiter(cand, int)
+                    hit = _covered(mids[i], float(mdeps[i]),
+                                   tri2[sel], triD[sel])
+                if hit:
                     hid.setdefault(k, (p, q))      # occluded: dashed
                 else:
                     # In front of every surface: solid ink — this is how

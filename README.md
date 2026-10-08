@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M138**
+**Status: M139**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -224,7 +224,23 @@ independent project with no Autodesk assets or affiliation.)
   jog flushed a latent bug in M117's readout — the cut-face centroid
   broadcast was wrong at two loops and crashed at more — repaired
   rowwise with a golden: the new rung earning its keep by fixing the
-  old one**
+  old one**,
+  **and rung three-b points the cut at WHAT it wounds (M139): on a
+  multi-body model the section's props dialog grows the vendor's
+  "Objects to Cut" — and un-ticking a body does NOT delete it (the
+  naive filter would project only the kept halves: silent deletion).
+  An unchecked body stands WHOLE and unhatched behind the section,
+  the ASME standard-parts look, honoured by unioning each excluded
+  source solid back onto the kept half before projection. Exclusion
+  rides body names on the same entry — stale names inert, cutting
+  nothing refused before the undo capture — and it composes with the
+  jog and the legacy axis form; a slice simply omits what it cuts
+  nothing of. And the gate for this rung flushed a squatter in the
+  hidden-line sweep, which asked every front-facing triangle about
+  every edge midpoint: a small tapped plate's sheet took 91 s to
+  draw. Binning the triangles by 2D bounding box cut the sheet to
+  8.1 s with byte-identical ink, pinned against the pre-fix
+  baseline**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -405,7 +421,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1485 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1496 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

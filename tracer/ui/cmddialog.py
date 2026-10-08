@@ -63,6 +63,30 @@ class Shell:
             ((items[current] if items else ""), False)
 
 
+class ChecksField(QGroupBox):
+    """M139: a named list of checkable choices — a command that must
+    pick WHICH of several things it acts on (which bodies a section
+    cuts) cannot use a combo (one answer) and a wall of standalone
+    checkboxes trashes the form. value() is the list of checked
+    names, in the order the choices came."""
+
+    def __init__(self, label, choices, checked=(), parent=None):
+        super().__init__(label, parent)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(10, 2, 10, 6)
+        lay.setSpacing(2)
+        want = {str(x) for x in checked}
+        self._boxes = []
+        for c in choices:
+            b = QCheckBox(str(c))
+            b.setChecked(str(c) in want)
+            lay.addWidget(b)
+            self._boxes.append(b)
+
+    def checked_names(self):
+        return [b.text() for b in self._boxes if b.isChecked()]
+
+
 class CommandDialog(QDialog):
     def __init__(self, title: str, parent=None,
                  remember_key: str | None = None):
@@ -164,6 +188,12 @@ class CommandDialog(QDialog):
         self._fields[key] = w
         return self
 
+    def add_checks(self, key, label, choices, checked=(), group=""):
+        w = ChecksField(label, choices, checked)
+        self._form(group).addRow(w)
+        self._fields[key] = w
+        return self
+
     def add_text(self, key, label, default="", group=""):
         w = QLineEdit(str(default))
         w.selectAll()
@@ -181,6 +211,8 @@ class CommandDialog(QDialog):
 
     def value(self, key):
         w = self._fields[key]
+        if isinstance(w, ChecksField):
+            return w.checked_names()
         if isinstance(w, QComboBox):
             return w.currentText()
         if isinstance(w, QPlainTextEdit):
@@ -228,8 +260,9 @@ def ask(parent, title, fields, remember_key=None) -> dict | None:
 
     fields: list of dicts {key, label, kind, group?, default?, choices?,
     min?, max?, decimals?, suffix?} with kind in
-    {"combo","double","int","check"}; returns {key: value} or None on
-    Cancel.
+    {"combo","double","int","check","checks","text","multiline"}; returns
+    {key: value} or None on Cancel. A "checks" field (choices + checked)
+    values as the list of checked names.
     """
     d = CommandDialog(title, parent, remember_key)
     combo_keys = [f["key"] for f in fields if f["kind"] == "combo"]
@@ -257,6 +290,9 @@ def ask(parent, title, fields, remember_key=None) -> dict | None:
                       f.get("min", 1), f.get("max", 100000), g)
         elif kind == "check":
             d.add_check(f["key"], f["label"], f.get("default", False), g)
+        elif kind == "checks":
+            d.add_checks(f["key"], f["label"], f["choices"],
+                         f.get("checked", ()), g)
         elif kind == "text":
             d.add_text(f["key"], f["label"], f.get("default", ""), g)
         elif kind == "multiline":
