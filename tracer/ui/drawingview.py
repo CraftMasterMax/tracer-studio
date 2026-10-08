@@ -108,7 +108,17 @@ class DrawingCanvas(QWidget):
         the M102 axis dialog form or the two-click line on a parent;
         both return {"half", "view", "cut"}, and a line section's
         "view" is a basis TUPLE that the whole projection pipeline
-        already carries."""
+        already carries. M138: a line entry carrying "pts" is a
+        JOGGED polyline — its halves union into the one solid the
+        child projects and its caps concatenate across the steps, so
+        every downstream consumer reads a jog like a straight cut."""
+        if "pts" in sec:
+            segs, basis = drawing.plane_from_polyline(
+                sec["parent"], sec["pts"], bool(sec.get("flip")))
+            return drawing.section_jogged(
+                self.doc.result, segs, basis,
+                mode=str(sec.get("mode", "full")),
+                dist=sec.get("dist"))
         if "parent" in sec:
             o, a, dl = drawing.plane_from_line(
                 sec["parent"], sec["p0"], sec["p1"],
@@ -680,62 +690,84 @@ class DrawingCanvas(QWidget):
             fr = placed.get(sec["parent"])
             if fr is None:
                 continue
-            q0 = np.asarray(self._m2p(fr, sec["p0"]), float)
-            q1 = np.asarray(self._m2p(fr, sec["p1"]), float)
-            u = q1 - q0
-            L = float(np.hypot(*u))
-            if L < 1e-9:
+            pts = sec.get("pts") or [sec["p0"], sec["p1"]]
+            qs = [np.asarray(self._m2p(fr, q), float) for q in pts]
+            qs = [q for i, q in enumerate(qs)
+                  if i == 0 or np.hypot(*(q - qs[i - 1])) > 1e-9]
+            if len(qs) < 2:
                 continue
-            u = u / L
-            n2 = np.array([u[1], -u[0]])
+            u0 = qs[1] - qs[0]
+            u0 /= max(float(np.hypot(*u0)), 1e-12)
+            u1 = qs[-1] - qs[-2]
+            u1 /= max(float(np.hypot(*u1)), 1e-12)
+            n2 = np.array([u0[1], -u0[0]])    # eye = 90 CW of first leg
             if sec.get("flip"):
                 n2 = -n2
-            ext = 3.0 * fr["sc"]          # page overhang: 3 model mm
-            self._cut_line_ink(p, q0 - u * ext, q1 + u * ext, n2,
+            ext = 3.0 * fr["sc"]              # page overhang: 3 model mm
+            self._cut_line_ink(p, [qs[0] - u0 * ext] + qs[1:-1]
+                               + [qs[-1] + u1 * ext], n2,
                                str(sec["name"][0]))
         if self._sec_pts and self._sec_view in placed:
             fr = placed[self._sec_view]
-            q0 = np.asarray(self._m2p(fr, self._sec_pts[0]), float)
+            qs = [np.asarray(self._m2p(fr, q), float)
+                  for q in self._sec_pts]
             tip = (np.asarray(self._sec_hover, float)
-                   if self._sec_hover is not None else q0)
+                   if self._sec_hover is not None
+                   else qs[-1])
+            if np.hypot(*(tip - qs[-1])) > 1e-9:
+                qs = qs + [tip]
             p.setPen(QPen(_DETAIL, max(0.8, 0.2 * self._zoom),
                           Qt.DashLine))
-            p.drawLine(self.s2p(*q0), self.s2p(*tip))
+            for a, b in zip(qs, qs[1:]):          # the whole chain with
+                p.drawLine(self.s2p(*a), self.s2p(*b))   # a rubber tip
         p.restore()
 
-    def _cut_line_ink(self, p, q0, q1, n2, letter):
-        """One finished cutting line in canonical page mm: dash body,
-        thick caps, open-V arrows toward the kept side, letter ends."""
-        u = q1 - q0
-        L = float(np.hypot(*u))
-        if L < 1e-9:
+    def _cut_line_ink(self, p, qs, n2, letter):
+        """One finished cutting line in canonical page mm: dash body
+        along the CHAIN (two points = M136's straight; three or more
+        = M138's step — the standards draw no line where the plane
+        turns), thick caps square across the two OUTER ends, open-V
+        arrows toward the kept side on the outer legs, letter past
+        each end."""
+        if len(qs) < 2:
             return
-        u = u / L
         z = self._zoom
         p.setPen(QPen(_VIEW_EDGE, max(0.7, 0.18 * z), Qt.DashLine,
                       Qt.FlatCap))
-        p.drawLine(self.s2p(*q0), self.s2p(*q1))
+        for a, b in zip(qs, qs[1:]):
+            p.drawLine(self.s2p(*a), self.s2p(*b))
         p.setPen(QPen(_VIEW_EDGE, max(1.6, 0.5 * z), Qt.SolidLine,
                       Qt.RoundCap))
         cap = 2.5                                        # page-mm caps
-        for e in (q0, q1):
-            p.drawLine(self.s2p(*(e - u * cap)),
-                       self.s2p(*(e + u * cap)))
+        ends = [(qs[0], qs[1] - qs[0]), (qs[-1], qs[-1] - qs[-2])]
+        for e, d in ends:
+            d = d / max(float(np.hypot(*d)), 1e-12)
+            p.drawLine(self.s2p(*(e - d * cap)),
+                       self.s2p(*(e + d * cap)))
         p.setPen(QPen(_VIEW_EDGE, max(1.0, 0.3 * z)))
         ah = 3.2                                         # arrow height
-        for t in (0.3, 0.7):                             # the arrow pair
-            foot = q0 + u * (L * t)
+        if len(qs) == 2:
+            spots = [(qs[0], qs[1], 0.3), (qs[0], qs[1], 0.7)]
+        else:                       # one arrow per OUTER leg (the M136
+            spots = [(qs[0], qs[1], 0.5),                 # straight law:
+                     (qs[-2], qs[-1], 0.5)]               # a pair astride
+        for a, b, t in spots:
+            d = b - a
+            d = d / max(float(np.hypot(*d)), 1e-12)
+            foot = a + (b - a) * t
             tip = foot + n2 * ah
             p.drawLine(self.s2p(*foot), self.s2p(*tip))
-            for wing in (tip - n2 * 1.0 + u * 1.2,
-                         tip - n2 * 1.0 - u * 1.2):
+            for wing in (tip - n2 * 1.0 + d * 1.2,
+                         tip - n2 * 1.0 - d * 1.2):
                 p.drawLine(self.s2p(*tip), self.s2p(*wing))
         f2 = p.font()
         f2.setPointSizeF(max(6.5, 8.0 * min(z, 2.0)))
         p.setFont(f2)
         p.setPen(QPen(_VIEW_EDGE))
-        for e, sgn in ((q0, -1.0), (q1, 1.0)):
-            at = self.s2p(*(e + u * sgn * 5.0 + n2 * 2.0))
+        for e, d, sgn in ((qs[0], qs[1] - qs[0], -1.0),
+                          (qs[-1], qs[-1] - qs[-2], 1.0)):
+            d = d / max(float(np.hypot(*d)), 1e-12)
+            at = self.s2p(*(e + d * sgn * 5.0 + n2 * 2.0))
             p.drawText(QRectF(at.x() - 12, at.y() - 10, 24, 20),
                        Qt.AlignCenter, letter)
 
@@ -1136,11 +1168,16 @@ class DrawingCanvas(QWidget):
             self._drag = ev.position()
 
     def _sec_click(self, ev):
-        """M136: the two clicks of a cutting line, drawn ON the parent.
-        Clicks live in the parent's MODEL xy (they must travel with the
-        view when it is nudged, like dims and balloons — and survive its
-        M109 spin, so they come through the de-rotating _p2m); the entry
-        leaves letterless — MainWindow letters and keeps it."""
+        """M136: the two clicks of a cutting line, drawn ON the parent;
+        M138 grew the jog: Alt at a click sets a CORNER and keeps the
+        tool armed, every leg after the first must run straight on or
+        turn square, and a double-click finishes. Two plain clicks
+        still finish a straight section exactly as rung one shipped —
+        the entry byte for byte unchanged. Clicks live in the parent's
+        MODEL xy (they travel with the view when it is nudged, like
+        dims and balloons — and survive its M109 spin, so they come
+        through the de-rotating _p2m); the entry leaves letterless —
+        MainWindow letters and keeps it."""
         placed = self.placed()
         if not placed:
             return
@@ -1157,7 +1194,8 @@ class DrawingCanvas(QWidget):
             self._sec_view = view
             self._sec_pts = [self._p2m(placed[view], page)]
             self.tool_note.emit(f"Section on {view}: click where the "
-                                "cut ENDS (Shift flips the kept side)")
+                                "cut ENDS (Shift flips the kept side; "
+                                "Alt sets a corner to jog)")
             self.update()
             return
         if self._view_at(page, placed, slack=6.0) != self._sec_view:
@@ -1165,14 +1203,59 @@ class DrawingCanvas(QWidget):
                                 "line is drawn ON it")
             return
         p1 = self._p2m(placed[self._sec_view], page)
-        if math.dist(self._sec_pts[0], p1) < 0.5:
-            self.tool_note.emit("That line is too short to section on")
+        if math.dist(self._sec_pts[-1], p1) < 0.5:
+            self.tool_note.emit("That leg is too short to mean a corner")
             return
-        self.section_added.emit({
-            "parent": self._sec_view,
-            "p0": (float(self._sec_pts[0][0]), float(self._sec_pts[0][1])),
-            "p1": (float(p1[0]), float(p1[1])),
-            "flip": bool(ev.modifiers() & Qt.ShiftModifier)})
+        if len(self._sec_pts) >= 2:           # jog leg: square or bust
+            d = np.asarray(self._sec_pts[1], float) \
+                - np.asarray(self._sec_pts[0], float)
+            d /= max(float(np.linalg.norm(d)), 1e-12)
+            u = np.asarray(p1, float) - np.asarray(self._sec_pts[-1],
+                                                   float)
+            u /= max(float(np.linalg.norm(u)), 1e-12)
+            a = abs(float(u @ d))
+            if a < 0.999 and a > 0.001:
+                self.tool_note.emit("Jogs must turn SQUARE: run on, "
+                                    "or bend at right angles")
+                return
+        corner = bool(ev.modifiers()
+                      & Qt.AltModifier)
+        self._sec_pts.append((float(p1[0]), float(p1[1])))
+        if corner:
+            self.tool_note.emit("Corner set — click the next leg, "
+                                "double-click to finish")
+            self.update()
+            return
+        if len(self._sec_pts) == 2:
+            self._finish_section_line(ev)     # rung one: two plain
+        else:                                 # clicks finish a         \
+            self.update()                     # straight cut
+
+
+    def _finish_section_line(self, ev):
+        """Close the polyline into an entry: two points ship the M136
+        straight form untouched; three or more ship "pts" and the
+        jogged machinery reads them. Shift at the closing gesture
+        flips the kept side."""
+        if len(self._sec_pts) < 2:
+            self.tool_note.emit("A cutting line needs at least two "
+                                "points")
+            return
+        entry = {"parent": self._sec_view,
+                 "p0": tuple(self._sec_pts[0]),
+                 "p1": tuple(self._sec_pts[-1]),
+                 "flip": bool(ev.modifiers() & Qt.ShiftModifier)}
+        if len(self._sec_pts) > 2:
+            entry["pts"] = [tuple(p) for p in self._sec_pts]
+        try:
+            if "pts" in entry:
+                drawing.plane_from_polyline(entry["parent"],
+                                            entry["pts"], entry["flip"])
+        except ValueError as e:
+            self.tool_note.emit(str(e) + " — the line stands, keep "
+                                "clicking")
+            return
+        self.section_added.emit(entry)
         self._sec_pts, self._sec_view, self._sec_hover = [], None, None
         self.update()
 
@@ -1222,11 +1305,20 @@ class DrawingCanvas(QWidget):
         return True
 
     def mouseDoubleClickEvent(self, ev):
-        # M100: double-click a view -> its Scale dialog. M137: a
-        # SECTION child answers the same gesture with its own props —
-        # depth, kept side, hidden lines, scale — one dialog, because
-        # a section IS a view and the draughtsman reaches for the
-        # same click twice for the second time.
+        # M138: while the cut-line tool is armed a double-click is the
+        # FINISHING gesture (the vendor's polyline grammar) — never a
+        # dialog. M100: otherwise double-click a view -> its Scale
+        # dialog. M137: a SECTION child answers the same gesture with
+        # its own props — depth, kept side, hidden lines, scale — one
+        # dialog, because a section IS a view and the draughtsman
+        # reaches for the same click twice for the second time.
+        if self._sec_mode and ev.button() == Qt.LeftButton:
+            if len(self._sec_pts) >= 2:
+                self._finish_section_line(ev)
+            elif self._sec_mode:
+                self.tool_note.emit("Double-click finishes the cut — "
+                                    "give it at least two points first")
+            return
         if self._dim_mode or ev.button() != Qt.LeftButton:
             return
         placed = self.placed()

@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M137**
+**Status: M138**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -207,7 +207,24 @@ independent project with no Autodesk assets or affiliation.)
   the thread-crest hatch rule the probe flagged (ISO 6410-1 3.2.4)
   needs no code because our bores are GEOMETRIC — the hatch stops at
   the real wall, the rule only bites products that fake threads as
-  decals**
+  decals**,
+  **and rung three STEPS the line (M138): the jogged cutting
+  polyline the standards actually admit — legs that run on or turn
+  SQUARE (every drafting product enforces the bend by construction).
+  The feared hinge rotation turned out to be the IDENTITY for this
+  family: every cut plane stands perpendicular to the parent, so the
+  orthographic child along the shared eye flattens the steps for
+  free — each leg cuts its OWN plane inside its lateral slab (the law
+  rejects doubling back), the halves union into one projectable
+  solid and the caps concatenate across the hinge, so HLR, hatch,
+  measure, DXF, PNG and undo read a jog exactly like a straight cut,
+  zero consumer changes. The tool grew one honest key: Alt sets a
+  corner and a double-click finishes; two plain clicks still stand a
+  straight section byte for byte as rung one shipped. And the 4-cap
+  jog flushed a latent bug in M117's readout — the cut-face centroid
+  broadcast was wrong at two loops and crashed at more — repaired
+  rowwise with a golden: the new rung earning its keep by fixing the
+  old one**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -388,7 +405,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1474 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1485 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

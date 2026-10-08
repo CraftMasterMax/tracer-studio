@@ -162,8 +162,8 @@ def section_properties(loops) -> dict | None:
     area = float((sign * np.array(areas)).sum())
     if area <= 1e-12:
         return None
-    cen = (sign * np.array(areas)[:, None]
-           * np.array(cents)).sum(0) / area
+    cen = (np.array(cents)
+           * (sign * np.array(areas))[:, None]).sum(0) / area
     return dict(area_mm2=area,
                 perimeter_mm=float(np.array(perims).sum()),
                 centroid=(float(cen[0]), float(cen[1])),

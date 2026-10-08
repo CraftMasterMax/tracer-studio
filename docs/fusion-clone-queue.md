@@ -1500,8 +1500,33 @@ M125; items 1-11 below are history.*
     section's hidden ink — fixed by making the opt-in EXPLICIT in
     the test, not by loosening the assert. Still queued on this
     rung: hatch avoids annotations.
-    Rung three: jogged/offset polylines (UsePreviousCut-style
-    feed-forward) + fastener exclusion (excluded shows UNCUT).
+    RUNG THREEa SHIPPED (M138, suite 1485): the JOGGED cutting
+    polyline — legs that run on or turn SQUARE, the only family the
+    standards admit (AutoCAD/SolidWorks/Onshape all enforce the bend
+    by construction; wave-12a verified). The feared hinge rotation
+    is the IDENTITY here: all cut planes stand perpendicular to the
+    parent, so the orthographic child along the shared eye flattens
+    the steps for free. plane_from_polyline decomposes the line into
+    cut-runs with lateral ownership (advance-or-reject — no doubling
+    back); section_jogged cuts each run's OWN plane inside its slab,
+    unions the halves into ONE projectable solid and concatenates
+    the cap loops across the hinge: place, hatch, measure, DXF, PNG,
+    undo — zero consumer changes. The probe's verdict was
+    LIVE-VERIFIED before a line shipped (caps abut exactly at the
+    hinge, volumes analytic to the decimal). Tool: Alt sets a
+    corner, double-click finishes; two plain clicks still stand a
+    straight section byte for byte (M136 law intact, entry unchanged
+    when no "pts"). The child's faint step seam is the union's REAL
+    edge-on face — the fold-line convention by geometry, not added
+    ink (LibreTexts' stricter no-line law noted). The 4-cap jog
+    flushed a latent M117 bug: section_properties' centroid
+    broadcast mixed weights at 2 loops and crashed at 3+; fixed
+    rowwise, golden pinned. Still queued on this rung: the
+    "Bodies to Cut" picker (wave-13 banked + live-tested: a naive
+    body-minus-excluded filter is SILENT DELETION; the honest shape
+    is exclude:[names] + unhatched ADD-BACK, ~206 LOC at one
+    insertion point; fastener auto-detect deferred loudly — no
+    library, nothing to detect) and hatch avoids annotations.
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

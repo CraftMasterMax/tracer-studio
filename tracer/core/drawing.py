@@ -702,6 +702,141 @@ def section_on(solid, o, n, right=None, mode: str = "full",
     return res
 
 
+def plane_from_polyline(parent: str, pts, flip: bool = False):
+    """M138: the generalization of plane_from_line — a cutting
+    POLYLINE whose bends are right angles, the only jogged family
+    the standards admit (every drafting product enforces the square
+    turn BY CONSTRUCTION). Returns (segs, basis): one SEG per
+    maximal straight cut-run {"o","lo","hi"} — its plane through the
+    run, lateral ownership lo..hi along the main direction (None =
+    open toward the polyline end; hinge segments hand their shared
+    d-coordinate to the neighbour runs) — and a single shared BASIS
+    tuple (eye, page-x, page-y). The rotation the 'drawn as if the
+    offsets were in one plane' law implies is the IDENTITY for this
+    family: every cut plane is perpendicular to the parent and the
+    orthographic child along the shared eye flattens the steps for
+    free (live-verified on the stack, banked in the queue doc).
+    Non-square bends raise — that is the angular/aligned rung,
+    which does need the hinge rotation, and its open-source oracle
+    still stitches by approximation."""
+    if parent not in ("top", "front", "right"):
+        raise ValueError(f"section line needs an orthogonal parent "
+                         f"view, not {parent!r}")
+    _, X, Y = _basis(parent)
+    P = [np.asarray(p, float) for p in pts]
+    d2 = None
+    segs2 = []
+    for i in range(len(P) - 1):
+        v = P[i + 1] - P[i]
+        L = float(np.linalg.norm(v))
+        if L < 1e-9:
+            continue                            # click noise
+        u = v / L
+        if d2 is None:
+            d2 = u
+        segs2.append((P[i], P[i + 1], u))
+    if d2 is None or not segs2:
+        raise ValueError("section line needs two distinct points")
+    n2 = np.array([d2[1], -d2[0]])              # 90 deg CW: the eye
+    if flip:
+        n2 = -n2
+    runs: list = []                             # cut-runs, left to right
+    for (p0, p1, u) in segs2:
+        a2 = abs(float(u @ d2))
+        if a2 < 0.001:                          # square: a hinge
+            if not runs or runs[-1]["hi"] is not None:
+                raise ValueError("a jog must connect two cuts")
+            runs[-1]["hi"] = float(p0 @ d2)
+            continue
+        if a2 < 0.999:
+            raise ValueError("jogs must turn square: bend the "
+                             "cutting line at right angles only")
+        if runs and runs[-1]["hi"] is None:     # extend the open run
+            off0 = float(runs[-1]["p1"] @ n2)
+            if abs(float(p1 @ n2) - off0) > 1e-6:
+                raise ValueError("two cuts in a row must stay on "
+                                 "one line")
+            runs[-1]["p1"] = p1
+            continue
+        if runs:
+            prev_hi = runs[-1]["hi"]
+            if float(p0 @ d2) < prev_hi - 1e-9 or \
+                    float(p1 @ d2) < prev_hi - 1e-9:
+                raise ValueError("jogged cuts must ADVANCE along "
+                                 "the line — no doubling back")
+        runs.append({"p0": p0, "p1": p1, "hi": None})
+    if runs[-1]["hi"] is not None:
+        raise ValueError("a cutting polyline must END on a cut, "
+                         "not on a jog")
+    d3 = d2[0] * X + d2[1] * Y
+    n3 = n2[0] * X + n2[1] * Y
+    y3 = np.cross(n3, d3)                       # child page-y
+    basis = (tuple(n3), tuple(d3), tuple(y3))
+    segs = []
+    for i, r in enumerate(runs):
+        segs.append({"o": r["p0"][0] * X + r["p0"][1] * Y,
+                     "lo": None if i == 0 else runs[i - 1]["hi"],
+                     "hi": r["hi"]})
+    return segs, basis
+
+
+_jog_cache: dict = {}
+
+
+def section_jogged(solid, segs, basis, mode: str = "full",
+                   dist: float | None = None) -> dict:
+    """M138: the jogged child, assembled the way the standards read
+    it: cut each run's OWN plane inside its lateral slab (the slabs
+    are disjoint — no material is asked of two planes at once) and
+    CONCATENATE the cap loops (a single plane-section of the joined
+    halves would trace wrong loops where the steps land; the hatch
+    and the page do not care which plane a loop was cut on). The
+    kept halves union into ONE projectable solid, so every existing
+    consumer — HLR, hidden ink, place, hatch, DXF, PNG — receives
+    the jogged child exactly like a straight one. Depth modes ride
+    per run (the slab's named depth is the same at every step)."""
+    mode = str(mode or "full").lower()
+    dd = float(dist) if dist is not None else 0.0
+    key = (id(solid), mode, round(dd, 9),
+           tuple((tuple(np.round(s["o"], 6)), s["lo"], s["hi"])
+                 for s in segs))
+    hit = _jog_cache.get(key)
+    if hit is not None and hit[0] is solid:
+        return hit[1]
+    from .geometry import Solid
+    n3 = np.asarray(basis[0], float)
+    d3 = np.asarray(basis[1], float)
+    y3 = np.asarray(basis[2], float)
+    bb = np.asarray(solid.bounding_box, float)
+    L = float(np.linalg.norm(bb[1] - bb[0])) + 100.0
+    halves, cuts = [], []
+    for s in segs:
+        o = np.asarray(s["o"], float)
+        base = float(o @ d3)
+        lo = base - L if s["lo"] is None else float(s["lo"])
+        hi = base + L if s["hi"] is None else float(s["hi"])
+        if hi <= lo:
+            continue
+        M = np.eye(4)
+        M[:3, :3] = np.column_stack([d3, n3, y3])
+        M[:3, 3] = d3 * lo - n3 * L - y3 * L   # lo/hi are ABSOLUTE
+        clip = solid.intersect(                # d coords — anchor
+            Solid.box(hi - lo, 2 * L, 2 * L).transformed(M))
+        sec = section_on(clip, o, n3, right=d3, mode=mode, dist=dd)
+        if sec["half"] is not None:
+            halves.append(sec["half"])
+        cuts.extend(sec["cut"])
+    half = None
+    for h in halves:
+        half = h if half is None else half.union(h)
+    res = {"half": half, "view": tuple(basis), "cut": cuts,
+           "mode": mode}
+    if len(_jog_cache) > 24:
+        _jog_cache.clear()
+    _jog_cache[key] = (solid, res)
+    return res
+
+
 def _sweep_hatch(region, spacing: float) -> list:
     """Shared 45° sweep: the family x - y = c across a shapely region."""
     from shapely.geometry import LineString

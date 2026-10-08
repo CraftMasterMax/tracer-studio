@@ -137,7 +137,8 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
          True),
         ("S", "Cut-line tool: two clicks on the top, front or right "
               "view stand a lettered section (A-A…) there; Shift "
-              "flips the kept half", True),
+              "flips the kept half; Alt sets a corner and a "
+              "double-click finishes a JOGGED line", True),
         ("Double-click a section view", "Its props: depth (full / "
          "slice / distance slab), kept side, hidden lines, scale",
          False),

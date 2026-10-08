@@ -1245,7 +1245,9 @@ class MainWindow(QMainWindow):
                        "on the top, front or right view stand a "
                        "section there — the lettered child view (A-A…) "
                        "arrives hatched in the extra band; Shift at "
-                       "the closing click flips the kept half, and "
+                       "the closing click flips the kept half, Alt "
+                       "sets a square corner so the line can JOG "
+                       "around bores (double-click finishes), and "
                        "double-clicking the child opens its depth, "
                        "hidden-line and scale props")
         slb.toggled.connect(lambda on: self.drawing.set_section_mode(on))
@@ -1517,15 +1519,13 @@ class MainWindow(QMainWindow):
         self.doc.dirty = True
         self.drawing.update()
         msg = (f"Section {name} on {entry['parent']}"
+               + (f" ({len(entry['pts']) - 1}-leg jog)"
+                  if entry.get("pts") else "")
                + (" (flipped)" if entry.get("flip") else "")
                + " — drag it like any view, double-click it for "
                "depth & props")
         try:
-            o, a, dl = _dr.plane_from_line(
-                entry["parent"], entry["p0"], entry["p1"],
-                bool(entry.get("flip")))
-            sp = section_properties(
-                _dr.section_on(self.doc.result, o, a, right=dl)["cut"])
+            sp = section_properties(self.drawing._sec_cut(entry)["cut"])
         except Exception:
             sp = None
         if sp:
