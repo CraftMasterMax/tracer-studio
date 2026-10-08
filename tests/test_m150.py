@@ -398,8 +398,9 @@ def test_rung2_inks_the_sheet_and_stacks_honestly(win, qapp):
         del cv._draw_gdt_frame
     assert len(seen) == 2
     (_, r1, f1), (g2, r2, f2) = seen
+    box2 = 1.5 * max(8.0, r1.height() - 4.0)   # the painter's OWN
     assert r2.top() == pytest.approx(r1.bottom() + 0.25
-                                     * r1.height(), abs=1.0)
+                                     * box2, abs=1.0)   # box law
     widths = cv._gdt_cells_widths(g2, f2)
     assert r2.width() == pytest.approx(sum(widths), abs=1.0)
     # datum identifiers: the FIRST non-dim paper ink (sheet black).
