@@ -708,7 +708,7 @@ class MainWindow(QMainWindow):
         m_tools.addAction("New Sheet — parametric sheet metal…",
                           lambda checked=False:
                           self.action_new_sheet())
-        m_tools.addAction("Add Flange — fold the free end…",
+        m_tools.addAction("Add Flange — fold any free edge…",
                           lambda checked=False:
                           self.action_add_flange())
         m_tools.addAction("Place Datum Identifier…",
@@ -2620,6 +2620,25 @@ class MainWindow(QMainWindow):
                if n else " — no features referenced it"), 6000)
 
     def _delete_feature(self, feature):
+        # SM4 (M151): flanges that HANG on this leg go orphan at
+        # recompute — warn by name like _datum_delete_ok. uid, not
+        # name: identity is what survives a rename (G14's law).
+        from ..core.document import FlangeFeature
+        if self.doc is not None and isinstance(feature, FlangeFeature):
+            refs = self.doc.flange_references(feature.uid)
+            if refs:
+                ans = QMessageBox.question(
+                    self, "Flanges still hang here",
+                    f"{feature.name} carries {len(refs)} flange(s):\n  "
+                    + "\n  ".join(refs)
+                    + "\n\nDeleting it orphans them at recompute "
+                      "until they are edited or removed.",
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                if ans != QMessageBox.Yes:
+                    self.status.showMessage(
+                        f"{feature.name} kept — {refs[0]} still hangs "
+                        "on it", 5000)
+                    return
         self._capture()
         self.doc.features.remove(feature)
         self.doc.dirty = True
@@ -3957,30 +3976,57 @@ class MainWindow(QMainWindow):
             "Add Flange folds the free end of the last leg", 7000)
 
     def action_add_flange(self):
-        """Tools ▸ Add Flange (M149, SM3): the chain grows at the
-        FREE END of the last leg (v1 attach, the dialog's own words —
-        never a silent surprise). Guard-first like SM1: a body that
-        is not a parametric sheet gets the status line, not a dialog.
-        K rides the ksheet table LIVE unless the override is pinned;
-        reliefs carry the shop defaults gap = t, depth = ri + t, both
-        editable, and the pure law refuses anything that would sever
-        the bend."""
+        """Tools ▸ Add Flange (M149 SM3, M151 SM4): the flange hangs
+        on a CHOSEN edge — one combo row per FREE in-family end edge,
+        and the HEAD row is SM3's free end of the last leg, because
+        the M149 fake answers combos with choices[0] and a new combo
+        that moves the old law is our bug, not the test's. Guard-first
+        like SM1: a body that is not a parametric sheet — or a sheet
+        whose every edge already folds — gets the status line, not a
+        dialog. K rides the ksheet table LIVE unless the override is
+        pinned; reliefs carry the shop defaults gap = t, depth =
+        ri + t, both editable, and the pure law refuses anything that
+        would sever the bend."""
         if self.doc is None or self.doc.result is None:
             return
         from ..core import ksolver, sheetmetal
+        from ..core.document import FlangeFeature
         from . import cmddialog
         st = self.doc.sheet_states()
         body = self.doc.active_body
         if body not in st:
             self.status.showMessage(
                 f"Add Flange: '{body}' is not a parametric sheet — "
-                "Tools ▸ New Sheet opens one (flanges chain at the "
-                "free end of the last leg)", 6000)
+                "Tools ▸ New Sheet opens one (flanges hang on a free "
+                "edge of a leg)", 6000)
             return
         state = st[body]
+        if not state["free"]:
+            self.status.showMessage(
+                f"Add Flange: every edge of '{body}' already folds — "
+                "v1 places ONE fold per edge", 6000)
+            return
+        prior = [x for x in self.doc.features
+                 if isinstance(x, FlangeFeature) and x.body == body]
+        legs = [r for r in state["flat"]["runs"] if r["kind"] == "leg"]
+        rows = []
+        for e in state["free"]:
+            i = state["order"].index(e["name"])
+            x0 = float(legs[i]["x0"])
+            rows.append((e, x0 if e["side"] == "start"
+                         else x0 + float(legs[i]["extent"])))
+        head = next((j for j, (e, _) in enumerate(rows)
+                     if e["name"] == prior[-1].name
+                     and e["side"] == "end"), None)
+        if head:                                # SM3's law rides the
+            rows.insert(0, rows.pop(head))      #   HEAD choice
+        labels = [f"{e['name']} \u00b7 {e['side']} edge "
+                  f"(station {s:.2f} mm)" for e, s in rows]
         v = cmddialog.ask(self, "Add Flange", [
+            dict(key="edge", kind="combo", label="Attach to edge",
+                 choices=labels),
             dict(key="leg", kind="double",
-                 label="New leg at the free end (mm) — chain order",
+                 label="New leg length, tangent-to-end (mm)",
                  default=40.0, min=0.01),
             dict(key="angle", kind="double",
                  label="Fold angle (deg; sign = side)", default=90.0,
@@ -4001,6 +4047,8 @@ class MainWindow(QMainWindow):
                  default=state["t"] + 3.0, min=0.01)])
         if v is None:
             return
+        pick, station = rows[labels.index(v["edge"])]
+        hf = next(x for x in prior if x.uid == pick["uid"])
         self._capture()
         try:
             feat = self.doc.add_flange(
@@ -4008,19 +4056,26 @@ class MainWindow(QMainWindow):
                 ri=float(v["ri"]),
                 k_factor=float(v["k"]) if v["pin"] else None,
                 relief_gap=float(v["gap"]) if v["rel"] else None,
-                relief_depth=float(v["depth"]) if v["rel"] else None)
-        except (sheetmetal.SheetMetalError, ValueError) as e:
-            QMessageBox.warning(self, "Add Flange", str(e))
+                relief_depth=float(v["depth"]) if v["rel"] else None,
+                host=pick["uid"], side=pick["side"],
+                witness=0.0 if pick["side"] == "start"
+                else float(hf.leg))
+        except (sheetmetal.SheetMetalError, ValueError) as err:
+            QMessageBox.warning(self, "Add Flange", str(err))
             return
         self.recompute()
         self.rail.tree.reload()
-        k_used = self.doc.sheet_states()[body]["bends"][-1][2]
+        stn = self.doc.sheet_states()[body]
+        # the association says WHERE this flange's fold landed: under
+        # a PREPEND it is not last, and bends[-1] would read a stranger
+        k_used = stn["bends"][stn["bands"][feat.uid]][2]
         warn = self.doc.sheet_warnings
         src = " (pinned)" if feat.k_factor is not None else " (table)"
         self.status.showMessage(
-            f"Flange: {feat.leg:g} mm at {feat.angle:g}° · K "
-            f"{k_used:g}{src}"
-            + (f" — {warn[-1]}" if warn else ""), 7000)
+            f"Flange: {feat.leg:g} mm at {feat.angle:g}\u00b0 \u00b7 K "
+            f"{k_used:g}{src} \u00b7 on {pick['name']} {pick['side']} "
+            f"edge @ {station:.2f} mm"
+            + (f" \u2014 {warn[-1]}" if warn else ""), 7000)
 
     def action_joint(self):
         """Tools ▸ Joint (M146, assembly rung 1): As-Built Rigid —

@@ -1914,6 +1914,24 @@ M125; items 1-11 below are history.*
   rung-1 gates retargeted by CITE-THE-MOVE (the six-row pin dumps
   the six rows byte-exact; the glyph bounds learn arc/arrow ops).
   (1650.)
+- **SHEET METAL SM4 SHIPPED (M151)** — the EDGE becomes the
+  host: a flange hangs on the start OR end edge of ANY leg (base
+  or flanged), in any creation order, and the strip grows at BOTH
+  ends. The tree is a PATH by construction (one fold per edge,
+  degree <= 2 — the branch is UNREPRESENTABLE, not merely refused),
+  so the flat stays SM2's rectangle and every float stays == the
+  formula in attach_walk's canonical flat order (the order IS a
+  value: 171.7093794959284 vs its swapped-order twin, both pinned).
+  Edge identity = host UID + named slot + a witness offset (display
+  + shrink-guard only — §3.3's fold identity proves a station is a
+  DERIVED thing: 8/200 stations lose == by float; 1e-12 is the
+  budget); st["bends"] finally FLAT-ORDERED, so every paper label
+  speaks about its own band (a latent SM3 lie dies by construction).
+  The vendor's absent fields refuse BY NAME with their reasons in
+  the sentence (side-fold, partial width, To-Object, mid-leg fold,
+  closing ring). Legacy files chain byte-identical; the dialog's
+  HEAD choice IS SM3, so the old fakes walk the new combo green.
+  (1667.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

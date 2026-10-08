@@ -845,11 +845,14 @@ class FlangeFeature(Feature):
     machinery: no rule subsystem ships; k_factor=None rides the
     ksheet sidecar LIVE at recompute, a float pins an override).
     The base flange owns t, W and material; every later flange adds
-    one leg and folds the previous free end by a signed angle —
-    attach is CHAIN ORDER, the v1 limit the dialogs say out loud.
-    No sketch, no polyline, no stored outline: the folded section and
-    the flat are both DERIVED from the same runs list, in fixed
-    association order (float + is not associative; the order IS law,
+    one leg and folds ONE edge of a host leg by a signed angle —
+    SM4 makes the EDGE the host: host is the host leg's uid ("" = the
+    base, or SM3's chain onto the previous leg) and side names the
+    edge; attach is a PATH of folds, never a chain ordinal (contract
+    sm4 §2.1/§4.2). No sketch, no polyline, no stored outline: the
+    folded section and the flat are both DERIVED from the same runs
+    list, in fixed association order (float + is not associative;
+    the order IS law, sheetmetal.attach_walk then
     sheetmetal.param_flat). relief_gap/relief_depth are the square
     end-notches at this bend's two free edges (None = no relief);
     seam is the closed cycle's ONE unwrap number (paper law in v1).
@@ -867,6 +870,13 @@ class FlangeFeature(Feature):
     seam: float | None = None
     relief_gap: float | None = None
     relief_depth: float | None = None
+    # SM4 (M151): the edge as host. "" + "end" IS SM3's chain, so a
+    # pre-SM4 feature carries SM3 semantics with no migration.
+    host: str = ""                 # uid of the host leg's flange
+    side: str = "end"              # "start" | "end" (in-family edges)
+    witness: float | None = None   # edge offset along the host AT
+                                   #   PICK; display + drift sentence
+                                   #   only, never a resolver (§3.3)
 
 
 # ---- M148 rung 2a: the stream classifier's primitives -----------------
@@ -1987,6 +1997,14 @@ class Document:
                 out.append(f.name)      # the helix spins on this line
         return out
 
+    def flange_references(self, uid: str) -> list[str]:
+        """SM4 (M151): names of flanges that HANG on the leg this uid
+        owns — the delete-time mirror of datum_references. uid, not
+        name: rename is a raw write and a name-bound limb would rot
+        on it (§4.1's landmine, banked not widened)."""
+        return [f.name for f in self.features
+                if isinstance(f, FlangeFeature) and f.host == uid]
+
     def rename_datum(self, old: str, new: str) -> int:
         """M130: rename is a RELINK, not a string edit. Fusion keeps
         references internal, so renaming there is free; our datums are
@@ -2235,12 +2253,21 @@ class Document:
                    ri: float = 3.0, k_factor: float | None = None,
                    relief_gap: float | None = None,
                    relief_depth: float | None = None,
-                   seam: float | None = None):
-        """SM3: the chain grows at the FREE END of the last leg — the
-        v1 attach law, said out loud by the dialog. Guard-first like
-        SM1: a body that is no parametric sheet never sees a dialog,
-        and every input rides the pure refusal voices BEFORE the
-        stream changes. k_factor=None rides the ksheet table live;
+                   seam: float | None = None,
+                   host: str = "", side: str = "end",
+                   witness: float | None = None,
+                   width_type: str = "full", extent: str = "distance",
+                   station: float | None = None):
+        """SM4: the flange hangs on a CHOSEN edge — host is the host
+        leg's flange uid ("" = the SM3 chain onto the previous leg's
+        free end, byte-identical) and side names the edge. Guard-first
+        like SM1: a body that is no parametric sheet never sees a
+        dialog, and every input rides the pure refusal voices BEFORE
+        the stream changes — attach_walk checks the TRIAL tree before
+        anything is appended. The vendor's fields that v1 does not
+        ship refuse BY NAME: width_type (Full Edge), extent
+        (Distance) and station (a fold inside a leg is a FOLD) speak
+        their sentences; k_factor=None rides the ksheet table live,
         a float pins the override. seam is the closed cycle's single
         unwrap number (paper law; the folded ring body is queued)."""
         from . import sheetmetal as _sm
@@ -2251,16 +2278,42 @@ class Document:
             raise _sm.SheetMetalError(
                 f"{body!r} is not a parametric sheet — New Sheet "
                 "opens one")
+        if width_type != "full":
+            raise _sm.SheetMetalError(
+                "v1 flanges are FULL EDGE: a Symmetric / Two Sides / "
+                "Two Offsets flange stops in the middle of the width, "
+                "so its fold ENDS meet flat material, its relief "
+                "stops being optional, and its flat is a tab, not "
+                "the strip's rectangle")
+        if extent != "distance":
+            raise _sm.SheetMetalError(
+                "v1 measures a flange by its own height; extending "
+                "to a face needs an object reference that outlives "
+                "recompute")
+        if station is not None:
+            raise _sm.SheetMetalError(
+                "a fold at a line INSIDE a leg adds no material — "
+                "that is a FOLD, not a flange (SM5's Fold)")
         prior = [x for x in self.features
                  if isinstance(x, FlangeFeature) and x.body == body]
-        legs = [float(x.leg) for x in prior] + [float(leg)]
-        bends = [(float(x.angle), float(x.ri),
-                  _sm.K_DEFAULT if x.k_factor is None
-                  else float(x.k_factor)) for x in prior[1:]]
-        bends.append((float(angle), float(ri),
-                      _sm.K_DEFAULT if k_factor is None
-                      else float(k_factor)))
-        _sm._param_check(base.t, base.width, legs, bends)   # law, now
+        trial = [dict(name=x.name, uid=x.uid, leg=float(x.leg),
+                      bend=(None if i == 0 else
+                            (float(x.angle), float(x.ri),
+                             _sm.K_DEFAULT if x.k_factor is None
+                             else float(x.k_factor))),
+                      relief=None, host=str(x.host), side=str(x.side),
+                      witness=None)
+                 for i, x in enumerate(prior)]
+        trial.append(dict(name="trial", uid="trial", leg=float(leg),
+                          bend=(float(angle), float(ri),
+                                _sm.K_DEFAULT if k_factor is None
+                                else float(k_factor)),
+                          relief=None, host=str(host), side=str(side),
+                          witness=(None if witness is None
+                                   else float(witness))))
+        ordered = _sm.attach_walk(trial)           # every structural
+        _sm._param_check(base.t, base.width, ordered["legs"],
+                         ordered["bends"])         # refusal, NOW
         n = len(prior)
         feat = FlangeFeature(name=f"Flange {n} of {body}", body=body,
                              t=base.t, width=base.width,
@@ -2268,7 +2321,9 @@ class Document:
                              leg=float(leg), angle=float(angle),
                              ri=float(ri), k_factor=k_factor,
                              relief_gap=relief_gap,
-                             relief_depth=relief_depth, seam=seam)
+                             relief_depth=relief_depth, seam=seam,
+                             host=str(host), side=str(side),
+                             witness=witness)
         self.add(feat)
         return feat
 
@@ -2506,6 +2561,7 @@ class Document:
         buckets: dict[str, Solid | None] = {}
         by_uid: dict[str, Solid] = {}
         sheets: dict[str, dict] = {}          # SM3: per-body walk state
+        fnodes: dict[str, list] = {}          # SM4: stream-order nodes
         for pos, f in enumerate(self.features):
             # M118: the log bridge's "who broke" — whichever feature the
             # loop was building when an exception escapes is the guilty
@@ -2614,22 +2670,28 @@ class Document:
                     sides.append(self._apply_placement(b, s))
                 solid = sides[0].intersect(sides[1])
             elif isinstance(f, FlangeFeature):
-                # SM3: one walk PER SHEET BODY, in stream order. The
-                # base flange owns t, W and material (a later flange
-                # that moves them is refused, never ignored — M148's
-                # fingerprint reads every field, so a silent override
-                # there would be a teleport dressed as a move). K rides
-                # the ksheet table LIVE while k_factor is None; a float
-                # pins. The walk REPLACES the bucket: it IS the body.
+                # SM3/SM4: one walk PER SHEET BODY, in stream order —
+                # but the WALK'S ORDER is the flat (attach_walk turns
+                # the uid-hosted edge tree into ascending stations;
+                # a chain-order sheet projects to itself, byte-for-
+                # byte). The base flange owns t, W and material (a
+                # later flange that moves them is refused, never
+                # ignored — M148's fingerprint reads every field, so a
+                # silent override there would be a teleport dressed
+                # as a move). K rides the ksheet table LIVE while
+                # k_factor is None; a float pins. The walk REPLACES
+                # the bucket: it IS the body.
                 from . import sheetmetal as _sm      # coil precedent
                 st = sheets.get(key)
+                nodes = fnodes.setdefault(key, [])
                 if st is None:
                     st = sheets[key] = dict(
                         t=float(f.t), W=float(f.width),
                         material=str(f.material), legs=[], bends=[],
                         reliefs=[], seam=(None if f.seam is None
                                           else float(f.seam)),
-                        k_notes=[], flat=None)
+                        k_notes=[], flat=None, order=[], bands={},
+                        free=[])
                 else:
                     for attr, holder in (("t", "t"), ("width", "W"),
                                          ("material", "material")):
@@ -2645,7 +2707,8 @@ class Document:
                             raise _sm.SheetMetalError(
                                 f"{f.name!r} moves the seam — one "
                                 "cycle unwraps at ONE cut")
-                if st["legs"]:                    # not the base: fold
+                bend = relief = None
+                if nodes:                         # not the base: fold
                     k = None if f.k_factor is None else float(f.k_factor)
                     if k is None:                 # the table rides live
                         from . import ksolver
@@ -2657,21 +2720,30 @@ class Document:
                                 f"no ksheet row for {st['material']!r} "
                                 f"at r/t = {float(f.ri) / st['t']:.2f} "
                                 f"({f.name!r}) — K_DEFAULT 0.44 stands")
-                    st["bends"].append((float(f.angle), float(f.ri), k))
+                    bend = (float(f.angle), float(f.ri), k)
                     if (f.relief_gap is None) != (f.relief_depth is None):
                         raise _sm.SheetMetalError(
                             f"{f.name!r}: a relief needs BOTH gap and "
                             "depth — half a relief is a whole surprise")
                     if f.relief_gap is not None:
-                        st["reliefs"].append(dict(
-                            bend=len(st["bends"]) - 1,
-                            gap=float(f.relief_gap),
-                            depth=float(f.relief_depth)))
+                        relief = dict(gap=float(f.relief_gap),
+                                      depth=float(f.relief_depth))
                 elif f.relief_gap is not None or f.relief_depth is not None:
                     raise _sm.SheetMetalError(
                         f"{f.name!r}: the base flange has no bend "
                         "to relieve")
-                st["legs"].append(float(f.leg))
+                nodes.append(dict(name=f.name, uid=f.uid,
+                                  leg=float(f.leg), bend=bend,
+                                  relief=relief, host=str(f.host),
+                                  side=str(f.side),
+                                  witness=(None if f.witness is None
+                                           else float(f.witness))))
+                ordered = _sm.attach_walk(nodes)
+                st["legs"], st["bends"] = ordered["legs"], ordered["bends"]
+                st["reliefs"] = ordered["reliefs"]
+                st["order"] = ordered["order"]
+                st["bands"] = ordered["bands"]
+                st["free"] = ordered["free"]
                 st["flat"] = _sm.param_flat(
                     st["legs"], st["bends"], st["t"], st["W"],
                     reliefs=st["reliefs"], seam=st["seam"])
@@ -2830,7 +2902,10 @@ class Document:
                          relief_gap=(None if f.relief_gap is None
                                      else float(f.relief_gap)),
                          relief_depth=(None if f.relief_depth is None
-                                       else float(f.relief_depth)))
+                                       else float(f.relief_depth)),
+                         host=str(f.host), side=str(f.side),
+                         witness=(None if f.witness is None
+                                  else float(f.witness)))
             elif isinstance(f, LinearPatternFeature):
                 d.update(source_uid=f.source_uid,
                          vector=list(map(float, f.vector)),
@@ -3038,7 +3113,9 @@ class Document:
                     material=fd.get("material", "mild-steel"),
                     k_factor=fd.get("k_factor"), seam=fd.get("seam"),
                     relief_gap=fd.get("relief_gap"),
-                    relief_depth=fd.get("relief_depth"), **base))
+                    relief_depth=fd.get("relief_depth"),
+                    host=fd.get("host", ""), side=fd.get("side", "end"),
+                    witness=fd.get("witness"), **base))
             elif t == "LinearPatternFeature":
                 doc.features.append(LinearPatternFeature(
                     name=fd["name"], source_uid=fd["source_uid"],

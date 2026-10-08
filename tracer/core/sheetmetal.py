@@ -596,6 +596,123 @@ def _param_check(t, W, legs, bends):
         bend_allowance(t, r, a, k)          # K, ri, t law, SM1's voice
 
 
+def attach_walk(nodes) -> dict:
+    """SM4 (M151): the EDGE AS HOST projected onto the strip. A node
+    is one flange feature — dict(name, uid, leg, bend, relief, host,
+    side, witness) — and the whole list is stream order. A flange
+    hangs on the START or END edge of its host leg; with one fold per
+    edge every leg has degree <= 2, so the tree is a PATH and the flat
+    is ONE strip (contract sm4 §2.1). Returns dict(legs, bends,
+    reliefs, order, bands, free) in ASCENDING FLAT STATION — the
+    association order param_flat demands (§3.5: the order IS a value).
+    host == "" on a later node IS SM3's chain: bind to the previous
+    stream node's end edge, byte-identical. Every refusal fires here,
+    before any leg reaches param_flat (§5.2); _param_check is NOT
+    grown."""
+    nodes = list(nodes)
+    if not nodes:
+        raise SheetMetalError("a sheet needs at least one leg")
+    if nodes[0]["host"]:
+        # no stream position precedes the first node: a host there
+        # CANNOT exist — the base was deleted (G14's orphan path)
+        raise SheetMetalError(
+            f"{nodes[0]['name']!r} hangs on leg {nodes[0]['host']!r}, "
+            "which is gone — re-pick its edge or delete the flange "
+            "too (Ctrl+Z first)")
+    if nodes[0]["bend"] is not None:
+        raise SheetMetalError(
+            f"{nodes[0]['name']!r} is not a base flange — a sheet "
+            "begins with one leg and no fold")
+    by_uid = {nodes[0]["uid"]: nodes[0]}
+    claimed, start_kid, end_kid = {}, {}, {}
+    for prev, nd in zip(nodes, nodes[1:]):
+        if not nd["host"]:                          # SM3 chain law
+            nd = dict(nd, host=prev["uid"])
+        name, host, side = nd["name"], nd["host"], nd["side"]
+        h = by_uid.get(host)
+        if h is None:
+            raise SheetMetalError(
+                f"{name!r} hangs on leg {host!r}, which is gone — "
+                "re-pick its edge or delete the flange too "
+                "(Ctrl+Z first)")
+        if side not in ("start", "end"):
+            raise SheetMetalError(
+                f"edge {side!r} of {h['name']!r} folds ACROSS the "
+                "sheet: v1 sheets bend on ONE axis (the section is "
+                "swept along W) and two bend families meet at a "
+                "corner no developable surface covers. The pan/box "
+                "case needs miters and 2-bend corner reliefs — that "
+                "is SM5's conversation")
+        if nd["bend"] is None:
+            raise SheetMetalError(
+                f"{name!r} hangs without a fold — a flange carries "
+                "its bend")
+        # The edge this child stands on is used up, and so is the
+        # CHILD's own facing edge: a second fold there would share a
+        # station, which _param_check refuses only via a zero-length
+        # leg (§2.2 belt) — claimed here so the voice names the fold.
+        facing = "start" if side == "end" else "end"
+        for slot, holder, other in (((host, side), h, name),
+                                    ((nd["uid"], facing), nd,
+                                     h["name"])):
+            if slot in claimed:
+                raise SheetMetalError(
+                    f"{by_uid[slot[0]]['name']!r} already folds at "
+                    f"its {slot[1]} edge (that is {claimed[slot]!r}); "
+                    "v1 places ONE fold per edge — pick the new free "
+                    "end instead")
+            claimed[slot] = other
+        if nd["witness"] is not None:
+            w, hl = float(nd["witness"]), float(h["leg"])
+            if w < -1e-9 or w > hl + 1e-9:
+                raise SheetMetalError(
+                    f"{name!r} was picked {w:.3f} mm along "
+                    f"{h['name']!r}, which is only {hl:.3f} mm long "
+                    "now — the host shrank below the witness; "
+                    "re-pick its edge")
+        (start_kid if side == "start" else end_kid)[host] = nd["uid"]
+        by_uid[nd["uid"]] = nd
+        nd["host"], nd["side"] = host, side         # resolve the ""
+
+    out: list = []
+
+    def walk(uid):                                  # ascending station
+        nd = by_uid[uid]
+        sc = start_kid.get(uid)
+        if sc:
+            walk(sc)                                # child owns the
+            out.append(("band", sc))                # fold at host.start
+        out.append(("leg", uid))
+        ec = end_kid.get(uid)
+        if ec:
+            out.append(("band", ec))                # fold at host.end
+            walk(ec)
+
+    walk(nodes[0]["uid"])
+    legs, bends, order, bands = [], [], [], {}
+    for kind, ref in out:
+        if kind == "leg":
+            legs.append(float(by_uid[ref]["leg"]))
+            order.append(by_uid[ref]["name"])
+        else:
+            bends.append(by_uid[ref]["bend"])
+            bands[ref] = len(bends) - 1
+    if len(bends) != len(legs) - 1:
+        raise SheetMetalError(
+            f"{len(legs)} legs and {len(bends)} folds is not a strip "
+            "— the walk emits one fold per junction")
+    reliefs = sorted((dict(bend=bands[nd["uid"]],
+                           gap=nd["relief"]["gap"],
+                           depth=nd["relief"]["depth"])
+                      for nd in nodes if nd["relief"] is not None),
+                     key=lambda d: d["bend"])
+    free = [dict(uid=nd["uid"], name=nd["name"], side=side)
+            for nd in nodes for side in ("start", "end")
+            if (nd["uid"], side) not in claimed]
+    return dict(legs=legs, bends=bends, reliefs=reliefs, order=order,
+                bands=bands, free=free)
+
+
 def param_flat(legs, bends, t, W, reliefs=(), seam=None) -> dict:
     """THE developed-blank law of a parametric chain, every float
     from formula. Open strip: len(bends) == len(legs) - 1. Closed
