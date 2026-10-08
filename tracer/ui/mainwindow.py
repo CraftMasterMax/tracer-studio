@@ -1223,6 +1223,12 @@ class MainWindow(QMainWindow):
         ex_dxf.clicked.connect(
             lambda: self.export_drawing(ext=".dxf"))
         bl.addWidget(ex_dxf)
+        pub = QPushButton("Publish PDF\u2026")           # M143
+        pub.setProperty("tb", True)
+        pub.setToolTip("Every sheet, one vector PDF — true paper, "
+                       "1:1, selectable text")
+        pub.clicked.connect(self.action_publish_pdf)
+        bl.addWidget(pub)
         dimb = QPushButton("Dimension")                  # M94 toggle
         dimb.setProperty("tb", True)
         dimb.setCheckable(True)
@@ -2006,6 +2012,33 @@ class MainWindow(QMainWindow):
                                 6000)
 
     # ---- User Parameters (M81) ----------------------------------------------
+    def action_publish_pdf(self):
+        """M143: Publish PDF — the whole drawing set as ONE vector
+        PDF, one page per sheet in creation order (the vendor's
+        bundle law: many sheets, one filename, chosen once). Sheet
+        scopes (Current/Selected/Range) are the named continuation;
+        v1 says honestly what it does."""
+        if self.doc is None or not self.doc.drawings:
+            self.status.showMessage("Nothing to publish — add a "
+                                    "drawing sheet first", 5000)
+            return
+        default = f"{self.doc.drawings[0]['name']}.pdf"
+        path, _ = QFileDialog.getSaveFileName(self, "Publish PDF",
+                                              default, "PDF (*.pdf)")
+        if not path:
+            return
+        if not path.lower().endswith(".pdf"):
+            path += ".pdf"
+        try:
+            n = self.drawing.publish_pdf(path)
+        except OSError as e:
+            self.status.showMessage(f"Publish failed — {e}", 6000)
+            return
+        import os                                   # the basename voice
+        self.status.showMessage(
+            f"Published {n} sheet(s) to "
+            f"{os.path.basename(path)} — vector, 1:1", 6000)
+
     def action_user_parameters(self):
         """Fusion's parameter sheet: named numbers (`width = 20`) whose
         formulas may reference each other, driving every feature lever

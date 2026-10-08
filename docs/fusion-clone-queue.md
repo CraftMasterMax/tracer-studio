@@ -1612,6 +1612,40 @@ M125; items 1-11 below are history.*
   datum on-face + tangent handles are the queued continuation
   (add_plane gains method:"on-face" deriving THROUGH the handle),
   revolve publish next. No-handle docs byte-identical (1522).
+- **PUBLISH PDF SHIPPED (M143)** — the whole drawing set as ONE
+  vector PDF (vendor bundle law: many sheets, one filename chosen
+  once, order = creation order), built the way the executed spike
+  pinned it: NOT a forked paper-painter but the SAME paintPage run
+  against a DEVICE SWAP — shadow width/height/rect, _zoom =
+  dpi/25.4, _center at the sheet centre — so every mm coefficient
+  the screen already carries lands as physical paper ink (print px
+  floors go inert; the pt clamps are fine because a pt ON PAPER is
+  physical). The writer's factory defaults (A4 portrait, 10 mm
+  margins, SILENT crop — reproduced pixel-wise) get no vote: an
+  explicit QPageLayout(size, Landscape, zero margins) per sheet,
+  BEFORE its paint; the test publishes at 150 AND 300 dpi and pins
+  identical MediaBoxes (1191×842 ±1.5 — Qt rounds). One painter
+  across the bundle; PySide6 puts newPage on the DEVICE (painter's
+  is unexported) and QPdfWriter finalises on destruction (no
+  close()); load-side asserts go through QtPdf itself — zero new
+  dependencies (contract §7's audit: pypdf addable but unneeded).
+  The page is a VIEW, so print mode fills paper edge-to-edge (no
+  desk grey, no dark 1-px ring — the ring the probe measured at
+  #14161a), the three frame pens gain true 0.35 mm ink and the
+  one cosmetic pen 0.18 (the _w() helper's whole remit — the
+  self-healing max(floor, mm·zoom) strokes were left ALONE, honest
+  to §8), and the per-sheet sheet_idx repoint makes every title
+  block say its own "n / N". The swap is a LOAN: sheet state,
+  zoom, centre, _printing and the in-progress tool's ghosts are
+  stashed and returned (publish mid-section and your rubber band
+  is waiting when it finishes — pinned by spy). Selectable text
+  proven via getAllText (ToUnicode rides for free); the refusal
+  without sheets precedes the dialog. Continuations named: sheet
+  SCOPES (Current/Selected/Range — v1 is All, honestly), PDF/A
+  output-intent, the ISO 5457 frame, DWG stays refused in-product
+  (§6: LibreDWG's own README admits R2010-writer pain — our
+  baseline; the "open the DXF in a DWG tool" cure is documented).
+  (1530.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

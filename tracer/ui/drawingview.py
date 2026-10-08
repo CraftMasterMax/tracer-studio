@@ -9,8 +9,9 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
+from PySide6.QtCore import QMarginsF, QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import (QColor, QPainter, QPainterPath, QPageLayout,
+                           QPageSize, QPen, QPdfWriter)
 
 from PySide6.QtWidgets import QWidget
 
@@ -71,6 +72,7 @@ class DrawingCanvas(QWidget):
         self._sec_pts = []                     # parent MODEL xy of clicks
         self._sec_view = None
         self._sec_hover = None                 # page xy of the rubber tip
+        self._printing = False                 # M143: publishing to paper
         self._fit_mode = False                 # M114: fit-callout armed?
         self._view_drag = None                 # M96: (view, start, base)
         self.setMinimumSize(320, 240)
@@ -623,6 +625,14 @@ class DrawingCanvas(QWidget):
         self.update()
 
     # ---- paint ----------------------------------------------------------
+    def _w(self, mm: float) -> float:
+        """Frame/border ink: true mm on paper, 1-px floor on screen.
+        The body strokes are already max(floor, mm*zoom) — inert at
+        print zoom (§8 trap 1 self-heals); only raw 1-px pens and the
+        cosmetic 0-width pen needed a voice for paper."""
+        return mm * self._zoom if self._printing else max(1.0,
+                                                          mm * self._zoom)
+
     def s2p(self, x: float, y: float) -> QPointF:
         """Sheet mm -> widget px: centred, y flipped (sheet y is up)."""
         w, h = self.width(), self.height()
@@ -642,13 +652,16 @@ class DrawingCanvas(QWidget):
 
     def paintPage(self, p: QPainter):
         p.setRenderHint(QPainter.Antialiasing)
-        p.fillRect(self.rect(), _DESK)          # desk grey
+        # M143: the page is a VIEW — desk, ring, ghosts. On paper the
+        # device IS the sheet: fill paper edge to edge, no desk, no
+        # dark 1-px ring (the trap the spike reproduced pixel-wise).
+        p.fillRect(self.rect(), _PAPER if self._printing else _DESK)
         W, H = drawing.PAGES.get(self.page, drawing.PAGES["A3"])
         a = self.s2p(0, 0)
         b = self.s2p(W, H)
         sheet = QRectF(min(a.x(), b.x()), min(a.y(), b.y()),
                        abs(b.x() - a.x()), abs(b.y() - a.y()))
-        p.setPen(QPen(_DESK_EDGE, 1))
+        p.setPen(Qt.NoPen if self._printing else QPen(_DESK_EDGE, 1))
         p.setBrush(_PAPER)                        # the paper
         p.drawRect(sheet)
         p.setBrush(Qt.NoBrush)
@@ -717,6 +730,85 @@ class DrawingCanvas(QWidget):
         self._draw_balloons(p, placed)               # M110 item bubbles
         self._draw_hole_notes(p, placed)             # M129 table + marks
         self._draw_section_lines(p, placed)          # M136 cutting lines
+
+    # ---- publish (M143) ---------------------------------------------------
+    _Q_PAGE = {"A3": QPageSize.A3, "A4": QPageSize.A4}
+
+    def publish_pdf(self, path, indices=None, dpi=300) -> int:
+        """The vendor's bundle law: every sheet — creation order —
+        into ONE vector PDF. Reuse is a DEVICE SWAP, spike-pinned:
+        shadow the three geometry getters, set _zoom = dpi/25.4 and
+        _center to the sheet centre, and the existing mm coefficients
+        become physical paper (print px floors go inert; the pt
+        clamps are fine because a pt ON PAPER is physical). The
+        writer's factory defaults — A4 portrait, 10 mm margins — get
+        NO vote: an explicit QPageLayout (size, Landscape, zero
+        margins) goes down per sheet BEFORE its paint, or Qt crops
+        the sheet silently (reproduced pixel-wise, contract §3). One
+        painter across the bundle, newPage() between sheets (FreeCAD
+        rule: no begin/end mid-run); QPdfWriter finalises on
+        destruction — PySide6 has no close(). The borrow is a loan:
+        _printing hides the view chrome, the transient tools are
+        stashed off the sheet and returned afterwards, and every
+        swapped field lands back exactly where it was. Pages
+        written."""
+        if self.doc is None or not self.doc.drawings:
+            raise ValueError("no sheets to publish")
+        order = (list(range(len(self.doc.drawings))) if indices is None
+                 else [int(i) for i in indices])
+        if not order:
+            raise ValueError("no sheets selected")
+        try:
+            open(path, "ab").close()               # FreeCAD's Windows
+        except OSError as e:                       # lesson: pre-check
+            raise OSError(f"cannot write {path}: {e}") from e
+        writer = QPdfWriter(path)
+        writer.setCreator("Tracer Studio")
+        writer.setTitle(str(self.doc.drawings[order[0]].get("name",
+                                                            "Drawing")))
+        painter = None
+        saved = (self.sheet_idx, self.page, self._zoom, self._center,
+                 self._printing, self._dim_first, self._sec_pts,
+                 self._sec_view, self._sec_hover)
+        try:
+            for k, idx in enumerate(order):
+                self.sheet_idx = idx              # _block_meta reads it
+                self.page = self.sheet().get("page", "A3")
+                layout = QPageLayout(
+                    self._Q_PAGE.get(self.page, QPageSize.A3),
+                    QPageLayout.Landscape, QMarginsF(0, 0, 0, 0))
+                writer.setPageLayout(layout)
+                writer.setResolution(dpi)
+                px = layout.fullRectPixels(dpi)
+                self.width = lambda: px.width()   # the shadow swap:
+                self.height = lambda: px.height()  # s2p reads only
+                self.rect = lambda: QRectF(0, 0, px.width(), px.height())
+                #                                            these five
+                self._center = QPointF(*[v / 2.0 for v in
+                                         drawing.PAGES.get(
+                                             self.page,
+                                             drawing.PAGES["A3"])])
+                self._zoom = dpi / 25.4
+                self._printing = True
+                self._dim_first = None            # ghosts stay off
+                self._sec_pts = []                # the sheet; the
+                self._sec_view = None             # user keeps them
+                self._sec_hover = None            # after
+                if painter is None:
+                    painter = QPainter(writer)
+                else:
+                    writer.newPage()    # PySide6 puts newPage on the
+                    #        device; same rule: one painter, no end mid-run
+                self.paintPage(painter)
+        finally:
+            if painter is not None:
+                painter.end()
+            (self.sheet_idx, self.page, self._zoom, self._center,
+             self._printing, self._dim_first, self._sec_pts,
+             self._sec_view, self._sec_hover) = saved
+            for gone in ("width", "height", "rect"):
+                self.__dict__.pop(gone, None)     # unshadow the widget
+        return len(order)
 
     def _draw_section_lines(self, p, placed):
         """M136: the cutting line rides its parent view — thin long
@@ -806,7 +898,7 @@ class DrawingCanvas(QWidget):
         f2 = p.font()
         f2.setPointSizeF(max(6.5, 8.0 * min(z, 2.0)))
         p.setFont(f2)
-        p.setPen(QPen(_VIEW_EDGE))
+        p.setPen(QPen(_VIEW_EDGE, self._w(0.18)))   # M143: the
         for e, d, sgn in ((qs[0], qs[1] - qs[0], -1.0),
                           (qs[-1], qs[-1] - qs[-2], 1.0)):
             d = d / max(float(np.hypot(*d)), 1e-12)
@@ -830,7 +922,7 @@ class DrawingCanvas(QWidget):
         p.save()
         tb = drawing.title_block(self.sheet(), meta=self._block_meta(),
                                  page=self.page)
-        p.setPen(QPen(_BORDER, 1))
+        p.setPen(QPen(_BORDER, self._w(0.35)))
         for (ax, ay), (bx, by) in tb["lines"]:
             p.drawLine(self.s2p(ax, ay), self.s2p(bx, by))
         p.setPen(QPen(_SHEET))
@@ -874,7 +966,7 @@ class DrawingCanvas(QWidget):
         tb = drawing.title_block(self.sheet(), meta=self._block_meta(),
                                  page=self.page)
         t = drawing.parts_list_table(rows, tb["rect"], page=self.page)
-        p.setPen(QPen(_BORDER, 1))
+        p.setPen(QPen(_BORDER, self._w(0.35)))
         for (ax, ay), (bx, by) in t["lines"]:
             p.drawLine(self.s2p(ax, ay), self.s2p(bx, by))
         if t["overflow"]:
@@ -968,7 +1060,7 @@ class DrawingCanvas(QWidget):
                                   2 * rb, 2 * rb),
                            Qt.AlignCenter, str(m["item"]))
         t = drawing.hole_table(rows, page=self.page)
-        p.setPen(QPen(_BORDER, 1))
+        p.setPen(QPen(_BORDER, self._w(0.35)))
         for (ax, ay), (bx, by) in t["lines"]:
             p.drawLine(self.s2p(ax, ay), self.s2p(bx, by))
         if t["overflow"]:

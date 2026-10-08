@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M142**
+**Status: M143**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -330,7 +330,11 @@ independent project with no Autodesk assets or affiliation.)
   bubbles onto views — model-space anchors, so they ride through
   moves and spins while the numbers count parts; sheets live in
   the browser tree and export as PNG+DXF (paper furniture — block,
-  list, balloons — paints the PNG and never enters the DXF line art)
+  list, balloons — paints the PNG and never enters the DXF line
+  art); **Publish PDF…** (M143) bundles EVERY sheet into one vector
+  PDF at true paper size — 1:1, real line weights, selectable text —
+  one filename, creation order, the same paintPage on a print device
+  (the desk grey and any half-drawn tool stay on screen)
 - **Configurations**: multiple design variants in one file — a text
   table per config (`Small: width = 18, height = 10`) overrides
   parameters on the fly; switch the active config and the solid,
@@ -430,7 +434,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1522 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1530 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
