@@ -132,6 +132,11 @@ class SketchModel:
         self.handle: dict | None = None   # M142: live face attachment
         #   {"feature","part"} — captured beside the frozen frame; None
         #   is (and always was) a pure snapshot
+        self.host: str = ""          # M152: the CONSTRUCTION-PLANE name
+        #   a datum-hosted sketch was opened on ("" everywhere else).
+        #   DISPLAY + RELINK + WARN material — NEVER a resolver: the
+        #   frame stays the frozen copy (M125 law); the letter is
+        #   looked up through the registry, one registry one truth.
         self.dim_exprs: dict = {}    # M89: constraint idx -> {e, t}
         self.sid = id(self)          # association key while in memory
 
@@ -734,6 +739,7 @@ def model_to_dict(m: SketchModel) -> dict:
                           for x, y in np.asarray(r["pts"], float)],
                   "closed": bool(r["closed"])} for r in m.refs]
     d["handle"] = dict(m.handle) if m.handle else None   # M142
+    d["host"] = str(m.host)                 # M152: datum-host witness
     d["dim_exprs"] = {str(int(k)): dict(rec)
                       for k, rec in m.dim_exprs.items()}   # M89 fx
     return d
@@ -788,6 +794,7 @@ def model_from_dict(d: dict) -> SketchModel:
                "closed": bool(r.get("closed", False))}
               for r in d.get("refs", [])]        # pre-M82 files: none
     m.handle = d.get("handle")                   # M142; pre-M142: None
+    m.host = d.get("host", "")                   # M152; pre-M152: ""
     m.dim_exprs = {int(k): dict(rec) for k, rec
                    in d.get("dim_exprs", {}).items()}   # M89 fx
     for c in d.get("constraints", []):

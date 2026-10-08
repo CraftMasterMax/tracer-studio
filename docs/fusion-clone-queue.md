@@ -1932,6 +1932,26 @@ M125; items 1-11 below are history.*
   closing ring). Legacy files chain byte-identical; the dialog's
   HEAD choice IS SM3, so the old fakes walk the new combo green.
   (1667.)
+- **THE DATUM WEARS ITS LETTER SHIPPED (M152)** — rungs A–C and
+  the M150 registry never spoke: a dead face-handle attachment was
+  PURE SILENCE (frozen frame, no badge, no word — spike-measured
+  1500.0), a renamed host rotted every child handle invisibly (the
+  buried boss: 72000.0 where following says 73500.0), and no sketch
+  path saw a letter. Now: browser rows carry the registry ("▭ Plane 1
+  [A]", holes by uid, hosted sketches by host-name), rename_feature
+  is M130's counted relink (the raw write dies; collisions refused,
+  undo-clean), sketches carry a host NAME witness (frame stays the
+  frozen copy — register/remove is a measured byte-zero geometry
+  event, 24000.0 ==), rung D badges are the product's first amber
+  health states on the red failure dot's OWN chip corner (red
+  outranks, predicates clear), attachment_warnings surface through
+  log + status as the LAST word of the bridge, and gdt.datum_hints
+  speaks unregistered letters beside the validator, which stays
+  byte-identical grammar-only. Letters are paint, never ink: DXF
+  ops byte-equal across registration (354 ==), the delete dialog
+  names "(datum A)" BEFORE the click. One cited retarget: M130's
+  duplicate-names gate reached its state through the raw write —
+  the mechanism moved, the law stands. (1681.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

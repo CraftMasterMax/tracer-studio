@@ -1977,7 +1977,10 @@ class MainWindow(QMainWindow):
                  "Angularity, illegal elsewhere",
                  default=str(cur.get("angle", "") or "")),
             dict(key="datums", kind="text",
-                 label="Datums (A, A-B; comma separated)",
+                 label="Datums (A, A-B; comma separated)"
+                 + (" — registered: " + " ".join(
+                     d["letter"] for d in self.doc.datums)
+                     if self.doc.datums else ""),
                  default=", ".join(cur.get("datums", []))),
             dict(key="size", kind="text",
                  label="Size limits (9.995/10.010 or a fit class, "
@@ -2040,8 +2043,18 @@ class MainWindow(QMainWindow):
                 return
             if uid is not None:
                 entry["target"] = {"uid": uid, "role": "axis"}
+            hint_lines: list[str] = []
             try:
                 warns = list(gdt.gdt_validate(entry))
+                # M152: the grammar gate stays UNTOUCHED; the registry
+                # speaks BESIDE it, painted-not-evaluated, never a
+                # refusal. §2.3 CITE-THE-MOVE: hints never outrank a
+                # COMPUTED sentence (M150's arithmetic line is the
+                # louder truth) — they ride the log and take the
+                # status line only when nothing else speaks.
+                hint_lines = gdt.datum_hints(
+                    entry["datums"],
+                    {d["letter"] for d in self.doc.datums})
             except (ValueError, params.ParamError) as e:
                 self._undo.pop()             # rejected: no edit happened
                 QMessageBox.warning(self, "GD&T", str(e))
@@ -2070,6 +2083,15 @@ class MainWindow(QMainWindow):
             warns += size_warns
             if warns:
                 msg = warns[0]
+            elif hint_lines:
+                # §2.3 CITE-THE-MOVE: the hint JOINS the line rather
+                # than replacing it — the readback (and any computed
+                # arithmetic) is the confirmation, the registry's
+                # reminder is the footnote. Grammar still outranks
+                # everything: a refusal replaces the line outright.
+                msg += " \u2014 " + hint_lines[0]
+            for hl in hint_lines:
+                logservice.warn(hl, source="annotate")
         if bool(v["basic"]):
             d["basic"] = True
         else:
@@ -2581,14 +2603,32 @@ class MainWindow(QMainWindow):
         self.status.showMessage(f"{feature.name}: {val:g}° revolve", 4000)
 
     def _rename_feature(self, feature):
-        name, ok = Shell.getText(self, "Rename feature", "Name:",
-                                        text=feature.name)
-        if not ok or not name.strip():
+        """M152: the thin UI arm of Document.rename_feature — what
+        was a raw string write is now M130's counted relink, so a
+        rename retargets every name-bound face handle and the status
+        line counts them (the buried-boss rot cannot recur)."""
+        if self.doc is None:
             return
-        self._capture()
-        feature.name = name.strip()
+        old = feature.name
+        name, ok = Shell.getText(self, "Rename feature", "Name:",
+                                        text=old)
+        if not ok or not name.strip() or name.strip() == old:
+            return
+        self._capture()                            # undo point BEFORE
+        try:
+            n = self.doc.rename_feature(old, name.strip())
+        except Exception as e:                     # name taken
+            self._undo.pop()                       # refusal mutates
+            self._redo.clear()                     #   nothing
+            QMessageBox.warning(self, "Rename", str(e))
+            return
         self.doc.dirty = True
         self.recompute()
+        self.rail.tree.reload()
+        self.status.showMessage(
+            f"Renamed {old!r} → {name.strip()!r}"
+            + (f" — {n} reference{'s' if n != 1 else ''} retargeted"
+               if n else " — no handles referenced it"), 6000)
 
     def _rename_datum(self, kind: str, old: str):
         """Construction-plane / work-axis rename (M130): the datum store
@@ -2908,15 +2948,29 @@ class MainWindow(QMainWindow):
         model.axes = [list(p["u"]), list(p["v"])]
         model.origin = tuple(float(t) for t in p["origin"])
         model.name = self._next_sketch_name()
+        model.host = p["name"]        # M152: the WITNESS — display +
+        #   relink + warn material only; the frame stays the frozen
+        #   copy and the letter is looked up through the registry
         self._begin_sketch(model)
         self.status.showMessage(
-            f"Sketching on {p['name']} — draw, then X extrudes along its "
-            "normal")
+            f"Sketching on {p['name']}{self._datum_badge(p['name'])}"
+            " — draw, then X extrudes along its normal")
+
+    def _datum_badge(self, ref: str) -> str:
+        """" [A]" when a registered plane/axis letter answers to
+        this NAME (hole refs are uids and never ride this path). One
+        registry, one truth: the letter is LOOKED UP, never stored."""
+        if self.doc is None:
+            return ""
+        for dt in self.doc.datums:
+            if dt["kind"] in ("plane", "axis") and dt["ref"] == ref:
+                return f" [{dt['letter']}]"
+        return ""
 
     def _cplane_menu(self, name, pos):
         stored = name not in ("XY", "XZ", "YZ")   # origin planes: section
         menu = QMenu(self)                        # yes, rename/delete no
-        menu.addAction("Sketch on plane",
+        menu.addAction("Sketch on plane" + self._datum_badge(name),
                        lambda: self.action_sketch_on_plane(name))
         menu.addSeparator()
         # M135: section rides named planes — datum renames (M130)
@@ -5740,6 +5794,17 @@ class MainWindow(QMainWindow):
         self._update_status()
         self._autosave()
         self._on_face_selection()
+        # rung D (M152): the states that used to be SILENT — a frozen
+        # face handle, a mute letter, a stale host — reach the maker:
+        # every line through the log's warn channel, the first also on
+        # the status line. LAST word on purpose: _on_face_selection
+        # rewrites the status with the body stats; a warning outlasts
+        # a stat line. Never a modal: the model lives with these.
+        aw = getattr(self.doc, "attachment_warnings", [])
+        for line in aw:
+            logservice.warn(line, source="kernel")
+        if aw:
+            self.status.showMessage(aw[0], 6000)
         if was_bad:                     # M118: recovery is news too
             logservice.info("recompute clean again", source="kernel")
             self.timeline.bar.update()  # badges were wiped by the pass

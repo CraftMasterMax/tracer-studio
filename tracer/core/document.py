@@ -948,6 +948,11 @@ class Document:
                                               # IDS — a file fact,
                                               # like the bodies list
         self.joint_warnings: list[str] = []   # session: degraded
+        self.attachment_warnings: list[str] = []  # M152 rung D: the
+        #   once-SILENT states — a swallowed face_frame refusal, a mute
+        #   datum letter, a sketch host that is gone. Filled EVERY
+        #   clean recompute (never serialized, never fatal): freeze,
+        #   never blank — but never silent either.
                                               # cycles, never saved
         self._sheet_states: dict | None = None   # SM3: set by recompute
         self.sheet_warnings: list[str] = []   # session: K defaults
@@ -1916,11 +1921,27 @@ class Document:
         its frozen numbers: the vendor's cache law — freeze, never
         blank; the flag on top is rung D."""
         h = getattr(f, "handle", None)
-        if not h or acc is None:
+        if not h:
+            return f
+        if acc is None:
+            # No body to follow yet (the usual shape AFTER the host
+            # was deleted — the handled feature became the first in
+            # its stream). The freeze stays; the SILENCE does not:
+            # face_frame resolves by NAME without any acc, so a dead
+            # handle names itself even here (M152 G3's whole point —
+            # rung D dies if first-feature deletion stays mute).
+            try:
+                self.face_frame(h)
+            except params.ParamError as e:
+                self.attachment_warnings.append(f"{f.name} — {e}")
             return f
         try:
             pt, n = self.face_frame(h)
-        except params.ParamError:
+        except params.ParamError as e:
+            # rung D (M152): the freeze stays, the SILENCE does not —
+            # the sentence face_frame already spoke to scripts now
+            # reaches the maker (badge + log), geometry unchanged
+            self.attachment_warnings.append(f"{f.name} — {e}")
             return f
         u, v = plane_uv(f.plane, f.axes)
         nu, nv = face_axes(n)
@@ -1995,7 +2016,13 @@ class Document:
                 out.append(f.name)      # pivot or either lattice rail
             elif isinstance(f, CoilFeature) and f.axis == name:
                 out.append(f.name)      # the helix spins on this line
-        return out
+            sk = getattr(f, "sketch", None)
+            if isinstance(sk, dict) and sk.get("host") == name:
+                out.append(f.name)      # M152: a datum-hosted sketch
+        for d in self.datums:           # M152: a letter that would go
+            if d["ref"] == name:        # mute is a reference too —
+                out.append(f"(datum {d['letter']})")   # the dialog
+        return out                      #   names it BEFORE the click
 
     def flange_references(self, uid: str) -> list[str]:
         """SM4 (M151): names of flanges that HANG on the leg this uid
@@ -2059,6 +2086,53 @@ class Document:
         if self._section and self._section["plane"] == old:
             self._section["plane"] = new       # M135: the live cut is a
             n += 1                             # name-bearer too (M130's
+        for f in self.features:                # M152: a datum-hosted
+            sk = getattr(f, "sketch", None)    # sketch stores the
+            if isinstance(sk, dict) and sk.get("host") == old:
+                sk["host"] = new               # plane's NAME — the
+                n += 1                         # witness relinks, the
+        self.dirty = True                      # frame stays frozen
+        return n
+
+    def rename_feature(self, old: str, new: str) -> int:
+        """M152: rename reaches FEATURES with M130's ledger manners.
+        _rename_feature was a raw string write, and name-bound
+        handles rotted silently on it (the buried boss: 72000.0 where
+        FOLLOWING says 73500.0). Today exactly one family binds a
+        feature NAME — the face handle {"feature","part"} on extrudes
+        — and its mirror inside the stored sketch payload is the SAME
+        reference, counted once. Everything else that must survive a
+        rename binds UID (targets M146, hole-axis datums M150) or has
+        its own counted relink (rename_datum). Returns the number of
+        HANDLES retargeted; a taken name is refused, never
+        disambiguated — one name must mean one feature."""
+        new = str(new).strip()
+        if not new:
+            raise params.ParamError(
+                f"rename failed: {old!r} needs a name — blank was offered")
+        if new == old:
+            return 0
+        if any(f.name == new for f in self.features):
+            raise params.ParamError(
+                f"rename failed: {new!r} is already taken — feature "
+                "names are what handles bind to, so one name must "
+                "mean one feature (rename the other first)")
+        src = [f for f in self.features if f.name == old]
+        if not src:
+            raise params.ParamError(
+                f"rename failed: no feature named {old!r} to rename")
+        n = 0
+        for f in self.features:
+            h = getattr(f, "handle", None)
+            if isinstance(h, dict) and h.get("feature") == old:
+                h["feature"] = new
+                sk = getattr(f, "sketch", None)
+                sh = sk.get("handle") if isinstance(sk, dict) else None
+                if isinstance(sh, dict) and sh.get("feature") == old:
+                    sh["feature"] = new        # the payload mirror is
+                n += 1                         # the SAME reference
+        for f in src:
+            f.name = new
         self.dirty = True
         return n
 
@@ -2562,6 +2636,8 @@ class Document:
         by_uid: dict[str, Solid] = {}
         sheets: dict[str, dict] = {}          # SM3: per-body walk state
         fnodes: dict[str, list] = {}          # SM4: stream-order nodes
+        self.attachment_warnings = []         # rung D: filled fresh by
+        #   EVERY clean pass — a session list like the K notes (M152)
         for pos, f in enumerate(self.features):
             # M118: the log bridge's "who broke" — whichever feature the
             # loop was building when an exception escapes is the guilty
@@ -2824,6 +2900,25 @@ class Document:
         for f in self.features:
             if getattr(f, "error", None):
                 f.error = None
+        # rung D (M152): two states a model can live with but must
+        # never live in SILENCE — a registered letter whose datum has
+        # died, and a sketch hosted on a construction plane that is
+        # gone. Geometry outcome unchanged (freeze, never blank); the
+        # sentence is the badge's second copy. O(datums + sketches).
+        for dt in self.datums:
+            try:
+                self.datum_frame_of(dt)
+            except params.ParamError as e:
+                self.attachment_warnings.append(
+                    f"datum {dt['letter']} is mute \u2014 {e}")
+        plane_names = {p["name"] for p in self.planes} | {"XY", "XZ", "YZ"}
+        for f in self.features:
+            sk = getattr(f, "sketch", None)
+            host = sk.get("host") if isinstance(sk, dict) else None
+            if host and host not in plane_names:
+                self.attachment_warnings.append(
+                    f"{f.name}'s datum '{host}' is gone \u2014 its "
+                    "frame is frozen where the plane left it")
         self.dirty = False
         return self._result
 

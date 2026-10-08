@@ -296,6 +296,25 @@ def gdt_cells(entry: dict) -> list[dict]:
     return cells
 
 
+def datum_hints(datums, known) -> list[str]:
+    """M152 rung D: the registry-aware SIBLING of gdt_validate, which
+    polices grammar only — an unregistered letter is honest ink (the
+    standards do not know our Document), so this never refuses: one
+    painted-not-evaluated sentence per unknown letter, sorted, with
+    the common-datum split the grammar already speaks (A-B is B and
+    A). The FCF dialog contributes these to its warning line."""
+    letters = set()
+    for cell in datums or []:
+        for part in str(cell).strip().split("-"):
+            part = part.strip()
+            if len(part) == 1 and "A" <= part <= "Z":
+                letters.add(part)
+    return [f"datum {L} is not registered \u2014 the frame is honest "
+            f"ink, but no model datum answers to {L} yet (right-click "
+            "a plane, axis or hole row and Register as Datum\u2026)"
+            for L in sorted(letters - set(known))]
+
+
 def key_for_name(label: str) -> str | None:
     """Dialog label -> table key (the combo speaks English, the
     entry speaks keys)."""

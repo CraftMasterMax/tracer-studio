@@ -106,6 +106,16 @@ class TimelineBar(QWidget):
                 return        # safe now: context manager closes painter
             x = 34
             last = len(self.doc.features) - 1
+            # rung D (M152): the feature names whose attachment state
+            # is speaking this pass — document-side law keys every
+            # sentence to a NAME, so the predicate is a name set
+            warn_names = set()
+            for line in getattr(self.doc, "attachment_warnings",
+                                []) or []:
+                if " \u2014 " in line:
+                    warn_names.add(line.split(" \u2014 ")[0])
+                if "'s datum" in line:
+                    warn_names.add(line.split("'s datum")[0])
             rb = getattr(self.doc, "rollback_to", None)   # M88 rubber band
             self._marker = None
             if rb == 0:
@@ -136,6 +146,11 @@ class TimelineBar(QWidget):
                     p.setPen(Qt.PenStyle.NoPen)      # the feature that
                     p.setBrush(QColor(D["danger"]))  # broke the last
                     p.drawEllipse(r.topRight() - QPointF(7, 7), 3, 3)
+                elif f.name in warn_names:           # M152 rung D: the
+                    p.setPen(Qt.PenStyle.NoPen)      # amber sibling on
+                    p.setBrush(QColor(D["warn"]))    # the SAME corner —
+                    p.drawEllipse(r.topRight() - QPointF(7, 7), 3, 3)
+                #                                      red outranks amber
                 self._chips.append((x, 30, f))
                 if rb is not None and i + 1 == rb:
                     mx = x + 32                # rubber band after this chip

@@ -102,6 +102,19 @@ class FeatureTree(QTreeWidget):
         self._doc = doc
         self.reload()
 
+    @staticmethod
+    def datum_badges(doc) -> dict:
+        """M152: the registry as the tree sees it — {ref: [letters]},
+        plane/axis refs keyed by NAME, hole refs by UID (rename-
+        immune, the two binding families the registry already speaks).
+        Pure over the registry: no geometry, no lookups that fail."""
+        out: dict = {}
+        if doc is None:
+            return out
+        for d in getattr(doc, "datums", []):
+            out.setdefault(d["ref"], []).append(d["letter"])
+        return out
+
     def reload(self):
         self.clear()
         if not self._doc:
@@ -123,6 +136,22 @@ class FeatureTree(QTreeWidget):
         origin = QTreeWidgetItem(["Origin"])
         origin.setData(0, Qt.UserRole, ("folder", "origin"))
         root.addChild(origin)
+        # rung D (M152): the letters the registry wears, and the names
+        # whose attachment state is speaking (warn fg — amber is the
+        # sibling of M118's red, and red still outranks it: an error
+        # badge means the row is already the log's business).
+        badges = self.datum_badges(self._doc)
+        warn_names = set()
+        for line in getattr(self._doc, "attachment_warnings", []) or []:
+            if " — " in line:
+                warn_names.add(line.split(" — ")[0])
+            if "'s datum" in line:
+                warn_names.add(line.split("'s datum")[0])
+
+        def _badge(ref):
+            letters = badges.get(ref)
+            return (" [" + " ".join(letters) + "]") if letters else ""
+
         op = QTreeWidgetItem(["\u2316 Origin"])            # ⌖ origin point
         op.setData(0, Qt.UserRole, ("originpt", None))
         origin.addChild(op)
@@ -133,8 +162,8 @@ class FeatureTree(QTreeWidget):
             it.setData(0, Qt.UserRole, ("axis", lab[0]))
             origin.addChild(it)
         for pl in ("XY-Plane", "XZ-Plane", "YZ-Plane"):
-            it = QTreeWidgetItem(["\u25ad " + pl])         # ▭
-            it.setData(0, Qt.UserRole, ("plane", pl[:2]))
+            it = QTreeWidgetItem(["\u25ad " + pl + _badge(pl[:2])])
+            it.setData(0, Qt.UserRole, ("plane", pl[:2]))   # M152 [A]
             origin.addChild(it)
         origin.setExpanded(False)
 
@@ -220,18 +249,27 @@ class FeatureTree(QTreeWidget):
                 nm = f"{nm} ({seen[nm]})"
             label = (f"{glyph} {nm}" if fillet
                      else f"{glyph} {kind} {nm}")
+            if isinstance(f, HoleFeature):
+                label += _badge(f.uid)      # M152: ◯ Hole 1 [C] —
+            #                                 the hole family binds uid
             item = QTreeWidgetItem([label])
             item.setData(0, Qt.UserRole, ("feature", i))
             if f.suppressed:
                 item.setForeground(0, QColor(DARK["fg_faint"]))
+            elif f.name in warn_names:      # M152 rung D: the amber
+                item.setForeground(0, QColor(DARK["warn"]))
             parent = body_nodes.get(getattr(f, "body", None) or default)
             if parent is None:                      # orphaned by hand-edit
                 parent = body_nodes[default]
             parent.addChild(item)
             if (isinstance(f, (ExtrudeFeature, RevolveFeature, HoleFeature))
                     and f.sketch):
-                sk = QTreeWidgetItem([_sketch_label(f.sketch)])
+                lbl = _sketch_label(f.sketch) + _badge(
+                    f.sketch.get("host") or "")   # M152: ✎ → [A]
+                sk = QTreeWidgetItem([lbl])
                 sk.setData(0, Qt.UserRole, ("sketch", i))
+                if f.name in warn_names:
+                    sk.setForeground(0, QColor(DARK["warn"]))
                 item.addChild(sk)
                 item.setExpanded(True)
 
@@ -255,11 +293,13 @@ class FeatureTree(QTreeWidget):
         constr.setData(0, Qt.UserRole, ("folder", "construction"))
         root.addChild(constr)
         for pl in planes:
-            it = QTreeWidgetItem(["\u25ad " + pl["name"]])   # ▭
+            it = QTreeWidgetItem(["\u25ad " + pl["name"]     # ▭
+                                  + _badge(pl["name"])])     # M152 [A]
             it.setData(0, Qt.UserRole, ("cplane", pl["name"]))
             constr.addChild(it)
         for ax in axes:
-            it = QTreeWidgetItem(["\u2225 " + ax["name"]])   # ∥
+            it = QTreeWidgetItem(["\u2225 " + ax["name"]     # ∥
+                                  + _badge(ax["name"])])     # M152 [B]
             it.setData(0, Qt.UserRole, ("caxis", ax["name"]))
             constr.addChild(it)
         constr.setExpanded(bool(planes or axes))

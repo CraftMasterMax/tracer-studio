@@ -198,15 +198,20 @@ def test_datum_rows_carry_rename_in_their_menus():
 
 def test_duplicate_feature_names_show_numbered_but_stay_raw(win, qapp,
                                                             monkeypatch):
-    from tracer.ui.cmddialog import Shell
     win.doc.add(PrimitiveFeature(name="plate", kind="box",
                                  dims={"dx": 20, "dy": 20, "dz": 4}))
     win.doc.add(PrimitiveFeature(name="stud", kind="box",
                                  dims={"dx": 4, "dy": 4, "dz": 10}))
     win.recompute()
-    monkeypatch.setattr(Shell, "getText",
-                        staticmethod(lambda p, t, l, text="": ("stud", True)))
-    win._rename_feature(win.doc.features[0])       # plate becomes "stud"
+    # CITE-THE-MOVE (M152): this gate used to reach the duplicate state
+    # through _rename_feature, which was a raw string write. Rename is
+    # now M130's counted relink and a TAKEN name is refused by name
+    # (G8) — so the gate mints the duplicate the way messy files arrive
+    # (a direct field write, which the browser's disambiguation exists
+    # to survive). The LAW below — "stud (1)"/"stud (2)" display over
+    # raw names — stands untouched.
+    win.doc.features[0].name = "stud"
+    win.rail.tree.reload()
     qapp.processEvents()
     assert [f.name for f in win.doc.features] == ["stud", "stud"]
 
