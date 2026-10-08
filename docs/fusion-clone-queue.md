@@ -1407,7 +1407,21 @@ M125; items 1-11 below are history.*
     the viewport via stitch-order face ranges (display_ranges), picks
     resolve majority-body and light the row (signals blocked: no
     bounce-back), datum rows re-centre the orbit; the wash is visual
-    — _sel never grows from a row click. Isolate/show-all remains.
+    — _sel never grows from a row click.
+    ISOLATE/SHOW-ALL SHIPPED (M134, suite 1441): the ladder's
+    visibility rung, built to the wave-8a law by CONSTRUCTION —
+    isolation is a stacked (scope, boosted) overlay that never writes
+    eye state, so unisolate restores the pre-isolate world exactly
+    (hidden-before come back hidden; boosting shows an isolated
+    hidden row while its bulb stays OFF). Show All ships as the
+    SEPARATE lossy verb (force-every-bulb-on recovery; the vendor's
+    conflation is the confusion we refuse). Esc pops one level after
+    gestures/selection yield; the root row carries the always-findable
+    exits (Fusion's documented annoyance: leaving required finding the
+    isolated row); re-isolate narrows by AND; isolation is session
+    state, absent from the save file. Browser tail now: in-place
+    click-pause edit, body/sheet-row rename (WHEN rename lands,
+    isolation scopes MUST relink — M130 doctrine).
     NAV LADDER RUNG ONE SHIPPED (M132, suite 1422): the 4-wedge
     hold-wheel — RMB still ≥200 ms blooms Undo/Extrude/Sketch/Move at
     the cursor (guarded ribbon verbs under the vendor's quadrant

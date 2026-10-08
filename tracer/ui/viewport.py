@@ -61,6 +61,8 @@ class Viewport(QWidget):
     selection_changed = Signal(int)        # live measure: faces now selected
     zoom_selection = Signal()              # Z hotkey: zoom to what's picked
     zoom_window = Signal(object)           # Zoom-window (M62) payload dict
+    isolation_esc = Signal()               # M134: Esc's last stop —
+                                           # MainWindow pops one level
 
     def __init__(self, renderer: SceneRenderer, parent=None):
         super().__init__(parent)
@@ -1106,7 +1108,11 @@ class Viewport(QWidget):
                 self._apply_hi()
                 if had:
                     self.selection_changed.emit(0)
-            return
+                return
+            self.isolation_esc.emit()      # M134: nothing to deselect,
+            return                         # nothing gesturing — Esc's
+                                           # last job is exiting one
+                                           # isolation level
         _VIEWS = {Qt.Key_0: "iso", Qt.Key_1: "front",
                   Qt.Key_2: "top", Qt.Key_3: "right"}
         if k in _VIEWS:                 # our documented BEAT: Fusion

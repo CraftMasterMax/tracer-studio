@@ -56,6 +56,10 @@ class FeatureTree(QTreeWidget):
     cplane_menu = Signal(str, object)       # plane name, global QPoint
     caxis_menu = Signal(str, object)        # M125 work axis, same grammar
     body_menu = Signal(object, object)        # body name, global QPoint
+    root_menu = Signal(object)                # M134: doc-row (isolation
+                                              # exits live here — leaving
+                                              # must not require finding
+                                              # the isolated row)
     feature_delete = Signal(object)         # Feature (Del key, M72)
     feature_rename = Signal(object)         # Feature (F2 key, M72)
 
@@ -84,6 +88,8 @@ class FeatureTree(QTreeWidget):
             self.caxis_menu.emit(role[1], self.viewport().mapToGlobal(pos))
         elif role and role[0] == "body":
             self.body_menu.emit(role[1], self.viewport().mapToGlobal(pos))
+        elif role and role[0] == "root":
+            self.root_menu.emit(self.viewport().mapToGlobal(pos))
 
     def set_document(self, doc: Document):
         self._doc = doc
@@ -102,7 +108,9 @@ class FeatureTree(QTreeWidget):
         seen: dict = {}
         root = QTreeWidgetItem([self._doc.title])
         root.setFlags(root.flags() & ~Qt.ItemIsSelectable)
-        self.addTopLevelItem(root)
+        root.setData(0, Qt.UserRole, ("root", None))   # M134: right-
+        self.addTopLevelItem(root)                      # clickable home
+                                                        # for exits
 
         # ---- Origin: point + axes + planes, like Fusion's folder ----------
         origin = QTreeWidgetItem(["Origin"])

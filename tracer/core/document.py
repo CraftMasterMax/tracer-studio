@@ -826,6 +826,9 @@ class Document:
         self.drawings: list = []              # M93: [{name, page}]
         self.rollback_to: int | None = None   # M88 rubber band (view state)
         self.bodies: list[dict] = []          # M104: [{name, visible}]
+        self._iso: list = []                  # M134: [(scope, boosted)]
+                                              # isolation stack — session
+                                              # view state, never saved
         self.active_body: str | None = None   # M104: new features land here
         self._result: Solid | None = None
         self._body_solids: dict[str, Solid] | None = None
@@ -958,8 +961,77 @@ class Document:
                 if bool(b.get("visible", True)) != bool(flag):
                     b["visible"] = bool(flag)
                     self.dirty = True
+                if not flag and self._iso:
+                    # M134: a hide performed DURING isolation must
+                    # stick — drop any boost that would overrule the
+                    # user on the way back out.
+                    self._iso = [(sc, frozenset(n for n in bo
+                                                if n != name))
+                                 for sc, bo in self._iso]
                 return True
         return False
+
+    # ---- isolation (M134) --------------------------------------------------
+    def isolate(self, names) -> list[str]:
+        """Isolate = a SUPPRESSIVE OVERLAY, never a write to eye state.
+        While scopes are stacked a body renders only if named in EVERY
+        scope; a member the user had hidden still renders, BOOSTED for
+        the session, while its bulb stays honestly OFF — so unisolate
+        restores the pre-isolate world BY CONSTRUCTION (the vendor's
+        verbatim law: rows hidden before isolation come back hidden),
+        and saving mid-isolation persists the untouched truth. Re-
+        isolating stacks a narrower view; Esc pops one level. Returns
+        the scope actually isolated (unknown names drop)."""
+        want = [n for n in names if any(b["name"] == n
+                                        for b in self.body_list())]
+        if not want:
+            return []
+        boosted = frozenset(n for n in want if not self._user_visible(n))
+        self._iso.append((frozenset(want), boosted))
+        return sorted(want)
+
+    def _user_visible(self, name: str) -> bool:
+        return next((bool(b.get("visible", True))
+                     for b in self.body_list() if b["name"] == name), True)
+
+    def unisolate(self) -> bool:
+        """Pop one isolation level. Nothing to restore — the overlay
+        was the only thing showing what it showed."""
+        if not self._iso:
+            return False
+        self._iso.pop()
+        return True
+
+    def unisolate_all(self) -> int:
+        """Exit every stacked level at once (root-row control: leaving
+        must never require finding the isolated row)."""
+        n = len(self._iso)
+        self._iso.clear()
+        return n
+
+    def show_all(self) -> int:
+        """The SEPARATE, LOSSY verb, shipped next to unisolate and
+        never conflated with it: force every bulb on and drop all
+        isolation. Rows hidden before an isolation come back VISIBLE
+        here — which is exactly why it is recovery, not exit."""
+        self._iso.clear()
+        n = 0
+        for b in self.body_list():
+            if not b.get("visible", True):
+                b["visible"] = True
+                n += 1
+                self.dirty = True
+        return n
+
+    def isolation_active(self) -> bool:
+        return bool(self._iso)
+
+    def isolation_depth(self) -> int:
+        return len(self._iso)
+
+    def isolation_names(self) -> list[str]:
+        """The top level's scope, for the status tell."""
+        return sorted(self._iso[-1][0]) if self._iso else []
 
     def body_solids(self) -> dict:
         """body name -> its Solid, live (rebuilds when dirty)."""
@@ -1019,16 +1091,28 @@ class Document:
         return out
 
     def _visible_solids(self) -> list:
-        """[(body, Solid)] that are visible and built, browser order."""
+        """[(body, Solid)] that are visible and built, browser order —
+        through the isolation overlay when one is active (M134)."""
         self.result
         out = []
         for b in self.body_list():
-            if not b.get("visible", True):
+            if not self.effective_visible(b["name"]):
                 continue
             s = (self._body_solids or {}).get(b["name"])
             if s is not None:
                 out.append((b, s))
         return out
+
+    def effective_visible(self, name: str) -> bool:
+        """The one question every renderer asks. No isolation: the
+        browser's own bulbs. With isolation: membership AND-ed across
+        the stacked scopes, top-level boosts honoured — and the user's
+        eye state was never written to produce that answer."""
+        vis = self._user_visible(name)
+        if not self._iso:
+            return vis
+        return all(name in scope for scope, _ in self._iso) and (
+            vis or name in self._iso[-1][1])
 
     def _stitch(self, colours: bool, default_color, ranges: bool = False):
         """Concatenate visible bodies into (v, n, f[, face_colors]).

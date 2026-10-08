@@ -121,6 +121,7 @@ class MainWindow(QMainWindow):
         self.rail.tree.cplane_menu.connect(self._cplane_menu)
         self.rail.tree.caxis_menu.connect(self._caxis_menu)
         self.rail.tree.body_menu.connect(self._body_menu)
+        self.rail.tree.root_menu.connect(self._root_menu)
         self.rail.tree.feature_delete.connect(self._delete_feature)
         self.rail.tree.feature_rename.connect(self._rename_feature)
         self.viewport.zoom_selection.connect(self._zoom_to_selection)
@@ -156,6 +157,7 @@ class MainWindow(QMainWindow):
         self.viewport.context_request.connect(self._show_marking_menu)
         self.viewport.set_wheel_commands(self._wheel_commands)
         self.viewport.zoom_window.connect(self._on_zoom_window)
+        self.viewport.isolation_esc.connect(self._on_isolation_esc)
         self._mark_menu = None               # open marking menu (M56)
         self._move_origin = None             # armed Move gesture (M53)
         self._move_len = 40.0
@@ -2313,6 +2315,14 @@ class MainWindow(QMainWindow):
                        lambda checked=False: self.action_paint_body(name))
         menu.addAction(("Hide" if vis else "Show") + " " + name,
                        lambda checked=False: self._toggle_body_visible(name))
+        # M134: Isolate — the suppressive overlay, offered on body rows.
+        # (Fusion's own body-row isolate is officially broken for
+        # multi-body components; our strict per-row predicate is the
+        # differentiator, per the probe.)
+        menu.addAction("Isolate " + name,
+                       lambda checked=False: self._isolate_body(name))
+        if self.doc.isolation_active():
+            menu.addAction("Unisolate All", self._unisolate_all)
         mat = menu.addMenu("Material")
         from ..core.materials import NAMES as MAT_NAMES
         cur = (entry or {}).get("material") if entry else None
@@ -2410,6 +2420,75 @@ class MainWindow(QMainWindow):
         self.viewport.refresh()
         self.status.showMessage(f"{name} " + ("hidden" if vis else "shown"),
                                 3000)
+
+    # ---- isolation (M134) ---------------------------------------------------
+    def _refresh_visibility(self):
+        self.rail.tree.reload()
+        self.viewport.refresh()
+
+    def _isolate_body(self, name):
+        doc = self.doc
+        if doc is None:
+            return
+        scope = doc.isolate([name])
+        if not scope:
+            return
+        self._refresh_visibility()
+        self.status.showMessage(
+            f"Isolating {', '.join(scope)} — Esc pops back, Show All is "
+            "the lossy recovery", 5000)
+
+    def _unisolate_all(self):
+        doc = self.doc
+        if doc is None or doc.unisolate_all() == 0:
+            return
+        self._refresh_visibility()
+        self.status.showMessage("Isolation ended — rows hidden before "
+                                "it came back hidden, exactly", 5000)
+
+    def _show_all_bodies(self):
+        doc = self.doc
+        if doc is None:
+            return
+        dropped = doc.isolation_depth()
+        shown = doc.show_all()
+        if dropped or shown:
+            self._unsaved = True    # Show All WRITES eye state — it is
+            self._refresh_visibility()   # model-visible, unlike
+            # (hence unsaved)  isolation's pure overlay
+            self.status.showMessage(
+                f"Show All: {shown} body(s) forced on"
+                + (f", {dropped} isolation level(s) ended" if dropped
+                   else "")
+                + " — unisolate would have kept the pre-isolate darks",
+                6000)
+
+    def _on_isolation_esc(self):
+        doc = self.doc
+        if doc is None or not doc.unisolate():
+            return
+        self._refresh_visibility()
+        if doc.isolation_active():
+            self.status.showMessage(
+                f"Isolation {doc.isolation_depth()} deep → "
+                f"{', '.join(doc.isolation_names())}", 4000)
+        else:
+            self.status.showMessage("Isolation ended — pre-isolate "
+                                    "visibility restored exactly", 4000)
+
+    def _root_menu(self, pos):
+        """Document-row menu (M134): the always-findable exits. Leaving
+        an isolation must never require finding the isolated row — the
+        probe made that Fusion's documented annoyance, so Show All and
+        Unisolate All live on the root, permanently."""
+        if self.doc is None:
+            return
+        menu = QMenu(self)
+        menu.addAction("Show All", self._show_all_bodies)
+        if self.doc.isolation_active():
+            menu.addAction("Unisolate All", self._unisolate_all)
+        self._root_menu_open = menu               # inspectable, like
+        menu.popup(pos)                           # _mark_menu
 
     def action_activate_body(self, name):
         """M104: make `name` the body every new feature lands in."""

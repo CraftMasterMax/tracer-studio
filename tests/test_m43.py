@@ -137,6 +137,7 @@ def test_body_node_menu_activates_and_hides_its_body(win, monkeypatch):
     assert [a.text() for a in menus[-1].actions()] == ["Activate Body 1",
                                                        "Paint Body 1…",
                                                        "Hide Body 1",
+                                                       "Isolate Body 1",
                                                        "Material"]      # M110
     menus[-1].actions()[2].trigger()                  # the per-body bulb
     assert win.doc.bodies[0]["visible"] is False
@@ -144,6 +145,7 @@ def test_body_node_menu_activates_and_hides_its_body(win, monkeypatch):
     assert [a.text() for a in menus[-1].actions()] == ["Activate Body 1",
                                                        "Paint Body 1…",
                                                        "Show Body 1",
+                                                       "Isolate Body 1",
                                                        "Material"]
     menus[-1].actions()[2].trigger()
     assert win.doc.bodies[0]["visible"] is True

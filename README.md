@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M133**
+**Status: M134**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -153,7 +153,18 @@ independent project with no Autodesk assets or affiliation.)
   is stolen. The vendor's sticky-pivot trap (a centre that outlives
   the session until a reset) cannot exist here: the pivot IS the
   camera target every pan already relocates, and MMB-click Home is
-  Reset Orbit Centre, already bound**
+  Reset Orbit Centre, already bound**,
+  **isolation (M134): right-click a body — Isolate. The canvas keeps
+  only what the overlay scopes while the browser's bulbs stay honestly
+  untouched: isolation is a stacked (scope, boosted) overlay that
+  writes NO eye state, so Esc restores the pre-isolate world exactly
+  (bodies hidden before an isolation come back hidden — the vendor's
+  verbatim law, held by construction, not by bookkeeping). Re-isolate
+  narrows; the document row carries the always-findable exits; Show
+  All is the separate, lossy recovery — force-every-bulb-on — and the
+  two verbs' status tells say out loud why they are not each other.
+  Picking and cross-highlight see the isolated world for free, since
+  every renderer asks the one overlay-aware question**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -334,7 +345,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1430 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1441 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
