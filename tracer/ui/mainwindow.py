@@ -2819,15 +2819,17 @@ class MainWindow(QMainWindow):
             if n else "Nothing to project — the plane misses the solid",
             5000)
 
-    def _start_sketch_on_face(self, point, normal, body=None):
+    def _start_sketch_on_face(self, point, normal, body=None,
+                              tri=None):
         """M140 rung A: the frame is DERIVED, never clicked. Origin
         = the picked body's bbox anchor PROJECTED onto the face
         plane — the natural corner the body was built from, so the
         same face yields the same frame whatever the cursor
         touched (the click-point origin was half the complaint);
-        axes ride the nearest-axis law (face_axes). Rung C will
-        store a FaceHandle beside these frozen numbers; today
-        every fresh pick re-derives them from the live solid."""
+        axes ride the nearest-axis law (face_axes). M141 rung B-lite:
+        the host face's OWN loop lands as refs the moment the
+        sketch opens (vendor law, live-verified: the face speaks
+        first; the P key's full-section project() stays opt-in)."""
         if self.doc is None or not self._discard_guard():
             return
         n = np.asarray(normal, float)
@@ -2844,10 +2846,48 @@ class MainWindow(QMainWindow):
         model.axes = [u.tolist(), v.tolist()]
         model.origin = tuple(float(t) for t in origin)
         model.name = self._face_sketch_name(body)
+        landed = 0
+        if tri is not None:
+            model.refs = self._host_face_refs(int(tri), model)
+            landed = len(model.refs)
         self._begin_sketch(model)
         self.status.showMessage(
             f"Sketching on {model.name} — origin at the body's own "
-            "corner; X extrudes outward from the face", 6000)
+            "corner; X extrudes outward from the face"
+            + (f"; its outline landed with it ({landed} loop"
+               f"{'s' if landed != 1 else ''}, dimensionable)"
+               if landed else ""), 6000)
+
+    def _host_face_refs(self, tri, m):
+        """M141: the host face's loop mapped into the sketch frame.
+        The picked triangle's coplanar-ADJACENCY group (M59's _gid:
+        disjoint coplanar faces never merge, so the plate-top loop
+        is the plate's, not the world's) is validated by face_region
+        — outer + holes in the face's own basis — then re-expressed
+        in the sketch's (origin, u, v). NOT project(): the slice
+        answers "what stands at this height", the loop answers
+        "which face am I on" — and a re-include REPLACES (M82 law)."""
+        from ..core.presspull import face_region
+        tm = self.viewport._tm
+        if tm is None:
+            return []
+        region = face_region(tm, self.viewport._group(tri))
+        if region is None:
+            return []                      # curved/degenerate group:
+        u = np.asarray(m.axes[0], float)   # the loop honestly says
+        v = np.asarray(m.axes[1], float)   # nothing
+        o = np.asarray(m.origin, float)
+        p0 = np.asarray(region["point"], float)
+        ru = np.asarray(region["u"], float)
+        rv = np.asarray(region["v"], float)
+        refs = []
+        for pts in [np.asarray(region["outer"], float)] + \
+                   [np.asarray(h, float) for h in region["holes"]]:
+            w = p0 + pts[:, :1] * ru + pts[:, 1:] * rv
+            refs.append({"pts": np.column_stack([(w - o) @ u,
+                                                 (w - o) @ v]),
+                         "closed": True})
+        return refs
 
     def _face_sketch_name(self, body):
         """Host-named, collision-counted like every other feature."""
@@ -3474,7 +3514,8 @@ class MainWindow(QMainWindow):
                             + (f" — {b}" if b else ""),
                             lambda checked=False, h=hit:
                             self._start_sketch_on_face(
-                                h["point"], h["normal"], h["body"]))
+                                h["point"], h["normal"], h["body"],
+                                h.get("tri")))
                 m.addSeparator()
         m.addAction("Fit", lambda checked=False: self.action_view("fit"))
         m.addAction("Zoom to selection", self._zoom_to_selection)

@@ -52,7 +52,8 @@ def draw_triad(p: QPainter, cam, w: float, h: float, palette: dict):
 
 
 class Viewport(QWidget):
-    face_picked = Signal(object, object, object)  # point, normal, body
+    face_picked = Signal(object, object, object,
+                         object)  # point, normal, body, tri (M141)
     face_rejected = Signal(str)     # M140: a refusal that says why
     coords = Signal(object)                # world point under cursor | None
     press_pull = Signal(object)            # Press-Pull drag payload dict
@@ -1081,8 +1082,8 @@ class Viewport(QWidget):
             if h is None or float(h[1] @ n0) < cos_lim:
                 return None, ("That face is not flat enough to sketch "
                               "on — pick a planar face")
-        return (dict(point=point, normal=n0,
-                     body=self._body_at(hit[2])), None)
+        return (dict(point=point, normal=n0, body=self._body_at(hit[2]),
+                    tri=int(hit[2])), None)
 
     def _body_at(self, tri):
         """M131's stitched-mesh map read the other way: triangle ->
@@ -1097,7 +1098,7 @@ class Viewport(QWidget):
             hit, reason = self.face_probe(ev.position())
             if hit is not None:
                 self.face_picked.emit(hit["point"], hit["normal"],
-                                      hit["body"])
+                                      hit["body"], hit["tri"])
                 ev.accept()
                 return
             if reason:

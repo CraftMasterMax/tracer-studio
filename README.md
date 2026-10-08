@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M140**
+**Status: M141**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -403,7 +403,8 @@ python3 -m venv .venv
 rubber band left→right windows, right→left crosses, Ctrl+drag adds) ·
 **drag a face** to Press-Pull (+Esc to cancel, release to commit) ·
 **double-click a flat face** (or **RMB → Sketch on Face**) to sketch on
-it — the frame lands on the body's own corner, not under the cursor ·
+it — the frame lands on the body's own corner and the face's outline
+arrives with it, dimensionable ·
 **Move/Rotate body** spawn a triad — drag an arrow to slide, a ring to
 spin, **Ctrl = copy** (Fusion's Move/Copy) ·
 **MMB** orbit · **Shift+MMB** pan · **RMB-drag** orbit · **RMB-click**
@@ -426,7 +427,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1506 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1512 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

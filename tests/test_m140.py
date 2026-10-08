@@ -153,15 +153,18 @@ def test_face_probe_answers_with_state(win, qapp):
 
 def test_dblclick_carries_the_body(win, qapp):
     seen = []
+    # M141: the pick also carries the TRIANGLE (rung B-lite reads the
+    # face group from it — the index M140 stopped throwing away).
     win.viewport.face_picked.connect(
-        lambda p, n, b: seen.append(b))
+        lambda p, n, b, t: seen.append((b, t)))
     pos = screen_of(win.viewport, (5, 5, 20))
     ev = QMouseEvent(QEvent.Type.MouseButtonDblClick, pos, pos,
                      pos, Qt.MouseButton.LeftButton,
                      Qt.MouseButton.LeftButton,
                      Qt.KeyboardModifier.NoModifier)
     win.viewport.mouseDoubleClickEvent(ev)
-    assert seen == ["Stud"]
+    assert seen and seen[0][0] == "Stud"
+    assert isinstance(seen[0][1], int)
 
 
 def test_marking_menu_offers_face_on_planar_hit(win, qapp):

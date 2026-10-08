@@ -24,7 +24,7 @@ interaction grammar and visual language** — never Autodesk's identity
 | Inspect › Measure              | ✓ M33 (area, angle/gap, volume, surface)        |
 | Construction › Plane (offset)  | ✓ M40 (sketch-on-plane, browser + viewport quad)|
 | Sketch: 7 tools + 16 constraints | ✓ M5..M17, M41 (midpoint, collinear, polygon)|
-| Sketch on a face | ✓ M140 rung A (derived frame, body-named, refusal state, contact preset) — B/C queued |
+| Sketch on a face | ✓ M140–M141 rungs A+B-lite (derived frame, body-named, refusal state, contact preset, host loop lands as refs) — C queued |
 | Offset Entities                | ✓ M34 (mitred parallel copy, inward/outward)    |
 | Timeline + browser             | ✓ M9/M11 (+ glyphs, suppress, reorder-safe)     |
 | STEP / STL / 3MF / OBJ / PLY   | ✓ (STEP + fillets via OCCT bridge, degrades)    |
@@ -1563,10 +1563,31 @@ M125; items 1-11 below are history.*
   document guarded to join. The gate caught the datum-sketch-on-
   empty-doc crash and the m8-era API law-change honestly (tests
   cite the new law, assertions strengthened not loosened).
-  Deferred loudly per probe: B-lite the loop lands (next rung),
+  Deferred loudly per probe: B-lite the loop lands (SHIPPED as
+  M141, the record below),
   C follow-at-recompute (FaceHandle rides the placement layer),
   D health/recovery; cylindrical unwraps: never (the vendor
   refuses too).
+- **SKETCH-ON-FACE RUNG B-LITE SHIPPED (M141)** — the vendor law
+  the probe live-verified: face edges auto-project the moment the
+  sketch OPENS. Not the plane-slice (project() answers "what
+  stands at this height" — it catches the boss the face merely
+  hosts a) but the HOST FACE's own loop: the picked triangle's
+  coplanar-ADJACENCY group (M59's union-find keeps disjoint
+  coplanar faces separate — the plate-top loop is the plate's, not
+  the world's), validated by face_region (outer + its holes —
+  a bored face speaks its bore), mapped into the DERIVED frame so
+  a bore at world (30,20) is truthfully (30,20) in sketch
+  coordinates. Construction-but-dimensionable refs (M82 machinery:
+  drawn, magnetic, serialized, undo-safe); REPLACED never stacked
+  (the P key re-includes the full slice, M82 law intact, and the
+  grazing-offset truth — a hair above the plate it finds the boss
+  section, which is what a slice honestly means). The pick chain
+  finally consumes the triangle index M140 stopped throwing away:
+  probe -> tri -> _group -> face_region -> refs; face_picked grew
+  a fourth voice (body, tri — arity cited where the m140 gate
+  moved). Plane sketches stay unprojected (opt-in project kept);
+  a group face_region refuses lands NO loop and says nothing false.
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff
