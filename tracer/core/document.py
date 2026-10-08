@@ -1030,20 +1030,30 @@ class Document:
                 out.append((b, s))
         return out
 
-    def _stitch(self, colours: bool, default_color):
-        """Concatenate visible bodies into (v, n, f[, face_colors])."""
+    def _stitch(self, colours: bool, default_color, ranges: bool = False):
+        """Concatenate visible bodies into (v, n, f[, face_colors]).
+
+        With `ranges`, also returns [(body_name, face_lo, face_hi)]:
+        _visible_solids walks the browser order and each body's faces
+        land as one contiguous block, so this little table IS body
+        identity inside the merged index space — what M131's cross-
+        highlight resolves both directions through."""
         parts = self._visible_solids()
         if not parts:
-            return None
+            return (None, []) if ranges else None
         vs, ns, fs, cs = [], [], [], []
+        rng: list = []
         painted = any((b.get("appearance") or {}).get("color")
                       for b, _ in parts)
         off = 0
+        nface = 0
         for b, s in parts:
             v, n, f = s.to_render_arrays()
             vs.append(v)
             ns.append(n)
             fs.append(f + off if off else f)
+            rng.append((b["name"], nface, nface + len(f)))
+            nface += len(f)
             off += len(v)
             if colours and painted:
                 col = (b.get("appearance") or {}).get("color")
@@ -1055,9 +1065,19 @@ class Document:
             v, n, f = vs[0], ns[0], fs[0]
         else:
             v, n, f = np.vstack(vs), np.vstack(ns), np.vstack(fs)
-        if not colours:
-            return v, n, f
-        return v, n, f, (np.vstack(cs) if painted else None)
+        if colours:
+            out = (v, n, f, np.vstack(cs) if painted else None)
+        else:
+            out = (v, n, f)
+        return (out, rng) if ranges else out
+
+    def display_ranges(self, default_color=None):
+        """(stitched 4-tuple, [(body, face_lo, face_hi)]) — the map
+        M131's cross-highlight resolves through: which faces of the
+        viewport mesh belong to which browser row, in both directions.
+        No visible bodies: (None, [])."""
+        return self._stitch(colours=True, default_color=default_color,
+                            ranges=True)
 
     def display_arrays(self):
         """The viewport mesh: visible bodies STITCHED (concatenated,

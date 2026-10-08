@@ -6,7 +6,8 @@ from __future__ import annotations
 import numpy as np
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QTreeWidget, QTreeWidgetItem, QLabel, QVBoxLayout,
+from PySide6.QtWidgets import (QAbstractItemView, QTreeWidget, QTreeWidgetItem,
+                               QLabel, QVBoxLayout,
                                QTabWidget, QWidget, QFrame)
 
 from ..core import units
@@ -254,6 +255,31 @@ class FeatureTree(QTreeWidget):
             if idx < len(self._doc.features):
                 return self._doc.features[idx]
         return None
+
+    def select_body(self, name: str | None) -> bool:
+        """Canvas -> browser (M131): light up the row for the body that
+        owns the picked faces and scroll it into view. Selecting emits
+        currentItemChanged, which re-announces properties exactly as a
+        hand-click would — one selection truth, one reaction path."""
+        if not name:
+            return False
+
+        def walk(it):
+            for i in range(it.childCount()):
+                ch = it.child(i)
+                role = ch.data(0, Qt.UserRole)
+                if role and role[0] == "body" and role[1] == name:
+                    self.blockSignals(True)
+                    self.setCurrentItem(ch)
+                    self.blockSignals(False)
+                    self.scrollToItem(ch, QAbstractItemView.PositionAtCenter)
+                    self.viewport().update()
+                    return True
+                if walk(ch):
+                    return True
+            return False
+        root = self.topLevelItem(0)
+        return bool(root and walk(root))
 
     def keyPressEvent(self, ev):
         """Fusion's browser key grammar (M72): Del removes the selected

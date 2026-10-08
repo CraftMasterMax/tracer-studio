@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M130**
+**Status: M131**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -124,7 +124,15 @@ independent project with no Autodesk assets or affiliation.)
   ("4 references retargeted"), and collisions refuse with the cure
   rather than Fusion's silent "(1)" suffix — one name must mean one
   datum. Duplicate *feature* names do get the browser's "(1) (2)"
-  display, where nothing resolves by name anyway**
+  display, where nothing resolves by name anyway**,
+  **cross-highlighted browser (M131): click a Body row — or a feature's
+  — and its body wears the selection wash in the viewport; pick a face
+  and the owning body's row lights up and scrolls into view; select a
+  construction plane or work axis and the orbit centres on it. The
+  wash is visual only: the picked-face selection that measure-on-pick
+  and every face command trust never grows from clicking a row,
+  because stitched bodies are contiguous face blocks (display_ranges)
+  and the highlight merges at one choke point**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -305,7 +313,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1400 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1408 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

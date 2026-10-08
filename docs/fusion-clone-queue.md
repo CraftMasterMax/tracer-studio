@@ -1402,7 +1402,12 @@ M125; items 1-11 below are history.*
     as display only. Deferred from the rung: Explorer delayed-
     double-click in-place edit (double-click is ours = open editor;
     a click-pause-click timing layer wants its own milestone), and
-    body/sheet-row rename. Cross-highlight + isolate remain.
+    body/sheet-row rename. CROSS-HIGHLIGHT SHIPPED (M131, suite 1408):
+    the ladder's defining rung — body/feature rows wash their body in
+    the viewport via stitch-order face ranges (display_ranges), picks
+    resolve majority-body and light the row (signals blocked: no
+    bounce-back), datum rows re-centre the orbit; the wash is visual
+    — _sel never grows from a row click. Isolate/show-all remains.
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

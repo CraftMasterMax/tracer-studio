@@ -74,6 +74,8 @@ class Viewport(QWidget):
         self._gid = None                   # face -> coplanar group id
         self._hover: list[int] | None = None
         self._sel: list[int] = []
+        self._body_rng: list = []          # M131 stitch ranges (body->faces)
+        self._body_hi: list[int] = []      # M131 browser-picked body wash
         self._pp = None                    # press-pull drag state
         self.show_cube = True              # Ctrl+Alt+V (M113 layout layer)
         self.show_nav = True               # Ctrl+Alt+N
@@ -98,11 +100,14 @@ class Viewport(QWidget):
         doc = self._doc
         default = ((doc.appearance or {}).get("color")
                    if doc and doc.painted_bodies() else None)
-        stitched = doc.display_stitched(default) if doc else None
+        stitched, rng = (doc.display_ranges(default) if doc
+                         else (None, []))
         arrays = None if stitched is None else stitched[:3]
         face_colors = None if stitched is None else stitched[3]
         had_sel = bool(self._sel)
         self._hover, self._sel = None, []
+        self._body_hi = []                 # M131: the wash dies with its
+        self._body_rng = rng               # mesh generation
         self._pp, self._pp_drag = None, False
         self._box, self._box_drag = None, False
         self._mv = None                    # Move gesture state (M53)
@@ -693,7 +698,14 @@ class Viewport(QWidget):
         return np.flatnonzero(self._gid == self._gid[face]).tolist()
 
     def _apply_hi(self):
-        self._r.set_highlight(self._hover, self._sel)
+        # M131: a browser-picked body washes through the SELECTION value,
+        # merged here at the single choke point — self._sel stays exactly
+        # the picked faces, so measure-on-pick and every face command
+        # keep their precise targets.
+        sel = self._sel
+        if self._body_hi:
+            sel = sorted(set(sel) | set(self._body_hi))
+        self._r.set_highlight(self._hover, sel)
         self.update()
 
     def _hover_update(self, pos):
@@ -784,6 +796,57 @@ class Viewport(QWidget):
             seen.update(g)
             out.append(g)
         return out
+
+    # ---- cross-highlight (M131) ----------------------------------------
+    def emphasize_body(self, name: str | None):
+        """Browser -> canvas: wash one body in the selection blue just
+        by clicking its row. Visual only — the picked-face selection is
+        untouched, so nothing downstream sees a phantom selection.
+        None clears the wash (a non-body row was chosen)."""
+        self._body_hi = self.body_faces(name) if name else []
+        self._apply_hi()
+
+    def body_faces(self, name: str) -> list[int]:
+        """Every viewport mesh face that came from body `name` (from
+        the stitch ranges); [] when the body is hidden or unknown."""
+        for nm, lo, hi in self._body_rng:
+            if nm == name:
+                return list(range(lo, hi))
+        return []
+
+    def body_of_faces(self, faces) -> str | None:
+        """Canvas -> browser: which body owns most of these faces —
+        the pick resolves to a browser row (majority, since a marquee
+        can catch two bodies' edges)."""
+        if not self._body_rng or not faces:
+            return None
+        tally: dict = {}
+        for f in faces:
+            for nm, lo, hi in self._body_rng:
+                if lo <= f < hi:
+                    tally[nm] = tally.get(nm, 0) + 1
+                    break
+        return max(tally, key=tally.get) if tally else None
+
+    def selected_body(self) -> str | None:
+        """The body owning the current picked faces (None if none)."""
+        return self.body_of_faces(self._sel)
+
+    def focus_datum(self, role: str, name: str) -> bool:
+        """Browser -> camera: centre the orbit on a construction plane
+        or work axis (M131 zoom-to-datum). The frame IS the datum's
+        only body, so we re-centre honestly rather than pretend to
+        know an on-screen size for an infinite object."""
+        if self._doc is None:
+            return False
+        store = (self._doc.planes if role == "cplane"
+                 else self._doc.axes if role == "caxis" else [])
+        for d in store:
+            if d["name"] == name:
+                self._cam.target = np.asarray(d["origin"], float)
+                self.update()
+                return True
+        return False
 
     def selected_face(self) -> dict | None:
         """Reference frame of the current face selection: {'point',

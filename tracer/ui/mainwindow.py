@@ -115,8 +115,7 @@ class MainWindow(QMainWindow):
         self._renderer = renderer or SceneRenderer()
         self.viewport = Viewport(self._renderer)
         self.rail = LeftRail()
-        self.rail.tree.currentItemChanged.connect(
-            lambda *_: self.rail.props.show_feature(self.rail.tree.current_feature()))
+        self.rail.tree.currentItemChanged.connect(self._on_tree_select)
         self.rail.tree.itemDoubleClicked.connect(self._tree_activated)
         self.rail.tree.feature_menu.connect(self._feature_menu)
         self.rail.tree.cplane_menu.connect(self._cplane_menu)
@@ -744,6 +743,24 @@ class MainWindow(QMainWindow):
         return True
 
     # ---- sketching: new, finish (associative extrude), re-edit ---------------
+    def _on_tree_select(self, cur, *_):
+        """Row chosen in the browser: refresh properties (the M72 path)
+        AND wash the body that row builds (M131) — a body row washes
+        itself, a feature/sketch row washes its owning body, a datum or
+        folder row washes nothing (clears)."""
+        self.rail.props.show_feature(self.rail.tree.current_feature())
+        role = cur.data(0, Qt.UserRole) if cur is not None else None
+        name = None
+        if role and self.doc is not None:
+            kind, arg = role
+            if kind == "body":
+                name = arg
+            elif kind in ("feature", "sketch") and isinstance(arg, int):
+                feats = list(self.doc.features)
+                if 0 <= arg < len(feats):
+                    name = getattr(feats[arg], "body", None)
+        self.viewport.emphasize_body(name)
+
     def _tree_activated(self, item, col):
         role = item.data(0, Qt.UserRole) if item else None
         if not role:
@@ -2698,6 +2715,12 @@ class MainWindow(QMainWindow):
         except Exception:          # a stale selection mid-recompute: silent
             return
         self.status.showMessage(msg)
+        # M131 cross-highlight, the other way: light the browser row for
+        # the body that owns the picked faces (select_body blocks signals
+        # so this never bounces back and re-washes the whole body).
+        owner = self.viewport.selected_body()
+        if owner:
+            self.rail.tree.select_body(owner)
 
     def action_shell(self):
         """Fusion Shell: hollow the body to thin walls, removing one face
