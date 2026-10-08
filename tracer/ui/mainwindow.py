@@ -2846,6 +2846,7 @@ class MainWindow(QMainWindow):
         model.axes = [u.tolist(), v.tolist()]
         model.origin = tuple(float(t) for t in origin)
         model.name = self._face_sketch_name(body)
+        model.handle = self._pick_handle(body, p, n)     # M142
         landed = 0
         if tri is not None:
             model.refs = self._host_face_refs(int(tri), model)
@@ -2857,6 +2858,28 @@ class MainWindow(QMainWindow):
             + (f"; its outline landed with it ({landed} loop"
                f"{'s' if landed != 1 else ''}, dimensionable)"
                if landed else ""), 6000)
+
+    def _pick_handle(self, body, point, normal):
+        """M142: at pick the plane under the cursor is matched
+        against what the body's features DECLARE — the NEWEST
+        publisher wins (a fresh cap shadows the face it grew from,
+        which is the face the user saw). A plane nobody publishes
+        gets no handle and stays a snapshot: honest, and exactly
+        yesterday's behaviour. body=None keeps the old arity's law:
+        no attribution invented."""
+        if body is None or self.doc is None:
+            return None
+        best = None
+        cos1 = math.cos(math.radians(1.0))
+        for f in self.doc.features:
+            if (getattr(f, "body", None) or "Body 1") != body:
+                continue
+            for part, pt, n in self.doc._published_planes(f):
+                if (float(n @ normal) > cos1
+                        and abs(float((point - np.asarray(pt, float))
+                                      @ n)) < 1e-6):
+                    best = {"feature": f.name, "part": part}
+        return best
 
     def _host_face_refs(self, tri, m):
         """M141: the host face's loop mapped into the sketch frame.
@@ -2993,6 +3016,9 @@ class MainWindow(QMainWindow):
                           op=op, plane=m.plane, axes=axes,
                           placement=placement, sketch=sketch,
                           sid=m.sid, region=i)
+            if not revolve and getattr(m, "handle", None):
+                common["handle"] = dict(m.handle)   # M142: extrude
+            #                                          only, for now
             self.doc.add(RevolveFeature(angle=angle, **common) if revolve
                          else ExtrudeFeature(height=height, **common))
         self.sketch.set_model(SketchModel())         # committed: clear editor
@@ -4346,7 +4372,11 @@ class MainWindow(QMainWindow):
                 if isinstance(src, RevolveFeature):
                     self.doc.add(RevolveFeature(angle=src.angle, **extra))
                 else:
-                    self.doc.add(ExtrudeFeature(height=src.height, **extra))
+                    if getattr(src, "handle", None):
+                        extra["handle"] = dict(src.handle)  # M142:
+                        #   added regions inherit the attachment
+                    self.doc.add(ExtrudeFeature(height=src.height,
+                                                **extra))
         for f in group[len(profiles):]:     # regions shrank: drop stale features
             self.doc.features.remove(f)
         self.doc.dirty = True

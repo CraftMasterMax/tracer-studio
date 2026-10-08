@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M141**
+**Status: M142**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -275,11 +275,14 @@ independent project with no Autodesk assets or affiliation.)
   the cut direction is probed into the material and re-editing the sketch
   moves the holes with their circles**, linear, circular & **on-path**
   patterns (N copies walking a sketched path),
-  **mirror**, sketch-on-face **(M140: the frame is DERIVED — origin
-  lands on the host body's anchor projected onto the face, axes by a
-  nearest-axis law, the sketch is named for its body, a refused face
-  says why, the RMB menu offers the route, and the extrude preset
-  reads the contact: join outward, cut when buried)**,
+  **mirror**, sketch-on-face **(M140–M142: the frame is DERIVED —
+  origin lands on the host body's anchor projected onto the face, axes
+  by a nearest-axis law, the sketch is named for its body, a refused
+  face says why, the RMB menu offers the route, the extrude preset
+  reads the contact (join outward, cut when buried), the face's own
+  loop lands as dimensionable refs — and the sketch ATTACHES: a
+  semantic FaceHandle follows the live face at recompute, pockets
+  keep cutting, stale ones freeze into cache and never blank)**,
   **Press-Pull** — grab any flat face and drag it along its normal to add
   or remove material (Fusion-style live preview; the edit commits as a
   regular parametric extrude feature: suppressible, undoable, editable
@@ -427,7 +430,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1512 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1522 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

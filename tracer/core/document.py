@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal
 
 import numpy as np
@@ -16,7 +16,8 @@ import numpy as np
 from . import params
 from .geometry import Solid, circle_contour, round_corners
 from .rimfillet import rim_fillet
-from .sketch.model import frame_matrix, plane_matrix, revolve_matrix
+from .sketch.model import (face_axes, frame_matrix, plane_matrix,
+                           plane_uv, revolve_matrix)
 
 CombineOp = Literal["union", "subtract", "intersect"]
 
@@ -325,6 +326,8 @@ class ExtrudeFeature(Feature):
     chamfer: float = 0.0     # cut vertical edges (2D corner chamfer, mm)
     taper: float = 0.0       # draft angle in degrees; + widens as it goes
     symmetric: bool = False  # straddle the sketch plane (Fusion extent)
+    handle: dict | None = None   # M142: {"feature", "part"} — the LIVE
+    #   face this sketch attached to at pick; None = frozen snapshot
 
     def _profile(self):
         if self.fillet > 0 or self.chamfer > 0:
@@ -1390,6 +1393,86 @@ class Document:
             "it with Construction Plane (Ctrl+Shift+P) or point the "
             "feature at a surviving datum")
 
+    # ---- face handles (M142, rung C) --------------------------------------
+    def _published_planes(self, f):
+        """The planes a feature DECLARES at CURRENT parameters:
+        (part, point, normal). Algebra, not geometry — an extrude's
+        caps are its placement and placement + h·n; a box's caps the
+        z faces of its dims; a cylinder's its ±z ends; a placement
+        offsets them all. A face no feature publishes carries no
+        handle and never follows: the honest snapshot law, unchanged.
+        Walls/revolve/curved parts are the named continuation."""
+        pl = np.asarray(getattr(f, "placement", (0.0, 0.0, 0.0)), float)
+        if isinstance(f, PrimitiveFeature):
+            d = f.dims
+            if f.kind == "box":
+                yield ("cap-top", pl + [0.0, 0.0, float(d["dz"])],
+                       np.array([0.0, 0.0, 1.0]))
+                yield ("cap-bottom", pl.copy(),
+                       np.array([0.0, 0.0, -1.0]))
+            elif f.kind == "cylinder":
+                yield ("cap-top", pl + [0.0, 0.0, float(d["height"])],
+                       np.array([0.0, 0.0, 1.0]))
+                yield ("cap-bottom", pl.copy(),
+                       np.array([0.0, 0.0, -1.0]))
+        elif isinstance(f, ExtrudeFeature):
+            M = plane_matrix(f.plane, tuple(pl), f.axes)
+            n, o, h = M[:3, 2], M[:3, 3], float(f.height)
+            if f.symmetric:
+                yield ("cap-top", o + n * (h / 2.0), n)
+                yield ("cap-bottom", o - n * (h / 2.0), -n)
+            else:
+                yield ("cap-top", o + n * h, n)
+                yield ("cap-bottom", o, -n)
+
+    def face_frame(self, handle: dict):
+        """M142 rung C: a FaceHandle {"feature", "part"} resolves to
+        the LIVE (point, normal) of that feature's published plane —
+        pure arithmetic at current parameters, never a mesh search,
+        so it rides every edit that keeps the feature. plane_frame's
+        voice: a missing publisher raises BY NAME and says the cure."""
+        f = next((x for x in self.features
+                  if x.name == handle.get("feature")), None)
+        if f is None:
+            raise params.ParamError(
+                f"no feature named {handle['feature']!r} to follow — it "
+                "may have been deleted; the sketch keeps its last frame "
+                "(cache is used): recreate the face or re-pick to "
+                "re-attach")
+        for part, pt, n in self._published_planes(f):
+            if part == handle.get("part"):
+                return np.asarray(pt, float), np.asarray(n, float)
+        raise params.ParamError(
+            f"feature {f.name!r} publishes no {handle.get('part')!r} "
+            "plane; the sketch keeps its last frame (cache is used)")
+
+    def _follow_face(self, f, acc):
+        """Fold-time derivation: a handled extrude re-derives its
+        frame from the LIVE face before it is consumed — origin by
+        the pick law again (the body-so-far's bbox anchor projected
+        onto the plane; the same anchor the pick saw for a face the
+        stream has not moved since), axes by the nearest-axis law,
+        and the committed SIDE preserved: a pocket follows its face
+        AND still cuts into it. Anything that cannot resolve keeps
+        its frozen numbers: the vendor's cache law — freeze, never
+        blank; the flag on top is rung D."""
+        h = getattr(f, "handle", None)
+        if not h or acc is None:
+            return f
+        try:
+            pt, n = self.face_frame(h)
+        except params.ParamError:
+            return f
+        u, v = plane_uv(f.plane, f.axes)
+        nu, nv = face_axes(n)
+        if float(np.cross(u, v) @ n) < 0.0:          # committed frame
+            nu = -nu                                  # faced the other
+        o = np.asarray(acc.to_trimesh().bounds[0], float)
+        origin = o + float((pt - o) @ n) * n
+        return replace(f, placement=tuple(float(t) for t in origin),
+                       axes=[[float(a) for a in nu],
+                             [float(b) for b in nv]])
+
     def add_axis_2pt(self, p1, p2) -> dict:
         p1, p2 = np.asarray(p1, float), np.asarray(p2, float)
         d = p2 - p1
@@ -1877,7 +1960,9 @@ class Document:
                 by_uid[f.uid] = buckets[key]
                 continue          # replaces the body; not a boolean operand
             else:
-                solid = f.build()
+                solid = (self._follow_face(f, acc).build()
+                         if isinstance(f, ExtrudeFeature)
+                         else f.build())
             by_uid[f.uid] = solid
             if acc is None:
                 if f.op == "subtract":
@@ -1955,7 +2040,8 @@ class Document:
                          symmetric=bool(f.symmetric),
                          placement=list(map(float, f.placement)),
                          plane=f.plane, axes=f.axes, sketch=f.sketch,
-                         sid=f.sid, region=f.region)
+                         sid=f.sid, region=f.region,
+                         handle=(dict(f.handle) if f.handle else None))
             elif isinstance(f, RevolveFeature):
                 d.update(outer=np.asarray(f.outer).tolist(),
                          holes=[np.asarray(h).tolist() for h in f.holes],
@@ -2138,7 +2224,8 @@ class Document:
                     placement=tuple(fd["placement"]),
                     plane=fd.get("plane", "XY"), axes=fd.get("axes"),
                     sketch=fd.get("sketch"),
-                    sid=fd.get("sid"), region=fd.get("region", 0), **base))
+                    sid=fd.get("sid"), region=fd.get("region", 0),
+                    handle=fd.get("handle"), **base))
             elif t == "RevolveFeature":
                 doc.features.append(RevolveFeature(
                     name=fd["name"],

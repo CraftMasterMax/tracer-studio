@@ -129,6 +129,9 @@ class SketchModel:
         self.axes: list | None = None      # FACE plane: [u, v] as 3-lists
         self.origin: tuple = (0.0, 0.0, 0.0)
         self.refs: list = []         # projected model edges (M82 refs)
+        self.handle: dict | None = None   # M142: live face attachment
+        #   {"feature","part"} — captured beside the frozen frame; None
+        #   is (and always was) a pure snapshot
         self.dim_exprs: dict = {}    # M89: constraint idx -> {e, t}
         self.sid = id(self)          # association key while in memory
 
@@ -730,6 +733,7 @@ def model_to_dict(m: SketchModel) -> dict:
     d["refs"] = [{"pts": [[float(x), float(y)]
                           for x, y in np.asarray(r["pts"], float)],
                   "closed": bool(r["closed"])} for r in m.refs]
+    d["handle"] = dict(m.handle) if m.handle else None   # M142
     d["dim_exprs"] = {str(int(k)): dict(rec)
                       for k, rec in m.dim_exprs.items()}   # M89 fx
     return d
@@ -783,6 +787,7 @@ def model_from_dict(d: dict) -> SketchModel:
     m.refs = [{"pts": np.asarray(r["pts"], float),
                "closed": bool(r.get("closed", False))}
               for r in d.get("refs", [])]        # pre-M82 files: none
+    m.handle = d.get("handle")                   # M142; pre-M142: None
     m.dim_exprs = {int(k): dict(rec) for k, rec
                    in d.get("dim_exprs", {}).items()}   # M89 fx
     for c in d.get("constraints", []):

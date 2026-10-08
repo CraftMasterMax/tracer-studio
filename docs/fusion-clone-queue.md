@@ -24,7 +24,7 @@ interaction grammar and visual language** — never Autodesk's identity
 | Inspect › Measure              | ✓ M33 (area, angle/gap, volume, surface)        |
 | Construction › Plane (offset)  | ✓ M40 (sketch-on-plane, browser + viewport quad)|
 | Sketch: 7 tools + 16 constraints | ✓ M5..M17, M41 (midpoint, collinear, polygon)|
-| Sketch on a face | ✓ M140–M141 rungs A+B-lite (derived frame, body-named, refusal state, contact preset, host loop lands as refs) — C queued |
+| Sketch on a face | ✓ M140–M142 rungs A+B-lite+C-core (derived frame, loop lands, FaceHandle follows at recompute) — C-datum/D queued |
 | Offset Entities                | ✓ M34 (mitred parallel copy, inward/outward)    |
 | Timeline + browser             | ✓ M9/M11 (+ glyphs, suppress, reorder-safe)     |
 | STEP / STL / 3MF / OBJ / PLY   | ✓ (STEP + fillets via OCCT bridge, degrades)    |
@@ -1588,6 +1588,30 @@ M125; items 1-11 below are history.*
   a fourth voice (body, tri — arity cited where the m140 gate
   moved). Plane sketches stay unprojected (opt-in project kept);
   a group face_region refuses lands NO loop and says nothing false.
+- **SKETCH-ON-FACE RUNG C-CORE SHIPPED (M142)** — attachment that
+  survives recompute, built the way the mesh kernel can honour it:
+  a semantic FaceHandle {"feature", "part"} — NOT a mesh search.
+  Features PUBLISH their cap planes algebraically (extrude caps =
+  placement and placement + h·n through the real plane_matrix, box
+  caps the z faces of dims, cylinder caps ±height, placement
+  honoured), so resolution is arithmetic at CURRENT parameters:
+  grow the plate, the boss RODE (golden 7600→12400, boss bottom
+  z=10), a handled pocket follows AND keeps its cut side (u-mirror
+  preserved — press-pull's law; the pocket's sketch x runs negative
+  to land inside the plate — pinned by a test that first fell to
+  its own assumption), and the fold DERIVES without rewriting:
+  the committed record keeps placement z=6 (history honest; the
+  vendor's file stores the relationship, not the moved numbers).
+  Unresolvable (feature gone/never published/acc empty) keeps the
+  FROZEN frame — the vendor's cache law read straight from its
+  error text ("Cache is used"), freeze never blank; the healthy/
+  unhealthy BADGE is rung D. plane_frame's voice kept: refusal
+  names the guilty feature and the cure. Newest-publisher-wins
+  attribution (a fresh cap shadows the face it grew from — the
+  face the user saw). Revolve/split inherit no handle yet (named),
+  datum on-face + tangent handles are the queued continuation
+  (add_plane gains method:"on-face" deriving THROUGH the handle),
+  revolve publish next. No-handle docs byte-identical (1522).
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff
