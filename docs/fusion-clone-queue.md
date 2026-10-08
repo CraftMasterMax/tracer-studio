@@ -1885,6 +1885,35 @@ M125; items 1-11 below are history.*
   space (component origins, version bump, D composed not derived) —
   "do not start 2b until the warning's user reports say growth-
   carry actually matters." (1617.)
+- **SHEET METAL SM3 SHIPPED (M149)** — the flange feature OWNS
+  its bends: Tools ▸ New Sheet / Add Flange build a parametric
+  sheet whose flat is the FORMULA (leg + πRα + leg, == identity),
+  reliefs are square end-notches inside the bend slot, a seam is
+  ONE number on a flat leg, and the ksheet table (ksolver sidecar,
+  folklore) is read LIVE at every recompute — a pinned float
+  outranks it, an unknown material names itself. The live Flat
+  branch answers the drawing AFTER any snapshot (walk speaks last)
+  and stamps bend labels BUILT FROM THE PARAMS, riding DXF TEXT
+  and PDF. The gates bit three times (band run-index misnumbering,
+  a QPointF unpack crash, colliding clipped labels — stamps now
+  alternate sides by band parity). Sidecar law: core/data is the
+  fastener registry's home; the K table rides beside its solver.
+  (1635.)
+- **GD&T RUNG 2 SHIPPED (M150)** — the frame becomes LANGUAGE:
+  five new seats (parallelism, angularity, profile-of-line/surface,
+  circular runout) bring CONTROL_TABLE to eleven in glyph lockstep;
+  datum LETTERS bind model frames (A/B/C registry, name-bound so
+  the M130 rename ledger counts them, resolve-or-refuse at register
+  time); the first COMPUTED frame (MMC/LMC bonus, virtual condition
+  — association-pinned == goldens, the gage ladder spoken on the
+  status line); the projected zone (P-circle cell, height owned by
+  the drafter, dashed ink only where honest — no 3-D zone exists
+  to draw); uid-bound feature targets survive a rename byte-
+  identically; the datum identifier is the FIRST non-dim paper ink
+  (letter-in-square + leader, paper-only by the BOM law). Two
+  rung-1 gates retargeted by CITE-THE-MOVE (the six-row pin dumps
+  the six rows byte-exact; the glyph bounds learn arc/arrow ops).
+  (1650.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

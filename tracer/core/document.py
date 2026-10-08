@@ -933,6 +933,8 @@ class Document:
         self.rollback_to: int | None = None   # M88 rubber band (view state)
         self.bodies: list[dict] = []          # M104: [{name, visible}]
         self.joints: list[dict] = []          # M146: relations bind
+        self.datums: list[dict] = []          # M150: letter->frame
+                                            # registry (file fact)
                                               # IDS — a file fact,
                                               # like the bodies list
         self.joint_warnings: list[str] = []   # session: degraded
@@ -2032,10 +2034,14 @@ class Document:
             elif isinstance(f, CoilFeature) and f.axis == old:
                 f.axis = new
                 n += 1
+        for d in self.datums:                  # M150: datum letters
+            if d["ref"] == old:                    # are name-bearers
+                d["ref"] = new                     # too — M130's law
+                n += 1                             # covers new limbs
         if self._section and self._section["plane"] == old:
             self._section["plane"] = new       # M135: the live cut is a
             n += 1                             # name-bearer too (M130's
-        self.dirty = True                      # law covers new limbs)
+        self.dirty = True
         return n
 
     def thread_decals(self) -> list[dict]:
@@ -2083,6 +2089,72 @@ class Document:
             f"no axis named {ref!r} — it may have been deleted; recreate "
             "it with Work Axis (Ctrl+Shift+O) or point the feature at a "
             "surviving datum")
+
+    # ---- datum letters (M150, GD&T rung 2) --------------------------------
+    def datum_register(self, letter: str, kind: str, ref: str) -> dict:
+        """Bind a frame LETTER (A..Z) to a model datum: kind "plane"
+        names a construction plane (XY/XZ/YZ included), kind "axis"
+        a work axis, kind "hole-axis" a cylindrical feature's UID.
+        Resolution runs NOW — a letter that resolves to nothing is
+        refused before it can lie on paper (guard-first); duplicate
+        letters refuse with the cure (one letter, one datum)."""
+        from . import params
+        from .drawing import RESERVED_LETTERS   # ONE registry (M136)
+        d = {"letter": str(letter).strip().upper(), "kind": str(kind),
+             "ref": str(ref)}
+        if len(d["letter"]) != 1 or not ("A" <= d["letter"] <= "Z"):
+            raise params.ParamError(
+                f"datum letter {letter!r}: one capital letter, A to Z")
+        if d["letter"] in RESERVED_LETTERS:
+            raise params.ParamError(
+                f"datum letter {d['letter']} is reserved by the "
+                f"standards (reserved: {RESERVED_LETTERS})")
+        if d["kind"] not in ("plane", "axis", "hole-axis"):
+            raise params.ParamError(
+                f"datum kind {d['kind']!r}: plane, axis or hole-axis")
+        if any(x["letter"] == d["letter"] for x in self.datums):
+            raise params.ParamError(
+                f"letter {d['letter']} already names a datum — "
+                "remove it first (one letter, one datum)")
+        self.datum_frame_of(d)                # resolves or raises
+        self.datums.append(d)
+        self.dirty = True
+        return d
+
+    def datum_remove(self, letter: str) -> None:
+        """Retire a letter; painted frames keep standing (the
+        rung-1 stale law) and annotate names the mute letter."""
+        before = len(self.datums)
+        self.datums = [d for d in self.datums
+                       if d["letter"] != str(letter).strip().upper()]
+        if len(self.datums) != before:
+            self.dirty = True
+
+    def datum_frame(self, letter: str):
+        """The frame a letter stands for (plane: origin,u,v,n; axis:
+        origin,dir). Death of the model datum raises plane_frame's
+        named voice — the letter keeps its meaning, the file says
+        what it pointed at."""
+        return self.datum_frame_of(next(
+            (d for d in self.datums
+             if d["letter"] == str(letter).strip().upper()), None)
+            or {"letter": letter, "kind": "plane", "ref": letter})
+
+    def datum_frame_of(self, d: dict):
+        if d["kind"] == "plane":
+            return self.plane_frame(d["ref"])
+        if d["kind"] == "axis":
+            return self.axis_frame(d["ref"])
+        f = next((x for x in self.features
+                  if getattr(x, "uid", None) == d["ref"]
+                  and isinstance(x, HoleFeature)), None)
+        if f is None:
+            from . import params
+            raise params.ParamError(
+                f"datum {d['letter']}: no threaded/hole feature with "
+                f"uid {d['ref']!r} to carry its axis")
+        return [float(c) for c in f.center], [float(n) for n in
+                                              f.normal]
 
     # ---- editing -------------------------------------------------------
     def add(self, feature: Feature) -> Feature:
@@ -2886,6 +2958,7 @@ class Document:
                 "drawings": [dict(g) for g in self.drawings],   # M93
                 "bodies": [dict(b) for b in self.bodies],       # M104
                 "joints": [dict(j) for j in self.joints],       # M146
+                "datums": [dict(d) for d in self.datums],       # M150
                 "active_body": self.active_body,
                 "features": [_feat(f) for f in self.features],
                 "planes": [dict(p) for p in self.planes],
@@ -2912,6 +2985,7 @@ class Document:
             brec.setdefault("id", uuid.uuid4().hex[:8])
             brec.setdefault("grounded", False)  # ground is a FILE
         doc.joints = [dict(j) for j in (data.get("joints") or [])]
+        doc.datums = [dict(d) for d in (data.get("datums") or [])]
         doc.active_body = data.get("active_body")
         for fd in data.get("features", []):
             t = fd["type"]

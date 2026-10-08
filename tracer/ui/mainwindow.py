@@ -711,6 +711,9 @@ class MainWindow(QMainWindow):
         m_tools.addAction("Add Flange — fold the free end…",
                           lambda checked=False:
                           self.action_add_flange())
+        m_tools.addAction("Place Datum Identifier…",
+                          lambda checked=False:
+                          self.action_datum_identifier())
         m_tools.addAction("Show Extents…",
                           lambda checked=False:
                           self.action_show_extents())
@@ -857,6 +860,10 @@ class MainWindow(QMainWindow):
             menu.addAction("Change Parameters…",
                            lambda: self.action_change_params(feature))
         menu.addAction("User Parameters…", self.action_user_parameters)
+        from ..core.document import HoleFeature
+        if isinstance(feature, HoleFeature):
+            self._datum_menu_rows(menu, "hole-axis", feature.uid,
+                                  f"hole {feature.name}")
         menu.addAction("Rename…", lambda: self._rename_feature(feature))
         menu.addSeparator()
         menu.addAction("Unsuppress" if feature.suppressed else "Suppress",
@@ -1946,7 +1953,12 @@ class MainWindow(QMainWindow):
         if not 0 <= idx < len(dims):
             return
         d = dims[idx]
-        cur = (d.get("gdt") or [{}])[0]
+        frames = list(d.get("gdt") or [])
+        second = len(frames) >= 2            # edit-by-index (cl.6.4)
+        cur = frames[1] if second else (frames[0] if frames else {})
+        target_disp = {}
+        for label, uid in self._gdt_targets():
+            target_disp[uid] = label
         names = ["\u2014 none \u2014"] + [r["name"]
                                           for r in gdt.CONTROL_TABLE.values()]
         v = cmddialog.ask(self, "Feature control frame \u2014 GD&T", [
@@ -1960,9 +1972,34 @@ class MainWindow(QMainWindow):
             dict(key="mod", kind="combo", label="Modifier",
                  default=str(cur.get("mod", "") or ""),
                  choices=["", "M", "L"]),
+            dict(key="angle", kind="text",
+                 label="True angle (deg) \u2014 required for "
+                 "Angularity, illegal elsewhere",
+                 default=str(cur.get("angle", "") or "")),
             dict(key="datums", kind="text",
                  label="Datums (A, A-B; comma separated)",
                  default=", ".join(cur.get("datums", []))),
+            dict(key="size", kind="text",
+                 label="Size limits (9.995/10.010 or a fit class, "
+                 "e.g. H7) \u2014 the \u24c2 bonus computes from them",
+                 default=cur.get("size") if isinstance(
+                     cur.get("size"), str) else ""),
+            dict(key="proj", kind="text",
+                 label="Projected zone height (mm; blank = none) "
+                 "\u2014 position/orientation only; \u2265 the mating "
+                 "part\u2019s thickness",
+                 default=str(cur.get("proj", "") or "")),
+            dict(key="target", kind="combo",
+                 label="Target feature (the frame measures THIS)",
+                 default=target_disp.get(
+                     (cur.get("target") or {}).get("uid", ""),
+                     "\u2014 none \u2014"),
+                 choices=["\u2014 none \u2014"]
+                         + [n for n, _ in self._gdt_targets()]),
+            dict(key="stack", kind="check",
+                 label="Edit the SECOND stacked frame (ISO cl.6.4; "
+                 "a stack is at most two)",
+                 default=bool(second)),
             dict(key="basic", kind="check", label="Basic dimension "
                  "(boxed) \u2014 the true exact of ISO cl.11",
                  default=bool(d.get("basic")))])
@@ -1987,19 +2024,50 @@ class MainWindow(QMainWindow):
                      "tol": str(v["tol"]).strip(),
                      "mod": str(v["mod"]).strip(),
                      "datums": datums}
+            if str(v.get("angle", "")).strip():
+                entry["angle"] = str(v.get("angle", "")).strip()
+            if str(v.get("proj", "")).strip():
+                entry["proj"] = str(v.get("proj", "")).strip()
+            size_txt = str(v.get("size", "")).strip()
+            if size_txt:
+                entry["size"] = size_txt     # the TEXT the shop typed
+            ans_t = str(v.get("target", "\u2014 none \u2014"))
+            uid = dict(self._gdt_targets()).get(ans_t, None)
+            if ans_t != "\u2014 none \u2014" and uid is None:
+                self._undo.pop()
+                QMessageBox.warning(self, "GD&T",
+                                    "that target feature is gone")
+                return
+            if uid is not None:
+                entry["target"] = {"uid": uid, "role": "axis"}
             try:
-                warns = gdt.gdt_validate(entry)
-            except ValueError as e:
+                warns = list(gdt.gdt_validate(entry))
+            except (ValueError, params.ParamError) as e:
                 self._undo.pop()             # rejected: no edit happened
                 QMessageBox.warning(self, "GD&T", str(e))
                 return
-            d["gdt"] = [entry]          # rung 1 writes ONE frame; the
-            #                           LIST shape already fits stacking
+            frames = list(d.get("gdt") or [])
+            i = 1 if v.get("stack") else 0
+            if i == 1 and not frames:
+                self._undo.pop()
+                QMessageBox.warning(
+                    self, "GD&T", "a stack hangs off a FIRST frame "
+                    "- annotate the first before stacking")
+                return
+            if len(frames) < i + 1:
+                frames = frames + [entry]
+            else:
+                frames = frames[:i] + [entry] + frames[i + 1:]
+            d["gdt"] = frames
             msg = "FCF " + label
             if entry["tol"]:
                 msg += " " + entry["tol"]
             if entry["mod"]:
                 msg += " " + entry["mod"]
+            say, size_warns = self._gdt_arithmetic(entry)
+            if say:
+                msg += " \u00b7 " + say
+            warns += size_warns
             if warns:
                 msg = warns[0]
         if bool(v["basic"]):
@@ -2009,6 +2077,197 @@ class MainWindow(QMainWindow):
         self.doc.dirty = True
         self.drawing.update()
         self.status.showMessage(msg, 5000)
+
+    # ---- GD&T rung 2 (M150): targets, arithmetic, datum letters ----
+    def _gdt_targets(self) -> list:
+        """(display, uid) for the features an FCF can honestly
+        MEASURE: hole axes and cylindrical bosses — the publishing
+        family (walls/revolve/curved carry no parametric axis yet,
+        the named continuation). The dialog combo shows displays,
+        the entry stores the UID: names are display, ids are
+        identity (M146's law), so a renamed target cannot lie."""
+        from ..core.document import HoleFeature, PrimitiveFeature
+        out = []
+        for f in self.doc.features:
+            if isinstance(f, HoleFeature):
+                out.append((f"{f.name} · axis Ø{2 * f.radius:g}"
+                            f" ({f.body})", f.uid))
+            elif isinstance(f, PrimitiveFeature) and f.kind == "cylinder":
+                out.append((f"{f.name} · axis Ø"
+                            f"{2 * float(f.dims.get('radius', 0)):g}"
+                            f" ({f.body})", f.uid))
+        return out
+
+    def _gdt_arithmetic(self, entry: dict):
+        """The shop numbers a computed frame owes: bonus, allowed,
+        virtual condition, size breach. Returns (one spoken line,
+        warnings) - FORMULA truth only (stored strings + parametric
+        size), never a mesh chord (the SM3 census law)."""
+        from ..core import gdtzones
+        mod = entry.get("mod")
+        if mod not in ("M", "L") or self.doc is None:
+            return "", []
+        uid = (entry.get("target") or {}).get("uid")
+        feat = next((f for f in self.doc.features
+                     if getattr(f, "uid", None) == uid), None)
+        if feat is None:
+            return "", ["the target feature is gone — (M) is "
+                        "painted, not evaluated, on this frame"]
+        from ..core.document import HoleFeature
+        internal = isinstance(feat, HoleFeature)
+        d_act = (2.0 * float(feat.radius) if internal
+                 else 2.0 * float(feat.dims.get("radius", 0.0)))
+        size = entry.get("size")
+        lo = hi = None
+        txt = str(size)
+        if "/" in txt:
+            try:
+                lo, hi = (float(s) for s in txt.split("/", 1))
+            except ValueError:
+                raise ValueError(
+                    f"size limits '{txt}' must read lo/hi (e.g. "
+                    "9.995/10.010)") from None
+        elif txt:
+            from ..core import fits
+            try:
+                lo, hi = fits.limits(d_act, txt)     # fits' own voice
+            except (ValueError, KeyError):
+                raise ValueError(
+                    f"'{txt}' is neither lo/hi nor a fit class the "
+                    "table knows") from None
+        if lo is None:
+            return "", ["(M) is painted, not evaluated, without "
+                        "size limits — type lo/hi or a fit class"]
+        tol = str(entry.get("tol", "")).strip()
+        for junk in ("S⌀", "SØ", "⌀", "Ø"):
+            tol = tol.replace(junk, "")
+        t = float(tol)                               # validator passed
+        d_mms, d_lms = (lo, hi) if internal else (hi, lo)
+        if mod == "M":
+            bonus = (gdtzones.bonus_internal(d_act, d_mms) if internal
+                     else gdtzones.bonus_external(d_act, d_mms))
+        else:
+            bonus = (gdtzones.bonus_lmc_internal(d_act, d_lms)
+                     if internal
+                     else gdtzones.bonus_lmc_external(d_act, d_lms))
+        allowed = t + bonus
+        vc = (gdtzones.virtual_internal(d_mms, t) if internal
+              else gdtzones.virtual_external(d_mms, t))
+        warns = []
+        if not lo - 1e-12 <= d_act <= hi + 1e-12:
+            warns.append(
+                f"Ø{d_act:g} BREACHES its limits "
+                f"{lo:g}/{hi:g} — the frame reports the size, "
+                "never hides it")
+        kind = "hole" if internal else "pin"
+        say = (f"{allowed:.4f} allowed on Ø{d_act:g} {kind} "
+               f"({'+' if bonus >= 0 else ''}{bonus:.4f} bonus, "
+               f"VC Ø{vc:.4f})")
+        return say, warns
+
+    def _register_datum(self, kind: str, ref: str, label: str):
+        """Browser affordance: a row becomes a LETTER the frames on
+        this sheet can speak. Guard-first: the CORE resolves now (a
+        letter that names nothing never registers) and collides in
+        its own voice; undo captures the registry change."""
+        if self.doc is None:
+            return
+        from . import cmddialog
+        from ..core.drawing import RESERVED_LETTERS
+        v = cmddialog.ask(self, "Register datum", [
+            dict(key="letter", kind="text",
+                 label=f"Letter for {label} (A–Z, not "
+                       + " ".join(RESERVED_LETTERS) + ")")])
+        if v is None:
+            return
+        self._capture()
+        try:
+            d = self.doc.datum_register(str(v["letter"]), kind, ref)
+        except params.ParamError as e:
+            self._undo.pop()
+            QMessageBox.warning(self, "Register datum", str(e))
+            return
+        self._unsaved = True
+        self.status.showMessage(
+            f"Datum {d['letter']} := {label} — frames may now "
+            "reference it", 6000)
+
+    def _unregister_datum(self, letter: str, label: str):
+        if self.doc is None:
+            return
+        self._capture()
+        self.doc.datum_remove(letter)
+        self._unsaved = True
+        self.status.showMessage(
+            f"Datum {letter} ({label}) unregistered — painted "
+            "frames keep standing and say so when annotated", 6000)
+
+    def _datum_letters(self, ref: str):
+        return [d["letter"] for d in (self.doc.datums if self.doc
+                                      else []) if d["ref"] == ref]
+
+    def _datum_menu_rows(self, menu, kind, ref, label):
+        """One choke: a row that is a datum shows its letters to
+        retire; a row that is not, offers registration (M150)."""
+        letters = self._datum_letters(ref)
+        if letters:
+            for x in letters:
+                menu.addAction(
+                    f"Unregister datum {x}",
+                    lambda checked=False, L=x: self._unregister_datum(
+                        L, label))
+        else:
+            menu.addAction(
+                "Register as Datum\u2026",
+                lambda: self._register_datum(kind, ref, label))
+
+    def action_datum_identifier(self):
+        """Tools ▸ Place Datum Identifier (M150): the vendor
+        keeps the IDENTIFIER separate from the frame, so it is its
+        own annotation — letter-in-a-square on the paper, its
+        anchor in MODEL space so it travels and spins for free.
+        Guard-first: a sheet and a registered letter come first."""
+        if self.doc is None or not self.doc.drawings:
+            self.status.showMessage(
+                "Datum identifier needs a drawing sheet — "
+                "Create ▸ New drawing", 6000)
+            return
+        letters = [d["letter"] for d in self.doc.datums]
+        if not letters:
+            self.status.showMessage(
+                "No datum letters yet — right-click a plane, "
+                "axis or hole row and Register as Datum…", 7000)
+            return
+        from . import cmddialog
+        views = sorted(self.drawing.views())
+        if not views:
+            return
+        v = cmddialog.ask(self, "Datum Identifier", [
+            dict(key="letter", kind="combo", label="Datum letter",
+                 choices=letters),
+            dict(key="view", kind="combo", label="View",
+                 choices=views),
+            dict(key="x", kind="double", label="Anchor X (model mm)",
+                 default=0.0),
+            dict(key="y", kind="double", label="Anchor Y (model mm)",
+                 default=0.0),
+            dict(key="lead", kind="check",
+                 label="Leader to a stamp offset up-right",
+                 default=True)])
+        if v is None:
+            return
+        self._capture()
+        g = self.drawing.sheet()
+        g.setdefault("datums", []).append({
+            "letter": str(v["letter"]), "view": str(v["view"]),
+            "anchor": [float(v["x"]), float(v["y"])],
+            "leader": ([float(v["x"]) + 8.0, float(v["y"]) + 8.0]
+                       if v["lead"] else None)})
+        self.doc.dirty = True
+        self.drawing.update()
+        self.status.showMessage(
+            f"Datum identifier {v['letter']} placed on {v['view']}",
+            5000)
 
     def _open_drawing(self, idx: int):
         if self.doc is None or not (0 <= idx < len(self.doc.drawings)):
@@ -2527,6 +2786,7 @@ class MainWindow(QMainWindow):
         menu = QMenu(self)
         menu.addAction("Rename…",
                        lambda: self._rename_datum("work axis", name))
+        self._datum_menu_rows(menu, "axis", name, f"work axis {name}")
         menu.addSeparator()
         menu.addAction("Delete work axis", lambda: self._delete_axis(name))
         menu.exec_(pos)
@@ -2648,6 +2908,8 @@ class MainWindow(QMainWindow):
             if self.doc.section_plane() == name:
                 menu.addAction("Flip section", self._flip_section)
             menu.addAction("Clear section", self._clear_section)
+        self._datum_menu_rows(menu, "plane", name,
+                              f"plane {name}")
         if stored:
             menu.addSeparator()
             menu.addAction("Rename…",

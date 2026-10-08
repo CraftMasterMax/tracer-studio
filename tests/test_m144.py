@@ -31,9 +31,43 @@ from tracer.core.document import PrimitiveFeature  # noqa: E402
 # ---- pure core: the table, the validator, the cells, the glyphs ----
 
 def test_table_is_the_six():
-    assert set(gdt.CONTROL_TABLE) == {"straightness", "flatness",
+    # M150 CITES THE MOVE (M141's law, contract gdt_rung2.md §1.4):
+    # rung 1 pinned equality with six; rung 2 grows five seats, so
+    # the law becomes SUPERSET + a byte-exact pin of the six rung-1
+    # rows. The law bites BOTH ways: growth is legal, drift is not.
+    assert set(gdt.CONTROL_TABLE) >= {"straightness", "flatness",
                                       "circularity", "cylindricity",
                                       "perpendicularity", "position"}
+    import json
+    six = {k: gdt.CONTROL_TABLE[k] for k in
+           ("straightness", "flatness", "circularity", "cylindricity",
+            "perpendicularity", "position")}
+    assert json.dumps(six, sort_keys=True) == json.dumps({
+        "straightness": dict(
+            name="Straightness", mods=("M",), datums=(0, 0),
+            diam="optional", forces_TE=False,
+            zone="two parallel lines/planes; a cylinder iff ⌀ (18.1)"),
+        "flatness": dict(
+            name="Flatness", mods=(), datums=(0, 0),
+            diam="forbidden", forces_TE=False,
+            zone="two parallel planes t apart (18.2)"),
+        "circularity": dict(
+            name="Circularity", mods=(), datums=(0, 0),
+            diam="forbidden", forces_TE=False,
+            zone="two concentric circles, radial band (18.3)"),
+        "cylindricity": dict(
+            name="Cylindricity", mods=(), datums=(0, 0),
+            diam="forbidden", forces_TE=False,
+            zone="two coaxial cylinders, radial band (18.4)"),
+        "perpendicularity": dict(
+            name="Perpendicularity", mods=("M",), datums=(1, 3),
+            diam="optional", forces_TE=True,
+            zone="two parallel planes/lines (a cylinder iff ⌀) (18.6)"),
+        "position": dict(
+            name="Position", mods=("M", "L"), datums=(0, 3),
+            diam="normal", forces_TE=True,
+            zone="cylinder iff ⌀; two planes or sphere otherwise (18.8)"),
+    }, sort_keys=True)
     for row in gdt.CONTROL_TABLE.values():
         assert row["zone"] and row["name"]
         assert isinstance(row["mods"], tuple)
@@ -98,10 +132,23 @@ def test_glyphs_are_unit_boxed_polylines():
                 for x, y in op[1]:
                     assert -1e-9 <= x <= 1 + 1e-9, (key, x)
                     assert -1e-9 <= y <= 1 + 1e-9, (key, y)
-            else:
+            elif op[0] == "circle":
                 (_, (cx, cy), r) = op
                 assert 0 <= cx - r and cx + r <= 1
                 assert 0 <= cy - r and cy + r <= 1
+            elif op[0] == "arc":            # M150: profile seats
+                (_, (cx, cy), r, a0, a1) = op
+                # the DRAWN extent, not the full circle: Qt arcs take
+                # y = cy - r*sin(t), so an upper seat (180->0 through
+                # 90) reaches cy - r at its apex and never below cy.
+                assert 0 <= cx - r and cx + r <= 1
+                assert 0 <= cy - r and cy <= 1
+                assert -360 <= a0 <= 360 and -360 <= a1 <= 360
+            else:                           # M150: runout arrow
+                assert op[0] == "arrow", (key, op)
+                for (x, y) in op[1:]:
+                    assert -1e-9 <= x <= 1 + 1e-9, (key, x)
+                    assert -1e-9 <= y <= 1 + 1e-9, (key, y)
 
 
 def test_datum_cells_are_separate_grammar():

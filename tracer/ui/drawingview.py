@@ -850,6 +850,7 @@ class DrawingCanvas(QWidget):
         self._draw_dims(p, placed)
         self._draw_balloons(p, placed)               # M110 item bubbles
         self._draw_hole_notes(p, placed)             # M129 table + marks
+        self._draw_datum_ids(p, placed)              # M150 letters
         self._draw_section_lines(p, placed)          # M136 cutting lines
 
     # ---- publish (M143) ---------------------------------------------------
@@ -1194,6 +1195,57 @@ class DrawingCanvas(QWidget):
         self._paint_cells(p, t["cells"])
         p.restore()
 
+    def datum_ids_page(self) -> list:
+        """M150: the datum identifiers in SHEET-MM page coords —
+        (letter, page-pt, leader page-pt or None). Anchors live in
+        MODEL space (the dims' trick): the stamp travels, spins and
+        saves for free. Legacy sheets carry no "datums" key and
+        answer empty — the byte-identical paper law."""
+        out = []
+        for e in self.sheet().get("datums", []):
+            fr = self.placed().get(e["view"])
+            if fr is None:
+                continue
+            pt = self._m2p(fr, e["anchor"][:2])
+            lead = (self._m2p(fr, e["leader"][:2])
+                    if e.get("leader") else None)
+            out.append((str(e["letter"]), (float(pt[0]), float(pt[1])),
+                        None if lead is None else (float(lead[0]),
+                                                   float(lead[1]))))
+        return out
+
+    def _draw_datum_ids(self, p: QPainter, placed: dict):
+        """Letter-in-a-square with a leader — the vendor separates
+        the identifier from the frame, so it is its own annotation:
+        the FIRST paper object that is not a dim (opt-in key, black
+        sheet ink, not the dims' red)."""
+        ids = self.datum_ids_page()
+        if not ids:
+            return
+        p.save()
+        f = p.font()
+        f.setPixelSize(max(8, int(5.2 * self._zoom)))
+        p.setFont(f)
+        pen = QPen(_SHEET, max(0.9, 0.3 * self._zoom))
+        p.setPen(pen)
+        for letter, (px, py), lead in ids:
+            a = self.s2p(px, py)
+            if lead is not None:
+                lq = self.s2p(*lead)
+                p.drawLine(a, lq)
+                cx, cy = lq.x(), lq.y()
+            else:
+                cx, cy = a.x(), a.y()
+            half = max(3.4, 2.2 * self._zoom)
+            p.setBrush(_PAPER)                     # the square kills
+            p.drawRect(QRectF(cx - half, cy - half,                # the
+                              2 * half, 2 * half))                 # ink
+            p.setBrush(Qt.NoBrush)
+            p.drawText(QRectF(cx - half, cy - half,
+                              2 * half, 2 * half),
+                       Qt.AlignCenter, letter)
+        p.restore()
+
     def _draw_dims(self, p: QPainter, placed: dict):
         """Draughtsman bubbles: extension lines, arrowed dimension line
         offset away from the view, and the live millimetre text in a
@@ -1431,6 +1483,27 @@ class DrawingCanvas(QWidget):
                 else:
                     for a, b in zip(pts, pts[1:]):
                         p.drawLine(a, b)
+            elif op[0] == "arc":
+                (_, (ccx, ccy), r, a0, a1) = op
+                rect = QRectF(ox + (ccx - r) * side,
+                              oy + (ccy - r) * side,
+                              2.0 * r * side, 2.0 * r * side)
+                path = QPainterPath()
+                path.arcMoveTo(rect, a0)
+                path.arcTo(rect, a0, a1 - a0)
+                p.drawPath(path)
+            elif op[0] == "arrow":
+                (_, (x0, y0), (x1, y1)) = op
+                ax, ay = ox + x0 * side, oy + y0 * side
+                bx, by = ox + x1 * side, oy + y1 * side
+                p.drawLine(QPointF(ax, ay), QPointF(bx, by))
+                import math as _m
+                ang = _m.atan2(by - ay, bx - ax)
+                for sgn in (-1.0, 1.0):
+                    ha = ang + _m.radians(180.0 + 22.0 * sgn)
+                    p.drawLine(QPointF(bx, by), QPointF(
+                        bx + 0.20 * side * _m.cos(ha),
+                        by + 0.20 * side * _m.sin(ha)))
             else:
                 (_, (ccx, ccy), r) = op
                 p.drawEllipse(QPointF(ox + ccx * side, oy + ccy * side),
@@ -1458,6 +1531,23 @@ class DrawingCanvas(QWidget):
                 p.drawLine(QPointF(cx, top), QPointF(cx, top + box))
             if c["kind"] == "glyph":
                 self._paint_glyph(p, c["key"], cell, box)
+            elif c["kind"] == "proj":
+                # M150: the projected-zone compartment — a painted
+                # circle around P (the balloon family, not the
+                # tofu U+24C5) and the height beside it.
+                fm = QFontMetrics(self._dim_font())
+                s = c["s"]
+                full = fm.horizontalAdvance(s)
+                x0 = cell.center().x() - full / 2.0
+                rr = max(2.5, 0.5 * fm.horizontalAdvance("P")
+                         + 0.10 * box)
+                pcx = cell.center().x() - full / 2.0 + rr
+                p.drawEllipse(QPointF(pcx, cell.center().y()), rr, rr)
+                p.drawText(QRectF(pcx - rr, cell.top(), 2 * rr, box),
+                           Qt.AlignCenter, "P")
+                p.drawText(QRectF(pcx + rr, cell.top(),
+                                  cell.right() - pcx - rr, box),
+                           Qt.AlignVCenter | Qt.AlignLeft, s[2:])
             else:
                 p.drawText(cell, Qt.AlignCenter, c["s"])
             cx += w

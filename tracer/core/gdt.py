@@ -47,6 +47,31 @@ GLYPHS = {
     "position": [("circle", (0.50, 0.50), 0.30),
                  ("poly", [(0.10, 0.50), (0.90, 0.50)]),
                  ("poly", [(0.50, 0.10), (0.50, 0.90)])],
+    # rung 2 (M150): five new seats, ISO 1101 Table shapes via the
+    # probe §1.3 unit-box specs (y-DOWN like the page)
+    "parallelism": [("poly", [(0.14, 0.88), (0.44, 0.22)]),
+                    ("poly", [(0.42, 0.88), (0.72, 0.22)])],
+    "angularity": [("poly", [(0.14, 0.82), (0.80, 0.82)]),
+                   ("poly", [(0.14, 0.82), (0.66, 0.22)])],
+    "profile_line": [("arc", (0.50, 0.72), 0.36, 180, 0)],
+    "profile_surface": [("arc", (0.50, 0.72), 0.36, 180, 0),
+                        ("poly", [(0.14, 0.72), (0.86, 0.72)])],
+    "circular_runout": [("arrow", (0.24, 0.76), (0.76, 0.24))],
+}
+
+# The controls rung 2 REFUSES by name, with the reason in the voice
+# (a bare "unknown control" would hide the law):
+DEFERRED = {
+    "total_runout": "total runout is the circumferential-COMPOUND "
+                    "readout (a 360-sweep of circular runout plus "
+                    "element-line orientation) - no closed form, "
+                    "queued behind circular runout",
+    "concentricity": "concentricity was ELIMINATED by ASME "
+                     "Y14.5-2018 - the honest check is a median-"
+                     "element locus; do not draw it",
+    "symmetry": "symmetry was ELIMINATED by ASME Y14.5-2018 - the "
+                "honest check is a median-element locus; do not "
+                "draw it",
 }
 
 # The validator's rows — every field sourced in the probe §2.
@@ -82,6 +107,30 @@ CONTROL_TABLE = {
         name="Position", mods=("M", "L"), datums=(0, 3),
         diam="normal", forces_TE=True,
         zone="cylinder iff ⌀; two planes or sphere otherwise (18.8)"),
+    # ---- rung 2 (M150) ----
+    "parallelism": dict(
+        name="Parallelism", mods=("M",), datums=(1, 3),
+        diam="optional", forces_TE=True,
+        zone="two parallel planes/lines (a cylinder iff ⌀)"),
+    "angularity": dict(
+        name="Angularity", mods=("M",), datums=(1, 3),
+        diam="optional", forces_TE=True,
+        zone="two parallel planes/lines at the STATED angle"),
+    "profile_line": dict(
+        name="Profile of a line", mods=("M",), datums=(0, 3),
+        diam="forbidden", forces_TE=True,
+        zone="two envelope lines t apart, t/2 each side of the "
+             "true profile"),
+    "profile_surface": dict(
+        name="Profile of a surface", mods=("M",), datums=(0, 3),
+        diam="forbidden", forces_TE=True,
+        zone="two envelope surfaces t apart, t/2 each side of "
+             "the true profile"),
+    "circular_runout": dict(
+        name="Circular runout", mods=(), datums=(1, 1),
+        diam="forbidden", forces_TE=False,
+        zone="two concentric circles in one view plane, radial "
+             "band t"),
 }
 
 _NAMES = {row["name"]: key for key, row in CONTROL_TABLE.items()}
@@ -99,6 +148,9 @@ def gdt_validate(entry: dict) -> list[str]:
     should hear about (position with no datum reference)."""
     row = CONTROL_TABLE.get(entry.get("sym", ""))
     if row is None:
+        gone = DEFERRED.get(str(entry.get("sym", "")))
+        if gone is not None:
+            raise ValueError(gone)
         raise ValueError(
             f"'{entry.get('sym')}' is not one of: "
             + ", ".join(r["name"] for r in CONTROL_TABLE.values()))
@@ -169,7 +221,52 @@ def gdt_validate(entry: dict) -> list[str]:
                 raise ValueError(
                     f"datum letter {part} is reserved by the "
                     f"standards (reserved: {RESERVED_LETTERS})")
+    # ---- rung 2 grammar: the angle, the projected zone ----
+    angle = str(entry.get("angle", "") or "").strip()
+    if entry["sym"] == "angularity":
+        if not angle:
+            raise ValueError(
+                "angularity states its TRUE angle - the frame "
+                "without it describes no zone")
+        try:
+            a_val = float(angle)
+        except ValueError:
+            raise ValueError(
+                f"angle '{angle}' must be a number of degrees"
+            ) from None
+        if not 0.0 < a_val < 180.0:
+            raise ValueError(
+                "the stated angle lives between 0 and 180 "
+                "degrees (0 is parallelism, 90 perpendicularity)")
+    elif angle:
+        raise ValueError(
+            f"({angle}) belongs to angularity only - "
+            f"{row['name']} rides its datum at right angles or "
+            "parallel")
+    proj = str(entry.get("proj", "") or "").strip()
+    if proj:
+        if entry["sym"] not in ("position", "perpendicularity",
+                                "parallelism", "angularity"):
+            raise ValueError(
+                "a projected zone projects an AXIS - "
+                f"{row['name']} has no axis story")
+        try:
+            h_val = float(proj)
+        except ValueError:
+            raise ValueError(
+                f"projected height '{proj}' must be a number"
+            ) from None
+        if not h_val > 0:
+            raise ValueError("the projected height is a positive "
+                             "length (the drafter owns it: at "
+                             "least the mating part's thickness)")
     warnings = []
+    if mod in ("M", "L") and not entry.get("size") \
+            and not entry.get("target"):
+        warnings.append(
+            f"({mod}) is painted, not evaluated, without size "
+            "limits or a feature target - the frame is honest ink "
+            "but the bonus stays in the shop's head")
     if not datums and row["datums"][0] == 0 and row["forces_TE"]:
         warnings.append(
             f"{row['name']} with no datum reference locates nothing"
@@ -191,6 +288,8 @@ def gdt_cells(entry: dict) -> list[dict]:
     text = f"{tol} {entry['mod']}" if entry.get("mod") else tol
     cells = [dict(kind="glyph", key=entry["sym"]),
              dict(kind="text", s=text)]
+    if entry.get("proj"):
+        cells.append(dict(kind="proj", s="P " + str(entry["proj"]).strip()))
     cells += [dict(kind="datum", s=str(d))
               for d in entry.get("datums", [])]
     assert row                          # the key came from the table
