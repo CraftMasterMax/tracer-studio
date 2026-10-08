@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M147**
+**Status: M148**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -376,14 +376,24 @@ independent project with no Autodesk assets or affiliation.)
   two bodies, the child's pose captured once, and **LAW R** from then
   on — *a joint follows where a body is PLACED, not how it is BUILT*.
   Drag the base and the whole subtree rides (one 4×4 multiply per
-  jointed body, re-applied deterministically every recompute); a
-  parametric edit rides too — and says so, because bodies own no
-  frame yet (rung 2's priced migration, not a silent fudge). Bodies
+  jointed body, re-applied deterministically every recompute). And
+  since **rung 2a (M148)** the joint follows a parent's RIGID STREAM
+  MOTION too: edit a terminal Move/Rotate or a lone primitive's
+  placement and the welded child rides exactly — the kernel reads
+  that motion off the stream (D = g_now·g_bake⁻¹, structural frames,
+  never a bounding box: an asymmetric growth would lie). GROWTH
+  (dims, pattern counts, anything the classifier cannot read as
+  motion) carries nothing and SAYS SO — "a joint follows placement,
+  not growth" lands in the warnings, never a silent half-move. The
+  frame baseline rides the file; legacy files bake silently, and at
+  D = identity the math is bit-for-bit the shipped rung-1 line. Bodies
   mint ids that joints bind, so **renaming a body cannot orphan its
   joint** (the relink rewrites the name ledger; the joint holds the
   id). The first body grounds itself, ground is a file fact, and a
   grounded or jointed body refuses the Move/Rotate gesture **at arm
-  time** — the triad never appears. Browser ▸ **Joints (n)** rows
+  time** — the triad never appears. Capturing a jointed body's
+  placement refuses guard-first (capture rewrites the base pose; the
+  welded child would JUMP). Browser ▸ **Joints (n)** rows
   delete (delete-and-recreate is v1's edit). Self-join, second
   parents, cycles and jointing an interference clash are refused by
   name

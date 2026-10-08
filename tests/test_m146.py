@@ -131,9 +131,10 @@ def test_dragging_the_base_carries_the_whole_subtree():
 
 
 def test_parametric_edit_does_not_carry_the_child():
-    """F2's honest face: no per-body frame yet, so a stream change
-    to the parent moves only the parent — the product says
-    "where a body is PLACED", and this gate pins that wording."""
+    """F2's honest face, RE-SCOPED by rung 2a (M148 t1): the silent
+    non-carry is now the GROWTH half of the law — dims move nothing
+    and the joint says "grew" out loud. (A terminal Move/Rotate tail
+    or a lone primitive's placement DOES carry: test_m148 t1-t3.)"""
     d = _two_box_doc()
     d.move_body("B", 12.0, 0.0, 0.0)
     d.recompute()
@@ -142,6 +143,8 @@ def test_parametric_edit_does_not_carry_the_child():
     d.features[0].dims["dy"] = 40.0            # A grows: parametric
     d.recompute()
     assert _bounds(d._body_solids["B"]) == b0  # B stays (rung-1 law)
+    assert d.joint_warnings and "grew" in d.joint_warnings[0]
+    #                       ^ rung 2a's voice: growth refused, loudly
     d.move_body("A", 3.0, 0.0, 0.0)            # placement still
     d.recompute()                              # carries, delta form
     assert _bounds(d._body_solids["B"]) == _shifted(b0, [3.0, 0.0,

@@ -6,6 +6,8 @@ true history tree will replace later — files written today stay readable.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import uuid
 from dataclasses import dataclass, field, replace
@@ -835,6 +837,47 @@ class FlatPatternFeature(Feature):
                              height=0.01)
 
 
+# ---- M148 rung 2a: the stream classifier's primitives -----------------
+_ID4 = np.eye(4)
+
+
+def _trans_mat(x: float, y: float, z: float) -> np.ndarray:
+    m = np.array(_ID4)
+    m[0, 3], m[1, 3], m[2, 3] = x, y, z
+    return m
+
+
+def _canon(v):
+    """Signature-safe canonical value: int and float are ONE number
+    (the file round-trips either — the spike's g6 failure was
+    int->float drift read as a stream edit, and this canon is why
+    production cannot repeat it), sequences recurse, and big arrays
+    HASH: a fingerprint rides the file and must stay small."""
+    if isinstance(v, (int, float, np.integer, np.floating)):
+        return float(v)
+    if isinstance(v, np.ndarray):
+        raw = np.ascontiguousarray(v, dtype=np.float64).tobytes()
+        return "arr:" + hashlib.sha256(raw).hexdigest()
+    if isinstance(v, dict):
+        return {str(k): _canon(x)
+                for k, x in sorted(v.items(), key=lambda kv: str(kv[0]))}
+    if isinstance(v, (list, tuple)):
+        return [_canon(x) for x in v]
+    return v
+
+
+def _feat_sig(f: "Feature", drop: tuple = ()) -> list:
+    """One feature as the classifier sees it: kind + every stored
+    lever EXCEPT display identity (name/uid/body), user bindings and
+    the transient error badge — and except `drop`, the levers that
+    ARE the rigid motion this feature may carry. Names are out by
+    law: rename_body must never look like growth (t12)."""
+    body = {k: _canon(x) for k, x in vars(f).items()
+            if k not in ("name", "uid", "body", "bindings", "error")
+            and k not in drop}
+    return [type(f).__name__, json.dumps(body, sort_keys=True)]
+
+
 class Document:
     # Origin-plane normals with in-plane bases chosen so u × v = n:
     # a sketch drawn on such a plane extrudes along its own normal.
@@ -977,16 +1020,90 @@ class Document:
                    and (getattr(f, "body", None) or "Body 1") == name
                    for f in self.features)
 
+    def _frame_class(self, name: str):
+        """(k, g) for one body's stream — the classifier law
+        (body_frames.md §2.2). The stream is this body's features,
+        unsuppressed, inside rollback:
+          R1  a TERMINAL Move/Rotate tail (copy=False): g composes
+              the tail's matrices over the base's map, and the tail
+              levers (vec | center/axis/angle_deg) are EXCLUDED
+              from k — editing them IS the rigid motion a joint
+              follows;
+          R2  a lone PrimitiveFeature: g = T(placement), placement
+              excluded (its build is S = s.translated(placement),
+              so the map is exact);
+          class-none  anything else: g = I, k = the WHOLE stream.
+        A non-R2 base still takes its R1 tail (the tail law does not
+        ask what the base is built of). A copy=True tail feature is
+        GROWTH (it unions a twin) and stays in the base's full
+        fingerprint. Growth the classifier cannot read as motion
+        changes k — and the fold SAYS SO rather than guessing.
+        """
+        stream = [f for f in self.features
+                  if (f.body or "Body 1") == name and not f.suppressed]
+        if self.rollback_to is not None:
+            pos = {id(f): i for i, f in enumerate(self.features)}
+            stream = [f for f in stream if pos[id(f)] < self.rollback_to]
+        base, tail = list(stream), []
+        while base and isinstance(base[-1],
+                                  (MoveFeature, RotateFeature)) \
+                and not base[-1].copy:
+            tail.insert(0, base.pop())
+        if not base:                     # nothing builds: an empty
+            return (json.dumps([_feat_sig(f) for f in stream],   # or all-
+                              sort_keys=True), np.array(_ID4))   # tail stream
+        if len(base) == 1 and isinstance(base[0], PrimitiveFeature):
+            g = _trans_mat(*[float(x) for x in base[0].placement])
+            keys = [_feat_sig(base[0], drop=("placement",))]
+        else:
+            keys = [_feat_sig(f) for f in base]
+            g = np.array(_ID4)
+        for f in tail:
+            if isinstance(f, MoveFeature):
+                m = _trans_mat(*[float(x) for x in f.vec])
+                keys.append(_feat_sig(f, drop=("vec",)))
+            else:
+                from .geometry import rotation_about
+                m = rotation_about(tuple(float(x) for x in f.center),
+                                   tuple(float(x) for x in f.axis),
+                                   np.deg2rad(float(f.angle_deg)))
+                keys.append(_feat_sig(f, drop=("center", "axis",
+                                               "angle_deg")))
+            g = np.asarray(m) @ g
+        return json.dumps(keys, sort_keys=True), g
+
+    def _frame_delta(self, body: dict):
+        """D = g_now @ inv(g_bake): the rigid map the parent's stream
+        gained since the bake — or None when the stream changed in a
+        way the classifier cannot read as motion (growth: the fold
+        warns and the child holds). frame0 is a FILE fact baked at
+        add_joint; a pre-2a file carries none and bakes SILENTLY at
+        its first jointed recompute, byte-equal to the rung-1 answer
+        (the lazy bake freezes the CURRENT stream as the baseline).
+        The derived frame itself is never saved — a live pose
+        persisted across sessions would lie."""
+        k, g = self._frame_class(body["name"])
+        f0 = body.get("frame0")
+        if f0 is None:
+            body["frame0"] = {"k": k,
+                              "g": [float(x) for x in g.ravel()]}
+            return np.array(_ID4)
+        if k != f0["k"]:
+            return None
+        d = g @ np.linalg.inv(np.asarray(f0["g"], float).reshape(4, 4))
+        return np.array(_ID4) if np.allclose(d, _ID4, atol=1e-12) else d
+
     def add_joint(self, body_a: str, body_b: str,
                   note: str = "") -> dict:
         """As-Built Rigid — Fusion's As-Built Joint is the honest
         shape (§7.1 F3): we pick no geometry and MOVE NOTHING at
         creation. The child's pose-in-parent is BAKED from the two
         state matrices, m = inv(P_A0) @ P_B0, and recompute re-
-        applies P'_child = P'_parent @ m forever after: LAW R, "a
+        applies P'_child = P'_parent @ D @ m forever after (D = I
+        until a rigid stream edit says otherwise — rung 2a): LAW R, "a
         joint follows where a body is PLACED, not how it is BUILT"
-        (a stream edit carries nothing — no per-body frame until
-        rung 2, and the dialog says so). a_home is bake CONTEXT:
+        (its rigid STREAM motion carries too since rung 2a, but
+        growth carries nothing — and says so). a_home is bake CONTEXT:
         the re-apply must NOT consume it — the contract's extra
         inv(a_home) factor teleports a child whenever the base sat
         off identity, and the spike hid that by being all eye(4).
@@ -1032,6 +1149,9 @@ class Document:
              "a_home": [float(x) for x in pa.ravel()],
              "note": str(note)}
         self.joints.append(j)
+        k, g = self._frame_class(body_a)        # M148 rung 2a: the
+        a["frame0"] = {"k": k,                  # parent's stream
+                       "g": [float(x) for x in g.ravel()]}   # baseline
         a["grounded"] = True            # the base of a tree is the
         self.dirty = True               # ground (vendor's own rule)
         return j
@@ -1144,6 +1264,8 @@ class Document:
                              np.asarray(j["m"], float).reshape(4, 4)))
         children = {cn for _, cn, _ in resolved}
         mats: dict = {}
+        deltas: dict = {}                # M148: one classification
+        grew: dict = {}                  #  per jointed parent
         todo = list(resolved)
         progress = True
         while todo and progress:
@@ -1155,13 +1277,32 @@ class Document:
                     if pn in children:
                         continue         # wait: parents first
                     pm = self._placement_matrix(by_name.get(pn))
-                mats[cn] = pm @ m
+                # M148 rung 2a: the parent's RIGID stream motion
+                # rides too — P'_child = P'_parent @ D @ m — and at
+                # D = I the else-shape below is literally the
+                # shipped rung-1 line, bit for bit (t7's pin).
+                if pn not in deltas:
+                    deltas[pn] = self._frame_delta(by_name[pn])
+                D = deltas[pn]
+                if D is None:            # growth, not motion: loud
+                    grew.setdefault(pn, []).append(cn)
+                    mats[cn] = pm @ m
+                elif np.array_equal(D, _ID4):
+                    mats[cn] = pm @ m
+                else:
+                    mats[cn] = pm @ D @ m
                 todo.remove(t)
                 progress = True
         for pn, cn, _m in todo:
             self.joint_warnings.append(
                 f"joint cycle through {pn!r} and {cn!r} — v1 cannot "
                 "solve it; the bodies sit at their own placement")
+        for pn, kids in grew.items():    # the loud half of the law:
+            self.joint_warnings.append(  # growth is NOT motion
+                f"'{pn}' grew, it did not move — a joint follows "
+                "placement, not growth; "
+                + ", ".join(repr(k) for k in kids)
+                + " stayed at the jointed pose")
         out = dict(placed)
         for cn, pm in mats.items():
             s = buckets.get(cn)
@@ -1182,6 +1323,15 @@ class Document:
         zero the state.  After capture the placement is parametric and
         survives anything that reads features, not body dicts."""
         b = self._body(name)
+        if any(b["id"] in (j["a"], j["b"]) for j in self.joints):
+            # M148 rung 2a, guard-FIRST (§2.6's algebra): capture
+            # sets P := I and appends a stream Move — a welded child
+            # would JUMP by the captured vector, and re-baking
+            # frame0 cannot fix a stale m. Refuse, name the cure.
+            raise params.ParamError(
+                f"'{name}' rides a joint — capture rewrites its base "
+                "pose and the jointed partner would jump; delete the "
+                "joint first (the pose is already where you put it)")
         pos = list(b.get("placement") or (0.0, 0.0, 0.0))
         made = []
         if b.get("rot") is not None:

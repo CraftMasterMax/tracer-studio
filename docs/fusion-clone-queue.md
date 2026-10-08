@@ -1824,6 +1824,63 @@ M125; items 1-11 below are history.*
   — M145's own seam gate pins it, with the No-answered stub as the
   new act); _flat is filtered from flatten/joint pickers (paper is
   not a part). (1603.)
+- **ASSEMBLY RUNG 2a SHIPPED (M148)** — the joint learns to follow
+  the parent's RIGID STREAM MOTION (contract body_frames.md §2,
+  derived-frame option ALIVE in structural form, the geometric/bbox
+  variant DEAD by the probe's executed counterexample: asymmetric
+  growth lies by (0,10,0)). Two per-body keys split the law:
+  b["frame0"] = {k, g} is a FILE fact (stream fingerprint minus the
+  rigid levers + the rigid map at bake), the derived frame D =
+  g_now @ inv(g_bake) is RUNTIME-only — a live pose persisted across
+  sessions would lie. The classifier is the law's mouth: R1 = a
+  terminal Move/Rotate tail (copy=False) composes g tail-over-base
+  with its levers EXCLUDED from k (editing them IS motion); R2 = a
+  lone primitive, g = T(placement) (its build is exactly
+  s.translated(placement)); anything else is class-none, g = I, k =
+  the WHOLE stream. A copy=True tail feature is GROWTH wearing a
+  move's clothes — it unions a twin — and stays fully fingerprinted.
+  The fold grows one factor: P'_child = P'_parent @ D @ m, and at
+  D = I the shipped rung-1 line runs BIT-FOR-BIT (the fold literally
+  takes the old path when the delta is identity; t7 pins the
+  transformed() count at exactly the shipped 1-per-child, t6 re-pins
+  joint-free docs at ZERO calls AND at the untouched 6-key body
+  dict — frame0 appears only in jointed docs). Growth (dims,
+  pattern counts, class-none edits) refuses to carry AND says so —
+  "'A' grew, it did not move — a joint follows placement, not
+  growth" in joint_warnings, the child held at the jointed pose;
+  M146's own non-carry gate was RE-SCOPED in place to gain that
+  voice (the silent half of its law is now the loud half). Chains
+  fold by DEPTH (E5 golden: E_C = (P_A @ D_A @ m_AB) @ D_B @ m_BC,
+  child-before-parent list order proves topology beats order); a
+  rotate tail welds ORIENTATION (golden re-derived from corner-
+  anchoring: [10..15]x[0..5] turns to x [-5..0], y [10..15]).
+  INT-vs-FLOAT is a named law, not a footnote: the spike's first
+  save/load FAIL was json turning 10 into 10.0 and the fingerprint
+  reading drift as growth — _canon folds int/float to ONE float and
+  HASHES big arrays (fingerprints ride the file, stay small); the
+  gate bakes from INT dims, loads FLOAT ones, and carries the NET
+  delta after load. Legacy files (no frame0) bake SILENTLY at first
+  jointed recompute — byte-equal to the rung-1 answer, no version
+  bump; the lazy baseline is a REAL baseline (an edit after the
+  silent bake carries). Growth then REVERT re-arms the carry in
+  silence (the baseline never rebased on the warn — a warn is a
+  voice, not a state). Capture of a jointed body refuses GUARD-
+  FIRST, ParamError before a feature is added: capture sets P := I
+  and appends a Move, the welded child would JUMP by the captured
+  vector, and re-baking frame0 CANNOT fix a stale m (the probe tried
+  the re-bake, its own algebra killed it — g11's recorded near-
+  miss). Rename rides the split cleanly: streams key by NAME,
+  joints by ID — rename the carrying parent, the class recomputes
+  under the new name, the carry survives; the undo leg is the file
+  snapshot law (to_dict before, from_dict after, pose restored).
+  Known small lies, stated not hidden: an un-jointed doc whose
+  joint was REMOVED keeps a dead frame0 key (harmless rider,
+  cleanup queued); k includes feature order — reorder features and
+  the parent "grew" (loud, honest, conservative). Rung 2b named by
+  its own contract and deferred: streams building in per-body LOCAL
+  space (component origins, version bump, D composed not derived) —
+  "do not start 2b until the warning's user reports say growth-
+  carry actually matters." (1616.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

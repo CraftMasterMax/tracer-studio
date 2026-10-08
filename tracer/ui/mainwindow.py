@@ -3646,8 +3646,9 @@ class MainWindow(QMainWindow):
         mate, is a later rung). Two combos and a ground checkbox —
         the names are display only, the record binds ids. LAW R in
         the status line's every word: position captured, and from
-        now on this body follows where the BASE is placed — not
-        how it is built."""
+        now on this body follows the BASE's placement and its rigid
+        stream moves (rung 2a) — never its growth, which says so in
+        joint_warnings."""
         if self.doc is None:
             return
         names = [b["name"] for b in self.doc.body_list()
@@ -3685,7 +3686,8 @@ class MainWindow(QMainWindow):
         self.rail.tree.reload()
         self.status.showMessage(
             f"Joint {mover!r} \u2192 {base!r} — position captured "
-            "(rigid, 0 DOF)", 6000)
+            "(rigid, 0 DOF); follows the base's placement and rigid "
+            "moves, never its growth", 6000)
 
     def action_interference(self):
         """Tools ▸ Interference (M122, assembly phase 1): where do my
