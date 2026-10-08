@@ -138,6 +138,9 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("S", "Cut-line tool: two clicks on the top, front or right "
               "view stand a lettered section (A-A…) there; Shift "
               "flips the kept half", True),
+        ("Double-click a section view", "Its props: depth (full / "
+         "slice / distance slab), kept side, hidden lines, scale",
+         False),
         ("Esc", "Stand every sheet tool down", True),
     ]),
     ("Document & features", [

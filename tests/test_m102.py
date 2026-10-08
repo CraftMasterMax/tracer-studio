@@ -258,11 +258,14 @@ def test_dxf_export_carries_sections_and_their_hatching(win, qapp,
     monkeypatch.setattr(cmddialog, "ask", _ask(at=5.0))
     win.action_section_view()
     qapp.processEvents()
-    out = str(tmp_path / "sec.dxf")
-    win.export_drawing(out)
+    cv.sections()[0]["hidden"] = True        # M137: a section now reads
+    win.drawing.update()                   #   without back ink by
+    out = str(tmp_path / "sec.dxf")        #   default; opt in so the
+    win.export_drawing(out)                #   hidden really travels
     from tracer.core import import2d
     ops = [o for o in import2d.read(out) if o[0] in ("poly", "line")]
-    # section view chains + hidden + its cut boundary AND hatch lines
+    # section view chains + hidden (opted in) + its cut boundary AND
+    # hatch lines
     assert len(ops) >= n_vis + 20
     pts = [p for o in ops for p in (o[1:] if o[0] == "line" else o[1])]
     assert len(pts) > 200                        # the hatching is real

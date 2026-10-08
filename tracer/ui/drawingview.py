@@ -50,6 +50,7 @@ class DrawingCanvas(QWidget):
     view_drag_begin = Signal()                   # M96: undo capture hook
     view_scale_requested = Signal(str)           # M100: Scale dialog ask
     section_added = Signal(dict)                 # M136: {parent,p0,p1,flip}
+    section_edit_requested = Signal(str)         # M137: dbl-click a child
     tool_note = Signal(str)                      # M136: canvas says, status
 
     def __init__(self, parent=None):
@@ -112,14 +113,19 @@ class DrawingCanvas(QWidget):
             o, a, dl = drawing.plane_from_line(
                 sec["parent"], sec["p0"], sec["p1"],
                 bool(sec.get("flip")))
-            return drawing.section_on(self.doc.result, o, a, right=dl)
+            return drawing.section_on(self.doc.result, o, a, right=dl,
+                                      mode=str(sec.get("mode", "full")),
+                                      dist=sec.get("dist"))
         return drawing.section(self.doc.result, sec["axis"],
                                float(sec["at"]))
 
     def _sources(self) -> dict:
         """view name -> (solid to project, standard view key), live.
         The four standards project the full result; a section projects
-        its half through the standard basis that reads the cut face."""
+        its half through the standard basis that reads the cut face.
+        M137: a SLICE section has no half at all (None) — views()
+        substitutes its cap loops, and everything that paints a solid
+        skips it."""
         if self.doc is None or self.doc.result is None:
             return {}
         out = {v: (self.doc.result, v) for v in drawing.STANDARD}
@@ -133,23 +139,48 @@ class DrawingCanvas(QWidget):
 
     def views(self) -> dict:
         """Live silhouette views of the current result (model space),
-        sections included."""
-        return {name: drawing.project_view(sol, view=v)
-                for name, (sol, v) in self._sources().items()}
+        sections included. M137: a SLICE section shows the cut face
+        alone — its cap loops are already chains in the child's page
+        basis, so place/hatch/measure all just work."""
+        out: dict = {}
+        for name, (sol, v) in self._sources().items():
+            if sol is not None:
+                out[name] = drawing.project_view(sol, view=v)
+                continue
+            sec = self._sec_by_name(name)
+            if sec.get("mode") == "slice":
+                out[name] = [list(L) for L in self._sec_cut(sec)["cut"]]
+        return out
+
+    def _sec_by_name(self, name: str) -> dict:
+        """The stored entry behind a section view's name."""
+        return next(s for s in self.sections() if s["name"] == name)
 
     def chains(self, view: str = "top") -> list:
         return self.views().get(view, [])
 
+    def _hidden_off(self) -> set:
+        """M137: section views read WITHOUT back ink (ASME omits
+        hidden lines in section — the wound already shows the
+        interior); a section opts back in per entry, and a SLICE
+        never opts: there is no depth left to hide behind."""
+        return {s["name"] for s in self.sections()
+                if s.get("mode") == "slice" or not s.get("hidden")}
+
     def hidden_views(self) -> dict:
         """M97: dashed back creases per view (model space, live)."""
+        off = self._hidden_off()
         return {name: drawing.project_hidden(sol, view=v)
-                for name, (sol, v) in self._sources().items()}
+                for name, (sol, v) in self._sources().items()
+                if name not in off and sol is not None}
 
     def hidden_page(self, view: str) -> list:
         """Hidden chains in sheet-mm page coords — moves included,
         since the frame they ride on already carries the view's move."""
+        if view in self._hidden_off():       # M137: sections default
+            return []                        # to no back ink
         src = self._sources().get(view)
-        if src is None:
+        if src is None or src[0] is None:
             return []
         sol, vkey = src
         sc, off = self.frames()[view]
@@ -593,9 +624,10 @@ class DrawingCanvas(QWidget):
             hp.setStyle(Qt.DashLine)
             p.setPen(hp)                        # M101: depth-hidden ink
             srcs = self._sources()
-            for name in placed:
+            h_off = self._hidden_off()          # M137: sections read
+            for name in placed:                 # without back ink
                 src = srcs.get(name)
-                if src is None:
+                if src is None or name in h_off or src[0] is None:
                     continue
                 for c in drawing.project_hidden(src[0], view=src[1]):
                     pts = [self.s2p(*self._m2p(placed[name], p2))
@@ -1190,14 +1222,22 @@ class DrawingCanvas(QWidget):
         return True
 
     def mouseDoubleClickEvent(self, ev):
-        # M100: double-click a view -> its Scale dialog
+        # M100: double-click a view -> its Scale dialog. M137: a
+        # SECTION child answers the same gesture with its own props —
+        # depth, kept side, hidden lines, scale — one dialog, because
+        # a section IS a view and the draughtsman reaches for the
+        # same click twice for the second time.
         if self._dim_mode or ev.button() != Qt.LeftButton:
             return
         placed = self.placed()
         if not placed:
             return
         view = self._view_at(self.p2s(ev.position()), placed, slack=0.0)
-        if view is not None:
+        if view is None:
+            return
+        if any(s["name"] == view for s in self.sections()):
+            self.section_edit_requested.emit(view)
+        else:
             self.view_scale_requested.emit(view)
 
     def _balloon_click(self, ev):

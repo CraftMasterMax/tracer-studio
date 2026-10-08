@@ -1245,7 +1245,9 @@ class MainWindow(QMainWindow):
                        "on the top, front or right view stand a "
                        "section there — the lettered child view (A-A…) "
                        "arrives hatched in the extra band; Shift at "
-                       "the closing click flips the kept half")
+                       "the closing click flips the kept half, and "
+                       "double-clicking the child opens its depth, "
+                       "hidden-line and scale props")
         slb.toggled.connect(lambda on: self.drawing.set_section_mode(on))
         bl.addWidget(slb)
         self._sec_btn = slb
@@ -1328,6 +1330,8 @@ class MainWindow(QMainWindow):
             self._on_view_scale)
         self.drawing.section_added.connect(              # M136 cut line
             self._on_section_line)
+        self.drawing.section_edit_requested.connect(     # M137 props
+            self._on_section_edit)
         self.drawing.tool_note.connect(                  # M136 guidance
             lambda t: self.status.showMessage(t, 6000))
         lay.addWidget(self.drawing, 1)
@@ -1514,7 +1518,8 @@ class MainWindow(QMainWindow):
         self.drawing.update()
         msg = (f"Section {name} on {entry['parent']}"
                + (" (flipped)" if entry.get("flip") else "")
-               + " — drag it like any view")
+               + " — drag it like any view, double-click it for "
+               "depth & props")
         try:
             o, a, dl = _dr.plane_from_line(
                 entry["parent"], entry["p0"], entry["p1"],
@@ -1529,6 +1534,102 @@ class MainWindow(QMainWindow):
             if sp["holes"]:
                 msg += f", {sp['holes']} hole"
         self.status.showMessage(msg, 7000)
+
+    def _on_section_edit(self, name):
+        """M137: the section's own properties dialog (rung two of the
+        vendor's grammar): the tri-modal DEPTH — full half, slice (the
+        wound alone), distance slab — the kept side, hidden lines (OFF
+        is how a section reads, and the default; an entry can opt back
+        in), and the per-view scale the M100 double-click already
+        knew. Cancelling changes nothing; every edit rides _capture
+        exactly like the line that made the section."""
+        sec = next((s for s in self.drawing.sections()
+                    if s["name"] == name), None)
+        if sec is None:
+            return
+        from . import cmddialog
+        from ..core.drawing import parse_scale
+        line = "parent" in sec
+        g = self.drawing.sheet()
+        cur_sc = (g.get("vscale") or {}).get(name)
+        modes = ["Full (everything behind the line)",
+                 "Slice (the cut face alone)",
+                 "Distance (a slab from the line)"]
+        to_key = {modes[0]: "full", modes[1]: "slice",
+                  modes[2]: "distance"}
+        to_name = {v: k for k, v in to_key.items()}
+        fields = []
+        if line:
+            fields += [
+                dict(key="mode", kind="combo", label="Depth",
+                     choices=modes,
+                     default=to_name.get(str(sec.get("mode", "full")))),
+                dict(key="dist", kind="double",
+                     label="Slab depth (Distance only)",
+                     default=float(sec.get("dist") or 10.0),
+                     min=0.01, max=1e4, decimals=2),
+                dict(key="flip", kind="check",
+                     label="Flip the kept side",
+                     default=bool(sec.get("flip"))),
+            ]
+        fields += [
+            dict(key="hidden", kind="check",
+                 label="Show hidden lines (sections omit them)",
+                 default=bool(sec.get("hidden"))),
+            dict(key="scale", kind="text",
+                 label="Scale (blank = fit with the sheet)",
+                 default=("" if not cur_sc else
+                          f"1:{1 / float(cur_sc):g}")),
+        ]
+        v = cmddialog.ask(self, f"Section {name}", fields)
+        if v is None:
+            return
+        self._capture()
+        bits = []
+        if line:
+            mode = to_key.get(str(v["mode"]), "full")
+            if mode == str(sec.get("mode", "full")):
+                pass
+            elif mode == "full":
+                sec.pop("mode", None)
+                sec.pop("dist", None)
+            else:
+                sec["mode"] = mode
+                if mode == "distance":
+                    sec["dist"] = float(v.get("dist") or 10.0)
+                else:
+                    sec.pop("dist", None)
+            if bool(v.get("flip")) != bool(sec.get("flip")):
+                sec["flip"] = bool(v["flip"])
+                bits.append("flipped")
+            shown = mode
+            if mode == "distance":
+                shown = f"slab {float(sec.get('dist') or 0):g} mm"
+            bits.append({"full": "full depth",
+                         "slice": "slice \u2014 the wound alone"
+                         }.get(mode, shown))
+        if bool(v["hidden"]) != bool(sec.get("hidden")):
+            sec["hidden"] = bool(v["hidden"])
+            bits.append("hidden lines " + ("on" if v["hidden"]
+                                           else "off"))
+        try:
+            factor = parse_scale(str(v["scale"]))
+        except ValueError as e:
+            self.status.showMessage(f"Scale no good: {e} \u2014 the "
+                                    "rest of the edit stands", 6000)
+        else:
+            vs = g.setdefault("vscale", {})
+            if factor is None:
+                vs.pop(name, None)
+                if not vs:
+                    g.pop("vscale", None)
+            elif factor != cur_sc:
+                vs[name] = factor
+        self.doc.dirty = True
+        self.drawing.update()
+        self.status.showMessage(
+            f"Section {name} \u2014 " + (", ".join(bits) if bits
+                                         else "unchanged"), 5000)
 
     def action_title_block(self):
         """M108: fill the sheet's ISO title block.  Only the human fields

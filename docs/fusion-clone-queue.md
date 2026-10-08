@@ -1481,9 +1481,25 @@ M125; items 1-11 below are history.*
     naming a member); and union truth — a fused plate+stud yields
     TWO cap loops at the bore split, the stud's wound joined the
     plate's loop as one ten-sided polygon, not three regions.
-    Rung two (queued): depth modes Full|Slice|Distance, hidden
-    lines default OFF on section children, section-aware hatch
-    (thread crest per ISO 6410-1 3.2.4, hatch avoids annotations).
+    RUNG TWO SHIPPED (M137, suite 1474): the section's own props —
+    double-click the child and its dialog answers with the vendor's
+    tri-modal DEPTH (Full | Slice = the wound alone | Distance slab),
+    the kept side, hidden lines and the per-view scale. The ASME law
+    that sections omit hidden lines became the DEFAULT via one
+    _hidden_off() set gating paint, hidden_views and hidden_page
+    (opt-back-in per entry; a slice never opts — no depth to hide
+    behind). Slice costs nothing: the cap loops ARE chains in the
+    child's page basis — place/hatch/measure/export needed zero
+    changes for the mode with no solid (the basis-tuple decision
+    paying rent). The thread-crest hatch rule (ISO 6410-1 3.2.4)
+    needed NO code: our bores are geometric, hatch stops at the real
+    wall — the rule only bites products faking threads as decals
+    (banked verdict, not a skipped rung). Cache keys grew mode+dist
+    the day the modes shipped (test_modes_cache_apart pins it). One
+    golden moved honestly: m102's DXF count had been counting the
+    section's hidden ink — fixed by making the opt-in EXPLICIT in
+    the test, not by loosening the assert. Still queued on this
+    rung: hatch avoids annotations.
     Rung three: jogged/offset polylines (UsePreviousCut-style
     feed-forward) + fastener exclusion (excluded shows UNCUT).
 - Tail (queued by matrix order, unnumbered): single-HTML

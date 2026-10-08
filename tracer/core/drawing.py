@@ -644,14 +644,20 @@ def plane_from_line(parent: str, p0, p1, flip: bool = False):
 _section_on_cache: dict = {}
 
 
-def section_on(solid, o, n, right=None) -> dict:
+def section_on(solid, o, n, right=None, mode: str = "full",
+               dist: float | None = None) -> dict:
     """M136: the arbitrary-plane sibling of section() — same shape
     ({"half", "view", "cut"}) but the plane is (origin o, keep-normal
     n pointing at the eye), and the child's view key is a BASIS
     TUPLE (eye, page-x, page-y) that _basis passes through, so
     project_view/hidden/HLR/place/paint/export all take a slanted
     section exactly like a named one. RIGHT (defaults to any
-    perpendicular) lays the cut line flat on the child's page."""
+    perpendicular) lays the cut line flat on the child's page.
+    M137 depth modes (the vendor's triad): FULL keeps the half the
+    normal points into; DISTANCE keeps a slab of `dist` from the
+    plane (the material near the wound, nothing deeper); SLICE
+    shows the cut face ALONE — half=None, the cap loops are the
+    whole view."""
     o = np.asarray(o, float)
     n = np.asarray(n, float) / max(float(np.linalg.norm(n)), 1e-12)
     if right is None:
@@ -662,8 +668,10 @@ def section_on(solid, o, n, right=None) -> dict:
     X = X - n * float(X @ n)
     X = X / max(float(np.linalg.norm(X)), 1e-12)
     Y = np.cross(n, X)                          # right-handed page
+    mode = str(mode or "full").lower()
+    dd = float(dist) if dist is not None else 0.0
     key = (id(solid), tuple(np.round(o, 9)), tuple(np.round(n, 9)),
-           tuple(np.round(X, 9)))
+           tuple(np.round(X, 9)), mode, round(dd, 9))
     hit = _section_on_cache.get(key)
     if hit is not None and hit[0] is solid:
         return hit[1]
@@ -674,15 +682,19 @@ def section_on(solid, o, n, right=None) -> dict:
     # the KEPT half-space — local +z rides n, so intersect keeps
     # {p : (p - o) . n >= 0}, the eye side (slice_plane's rule and
     # the draughtsman's: the near half is what you look at).
-    box = Solid.box(2 * L, 2 * L, L)            # corner at local 000
-    M = np.eye(4)
-    M[:3, :3] = np.column_stack([X, Y, n])
-    M[:3, 3] = o - (X + Y) * L                  # centre square on o
-    half = solid.intersect(box.transformed(M))
+    # M137: FULL extrudes past any part; DISTANCE stops at `dist`.
+    depth = L if mode != "distance" else max(dd, 1e-4)
+    half = None                                 # SLICE: the cut IS all
+    if mode != "slice":
+        box = Solid.box(2 * L, 2 * L, depth)    # corner at local 000
+        M = np.eye(4)
+        M[:3, :3] = np.column_stack([X, Y, n])
+        M[:3, 3] = o - (X + Y) * L              # centre square on o
+        half = solid.intersect(box.transformed(M))
     tm = solid.to_trimesh()
     loops = _cut_loops(tm, o, n, X, Y)
     res = {"half": half, "view": (tuple(n), tuple(X), tuple(Y)),
-           "cut": loops}
+           "cut": loops, "mode": mode}
     if len(_section_on_cache) > 64:
         _section_cache.clear()
         _section_on_cache.clear()

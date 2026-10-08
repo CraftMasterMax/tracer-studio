@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M136**
+**Status: M137**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -193,7 +193,21 @@ independent project with no Autodesk assets or affiliation.)
   ink, nudges, scale, DXF: zero consumer changes. Letters obey the
   reserved-letter law (no I, O, Q, S, X, Z), one registry shared by
   both cutters, Shift flips the kept side, and Esc's first rung
-  erases the half-drawn line before the tools stand down**
+  erases the half-drawn line before the tools stand down**,
+  **and rung two gives the section its own props (M137):
+  double-click the child and the vendor's tri-modal depth answers —
+  Full (everything behind the line), Slice (the wound alone) or a
+  Distance slab of named depth — beside the kept side, the scale and
+  the ASME law that a section reads WITHOUT hidden lines (the
+  interior is already exposed; back ink only muddies it — an entry
+  can opt back in, but the default is honesty about what a section
+  is for). The slice mode is where rung one's basis-tuple decision
+  pays: the cap loops are already chains, so place, hatch, measure
+  and export needed zero changes for a mode with no solid at all;
+  the thread-crest hatch rule the probe flagged (ISO 6410-1 3.2.4)
+  needs no code because our bores are GEOMETRIC — the hatch stops at
+  the real wall, the rule only bites products that fake threads as
+  decals**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -374,7 +388,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1463 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1474 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
