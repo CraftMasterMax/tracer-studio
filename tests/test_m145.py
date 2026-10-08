@@ -203,6 +203,7 @@ def test_action_flat_pattern_refuses_a_bendless_block(win, qapp,
 
 def test_action_flat_pattern_reports_the_law(win, qapp, monkeypatch):
     from tracer.ui import cmddialog
+    from PySide6.QtWidgets import QMessageBox
     win.doc._result = bent_plate()         # the probe part as the
     win.doc.dirty = False                  # computed body
     calls = []
@@ -214,6 +215,10 @@ def test_action_flat_pattern_reports_the_law(win, qapp, monkeypatch):
         return {"report": ""}              # report: user clicks OK
 
     monkeypatch.setattr(cmddialog, "ask", fake_ask)
+    # M147 grew the command a second act (offer the paper); this gate
+    # is about SM1's report, which must stand WHOLE when declined.
+    monkeypatch.setattr(QMessageBox, "question",
+                        classmethod(lambda cls, *a, **k: cls.No))
     win.action_flat_pattern()
     assert len(calls) == 2                           # K, then report
     assert calls[0][0]["kind"] == "double"
@@ -223,3 +228,5 @@ def test_action_flat_pattern_reports_the_law(win, qapp, monkeypatch):
     assert "106.09" in report              # THE number, K-honest
     assert "6.09" in report                # and the band's BA
     assert "106.09" in win.status.currentMessage()
+    assert win.doc.flat_feature() is None  # declined: no paper, no
+    assert "_flat" not in win.doc.body_solids()      # derived body

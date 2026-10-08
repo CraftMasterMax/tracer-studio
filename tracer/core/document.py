@@ -807,6 +807,34 @@ class InterferenceFeature(Feature):
         raise RuntimeError("InterferenceFeature builds from its sources")
 
 
+@dataclass
+class FlatPatternFeature(Feature):
+    """M147 (sheet metal SM2): the flat pattern as DATA — the outline
+    and the bend centre-lines of ONE flat_outline() computation at one
+    K, frozen at command time (SNAPSHOT: re-running the command
+    replaces it; the recompute-live owner is SM3's parametric
+    FlangeFeature). The ImportedFeature precedent: the timeline holds
+    the paper, so it rides save/load/undo like any feature.
+    The chains travel ANALYTICALLY — the slab this builds is for the
+    solid rails (projection, hit-tests), and the bend ink is read from
+    the stored segments, never re-fit from the mesh (rail finding: the
+    drawing's arc re-fit misses fine tessellations and hallucinates
+    on coarse ones)."""
+    outline: list = field(default_factory=list)      # closed [x,y] pts
+    bend_lines: list = field(default_factory=list)   # {x, y0, y1}
+    flat_length: float = 0.0
+    width: float = 0.0
+    k_factor: float = 0.44
+    thickness: float = 0.0
+    source: str = ""                                  # sheet body name
+
+    def build(self) -> Solid:
+        """The paper-thin slab: real geometry for the drawing rails,
+        honest about being 1/100 mm of sheet."""
+        return Solid.extrude(np.asarray(self.outline, float),
+                             height=0.01)
+
+
 class Document:
     # Origin-plane normals with in-plane bases chosen so u × v = n:
     # a sketch drawn on such a plane extrudes along its own normal.
@@ -1361,10 +1389,14 @@ class Document:
         """The part as SEPARATE bodies for per-body export (M105): every
         body that has a solid, in browser order.  The whole part goes —
         the viewport bulb is a view fact and does not gate the file
-        (Fusion exports every body, visible or not)."""
+        (Fusion exports every body, visible or not).  DERIVED bodies
+        (M147's flat-pattern paper) are the exception: a 1/100 mm slab
+        is not a part to machine, and the flat travels as DXF ink."""
         self.result
         out = []
         for b in self.body_list():
+            if b.get("derived"):
+                continue
             s = (self._body_solids or {}).get(b["name"])
             if s is not None:
                 out.append((b["name"], s))
@@ -1908,6 +1940,54 @@ class Document:
                                          body_a=body_a, body_b=body_b))
         return b, f
 
+    FLAT_BODY = "_flat"                    # M147 SM2: the paper's name
+
+    def flat_feature(self) -> FlatPatternFeature | None:
+        """The one flat pattern this document carries (v1 law: ONE —
+        re-running the command replaces it), or None."""
+        return next((f for f in self.features
+                     if isinstance(f, FlatPatternFeature)), None)
+
+    def add_flat_pattern(self, body: str, K: float | None = None):
+        """SM2: the flat pattern as a DERIVED, HIDDEN body — the outline
+        of one flat_outline() computation at one K, frozen.
+
+        Derived bodies are not part of the PART: the result union and
+        3-D export skip them. This flag, not the hidden bulb, is what
+        keeps the paper out of the standard views — the disk truth the
+        SM2 reprobe's §7.2 got wrong (doc.result unions hidden bodies;
+        the M104 law stands). body_solids() and the drawing rails still
+        reach it, as any body. Latest command wins: a re-run replaces
+        the previous flat. Returns (body dict, feature)."""
+        from . import sheetmetal               # coil precedent: lazy
+        self._body(body)                       # honest KeyError early
+        solid = (self._body_solids or {}).get(body)
+        if solid is None:
+            raise KeyError(f"no built solid for body {body!r} yet")
+        f = sheetmetal.flat_outline(solid, K=(sheetmetal.K_DEFAULT
+                                              if K is None else K))
+        old = self.flat_feature()
+        if old is not None:                    # one flat per document
+            self.features = [x for x in self.features if x is not old]
+            self.bodies = [b for b in self.bodies
+                           if b["name"] != self.FLAT_BODY]
+        b = self.add_body(self.FLAT_BODY)
+        b["visible"] = False                   # the viewport never sees
+        b["derived"] = "flat"                  # paper, not part
+        feat = FlatPatternFeature(
+            name=f"Flat pattern of {body}", body=self.FLAT_BODY,
+            outline=[[float(a), float(bb)] for a, bb in f["outline"]],
+            bend_lines=[{"x": float(bl["x"]), "y0": float(bl["y0"]),
+                         "y1": float(bl["y1"])}
+                        for bl in f["bend_lines"]],
+            flat_length=float(f["flat_length"]), width=float(f["width"]),
+            k_factor=float(f["K"]), thickness=float(f["thickness"]),
+            source=body)
+        self.add(feat)
+        self.active_body = body                # _flat never hijacks
+        self.dirty = True                      # the next feature
+        return b, feat
+
     _INTERLOCK_NAMES = {                   # M121, per role
         "boss": {"carry": "Boss post", "mate": "Boss clearance"},
         "snapfit": {"carry": "Snap-fit hook", "mate": "Snap-fit window"},
@@ -2217,7 +2297,14 @@ class Document:
         if self.joints:                        # M146: LAW R — a joint
             placed = self._apply_joints(buckets, placed)   # follows
             self._body_solids = placed                      # PLACEMENT
-        solids = list(self._body_solids.values())
+        # M147: DERIVED bodies (the flat-pattern paper) are not part of
+        # the PART. Visibility is a view fact and does NOT gate the
+        # union (the M104 law), so a flag does — hidden ink in the
+        # viewport, result ink never. body_solids() and the drawing
+        # rails below still see the flat; no derived body, no change.
+        derived = {b["name"] for b in self.bodies if b.get("derived")}
+        solids = [s for n, s in self._body_solids.items()
+                  if n not in derived]
         if not solids:
             self._result = None
         elif len(solids) == 1:
@@ -2288,6 +2375,15 @@ class Document:
                 d.update(verts=np.asarray(f.verts).tolist(),
                          faces=np.asarray(f.faces).tolist(),
                          placement=list(map(float, f.placement)))
+            elif isinstance(f, FlatPatternFeature):
+                d.update(outline=[[float(a), float(b)]
+                                  for a, b in f.outline],
+                         bend_lines=[dict(bl) for bl in f.bend_lines],
+                         flat_length=float(f.flat_length),
+                         width=float(f.width),
+                         k_factor=float(f.k_factor),
+                         thickness=float(f.thickness),
+                         source=f.source)
             elif isinstance(f, LinearPatternFeature):
                 d.update(source_uid=f.source_uid,
                          vector=list(map(float, f.vector)),
@@ -2479,6 +2575,13 @@ class Document:
                 doc.features.append(ImportedFeature(
                     name=fd["name"], verts=fd["verts"], faces=fd["faces"],
                     placement=tuple(fd["placement"]), **base))
+            elif t == "FlatPatternFeature":
+                doc.features.append(FlatPatternFeature(
+                    name=fd["name"], outline=fd["outline"],
+                    bend_lines=fd["bend_lines"],
+                    flat_length=fd["flat_length"], width=fd["width"],
+                    k_factor=fd["k_factor"], thickness=fd["thickness"],
+                    source=fd.get("source", ""), **base))
             elif t == "LinearPatternFeature":
                 doc.features.append(LinearPatternFeature(
                     name=fd["name"], source_uid=fd["source_uid"],

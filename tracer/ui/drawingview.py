@@ -194,7 +194,12 @@ class DrawingCanvas(QWidget):
             except Exception:
                 continue
             out[sec["name"]] = (d["half"], d["view"])
-        return out
+        fp = self.doc.flat_feature()               # M147: the flat
+        if fp is not None:                         # pattern rides EVERY
+            sol = self.doc.body_solids().get("_flat")   # sheet (v1);
+            if sol is not None:                    # added last — a
+                out["Flat"] = (sol, "top")         # user "Flat" section
+        return out                                 # yields to the paper
 
     def views(self) -> dict:
         """Live silhouette views of the current result (model space),
@@ -246,6 +251,26 @@ class DrawingCanvas(QWidget):
         return [[(float(p[0] * sc + off[0]), float(p[1] * sc + off[1]))
                  for p in c]
                 for c in drawing.project_hidden(sol, view=vkey)]
+
+    def bends_page(self, view: str) -> list:
+        """M147: the flat view's bend centre-lines in sheet-mm page
+        coords — read from the FLAT's stored segments (analytic ink;
+        the rail finding says never re-fit lines or arcs from the
+        slab's mesh), mapped through the view's frame like hidden ink:
+        moves ride, the display spin does not. Every other view
+        answers empty."""
+        if self.doc is None or view != "Flat":
+            return []
+        fp = self.doc.flat_feature()
+        if fp is None:
+            return []
+        fr = self.frames().get(view)
+        if fr is None:
+            return []
+        sc, off = fr
+        return [[(bl["x"] * sc + off[0], bl["y0"] * sc + off[1]),
+                 (bl["x"] * sc + off[0], bl["y1"] * sc + off[1])]
+                for bl in fp.bend_lines]
 
     def cuts_page(self) -> dict:
         """M102: section name -> closed cut-face loops in sheet-mm page
@@ -722,6 +747,15 @@ class DrawingCanvas(QWidget):
                            for p2 in c]
                     for i in range(len(pts) - 1):
                         p.drawLine(pts[i], pts[i + 1])
+        # M147: the flat's bend centre-lines — the shop's dash pattern,
+        # analytic ink from the stored segments (never re-fit)
+        bend_segs = [(n, s) for n in placed for s in self.bends_page(n)]
+        if bend_segs:
+            bp = QPen(_DETAIL, max(0.8, 0.28 * self._zoom))
+            bp.setStyle(Qt.DashLine)
+            p.setPen(bp)
+            for _, seg in bend_segs:
+                p.drawLine(self.s2p(*seg[0]), self.s2p(*seg[1]))
         # M100: a view on an explicit scale wears its ratio as a caption;
         # M102: a section wears its letter (A-A · 1:2 when both)
         vs = self.sheet().get("vscale") or {}

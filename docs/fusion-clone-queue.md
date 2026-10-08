@@ -1784,6 +1784,46 @@ M125; items 1-11 below are history.*
   joint origins (the vendor's Joint with capture); occurrence
   layer (the vendor binds occurrences — we bind bodies, stated
   in §3.4's deviation note). (1592.)
+- **SHEET METAL SM2 SHIPPED (M147)** — the flat goes on PAPER: the
+  developed OUTLINE of a straight-fold tree is EXACTLY ONE RECTANGLE
+  L x W (stagger collapses — every leg is full width) and each bend
+  is a BA-wide slot marked by ONE CENTRE LINE at its middle. THE
+  ANNULUS IS AN ORACLE, NOT INK: r_c = ri + K·t with radial span ±t/2
+  and θ·r_c = BA as an identity, tangency C1-exact — but its
+  boundaries sit at ri+(K−½)t and ri+(K+½)t, equal to the true ri/ro
+  ONLY at K = 0.5; arcing the plan would silently assert K = 0.5
+  under a dialog that says 0.44 (a THIRD golden-drift story after
+  SM1's 96.09 and M146's §7.1: the probe console prints ~1e-5 off
+  the law; the gates ride the kernel's OWN measured t = 1.999995 /
+  ri / angle, never the nominal extrusion values). Tree order rides
+  SM1's legkey law (two bands naming a shared leg AGREE): legs are
+  nodes, bands are edges, the walk starts at the lowest-sorted leaf
+  — deterministic, no dict iteration; branched sheets and CROSS-
+  folds refuse out loud (SM3's seams/reliefs conversation), and
+  every SM1 refusal rides unfold_flat's ONE choke. THE DISK-TRUTH
+  CORRECTION (contract §7.2 died on disk): the probe claimed
+  doc.result unions only EFFECTIVE-VISIBLE bodies — it does NOT
+  (the M104 law: the bulb is a view fact, the PART is the union of
+  everything built); a hidden _flat body would have bled its 106 mm
+  rectangle into every standard view. The fix is a NAMED FLAG, not
+  a rewrite: bodies carry derived="flat", the result union and
+  export_solids skip derived bodies, and body_solids()/the drawing
+  rails still reach the paper like any body — identity proven on
+  every joint-free, derived-free file. The flat rides as a
+  FlatPatternFeature (SNAPSHOT semantics after the ImportedFeature
+  precedent — re-running replaces; SM3's parametric FlangeFeature
+  is the live owner), building a h=0.01 slab the G7 rail law
+  certifies (projects to EXACTLY one closed 5-pt chain, hidden 0).
+  Every drawing sheet gains a Flat view via _sources (~5 lines) and
+  the bend centre-lines travel as ANALYTIC ink — the rail probe
+  measured drawing.find_arcs MISSING a 90°/0.45°-per-chord arc and
+  HALLUCINATING r=29/37 fits at 4.5°/chord, so segments ride the
+  feature record, never a re-fit of the slab's mesh. PDF needed
+  ZERO new code (M143's device-swap paint). UI: the SM1 report's OK
+  offers the paper (declining leaves SM1's behavior byte-identical
+  — M145's own seam gate pins it, with the No-answered stub as the
+  new act); _flat is filtered from flatten/joint pickers (paper is
+  not a part). (1603.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

@@ -2048,6 +2048,10 @@ class MainWindow(QMainWindow):
                         if len(c) > 1:
                             ops.append(("poly", [tuple(p) for p in c],
                                         False))
+                for name in placed:            # M147: one line-poly per
+                    for c in self.drawing.bends_page(name):   # bend of
+                        ops.append(("poly", [tuple(p) for p in c],  # the flat
+                                    False))
                 # M102: section hatching travels as honest line geometry
                 from ..core import drawing as _dr
                 for loops in self.drawing.cuts_page().values():
@@ -3605,6 +3609,31 @@ class MainWindow(QMainWindow):
                  label="The blank (bend facets never ship — each "
                        "bend contributes BA only)",
                  default="\n".join(lines))])
+        # M147 SM2: the report is HALF the command — offer the paper.
+        # The active body is the sheet: v1 flattens what the user is
+        # holding, not the union of everything visible.
+        if QMessageBox.question(
+                self, "Flat Pattern",
+                "Put the flat on paper?\n\nIt lands as a hidden derived "
+                "body '_flat' (no standard view shows it, no 3-D export "
+                "carries it) and every drawing sheet gains a 'Flat' "
+                "view with one bend centre-line per bend.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes) == QMessageBox.Yes:
+            body = self.doc.active_body
+            self._capture()
+            try:
+                b, feat = self.doc.add_flat_pattern(body, K=float(v["K"]))
+            except (sheetmetal.SheetMetalError, KeyError) as e:
+                QMessageBox.warning(self, "Flat Pattern", str(e))
+                return
+            self.recompute()
+            self.rail.tree.reload()
+            self.status.showMessage(
+                f"Flat on paper: {feat.flat_length:.3f} x "
+                f"{feat.width:.3f} mm — hidden body '_flat', drawing "
+                "view 'Flat'", 6000)
+            return
         self.status.showMessage(
             f"Flat: {u['flat_length']:.2f} mm blank · "
             f"{len(u['bands'])} bend(s) · K {u['K']:g}", 5000)
@@ -3621,7 +3650,8 @@ class MainWindow(QMainWindow):
         how it is built."""
         if self.doc is None:
             return
-        names = [b["name"] for b in self.doc.body_list()]
+        names = [b["name"] for b in self.doc.body_list()
+                 if not b.get("derived")]     # M147: paper isn't a part
         if len(names) < 2:
             self.status.showMessage(
                 "Joint needs two bodies — New Body first (right-click "

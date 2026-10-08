@@ -409,7 +409,12 @@ def unfold_flat(solid, K: float = K_DEFAULT) -> dict:
                 extent = float(s.max() - s.min())
             cur = seen_leg.get(key)
             if cur is None or extent > cur["extent"]:
-                seen_leg[key] = dict(extent=extent)
+                # SM2's fix riding SM1's key law: the extent is
+                # ANONYMOUS without the legkey, and the outline walk
+                # needs "which leg comes next" — the key was already
+                # the leg's identity, so carrying it changes nothing
+                # that unfolded before.
+                seen_leg[key] = dict(extent=extent, key=key)
     flanges = list(seen_leg.values())
     ba_total = sum(bend_allowance(t, b["ri"], b["angle"], K)
                    for b in bands)
@@ -420,3 +425,124 @@ def unfold_flat(solid, K: float = K_DEFAULT) -> dict:
     return dict(thickness=float(t), K=float(K), bands=out_bands,
                 flanges=flanges, ba_total=float(ba_total),
                 flat_length=float(flat_length))
+
+
+# ---- SM2: the flat as PAPER ------------------------------------------
+def _straight_fold(bands) -> None:
+    """SM2's own law, after unfold_flat's ONE choke has had its say:
+    a developed rectangle exists only for a STRAIGHT-fold tree —
+    every fold axis parallel (|dot| rules, not sign: the fold's
+    direction is its own, the tree's is the axis LINE). A cross-
+    fold needs seams and reliefs; that is SM3's conversation."""
+    if len(bands) < 2:
+        return
+    a0 = np.asarray(bands[0]["axis"], float)
+    for b in bands[1:]:
+        if abs(float(np.asarray(b["axis"], float) @ a0)) <= AXIS_PAR:
+            raise SheetMetalError(
+                "SM2 unfolds STRAIGHT-fold trees only (all fold "
+                "axes parallel) — a cross-fold needs seams and "
+                "reliefs; that is SM3's conversation")
+
+
+def _sheet_width(solid, u) -> float:
+    """Sheet width = the span EVERY full-width leg takes along the
+    common fold axis (the extrude direction of the profile that
+    built the part). The MEDIAN, so a relief or a cut that trims
+    one leg cannot shrink the blank — full-width legs are the
+    majority of a real part."""
+    a = np.asarray(u["bands"][0]["axis"], float)
+    m = _facet_model(solid)
+    V, tm = m["V"], m["tm"]
+    spans = []
+    for f in u["flanges"]:
+        faces = None
+        for b in u["bands"]:
+            if f["key"] in b["legfaces"]:
+                faces = b["legfaces"][f["key"]]
+                break
+        rep = max(faces, key=lambda g: m["farea"][g])
+        pts = V[tm.faces[m["gfaces"][rep]].ravel()]
+        s = pts @ a
+        spans.append(float(s.max() - s.min()))
+    return float(np.median(spans)) if spans else 0.0
+
+
+def flat_outline(solid, K: float = K_DEFAULT) -> dict:
+    """SM2: the flat pattern as outline geometry, law values all the
+    way down (reprobe §2, EXECUTED).
+
+    The developed OUTLINE of a straight-fold tree is exactly ONE
+    RECTANGLE  L x W — L = the law's flat_length, and the stagger
+    collapses because every leg is full-width W. Each bend is a
+    BA-wide SLOT along L, and the shop drawing marks it with one
+    centre line at the slot's middle. The annulus the mesh hints
+    at (r_c = ri + K*t, radial span +-t/2, theta*r_c == BA as an
+    IDENTITY, tangency C1-exact) is the ORACLE these slots stand
+    for, never the ink: its boundaries sit at ri+(K-.5)t and
+    ri+(K+.5)t, equal to the true ri/ro ONLY at K=0.5 — arcing the
+    plan would silently assert K=0.5 under a dialog that says 0.44.
+
+    Tree order rides the legkeys (SM1's order-independent key law:
+    two bands naming a shared leg AGREE, so legs are nodes and
+    bands are edges): the walk starts at the lowest-sorted leaf and
+    never iterates a dict. Refusals ride unfold_flat's ONE choke
+    (bendless, seam, mixed t); straight-fold and one-strip are
+    SM2's own named laws — a branched sheet has no single
+    rectangle and says so.
+    """
+    u = unfold_flat(solid, K=K)                  # THE choke
+    bands = u["bands"]
+    _straight_fold(bands)
+    leg_extent = {f["key"]: f["extent"] for f in u["flanges"]}
+    adj: dict = {}
+    for i, b in enumerate(bands):
+        k_a, k_b = b["legkeys"]
+        adj.setdefault(k_a, []).append((i, k_b))
+        adj.setdefault(k_b, []).append((i, k_a))
+    if any(len(e) > 2 for e in adj.values()):
+        raise SheetMetalError(
+            "this sheet BRANCHES at a leg — SM2 unfolds ONE strip "
+            "(leg, bend, leg, ...); a branched blank is not a "
+            "rectangle")
+    leaves = sorted(k for k, e in adj.items() if len(e) == 1)
+    if len(leaves) != 2:
+        # tree + max-degree-2 is a path, or the kernel is wrong
+        raise SheetMetalError(
+            "the fold tree is not a single open strip — nothing "
+            "to unfold here")
+    w = _sheet_width(solid, u)
+    runs: list = []
+    x, cur, used = 0.0, leaves[0], set()
+    runs.append(dict(kind="leg", key=cur, x0=x,
+                     extent=leg_extent[cur]))
+    x += leg_extent[cur]
+    while len(used) < len(bands):
+        for i, other in adj[cur]:
+            if i in used:
+                continue
+            used.add(i)
+            b = bands[i]
+            runs.append(dict(kind="band", index=i, x0=x, ba=b["ba"],
+                             ri=b["ri"], ro=b["ro"], angle=b["angle"]))
+            x += b["ba"]
+            runs.append(dict(kind="leg", key=other, x0=x,
+                             extent=leg_extent[other]))
+            x += leg_extent[other]
+            cur = other
+            break
+    flat = float(x)
+    # the walk total meets the law total term by term — a drift
+    # this big IS a kernel bug, not a part:
+    if abs(flat - u["flat_length"]) > 1e-6:
+        raise SheetMetalError(
+            "the outline walk disagrees with the law total — that "
+            "is a kernel bug, not a part: report it")
+    outline = [(0.0, 0.0), (flat, 0.0), (flat, w), (0.0, w),
+               (0.0, 0.0)]
+    bend_lines = [dict(x=r["x0"] + r["ba"] / 2.0, y0=0.0, y1=w,
+                       band=r["index"])
+                  for r in runs if r["kind"] == "band"]
+    return dict(runs=runs, outline=outline, bend_lines=bend_lines,
+                flat_length=flat, width=w, K=float(u["K"]),
+                thickness=u["thickness"], bands=bands)

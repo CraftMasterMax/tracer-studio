@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M146**
+**Status: M147**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -354,9 +354,24 @@ independent project with no Autodesk assets or affiliation.)
   band's tessellation is K = 0.5 by construction, and a facet-hinge
   unroll would ship +0.188 mm of silent error per bend. Closed
   sections DEMAND a user-placed seam out loud instead of inventing
-  one; mixed thicknesses in one chain are refused, never averaged.
-  The flat GEOMETRY on paper is SM2; the parametric FlangeFeature is
-  SM3
+  one; mixed thicknesses in one chain are refused, never averaged
+- **Sheet metal, rung 2 (M147)**: the flat now goes on PAPER. The
+  developed outline of a straight-fold tree is EXACTLY ONE RECTANGLE
+  L x W (every leg is full width, so the stagger collapses) and each
+  bend is a BA-wide slot marked by one centre line at its middle —
+  the ANNULUS (r_c = ri + K·t) is kept as the ORACLE the slots stand
+  for, never as ink: arcing the plan would silently assert K = 0.5
+  under a dialog that says 0.44. Cross-fold trees are refused out
+  loud (they need seams and reliefs — SM3), and every SM1 refusal
+  rides the SAME choke: one body, one law, one voice. OK-ing the
+  report offers the flat as a hidden DERIVED body '_flat' — and
+  derived is a FLAG, not the visibility bulb: the PART union and
+  3-D exports skip derived bodies (the bulb never gated the union,
+  the M104 law stands), while every drawing sheet gains a **Flat**
+  view whose bend centre-lines travel as ANALYTIC ink to screen,
+  DXF and PDF — never re-fit from the slab's mesh, which the rail
+  probe measured to miss fine tessellations and hallucinate on
+  coarse ones. The parametric FlangeFeature is SM3
 - **Assembly, rung 1 (M146)**: Tools ▸ **Joint — As-Built Rigid**:
   two bodies, the child's pose captured once, and **LAW R** from then
   on — *a joint follows where a body is PLACED, not how it is BUILT*.
