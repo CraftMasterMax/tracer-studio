@@ -699,6 +699,9 @@ class MainWindow(QMainWindow):
         m_tools.addAction("Interference — where bodies clash…",
                           lambda checked=False:
                           self.action_interference())
+        m_tools.addAction("Flat Pattern — unfold a sheet…",
+                          lambda checked=False:
+                          self.action_flat_pattern())
         m_tools.addAction("Show Extents…",
                           lambda checked=False:
                           self.action_show_extents())
@@ -3489,6 +3492,61 @@ class MainWindow(QMainWindow):
         tm = (printcheck.drop_to_bed(self.doc.result) if drop
               else self.doc.result.to_trimesh())
         tm.export(str(path))
+
+    def action_flat_pattern(self):
+        """Tools ▸ Flat Pattern (M145, sheet metal SM1): the blank,
+        computed by the SHOP LAW — BA = θ(ri + K·t) off the inside
+        face — never by unrolling mesh facets (the band tessellation's
+        neutral fibre is the mid-surface: K = 0.5 BY CONSTRUCTION,
+        +0.188 mm of silent error per bend the moment the shop says
+        0.44). SM1 is NUMBERS: per-bend BA/BD + the flat length,
+        reported in the dialog and the status line. The flat GEOMETRY
+        on paper is SM2; the parametric FlangeFeature that owns band
+        geometry outright (and ends the detector fuzz) is SM3."""
+        if self.doc is None:
+            return
+        solid = self.doc.result
+        if solid is None:
+            return
+        from ..core import sheetmetal
+        from . import cmddialog
+        try:
+            bands = sheetmetal.detect_bands(solid)
+        except Exception:
+            bands = []
+        if not bands:
+            self.status.showMessage(
+                "Flat pattern: no bend bands found — this body is "
+                "not a sheet (a bend needs an inside radius)", 6000)
+            return
+        v = cmddialog.ask(self, "Flat Pattern", [
+            dict(key="K", kind="double",
+                 label=f"K-factor ({len(bands)} bend(s) found; 0.44 "
+                       "is shop folklore, not a standard)",
+                 default=sheetmetal.K_DEFAULT)])
+        if v is None:
+            return
+        try:
+            u = sheetmetal.unfold_flat(solid, K=float(v["K"]))
+        except ValueError as e:        # SheetMetalError IS a ValueError
+            QMessageBox.warning(self, "Flat Pattern", str(e))
+            return
+        lines = [f"Bend {i + 1}: theta={b['angle']:.1f}  "
+                 f"ri={b['ri']:.2f}  ro={b['ro']:.2f}  "
+                 f"BA={b['ba']:.3f}  BD={b['bd']:.3f}"
+                 for i, b in enumerate(u["bands"])]
+        lines.append("Flanges: " + " + ".join(
+            f"{f['extent']:.2f}" for f in u["flanges"]))
+        lines.append(f"FLAT: {u['flat_length']:.3f} mm  |  t="
+                     f"{u['thickness']:.2f} mm  |  K={u['K']:g}")
+        cmddialog.ask(self, "Flat Pattern", [
+            dict(key="report", kind="multiline",
+                 label="The blank (bend facets never ship — each "
+                       "bend contributes BA only)",
+                 default="\n".join(lines))])
+        self.status.showMessage(
+            f"Flat: {u['flat_length']:.2f} mm blank · "
+            f"{len(u['bands'])} bend(s) · K {u['K']:g}", 5000)
 
     def action_interference(self):
         """Tools ▸ Interference (M122, assembly phase 1): where do my

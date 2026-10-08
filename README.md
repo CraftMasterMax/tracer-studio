@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M144**
+**Status: M145**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -343,6 +343,20 @@ independent project with no Autodesk assets or affiliation.)
   value cell, the ISO **basic box** for true-exact dimensions, and
   the model stays nominal: the frame is paper furniture that travels
   with its dimension
+- **Sheet metal, rung 1 (M145)**: Tools ▸ **Flat Pattern** unfolds a
+  sheet body — bend bands are DETECTED from the real kernel mesh (each
+  band is a pair of chord ribbons whose axis lines coincide; radii
+  recover to 4dp) — and the blank is computed by the SHOP LAW,
+  **BA = θ·(ri + K·t)** with the neutral fibre off the INSIDE face and
+  K a process constant the dialog asks for (0.44 is folklore, not a
+  standard, and this app never cites a phantom ISO for it). Developed
+  lengths travel through the law, NEVER a mesh arc sum: the built
+  band's tessellation is K = 0.5 by construction, and a facet-hinge
+  unroll would ship +0.188 mm of silent error per bend. Closed
+  sections DEMAND a user-placed seam out loud instead of inventing
+  one; mixed thicknesses in one chain are refused, never averaged.
+  The flat GEOMETRY on paper is SM2; the parametric FlangeFeature is
+  SM3
 - **Configurations**: multiple design variants in one file — a text
   table per config (`Small: width = 18, height = 10`) overrides
   parameters on the fly; switch the active config and the solid,
@@ -374,7 +388,7 @@ independent project with no Autodesk assets or affiliation.)
   a playhead timeline of icon chips, and a blue-grey horizon viewport —
   plus first-launch shortcut tour and a persistent Shortcuts tab driven by
   one canonical key table
-- 1059 headless tests (EGL rendering + Qt pixel assertions)
+- 1578 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -442,7 +456,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1564 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1578 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

@@ -1682,6 +1682,47 @@ M125; items 1-11 below are history.*
   the contract: remaining 6 symbols (profile needs the (ADBEHIK)
   zone cells), Ⓜ arithmetic (needs size limits), Ⓟ projected zone,
   feature targets as first-class objects. (1564.)
+- **SHEET METAL SM1 SHIPPED (M145)** — Tools > Flat Pattern: the
+  blank as NUMBERS, computed by the shop law, never by unrolling
+  facets. The reprobe ran every line against OUR kernel first
+  (research/sheet_metal_reprobe.md), and the mesh itself corrected
+  the contract's mental model twice, both facts now law in code +
+  gate: (1) a kernel bend tessellates as TWO ribbon chains — outer
+  chord strip (every hinge-adjacency radius = ro) and inner (= ri),
+  all fold axes parallel — so a BEND is a PAIR of ribbons whose axis
+  LINES coincide, not one chain (a chain walking THROUGH a tangent
+  fuses multi-bend rings into garbage: the walk stops at flats
+  2.5x larger than the facet it stands on, the trim sheds them);
+  (2) the golden "flat 96.0947" was phrased to-apex while the
+  probe's own builder legs are tangent-to-end — the true blank of
+  that part is 100 + BA = 106.094690 (K=0.44), pinned re-derived,
+  not swallowed. THE LAW: BA = theta_rad*(ri + K*t), neutral fibre
+  off the INSIDE face; OSSB = tan(A/2)*(ri+t); BD = 2*OSSB - BA;
+  K is a PROCESS constant — 0.44 default is industry folklore, no
+  standard (ISO 12195 does not exist; never cited here). Why laws,
+  not arcs: our band tessellation's neutral fibre is the
+  mid-surface = K 0.5 BY CONSTRUCTION, +0.188 mm silent error per
+  bend at K 0.44 — so the flat is SUM(leg extents) + SUM(BA), bend
+  facets NEVER ship, and the gate's ORACLE is K=0.5 closing on the
+  mesh's own mid-surface arc (106.283185). Leg pairing: canonical
+  plane coordinates along +axis (normal sign folds INTO the offset,
+  so antiparallel faces of one leg share the key), gap = t pairs,
+  far offsets are PARALLEL LEGS; keys are order- and
+  representative-independent so two bands naming a shared leg
+  AGREE and the cycle guard never misses: a closed section is an
+  honest RAISE ("a seam is a draughtsman's cut, not a feature the
+  mesh can find"), mixed thickness in one chain refused, never
+  averaged. UI is interference's shape: guard BEFORE the dialog
+  (bendless body -> status, no K prompt), K double field (0.44
+  default, 0<K<=1 enforced by the law itself), multiline report,
+  status line. Detector soup-filter: constant adjR (+5%) and fit
+  residual <10% R — the §2.3 OCCT chains (radii to 553 mm, resid
+  27) die here; the angle reads the flange NORMAL pair (probe's
+  span formula had a wraparound bug; normals never lie). SM2 =
+  flat GEOMETRY on paper (outline is nearly planar: the §7 slab
+  projects to exactly one closed chain); SM3 = parametric
+  FlangeFeature owning band geometry (ends the detector fuzz,
+  starts the relief conversation). (1578.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff
