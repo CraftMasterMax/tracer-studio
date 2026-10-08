@@ -29,7 +29,7 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("Shift + MMB press on geometry", "Orbit around the pointed-at "
          "point: view centres on it, a pivot dot rides the centre", False),
         ("Shift + MMB drag on empty space", "Pan the view", False),
-        ("RMB tap", "Context menu: views, styles, toggles", False),
+        ("RMB tap", "Context menu: Sketch on Face · views · styles", False),
         ("RMB hold still", "Marking wheel: Undo · Extrude · Sketch · "
          "Move — release on a wedge to fire it, on the hub to dismiss",
          False),

@@ -52,7 +52,8 @@ def draw_triad(p: QPainter, cam, w: float, h: float, palette: dict):
 
 
 class Viewport(QWidget):
-    face_picked = Signal(object, object)   # world point, outward normal (planar)
+    face_picked = Signal(object, object, object)  # point, normal, body
+    face_rejected = Signal(str)     # M140: a refusal that says why
     coords = Signal(object)                # world point under cursor | None
     press_pull = Signal(object)            # Press-Pull drag payload dict
     move_drag = Signal(object)             # Move (M53) drag payload dict
@@ -1057,30 +1058,50 @@ class Viewport(QWidget):
                     stack.append(q)
         return sorted(seen)
 
-    def _pick_planar(self, pos):
-        """Hit test at pos; accept only faces flat within ~2 degrees across
-        a +/-3 px neighbourhood (kills cylinders/cones hiding in meshes)."""
+    def face_probe(self, pos):
+        """M140 rung A: the planar-sketch-face probe that ANSWERS
+        WITH STATE instead of silence.  Returns (hit, reason):
+        hit = {'point', 'normal', 'body'} when the face is flat
+        within ~2 degrees across a +/-10 px neighbourhood (kills
+        cylinders/cones hiding in meshes); (None, None) over empty
+        space — the dbl-click fallthrough law stays; (None,
+        sentence) when solid was under the cursor but the face
+        refused the flatness test — the silent shrug of the old
+        _pick_planar is the complaint this rung exists to cure."""
         if self._tm is None:
-            return None
+            return None, None
         tm = self._tm
         hit = self._shoot(tm, pos.x(), pos.y())
         if hit is None:
-            return None
+            return None, None
         point, n0 = hit[0], hit[1]
         cos_lim = math.cos(math.radians(2.0))
         for dx, dy in ((10, 0), (-10, 0), (0, 10), (0, -10)):
             h = self._shoot(tm, pos.x() + dx, pos.y() + dy)
             if h is None or float(h[1] @ n0) < cos_lim:
-                return None
-        return point, n0
+                return None, ("That face is not flat enough to sketch "
+                              "on — pick a planar face")
+        return (dict(point=point, normal=n0,
+                     body=self._body_at(hit[2])), None)
+
+    def _body_at(self, tri):
+        """M131's stitched-mesh map read the other way: triangle ->
+        browser body name (None if the range table is gone)."""
+        for b, lo, hi in (self._body_rng or []):
+            if lo <= tri < hi:
+                return b
+        return None
 
     def mouseDoubleClickEvent(self, ev):
         if ev.button() == Qt.LeftButton:
-            hit = self._pick_planar(ev.position())
+            hit, reason = self.face_probe(ev.position())
             if hit is not None:
-                self.face_picked.emit(hit[0], hit[1])
+                self.face_picked.emit(hit["point"], hit["normal"],
+                                      hit["body"])
                 ev.accept()
                 return
+            if reason:
+                self.face_rejected.emit(reason)
         super().mouseDoubleClickEvent(ev)
 
     # ---- home view ---------------------------------------------------------

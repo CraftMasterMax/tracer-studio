@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M139**
+**Status: M140**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -275,7 +275,11 @@ independent project with no Autodesk assets or affiliation.)
   the cut direction is probed into the material and re-editing the sketch
   moves the holes with their circles**, linear, circular & **on-path**
   patterns (N copies walking a sketched path),
-  **mirror**, sketch-on-face,
+  **mirror**, sketch-on-face **(M140: the frame is DERIVED — origin
+  lands on the host body's anchor projected onto the face, axes by a
+  nearest-axis law, the sketch is named for its body, a refused face
+  says why, the RMB menu offers the route, and the extrude preset
+  reads the contact: join outward, cut when buried)**,
   **Press-Pull** — grab any flat face and drag it along its normal to add
   or remove material (Fusion-style live preview; the edit commits as a
   regular parametric extrude feature: suppressible, undoable, editable
@@ -398,7 +402,8 @@ python3 -m venv .venv
 3D: **click a face** to select (whole faces; **Ctrl+click** adds/removes;
 rubber band left→right windows, right→left crosses, Ctrl+drag adds) ·
 **drag a face** to Press-Pull (+Esc to cancel, release to commit) ·
-**double-click a face** to sketch on it ·
+**double-click a flat face** (or **RMB → Sketch on Face**) to sketch on
+it — the frame lands on the body's own corner, not under the cursor ·
 **Move/Rotate body** spawn a triad — drag an arrow to slide, a ring to
 spin, **Ctrl = copy** (Fusion's Move/Copy) ·
 **MMB** orbit · **Shift+MMB** pan · **RMB-drag** orbit · **RMB-click**
@@ -421,7 +426,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1496 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1506 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

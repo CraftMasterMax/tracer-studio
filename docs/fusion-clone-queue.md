@@ -24,6 +24,7 @@ interaction grammar and visual language** — never Autodesk's identity
 | Inspect › Measure              | ✓ M33 (area, angle/gap, volume, surface)        |
 | Construction › Plane (offset)  | ✓ M40 (sketch-on-plane, browser + viewport quad)|
 | Sketch: 7 tools + 16 constraints | ✓ M5..M17, M41 (midpoint, collinear, polygon)|
+| Sketch on a face | ✓ M140 rung A (derived frame, body-named, refusal state, contact preset) — B/C queued |
 | Offset Entities                | ✓ M34 (mitred parallel copy, inward/outward)    |
 | Timeline + browser             | ✓ M9/M11 (+ glyphs, suppress, reorder-safe)     |
 | STEP / STL / 3MF / OBJ / PLY   | ✓ (STEP + fillets via OCCT bridge, degrades)    |
@@ -1539,6 +1540,33 @@ M125; items 1-11 below are history.*
     sheet (41,766 triangles) took 91 s to draw and the suite rode
     the 180 s timeout; 2D bbox binning made identical ink 8.1 s
     (pre-fix baseline diffed byte-for-byte; golden pinned).
+- **SKETCH-ON-FACE RUNG A SHIPPED (M140)** — the user complaint
+  "you can't sketch on an already extruded surface" researched to
+  a 162-line probe (vendor help + FreeCAD AttachmentEngine + our
+  code, hypotheses falsified along the way: the face's edges DO
+  auto-project there; the vendor refuses curved faces too — tangent
+  planes answer them). The rung ships the geometry of trust: the
+  pick's frame is DERIVED, never clicked — origin = the host body's
+  anchor projected onto the face (same face, same frame, whatever
+  the cursor touched), axes by a nearest-axis law with an owner
+  seed for exact ties; the pick carries the BODY (M131's stitched
+  range map read backwards — the triangle index was already in
+  hand and thrown away); sketches are named "Sketch on <body>";
+  a refused face answers with a SENTENCE (state, not silence — the
+  silent 2-degree shrug was the complaint verbatim); the RMB quick
+  menu leads with "Sketch on Face — <body>" (the vendor's
+  discoverable route, ~15 lines of highest UX payback); and the
+  extrude PRESET probes the contact — air ahead & material behind
+  joins (the old law, now chosen not assumed), material both sides
+  cuts (the pocket intent is first-class), normal dove inward
+  mirrors the frame (press-pull's trick) — with an empty first-body
+  document guarded to join. The gate caught the datum-sketch-on-
+  empty-doc crash and the m8-era API law-change honestly (tests
+  cite the new law, assertions strengthened not loosened).
+  Deferred loudly per probe: B-lite the loop lands (next rung),
+  C follow-at-recompute (FaceHandle rides the placement layer),
+  D health/recovery; cylindrical unwraps: never (the vendor
+  refuses too).
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

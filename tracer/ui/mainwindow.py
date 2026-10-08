@@ -42,8 +42,8 @@ from ..core.measure import (describe, face_stats, mass_properties,
                             principal_inertia, section_properties)
 from ..core.measure import extents as solid_extents
 from ..core import units
-from ..core.sketch.model import (SketchModel, face_basis, model_from_dict,
-                                 model_to_dict, plane_uv)
+from ..core.sketch.model import (SketchModel, face_axes, face_basis,
+                                 model_from_dict, model_to_dict, plane_uv)
 from . import icons
 from . import cmddialog
 from .commands import MODEL_KEYS, collect_commands
@@ -150,6 +150,8 @@ class MainWindow(QMainWindow):
         self.timeline.bar.feature_delete.connect(self._delete_feature)
         self.timeline.bar.home_clicked.connect(self.viewport.home)
         self.viewport.face_picked.connect(self._start_sketch_on_face)
+        self.viewport.face_rejected.connect(
+            lambda why: self.status.showMessage(why, 5000))
         self.viewport.coords.connect(self._show_coords)
         self.viewport.press_pull.connect(self._press_pull)
         self.viewport.move_drag.connect(self._on_move_drag)
@@ -2817,17 +2819,69 @@ class MainWindow(QMainWindow):
             if n else "Nothing to project — the plane misses the solid",
             5000)
 
-    def _start_sketch_on_face(self, point, normal):
+    def _start_sketch_on_face(self, point, normal, body=None):
+        """M140 rung A: the frame is DERIVED, never clicked. Origin
+        = the picked body's bbox anchor PROJECTED onto the face
+        plane — the natural corner the body was built from, so the
+        same face yields the same frame whatever the cursor
+        touched (the click-point origin was half the complaint);
+        axes ride the nearest-axis law (face_axes). Rung C will
+        store a FaceHandle beside these frozen numbers; today
+        every fresh pick re-derives them from the live solid."""
         if self.doc is None or not self._discard_guard():
             return
-        u, v = face_basis(normal)
+        n = np.asarray(normal, float)
+        n = n / max(np.linalg.norm(n), 1e-12)
+        u, v = face_axes(n)
+        p = np.asarray(point, float)
+        o = p                              # no body to anchor on:
+        solids = self.doc.body_solids()    # the plane's own point
+        if body in solids:
+            o = np.asarray(solids[body].to_trimesh().bounds[0],
+                           float)
+        origin = o + float((p - o) @ n) * n          # anchor projected
         model = SketchModel(plane="FACE")
         model.axes = [u.tolist(), v.tolist()]
-        model.origin = tuple(float(t) for t in point)
-        model.name = self._next_sketch_name()
+        model.origin = tuple(float(t) for t in origin)
+        model.name = self._face_sketch_name(body)
         self._begin_sketch(model)
         self.status.showMessage(
-            "Sketching on face — draw, then X extrudes outward from it")
+            f"Sketching on {model.name} — origin at the body's own "
+            "corner; X extrudes outward from the face", 6000)
+
+    def _face_sketch_name(self, body):
+        """Host-named, collision-counted like every other feature."""
+        base = f"Sketch on {body}" if body else "Sketch on face"
+        used = {f.name for f in self.doc.features}
+        name, k = base, 2
+        while name in used:
+            name, k = f"{base} {k}", k + 1
+        return name
+
+    def _contact_op(self, m, outer):
+        """M140's contact preset — PROBE, don't guess (the law the
+        hole command has kept since M31 and press-pull since M20,
+        missing only from the sketch path): sample material on both
+        sides of the profile centre along the face normal. Behind
+        only -> JOIN outward (the classic top-face boss, the old
+        union law intact); BOTH sides -> the face is buried and the
+        sketch means a pocket -> CUT; AHEAD only (the normal dove
+        into the body) -> JOIN with the frame mirrored so the
+        extrude still runs away from material."""
+        u, v = plane_uv(m.plane, m.axes)
+        n = np.cross(u, v)
+        if self.doc.result is None:
+            return "union", False       # the doc's first solid: a
+        c = np.asarray(outer, float).mean(axis=0)  # FACE-frame sketch
+        w = np.asarray(m.origin, float) + c[0] * u + c[1] * v
+        tm = self.doc.result.to_trimesh()
+        hits = list(tm.contains([w + n * 0.5, w - n * 0.5]))
+        front, back = bool(hits[0]), bool(hits[1])
+        if front and back:
+            return "subtract", False
+        if front:
+            return "union", True
+        return "union", False
 
     def _on_profiles(self, profiles, name, revolve=False):
         m = self.sketch.model
@@ -2887,11 +2941,16 @@ class MainWindow(QMainWindow):
             tag = name if len(profiles) == 1 else f"{name} #{i + 1}"
             face = m.plane == "FACE"
             axes = [list(map(float, a)) for a in m.axes] if face else None
+            op = "union"
+            if face and not revolve:
+                op, flip = self._contact_op(m, outer)
+                if flip:
+                    axes = [[-t for t in axes[0]], axes[1]]
             placement = tuple(m.origin) if face else (0.0, 0.0, 0.0)
             sketch = dict(payload, regions=len(profiles), region=i)
             common = dict(name=tag, outer=np.asarray(outer),
                           holes=[np.asarray(h) for h in holes],
-                          op="union", plane=m.plane, axes=axes,
+                          op=op, plane=m.plane, axes=axes,
                           placement=placement, sketch=sketch,
                           sid=m.sid, region=i)
             self.doc.add(RevolveFeature(angle=angle, **common) if revolve
@@ -2905,9 +2964,13 @@ class MainWindow(QMainWindow):
                 f"Revolved {len(profiles)} region(s) from {name} "
                 f"by {angle:g}°", 6000)
         else:
+            fresh = self.doc.features[-len(profiles):]
+            why = (" — cut: material sat on both sides of the face"
+                   if m.plane == "FACE" and any(
+                       f.op == "subtract" for f in fresh) else "")
             self.status.showMessage(
                 f"Extruded {len(profiles)} region(s) from {name} "
-                f"by {height:g} mm", 6000)
+                f"by {height:g} mm{why}", 6000)
 
     def action_hole(self):
         """Fusion Hole: each circle in the current sketch drills one hole —
@@ -3396,10 +3459,23 @@ class MainWindow(QMainWindow):
                 ("Sketch", self.action_new_sketch),
                 ("Move", self.action_move_body)]
 
-    def _marking_menu(self):
+    def _marking_menu(self, pos=None):
         """Fusion's right-click quick menu: fit / zoom-to / the four
-        views / visual styles / display toggles."""
+        views / visual styles / display toggles. M140: over a flat
+        face it LEADS with the gesture the double-click hid —
+        "Sketch on Face — <body>", the discoverable route the
+        sketch probe priced as the highest UX payback per line."""
         m = QMenu(self)
+        if pos is not None:
+            hit, _why = self.viewport.face_probe(pos)
+            if hit is not None:
+                b = hit["body"]
+                m.addAction("Sketch on Face"
+                            + (f" — {b}" if b else ""),
+                            lambda checked=False, h=hit:
+                            self._start_sketch_on_face(
+                                h["point"], h["normal"], h["body"]))
+                m.addSeparator()
         m.addAction("Fit", lambda checked=False: self.action_view("fit"))
         m.addAction("Zoom to selection", self._zoom_to_selection)
         m.addAction("Zoom window",
@@ -3421,7 +3497,7 @@ class MainWindow(QMainWindow):
         return m
 
     def _show_marking_menu(self, pos):
-        menu = self._marking_menu()
+        menu = self._marking_menu(pos)
         self._mark_menu = menu
         menu.aboutToHide.connect(
             lambda: setattr(self, "_mark_menu", None))

@@ -86,6 +86,30 @@ def face_basis(normal) -> tuple:
     return u, v
 
 
+def face_axes(normal, owner_u=(1.0, 0.0, 0.0)) -> tuple:
+    """M140 rung A: the DERIVED sketch axes of a face — nearest-axis
+    law.  U is the candidate axis lying MOST IN the plane (smallest
+    |dot| against the normal), projected in and normalised; an owner
+    seed may break an exact tie, and world X/Y/Z break every
+    remaining one, so the frame is a pure function of the face and
+    never of where the cursor landed.  v = n x u keeps the frame
+    right-handed (extrude dir = n).  face_basis stays the press-
+    pull convention; this one serves the sketch-on-face path."""
+    n = np.asarray(normal, float)
+    n = n / max(np.linalg.norm(n), 1e-12)
+    best = None
+    for cand in (np.asarray(owner_u, float), np.array([1.0, 0.0, 0.0]),
+                 np.array([0.0, 1.0, 0.0]), np.array([0.0, 0.0, 1.0])):
+        score = abs(float(cand @ n)) / max(np.linalg.norm(cand), 1e-12)
+        u = cand - float(cand @ n) * n
+        if np.linalg.norm(u) < 1e-9:
+            continue                       # candidate rides the normal
+        if best is None or score < best[0] - 1e-9:
+            best = (score, u / np.linalg.norm(u))
+    u = best[1] if best else np.array([1.0, 0.0, 0.0])
+    return u, np.cross(n, u)
+
+
 def _dim_tag(c) -> str:
     """Type fingerprint for a dimension binding (M89): a binding only
     drives a constraint whose serialized type still matches."""

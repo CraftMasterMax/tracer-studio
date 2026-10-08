@@ -78,11 +78,13 @@ def test_planar_pick_on_top_face(win, qapp):
     _plate_win(win)
     qapp.processEvents()
     vp = win.viewport
-    hit = vp._pick_planar(_px_of(vp, (10, 10, 5)))
-    assert hit is not None
-    point, normal = hit
-    assert normal[2] == pytest.approx(1.0, abs=1e-3)
-    assert point[2] == pytest.approx(5.0, abs=0.2)
+    # M140: _pick_planar grew into face_probe — the answer is now
+    # (hit, reason), hit carries the body name, and a refusal is a
+    # sentence instead of a shrug. Same 2-degree law underneath.
+    hit, why = vp.face_probe(_px_of(vp, (10, 10, 5)))
+    assert hit is not None and why is None
+    assert hit["normal"][2] == pytest.approx(1.0, abs=1e-3)
+    assert hit["point"][2] == pytest.approx(5.0, abs=0.2)
 
 
 def test_curved_faces_are_rejected(win, qapp):
@@ -91,7 +93,10 @@ def test_curved_faces_are_rejected(win, qapp):
     win.recompute()
     qapp.processEvents()
     vp = win.viewport
-    assert vp._pick_planar(_px_of(vp, (10, 0, 10))) is None
+    # M140: rejection stays a refusal AND becomes state — the probe
+    # answers with the sentence the status bar will show.
+    hit, why = vp.face_probe(_px_of(vp, (10, 0, 10)))
+    assert hit is None and why and "flat" in why.lower()
 
 
 # ---- end-to-end: double-click -> sketch -> extrude --------------------------
