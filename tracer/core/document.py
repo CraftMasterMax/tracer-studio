@@ -1263,6 +1263,56 @@ class Document:
                 out.append(f.name)      # the helix spins on this line
         return out
 
+    def rename_datum(self, old: str, new: str) -> int:
+        """M130: rename is a RELINK, not a string edit. Fusion keeps
+        references internal, so renaming there is free; our datums are
+        resolved BY NAME (M125), so a rename that skipped the ledger
+        would silently arm every named mirror, pattern rail and coil
+        with part 3's ParamError. Renaming here rewrites every
+        name-bound field that names `old`; frozen-frame holders
+        (sketches, derived planes) never referenced the name at all
+        and need nothing. Returns how many fields were retargeted."""
+        new = str(new).strip()
+        if not new:
+            raise params.ParamError(
+                f"rename failed: {old!r} needs a name — blank was offered")
+        taken = {p["name"] for p in self.planes} | \
+                {a["name"] for a in self.axes}
+        if new == old:
+            return 0
+        if new in taken or new in self._PLANE_BASES or new in ("X", "Y", "Z"):
+            raise params.ParamError(
+                f"rename failed: {new!r} is already taken — datum names "
+                "are what features bind to, so one name must mean one "
+                "datum (delete or rename the other first)")
+        hit = False
+        for store in (self.planes, self.axes):
+            for d in store:
+                if d["name"] == old:
+                    d["name"] = new
+                    hit = True
+        if not hit:
+            raise params.ParamError(
+                f"rename failed: no datum named {old!r} to rename")
+        n = 0
+        for f in self.features:
+            if isinstance(f, MirrorFeature) and f.plane == old:
+                f.plane = new
+                n += 1
+            elif isinstance(f, CircularPatternFeature) and f.axis == old:
+                f.axis = new
+                n += 1
+            elif isinstance(f, GeometricPatternFeature):
+                for attr in ("axis", "d1", "d2"):   # rails may be vectors;
+                    if getattr(f, attr) == old:     # str==str keeps that safe
+                        setattr(f, attr, new)
+                        n += 1
+            elif isinstance(f, CoilFeature) and f.axis == old:
+                f.axis = new
+                n += 1
+        self.dirty = True
+        return n
+
     def thread_decals(self) -> list[dict]:
         """Cosmetic threads (M128): the ISO major-diameter ring each
         cosmetically-threaded hole wears — the drawing-grade

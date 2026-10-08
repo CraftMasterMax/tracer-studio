@@ -1963,6 +1963,35 @@ class MainWindow(QMainWindow):
         self.doc.dirty = True
         self.recompute()
 
+    def _rename_datum(self, kind: str, old: str):
+        """Construction-plane / work-axis rename (M130): the datum store
+        row was read-only before, yet every named mirror, pattern rail
+        and coil binds to it BY NAME. The core relink rewrites those
+        references atomically, so a rename keeps the model green — the
+        status line counts the retargeted bindings so the draughtsman
+        sees the ripple, and a collision is refused, never auto-
+        disambiguated (one name must mean exactly one datum here)."""
+        if self.doc is None:
+            return
+        new, ok = Shell.getText(self, f"Rename {kind}", "New name:",
+                                text=old)
+        if not ok or not new.strip() or new.strip() == old:
+            return
+        self._capture()                            # undo point BEFORE
+        try:
+            n = self.doc.rename_datum(old, new)
+        except Exception as e:                     # ParamError: name taken
+            self._undo.pop()                       # refusal mutates nothing
+            self._redo.clear()
+            QMessageBox.warning(self, "Rename", str(e))
+            return
+        self.doc.dirty = True
+        self.recompute()
+        self.status.showMessage(
+            f"Renamed {old!r} \u2192 {new!r}"
+            + (f" — {n} reference{'s' if n != 1 else ''} retargeted"
+               if n else " — no features referenced it"), 6000)
+
     def _delete_feature(self, feature):
         self._capture()
         self.doc.features.remove(feature)
@@ -2128,6 +2157,9 @@ class MainWindow(QMainWindow):
 
     def _caxis_menu(self, name, pos):
         menu = QMenu(self)
+        menu.addAction("Rename…",
+                       lambda: self._rename_datum("work axis", name))
+        menu.addSeparator()
         menu.addAction("Delete work axis", lambda: self._delete_axis(name))
         menu.exec_(pos)
 
@@ -2238,6 +2270,10 @@ class MainWindow(QMainWindow):
         menu = QMenu(self)
         menu.addAction("Sketch on plane",
                        lambda: self.action_sketch_on_plane(name))
+        menu.addSeparator()
+        menu.addAction("Rename…",
+                       lambda: self._rename_datum("construction plane",
+                                                  name))
         menu.addSeparator()
         menu.addAction("Delete construction plane",
                        lambda: self._delete_plane(name))

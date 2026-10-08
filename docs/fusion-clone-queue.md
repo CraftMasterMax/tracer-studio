@@ -1393,7 +1393,16 @@ M125; items 1-11 below are history.*
     direction-encoded marquee, 4-wedge hold-wheel — ladder in
     `marking_wheel_nav.md`); zoom-to-selection is an UPSTREAM gap
     (requested since 2015, unimplemented) — cheap ours-first
-    differentiator when nav lands.
+    differentiator when nav lands. LADDER RUNG ONE SHIPPED (M130,
+    suite 1400): rename became a RELINK — datums got context-menu
+    Rename that rewrites every name-bound mirror/coil/pattern field
+    atomically (counted in the status line), collisions REFUSE with
+    the cure (Fusion's auto-"(1)" would lie for a name-resolved
+    kernel), duplicate feature names wear "(1) (2)" in the browser
+    as display only. Deferred from the rung: Explorer delayed-
+    double-click in-place edit (double-click is ours = open editor;
+    a click-pause-click timing layer wants its own milestone), and
+    body/sheet-row rename. Cross-highlight + isolate remain.
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

@@ -92,6 +92,13 @@ class FeatureTree(QTreeWidget):
         self.clear()
         if not self._doc:
             return
+        # M130: the ladder's cheap familiarity — duplicate feature names
+        # ride the browser as "Name (1)", "Name (2)" in first-appearance
+        # order (Fusion's disambiguation). Display only: the model, the
+        # rename prompt and every reference keep the RAW name.
+        from collections import Counter
+        dupe = Counter(f.name for f in self._doc.features)
+        seen: dict = {}
         root = QTreeWidgetItem([self._doc.title])
         root.setFlags(root.flags() & ~Qt.ItemIsSelectable)
         self.addTopLevelItem(root)
@@ -172,8 +179,12 @@ class FeatureTree(QTreeWidget):
                     else "\u2307" if isinstance(f, CoilFeature)  # ⌇ bolt
                     else "\u2935" if isinstance(f, PathPatternFeature)
                     else "\u25a1")
-            label = (f"{glyph} {f.name}" if fillet
-                     else f"{glyph} {kind} {f.name}")
+            nm = f.name
+            if dupe[nm] > 1:                        # shared name → (k)
+                seen[nm] = seen.get(nm, 0) + 1
+                nm = f"{nm} ({seen[nm]})"
+            label = (f"{glyph} {nm}" if fillet
+                     else f"{glyph} {kind} {nm}")
             item = QTreeWidgetItem([label])
             item.setData(0, Qt.UserRole, ("feature", i))
             if f.suppressed:
