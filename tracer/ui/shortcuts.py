@@ -25,7 +25,9 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
          "right→left crossing", False),
         ("Esc", "Cancel the drag / clear the face selection", False),
         ("MMB drag", "Orbit the model (RMB drag too)", False),
-        ("Shift + MMB drag", "Pan the view", False),
+        ("Shift + MMB press on geometry", "Orbit around the pointed-at "
+         "point: view centres on it, a pivot dot rides the centre", False),
+        ("Shift + MMB drag on empty space", "Pan the view", False),
         ("RMB tap", "Context menu: views, styles, toggles", False),
         ("RMB hold still", "Marking wheel: Undo · Extrude · Sketch · "
          "Move — release on a wedge to fire it, on the hub to dismiss",

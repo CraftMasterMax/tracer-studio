@@ -84,6 +84,8 @@ class Viewport(QWidget):
         self._rmb_timer: QTimer | None = None   # hold-to-open arming
         self._rmb_at: QPoint | None = None
         self._dragged = False              # a press has moved past a click
+        self._repivot = False              # M133: this MMB gesture orbits
+        self._pivot = None                 # pivot dot, alive with a gesture
         self._pp = None                    # press-pull drag state
         self.show_cube = True              # Ctrl+Alt+V (M113 layout layer)
         self.show_nav = True               # Ctrl+Alt+N
@@ -223,6 +225,15 @@ class Viewport(QWidget):
         self._nav.place(self.width(), self._cube.rect.bottom() + 8)
         if self.show_nav:
             self._nav.draw(p)
+        if self._pivot is not None:
+            # Pivot dot (M133): the eye derives from the target, so the
+            # pointed-at point holds screen-centre for the whole gesture
+            # — no projection needed, the centre IS the answer.
+            c = self.rect().center()
+            p.setRenderHint(QPainter.Antialiasing)
+            p.setPen(QPen(QColor(theme.DARK["line_hi"]), 1))
+            p.setBrush(QColor(theme.DARK["accent"]))
+            p.drawEllipse(c, 3, 3)
         if self._wheel is not None:
             self._wheel.paint(p, self.font())   # M132: the ring rides last
         p.end()
@@ -512,6 +523,15 @@ class Viewport(QWidget):
             self._apply_hi()
         if ev.button() == Qt.MiddleButton:
             self.setCursor(QCursor(Qt.ClosedHandCursor))
+            # M133: Shift+PRESS over geometry orbits the model about the
+            # point under the cursor. The view parallel-translates so the
+            # hit centres — with the eye derived from target that is one
+            # assignment, and yaw/pitch/distance all survive. Over empty
+            # space it is a no-op, so Shift+MMB drag keeps its pan meaning
+            # unstolen: the geometry under the cursor splits the gesture.
+            self._repivot = bool(
+                ev.modifiers() & Qt.ShiftModifier
+                and self._maybe_repivot(ev.position()))
 
     def mouseMoveEvent(self, ev):
         if self._wheel is not None:
@@ -585,7 +605,12 @@ class Viewport(QWidget):
             self.update()
             return
         if Qt.MiddleButton in self._buttons:
-            if ev.modifiers() & Qt.ShiftModifier:
+            if self._repivot:
+                # The pivot was chosen AT PRESS (modifiers sampled once —
+                # a late Shift change is nothing, per the probe's latch
+                # findings); until release this drag orbits that point.
+                self._cam.orbit(d.x(), d.y(), self.height())
+            elif ev.modifiers() & Qt.ShiftModifier:
                 self._cam.pan(d.x(), d.y(), self.height())   # Fusion: Shift+MMB pans
             else:
                 self._cam.orbit(d.x(), d.y(), self.height()) # Fusion: MMB orbits
@@ -677,10 +702,31 @@ class Viewport(QWidget):
             self._rmb_at = None
         if ev.button() == Qt.MiddleButton:
             self.unsetCursor()
-            if not getattr(self, "_dragged", False):
-                self.home()
+            was_repivot = self._repivot
+            self._repivot = False
+            self._pivot = None            # gesture ends; the pivot lives on
+                                          # as the plain camera target —
+                                          # exactly what a pan already does,
+                                          # so nothing can get "stuck"
+            if not getattr(self, "_dragged", False) and not was_repivot:
+                self.home()               # a shift-REPRESSED click is the
+                                          # point-centring itself, not home
         if not (self._buttons & (Qt.MiddleButton | Qt.RightButton)):
             self.unsetCursor()
+
+    def _maybe_repivot(self, pos) -> bool:
+        """Orbit-around-point (M133): recentre the camera on the mesh
+        point under `pos`. Returns whether a pivot happened — an empty
+        press stays a plain pan gesture."""
+        if self._tm is None:
+            return False
+        hit = self._shoot(self._tm, pos.x(), pos.y())
+        if hit is None:
+            return False
+        self._cam.target = np.asarray(hit[0], float)
+        self._pivot = self._cam.target.copy()
+        self.update()
+        return True
 
     def _plane_offset(self, px: float, py: float) -> float:
         """Signed mm the face should travel along its normal under the
@@ -1011,6 +1057,7 @@ class Viewport(QWidget):
 
     # ---- home view ---------------------------------------------------------
     def home(self):
+        self._pivot = None               # M133: home IS reset-orbit-centre
         if self._bbox is not None:
             self._cam.set_view("iso")
             self._cam.fit(self._bbox)

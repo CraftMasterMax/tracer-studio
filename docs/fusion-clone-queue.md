@@ -1417,8 +1417,15 @@ M125; items 1-11 below are history.*
     deterministic grabs in CI, capturable in proof shots, and a pixel
     test pins hover-fill to the wedge its label names (a one-quadrant
     start-angle slip passes every pick test and lies on screen).
-    Nav-ladder tail from the probe: Shift+MBB re-pivot (orbit around
-    the pointed-at point), settable home, sketch-context second ring.
+    SHIFT+MMB RE-PIVOT SHIPPED (M133, suite 1430): the probe's
+    contract, built as written — modifiers sampled AT press (late
+    changes are nothing: the latching trap pinned), hit pivots / miss
+    pans (the binding splits on geometry, pan never stolen), the
+    pivot IS the camera target so the sticky-centre pathology is
+    structurally impossible, Home doubles as Reset Orbit Center, and
+    the pivot dot rides dead centre by construction. An off-centre
+    pixel test replaced a trivially-passing one. Nav tail: settable
+    home, sketch-context wheel ring.
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

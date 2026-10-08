@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M132**
+**Status: M133**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -141,7 +141,19 @@ independent project with no Autodesk assets or affiliation.)
   paint, not a window — so a quick tap still raises the context menu
   and a drag still orbits, all three grammars pinned against each
   other, and the hover fill, the pick and the label are pixel-pinned
-  to the same wedge**
+  to the same wedge**,
+  **orbit around the point you point at (M133): hold Shift and PRESS
+  the middle button on geometry and the orbit centre jumps to the
+  rayed point — the view parallel-translates it to dead centre (the
+  eye derives from the target, so that is one assignment: yaw, pitch
+  and distance provably untouched), a pivot dot rides the screen
+  centre, and every drag until release spins about that point. Press
+  on empty space and nothing pivots — Shift+MMB keeps its pan meaning,
+  so the geometry under the cursor splits the gesture and no binding
+  is stolen. The vendor's sticky-pivot trap (a centre that outlives
+  the session until a reset) cannot exist here: the pivot IS the
+  camera target every pan already relocates, and MMB-click Home is
+  Reset Orbit Centre, already bound**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -322,7 +334,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1422 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1430 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```
