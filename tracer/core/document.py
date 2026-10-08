@@ -1300,9 +1300,11 @@ class Document:
         for pn, kids in grew.items():    # the loud half of the law:
             self.joint_warnings.append(  # growth is NOT motion
                 f"'{pn}' grew, it did not move — a joint follows "
-                "placement, not growth; "
+                "placement, not growth; while the stream cannot be "
+                "read as motion, "
                 + ", ".join(repr(k) for k in kids)
-                + " stayed at the jointed pose")
+                + " ride the PLACEMENT only (revert the growth to "
+                "re-arm the carry)")
         out = dict(placed)
         for cn, pm in mats.items():
             s = buckets.get(cn)

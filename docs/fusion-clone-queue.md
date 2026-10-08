@@ -1847,7 +1847,11 @@ M125; items 1-11 below are history.*
   dict — frame0 appears only in jointed docs). Growth (dims,
   pattern counts, class-none edits) refuses to carry AND says so —
   "'A' grew, it did not move — a joint follows placement, not
-  growth" in joint_warnings, the child held at the jointed pose;
+  growth" in joint_warnings, the child dropping to the PLACEMENT-
+  ONLY pose — the voice is exact because carry-then-grow FALLS BACK
+  (an untrusted stream cannot separate motion from growth, and the
+  offset is runtime-derived, never stored: a persisted live pose
+  would lie), and revert restores the carried pose bit-exactly;
   M146's own non-carry gate was RE-SCOPED in place to gain that
   voice (the silent half of its law is now the loud half). Chains
   fold by DEPTH (E5 golden: E_C = (P_A @ D_A @ m_AB) @ D_B @ m_BC,
@@ -1880,7 +1884,7 @@ M125; items 1-11 below are history.*
   its own contract and deferred: streams building in per-body LOCAL
   space (component origins, version bump, D composed not derived) —
   "do not start 2b until the warning's user reports say growth-
-  carry actually matters." (1616.)
+  carry actually matters." (1617.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

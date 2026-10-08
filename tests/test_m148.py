@@ -14,8 +14,12 @@ kernel can read off the stream:
 which reduces BIT-EXACTLY to rung 1 when D = I (t7 pins it; the
 whole 1592-gate legacy of LAW R is the real pin). Everything else —
 the honest half — REFUSES and SAYS SO: growth (dims, pattern counts,
-any class-none stream edit) leaves the child at the jointed pose and
-appends a "grew, it did not move" line to joint_warnings. The
+any class-none stream edit) drops the child to the PLACEMENT-ONLY
+pose (rung 1's exact line) and appends a "grew, it did not move"
+line to joint_warnings — a motion carried BEFORE the growth falls
+back with it and returns on revert: the offset is runtime-derived
+and never stored, because a live pose persisted across sessions
+would lie (the sequence gate pins this). The
 frame baseline (b["frame0"] = {"k": stream fingerprint minus the
 rigid levers, "g": the rigid map at bake}) rides the FILE; the
 derived frame itself is runtime-only and never persisted (a live
@@ -156,6 +160,32 @@ def test_class_none_stream_edits_refuse_with_the_same_voice():
     d.recompute()                               # (two-feature base)
     assert _bounds(d._body_solids["B"]) == b0
     assert d.joint_warnings and "grew" in d.joint_warnings[0]
+
+
+def test_carry_then_growth_falls_back_to_placement_only():
+    """The SEQUENCE the proof shot walked: a stream motion carries
+    (rung 2a), THEN growth poisons the class. The fold cannot tell
+    motion from growth inside an untrusted stream, so it drops to
+    the rung-1 line — placement only — and the warning says exactly
+    that; the carried offset is runtime-derived and NEVER stored,
+    so the revert restores it bit-exactly (persisting a live pose
+    would lie across sessions)."""
+    d = _tall_doc()
+    d.recompute()
+    b0 = _bounds(d._body_solids["B"])
+    d.features[2].vec = (14.0, 0.0, 0.0)        # motion carries...
+    d.recompute()
+    carried = _bounds(d._body_solids["B"])
+    assert carried == _shifted(b0, [14.0, 0.0, 0.0])
+    d.features[0].dims["dy"] = 40.0             # ...then growth
+    d.recompute()
+    assert _bounds(d._body_solids["B"]) == b0   # placement-only
+    assert d.joint_warnings and "grew" in d.joint_warnings[0]
+    assert "PLACEMENT" in d.joint_warnings[0]   # the voice is exact
+    d.features[0].dims["dy"] = 20.0             # revert: silent...
+    d.recompute()
+    assert d.joint_warnings == []
+    assert _bounds(d._body_solids["B"]) == carried   # ...pose back
 
 
 # ---- t5: chains fold the deltas by depth, not list order --------------

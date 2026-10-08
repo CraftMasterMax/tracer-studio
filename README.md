@@ -384,7 +384,9 @@ independent project with no Autodesk assets or affiliation.)
   never a bounding box: an asymmetric growth would lie). GROWTH
   (dims, pattern counts, anything the classifier cannot read as
   motion) carries nothing and SAYS SO — "a joint follows placement,
-  not growth" lands in the warnings, never a silent half-move. The
+  not growth" lands in the warnings, never a silent half-move;
+  while growth stands the joint trusts PLACEMENT only (rung 1's
+  line), and reverting the growth re-arms the carry bit-exactly. The
   frame baseline rides the file; legacy files bake silently, and at
   D = identity the math is bit-for-bit the shipped rung-1 line. Bodies
   mint ids that joints bind, so **renaming a body cannot orphan its
