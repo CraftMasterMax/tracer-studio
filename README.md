@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M134**
+**Status: M135**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -164,7 +164,20 @@ independent project with no Autodesk assets or affiliation.)
   All is the separate, lossy recovery — force-every-bulb-on — and the
   two verbs' status tells say out loud why they are not each other.
   Picking and cross-highlight see the isolated world for free, since
-  every renderer asks the one overlay-aware question**
+  every renderer asks the one overlay-aware question**,
+  **section view (M135): right-click a construction-plane row — cut
+  here — and the display obeys: every effective-visible body is sliced
+  by the plane and CAPPED watertight (trimesh's slice_plane on the
+  manifold3d engine we already ship — zero new geometry code, zero new
+  dependencies, hole-in-cap and all, volume-exact to the analytic
+  answer), the cut face wears the accent so a section reads different
+  from the skin, and everything the cut invalidates goes quiet at one
+  choke: face picks, hover, press-pull, sketch-on-face and re-pivot
+  sleep while cut — the indices belong to the model's mesh, not the
+  cut's. The cut rides a plane BY NAME, so renaming the datum relinks
+  the living section (M130's law, grown a new limb); flip keeps the
+  other half; Esc ends it after the gestures yield; and like
+  isolation it is session state that never touches the file**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -345,7 +358,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1441 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1451 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

@@ -829,6 +829,8 @@ class Document:
         self._iso: list = []                  # M134: [(scope, boosted)]
                                               # isolation stack — session
                                               # view state, never saved
+        self._section: dict | None = None     # M135: live cut — also
+                                              # session state, never saved
         self.active_body: str | None = None   # M104: new features land here
         self._result: Solid | None = None
         self._body_solids: dict[str, Solid] | None = None
@@ -1028,6 +1030,92 @@ class Document:
 
     def isolation_depth(self) -> int:
         return len(self._iso)
+
+    # ---- section view (M135) -----------------------------------------------
+    def set_section(self, ref: str, flip: bool = False):
+        """Section is SESSION view state (never saved — M134's
+        precedent): a plane — origin name or stored datum, so M130's
+        rename relinks it for free — cutting the DISPLAY. trimesh
+        keeps the half-space the normal points INTO; flip picks the
+        other side. Returns the live (origin, normal); raises
+        ParamError for an unknown name."""
+        prev = self._section
+        self._section = {"plane": ref, "flip": bool(flip)}
+        try:
+            return self.section_frame()
+        except Exception:
+            self._section = prev
+            raise
+
+    def clear_section(self) -> bool:
+        if self._section is None:
+            return False
+        self._section = None
+        return True
+
+    def section_active(self) -> bool:
+        return self._section is not None
+
+    def section_plane(self):
+        """The plane name the live cut rides on, or None."""
+        return self._section["plane"] if self._section else None
+
+    def section_frame(self):
+        """(origin, normal) of the live cut, flip applied."""
+        o, _, _, n = self.plane_frame(self._section["plane"])
+        s = -1.0 if self._section["flip"] else 1.0
+        return np.asarray(o, float), s * np.asarray(n, float)
+
+    def sectioned_display(self, default_color=None, cap_color=None):
+        """The sectioned display, in display_ranges' shape: every
+        EFFECTIVE-visible body (isolation still rules, M134) sliced by
+        the live plane and CAPPED by trimesh's manifold3d-backed
+        slice_plane, restitched in browser order with the cut faces
+        wearing cap_color — the vendor's default that a cut reads
+        differently from the skin. No ranges travel with a cut mesh:
+        face identity belongs to the MODEL's stitch, so a viewport
+        showing this one suspends picks, honestly and loudly."""
+        parts = self._visible_solids()
+        if not parts:
+            return None, []
+        origin, normal = self.section_frame()
+        if cap_color is None:
+            cap_color = (0.16, 0.55, 0.85)
+        vs, ns, fs, cs = [], [], [], []
+        off = 0
+        for b, s in parts:
+            try:
+                half = s.to_trimesh().slice_plane(origin, normal,
+                                                  cap=True)
+            except NotImplementedError:      # empty/degenerate bodies
+                continue                       # simply do not appear
+            if len(half.faces) == 0:
+                continue
+            v = np.asarray(half.vertices, float)
+            f = np.asarray(half.faces, int)
+            n = np.asarray(half.face_normals, float)
+            tol = max(1e-4, 1e-6 * max(half.extents))
+            onp = np.abs((v - origin) @ normal) < tol
+            capm = np.all(onp[f], axis=1)
+            col = (b.get("appearance") or {}).get("color")
+            col = col if col is not None else (
+                default_color if default_color is not None
+                else (0.70, 0.70, 0.72))
+            fc = np.tile(np.asarray(col, np.float32), (len(f), 1))
+            fc[capm] = np.asarray(cap_color, np.float32)
+            vs.append(v)
+            ns.append(n)
+            fs.append(f + off if off else f)
+            cs.append(fc)
+            off += len(v)
+        if not vs:
+            return None, []
+        if len(vs) == 1:
+            v, n, f, c = vs[0], ns[0], fs[0], cs[0]
+        else:
+            v, n, f, c = (np.vstack(vs), np.vstack(ns), np.vstack(fs),
+                          np.vstack(cs))
+        return (v, n, f, c), []
 
     def isolation_names(self) -> list[str]:
         """The top level's scope, for the status tell."""
@@ -1414,7 +1502,10 @@ class Document:
             elif isinstance(f, CoilFeature) and f.axis == old:
                 f.axis = new
                 n += 1
-        self.dirty = True
+        if self._section and self._section["plane"] == old:
+            self._section["plane"] = new       # M135: the live cut is a
+            n += 1                             # name-bearer too (M130's
+        self.dirty = True                      # law covers new limbs)
         return n
 
     def thread_decals(self) -> list[dict]:

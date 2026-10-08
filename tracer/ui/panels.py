@@ -84,6 +84,10 @@ class FeatureTree(QTreeWidget):
                                        self.viewport().mapToGlobal(pos))
         elif role and role[0] == "cplane":
             self.cplane_menu.emit(role[1], self.viewport().mapToGlobal(pos))
+        elif role and role[0] == "plane":
+            # M135: origin planes get the same menu (section rides them);
+            # the builder knows XY/XZ/YZ are not renameable or deletable.
+            self.cplane_menu.emit(role[1], self.viewport().mapToGlobal(pos))
         elif role and role[0] == "caxis":
             self.caxis_menu.emit(role[1], self.viewport().mapToGlobal(pos))
         elif role and role[0] == "body":

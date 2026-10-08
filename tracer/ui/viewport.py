@@ -63,6 +63,9 @@ class Viewport(QWidget):
     zoom_window = Signal(object)           # Zoom-window (M62) payload dict
     isolation_esc = Signal()               # M134: Esc's last stop —
                                            # MainWindow pops one level
+    section_esc = Signal()                 # M135: Esc ends the cut
+                                           # (after gestures, before
+                                           # deselect and isolation)
 
     def __init__(self, renderer: SceneRenderer, parent=None):
         super().__init__(parent)
@@ -112,8 +115,17 @@ class Viewport(QWidget):
         doc = self._doc
         default = ((doc.appearance or {}).get("color")
                    if doc and doc.painted_bodies() else None)
-        stitched, rng = (doc.display_ranges(default) if doc
-                         else (None, []))
+        if doc is None:
+            stitched, rng = None, []
+        elif doc.section_active():
+            # M135: the cut. Caps wear the accent — the vendor default
+            # that a section reads different from the skin.
+            ac = QColor(theme.DARK["accent"])
+            stitched, rng = doc.sectioned_display(
+                default, (ac.red() / 255.0, ac.green() / 255.0,
+                          ac.blue() / 255.0))
+        else:
+            stitched, rng = doc.display_ranges(default)
         arrays = None if stitched is None else stitched[:3]
         face_colors = None if stitched is None else stitched[3]
         had_sel = bool(self._sel)
@@ -771,6 +783,12 @@ class Viewport(QWidget):
 
     # ---- picking (double-click a planar face -> sketch on it) ---------------
     def _shoot(self, tm, px: float, py: float):
+        if self._sectioned():
+            # M135: while the display is a cut mesh its face indices
+            # are NOT the model's — hover, picks, press-pull, sketch-
+            # on-face and re-pivot all go quiet together, and the cut
+            # face itself is deliberately not a target.
+            return None
         o, d = self._cam.ray(px, py, self.width(), self.height())
         # NB: trimesh returns (locations, index_RAY, index_TRI)
         locs, _, itri = tm.ray.intersects_location([o], [d],
@@ -785,6 +803,11 @@ class Viewport(QWidget):
             return None
         t = -o[2] / d[2]
         return o + d * t if t > 0 else None
+
+    def _sectioned(self) -> bool:
+        """M135: is the display a cut mesh? If so, face identity is
+        gone — every mesh-facing interaction asks this first."""
+        return self._doc is not None and self._doc.section_active()
 
     def _group(self, face: int) -> list[int]:
         """All mesh faces coplanar-neighbouring `face` (whole logical face)."""
@@ -844,6 +867,9 @@ class Viewport(QWidget):
         (faces whose silhouette the box touches).  Whole logical faces
         (coplanar groups); replaces the selection.  v1 selects by 2D
         containment — hidden faces behind the hit count too."""
+        if self._sectioned():
+            return                         # M135: no face identity to
+        #                                  # box-select on a cut mesh
         if self._tm is None:
             return
         x0, x1 = sorted((float(p0.x()), float(p1.x())))
@@ -1102,6 +1128,9 @@ class Viewport(QWidget):
                 self.unsetCursor()
                 self.press_pull.emit({"cancel": True})
                 return
+            if self._sectioned():                    # M135: gestures done,
+                self.section_esc.emit()              # the cut itself is
+                return                               # next to yield
             if self._sel or self._hover:
                 had = bool(self._sel)
                 self._sel, self._hover = [], None

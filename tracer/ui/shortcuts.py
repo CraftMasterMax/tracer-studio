@@ -23,7 +23,8 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("LMB drag a flat face", "Press-Pull: push or pull material", False),
         ("LMB drag on empty space", "Selection box: left→right window, "
          "right→left crossing", False),
-        ("Esc", "Cancel the drag / clear the face selection", False),
+        ("Esc", "Yield the gesture ladder: ring · zoom-window · "
+         "section cut · selection · isolation level", False),
         ("MMB drag", "Orbit the model (RMB drag too)", False),
         ("Shift + MMB press on geometry", "Orbit around the pointed-at "
          "point: view centres on it, a pivot dot rides the centre", False),
@@ -31,6 +32,9 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("RMB tap", "Context menu: views, styles, toggles", False),
         ("RMB hold still", "Marking wheel: Undo · Extrude · Sketch · "
          "Move — release on a wedge to fire it, on the hub to dismiss",
+         False),
+        ("Plane row ▸ Section: cut here", "Cut the display on the "
+         "plane — capped, accent-shaded; picking sleeps while cut",
          False),
         ("Mouse wheel", "Zoom toward the cursor", False),
         ("MMB click", "Home view (fit + isometric)", False),

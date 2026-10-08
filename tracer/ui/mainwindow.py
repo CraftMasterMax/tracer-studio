@@ -158,6 +158,7 @@ class MainWindow(QMainWindow):
         self.viewport.set_wheel_commands(self._wheel_commands)
         self.viewport.zoom_window.connect(self._on_zoom_window)
         self.viewport.isolation_esc.connect(self._on_isolation_esc)
+        self.viewport.section_esc.connect(self._clear_section)
         self._mark_menu = None               # open marking menu (M56)
         self._move_origin = None             # armed Move gesture (M53)
         self._move_len = 40.0
@@ -2287,16 +2288,27 @@ class MainWindow(QMainWindow):
             "normal")
 
     def _cplane_menu(self, name, pos):
-        menu = QMenu(self)
+        stored = name not in ("XY", "XZ", "YZ")   # origin planes: section
+        menu = QMenu(self)                        # yes, rename/delete no
         menu.addAction("Sketch on plane",
                        lambda: self.action_sketch_on_plane(name))
         menu.addSeparator()
-        menu.addAction("Rename…",
-                       lambda: self._rename_datum("construction plane",
-                                                  name))
-        menu.addSeparator()
-        menu.addAction("Delete construction plane",
-                       lambda: self._delete_plane(name))
+        # M135: section rides named planes — datum renames (M130)
+        # relink the cut for free, which is why it is a row command.
+        menu.addAction("Section: cut here",
+                       lambda checked=False: self._section_here(name))
+        if self.doc is not None and self.doc.section_active():
+            if self.doc.section_plane() == name:
+                menu.addAction("Flip section", self._flip_section)
+            menu.addAction("Clear section", self._clear_section)
+        if stored:
+            menu.addSeparator()
+            menu.addAction("Rename…",
+                           lambda: self._rename_datum("construction plane",
+                                                      name))
+            menu.addSeparator()
+            menu.addAction("Delete construction plane",
+                           lambda: self._delete_plane(name))
         menu.exec_(pos)
 
     def _body_menu(self, name, pos):
@@ -2475,6 +2487,37 @@ class MainWindow(QMainWindow):
         else:
             self.status.showMessage("Isolation ended — pre-isolate "
                                     "visibility restored exactly", 4000)
+
+    # ---- section view (M135) -------------------------------------------------
+    def _section_here(self, name):
+        doc = self.doc
+        if doc is None:
+            return
+        try:
+            doc.set_section(name)            # resolves by NAME now: an
+        except Exception as e:               # unknown/broken datum cuts
+            self.status.showMessage(str(e), 5000)   # nothing and says why
+            return
+        self.viewport.refresh()
+        self.status.showMessage(
+            f"Section on {name} — Esc or Clear section ends it; face "
+            "picking is suspended while the model is cut", 6000)
+
+    def _flip_section(self):
+        doc = self.doc
+        if doc is None or not doc.section_active():
+            return
+        doc.set_section(doc.section_plane(), flip=not doc._section["flip"])
+        self.viewport.refresh()
+        self.status.showMessage("Section flipped — the kept half is the "
+                                "other one now", 4000)
+
+    def _clear_section(self):
+        if self.doc is None or not self.doc.clear_section():
+            return
+        self.viewport.refresh()
+        self.status.showMessage("Section cleared — the whole model is "
+                                "back, picks with it", 4000)
 
     def _root_menu(self, pos):
         """Document-row menu (M134): the always-findable exits. Leaving

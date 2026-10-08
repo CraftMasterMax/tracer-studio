@@ -1440,6 +1440,25 @@ M125; items 1-11 below are history.*
     the pivot dot rides dead centre by construction. An off-centre
     pixel test replaced a trivially-passing one. Nav tail: settable
     home, sketch-context wheel ring.
+    SECTION VIEW SHIPPED (M135, suite 1451): the wave-9 probe,
+    live-tested before a line shipped — trimesh 5.1.1 slice_plane
+    (cap=True) watertight-caps through the manifold3d engine already
+    in the venv (plate+bore sliced through the bore axis: 78 cap
+    faces, all accent, volume 3364.4 vs analytic 3364.38). Geometry
+    cost: ZERO. The milestone is honest wiring: per-body slices
+    restitched browser-order (isolation still rules), the cut face
+    accent-shaded (vendor default), picks/hover/press-pull/sketch-
+    face/re-pivot suspended at one choke while cut (mesh identity is
+    the model's), the plane bound BY NAME so M130's rename relinks
+    the living cut (+1 in the counted relink), flip/or other half,
+    Esc's ladder = gestures → cut → selection → isolation, and
+    session state absent from the save file. Origin-plane rows got a
+    menu at last (section yes, rename/delete no — not ours to kill).
+    Drawings rung (a)'s PAPER side (hatched section views from these
+    caps) remains; cap-hatch in the plane's 2D frame is the cheapest
+    follow-up (60-90 LOC). Cosmetic backlog: grazing-angle zebra on
+    coplanar boolean rims (predates M135 — control shot proved it;
+    candidate: polygon-offset or coplanar merge in the renderer).
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff
