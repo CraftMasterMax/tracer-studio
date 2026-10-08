@@ -3754,9 +3754,10 @@ class MainWindow(QMainWindow):
         self.rail.tree.reload()
         k_used = self.doc.sheet_states()[body]["bends"][-1][2]
         warn = self.doc.sheet_warnings
+        src = " (pinned)" if feat.k_factor is not None else " (table)"
         self.status.showMessage(
             f"Flange: {feat.leg:g} mm at {feat.angle:g}° · K "
-            f"{k_used:g}{' (pinned)' if feat.k_factor is not None else ' (table)'}"
+            f"{k_used:g}{src}"
             + (f" — {warn[-1]}" if warn else ""), 7000)
 
     def action_joint(self):

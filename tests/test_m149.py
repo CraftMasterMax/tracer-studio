@@ -154,16 +154,13 @@ def test_ksheet_bins_are_half_open_and_the_json_is_provenanced():
     assert ksolver.k_for("mild-steel", 6.0, T) == 0.40     # r/t = 3.0
     assert ksolver.k_for("mild-steel", 12.0, T) == 0.44    # r/t = 6.0
     assert ksolver.k_for("unobtainium", 3.0, T) is None
-    doc = json.loads((Path(sheetmetal.__file__).resolve().parent
-                      / "data" / "ksheet.json")
+    root = Path(sheetmetal.__file__).resolve().parent
+    doc = json.loads((root / "ksheet.json")
                      .read_text(encoding="utf-8"))
     assert doc["provenance"] and doc["verified"] and doc["license"]
     grep = subprocess.run(
-        ["grep", "-l", "12195",
-         str(Path(sheetmetal.__file__).resolve().parent
-             / "data" / "ksheet.json"),
-         str(Path(sheetmetal.__file__).resolve().parent
-             / "ksolver.py")], capture_output=True, text=True)
+        ["grep", "-l", "12195", str(root / "ksheet.json"),
+         str(root / "ksolver.py")], capture_output=True, text=True)
     assert grep.stdout == ""               # the phantom stays uncited
 
 

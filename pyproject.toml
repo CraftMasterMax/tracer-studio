@@ -36,7 +36,7 @@ include = ["tracer*"]
 
 [tool.setuptools.package-data]
 "tracer.resources" = ["fonts/*.ttf", "fonts/*.txt", "*.png"]
-"tracer.core" = ["data/*.json"]
+"tracer.core" = ["data/*.json", "ksheet.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

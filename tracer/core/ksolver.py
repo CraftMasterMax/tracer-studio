@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-_DATA = Path(__file__).resolve().parent / "data" / "ksheet.json"
+_DATA = Path(__file__).resolve().parent / "ksheet.json"
 
 MATERIALS: list[str] = []            # ordered, for the dialog combo
 _ROWS: list[dict] = []
