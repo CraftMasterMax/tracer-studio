@@ -97,6 +97,13 @@ def write_dxf(ops: list, path: str) -> int:
                         math.degrees(e) % 360.0)
         elif t == "poly":
             msp.add_lwpolyline(op[1], format="xy", close=bool(op[2]))
+        elif t == "text":
+            # SM3: bend labels travel as TEXT entities — the shop
+            # stamp rides the DXF like the dash lines do. (The one
+            # word-op grammar point; PNG keeps painting its own.)
+            msp.add_text(str(op[1]), dxfattribs={
+                "insert": (float(op[2][0]), float(op[2][1])),
+                "height": float(op[3])})
         else:
             continue
     doc.saveas(path)

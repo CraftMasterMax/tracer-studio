@@ -199,6 +199,13 @@ class DrawingCanvas(QWidget):
             sol = self.doc.body_solids().get("_flat")   # sheet (v1);
             if sol is not None:                    # added last — a
                 out["Flat"] = (sol, "top")         # user "Flat" section
+        flats = self.doc.sheet_flats()             # SM3: a parametric
+        if flats:                                  # sheet answers Flat
+            slab = self.doc.flat_slab(sorted(flats)[0])  # with its LIVE
+            if slab is not None:                   # walk — law needs
+                out["Flat"] = (slab, "top")        # no snapshot
+        # (a snapshot run on a parametric body anyway AGREES to ==;
+        # the walk, being the newer law, speaks last)
         return out                                 # yields to the paper
 
     def views(self) -> dict:
@@ -252,6 +259,19 @@ class DrawingCanvas(QWidget):
                  for p in c]
                 for c in drawing.project_hidden(sol, view=vkey)]
 
+    def _flat_lines(self) -> list:
+        """The Flat view's bend centre-lines in model space: the LIVE
+        walk of a parametric sheet answers FIRST (its numbers are the
+        features'), else the M147 snapshot's stored segments. Both
+        carry {x, y0, y1} — one mapping serves two laws (§4)."""
+        if self.doc is None:
+            return []
+        flats = self.doc.sheet_flats()
+        if flats:
+            return flats[sorted(flats)[0]]["bend_lines"]
+        fp = self.doc.flat_feature()
+        return [] if fp is None else fp.bend_lines
+
     def bends_page(self, view: str) -> list:
         """M147: the flat view's bend centre-lines in sheet-mm page
         coords — read from the FLAT's stored segments (analytic ink;
@@ -261,8 +281,8 @@ class DrawingCanvas(QWidget):
         answers empty."""
         if self.doc is None or view != "Flat":
             return []
-        fp = self.doc.flat_feature()
-        if fp is None:
+        lines = self._flat_lines()
+        if not lines:
             return []
         fr = self.frames().get(view)
         if fr is None:
@@ -270,7 +290,35 @@ class DrawingCanvas(QWidget):
         sc, off = fr
         return [[(bl["x"] * sc + off[0], bl["y0"] * sc + off[1]),
                  (bl["x"] * sc + off[0], bl["y1"] * sc + off[1])]
-                for bl in fp.bend_lines]
+                for bl in lines]
+
+    def bend_labels(self, view: str) -> list:
+        """SM3: per-bend text for the LIVE flat — "90° ↑ R3.00
+        K=0.44" built FROM THE PARAMS, the analytic-truth lesson
+        (SM2 §4.5) aimed at words. A detector snapshot answers []:
+        its paper says what was measured and invents no ownership.
+        (page-x, page-y, text) in sheet-mm; bands ride bl["band"],
+        so a seam-sorted line still names its own bend."""
+        if self.doc is None or view != "Flat":
+            return []
+        flats = self.doc.sheet_flats()
+        if not flats:
+            return []
+        body = sorted(flats)[0]
+        fr = self.frames().get(view)
+        if fr is None:
+            return []
+        sc, off = fr
+        bends = self.doc.sheet_states()[body]["bends"]
+        out = []
+        for bl in flats[body]["bend_lines"]:
+            a, r, k = bends[bl["band"]]
+            arrow = "\u2191" if float(a) >= 0 else "\u2193"
+            out.append(((float(bl["x"]) * sc + off[0],
+                         float(bl["y0"]) * sc + off[1] + 1.2),
+                        f"{abs(float(a)):g}\u00b0 {arrow} "
+                        f"R{float(r):.2f} K={float(k):g}"))
+        return out
 
     def cuts_page(self) -> dict:
         """M102: section name -> closed cut-face loops in sheet-mm page
@@ -756,6 +804,18 @@ class DrawingCanvas(QWidget):
             p.setPen(bp)
             for _, seg in bend_segs:
                 p.drawLine(self.s2p(*seg[0]), self.s2p(*seg[1]))
+        # SM3: the live flat's bend labels — words built from params,
+        # riding the same dash like the shop's stamp beside the fold
+        labels = self.bend_labels("Flat")
+        if labels:
+            f3 = p.font()
+            f3.setPointSizeF(max(5.0, 6.2 * min(self._zoom, 2.0)))
+            p.setFont(f3)
+            p.setPen(QPen(_DETAIL))
+            for at, txt in labels:
+                px, py = self.s2p(*at)
+                p.drawText(QRectF(px - 46, py - 9, 92, 16),
+                           Qt.AlignCenter, txt)
         # M100: a view on an explicit scale wears its ratio as a caption;
         # M102: a section wears its letter (A-A · 1:2 when both)
         vs = self.sheet().get("vscale") or {}

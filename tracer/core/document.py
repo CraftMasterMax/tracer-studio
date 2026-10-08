@@ -837,6 +837,38 @@ class FlatPatternFeature(Feature):
                              height=0.01)
 
 
+@dataclass
+class FlangeFeature(Feature):
+    """M149 (sheet metal SM3): the parametric flange that OWNS the
+    bend — the flat is FORMULA, never a measurement. The numbers ride
+    the FEATURE (Fusion's Sheet-Metal-Rule STRUCTURE without its
+    machinery: no rule subsystem ships; k_factor=None rides the
+    ksheet sidecar LIVE at recompute, a float pins an override).
+    The base flange owns t, W and material; every later flange adds
+    one leg and folds the previous free end by a signed angle —
+    attach is CHAIN ORDER, the v1 limit the dialogs say out loud.
+    No sketch, no polyline, no stored outline: the folded section and
+    the flat are both DERIVED from the same runs list, in fixed
+    association order (float + is not associative; the order IS law,
+    sheetmetal.param_flat). relief_gap/relief_depth are the square
+    end-notches at this bend's two free edges (None = no relief);
+    seam is the closed cycle's ONE unwrap number (paper law in v1).
+    t/width on a NON-base flange must repeat the base's — they are
+    checked loudly, never silently overridden, because M148 reads
+    every stored field in the stream fingerprint and a quiet rewrite
+    there would be a teleport dressed as a move."""
+    t: float = 2.0
+    width: float = 40.0
+    leg: float = 60.0            # tangent-to-END length (SM1's convention)
+    angle: float = 90.0          # fold at the previous free end; signed
+    ri: float = 3.0              # inside radius
+    material: str = "mild-steel"  # base owns: the K table's key
+    k_factor: float | None = None
+    seam: float | None = None
+    relief_gap: float | None = None
+    relief_depth: float | None = None
+
+
 # ---- M148 rung 2a: the stream classifier's primitives -----------------
 _ID4 = np.eye(4)
 
@@ -905,6 +937,9 @@ class Document:
                                               # like the bodies list
         self.joint_warnings: list[str] = []   # session: degraded
                                               # cycles, never saved
+        self._sheet_states: dict | None = None   # SM3: set by recompute
+        self.sheet_warnings: list[str] = []   # session: K defaults
+                                              # without a table row
         self._iso: list = []                  # M134: [(scope, boosted)]
                                               # isolation stack — session
                                               # view state, never saved
@@ -2100,6 +2135,106 @@ class Document:
         return next((f for f in self.features
                      if isinstance(f, FlatPatternFeature)), None)
 
+    # ---- SM3 (M149): the parametric sheet — New Sheet / Add Flange ----
+
+    def add_sheet(self, t: float = 2.0, width: float = 40.0,
+                  leg: float = 60.0, material: str | None = None,
+                  name: str | None = None):
+        """SM3: open a parametric sheet BODY whose whole stream is
+        flanges — the base FlangeFeature carries leg 0 and owns t, W
+        and the K-table material (None = the table's first material).
+        Inputs are checked by the pure law BEFORE the body exists: a
+        nonsense sheet touches no stream (add_interlock's fail-first
+        culture). Returns (body dict, base feature)."""
+        from . import sheetmetal as _sm           # coil precedent
+        from . import ksolver
+        material = (ksolver.materials()[0] if material is None
+                    else str(material))
+        _sm._param_check(float(t), float(width), [float(leg)], [])
+        b = self.add_body(name)
+        feat = FlangeFeature(name=f"Base flange of {b['name']}",
+                             body=b["name"], t=float(t),
+                             width=float(width), leg=float(leg),
+                             material=material)
+        self.add(feat)
+        return b, feat
+
+    def add_flange(self, body: str, leg: float, angle: float,
+                   ri: float = 3.0, k_factor: float | None = None,
+                   relief_gap: float | None = None,
+                   relief_depth: float | None = None,
+                   seam: float | None = None):
+        """SM3: the chain grows at the FREE END of the last leg — the
+        v1 attach law, said out loud by the dialog. Guard-first like
+        SM1: a body that is no parametric sheet never sees a dialog,
+        and every input rides the pure refusal voices BEFORE the
+        stream changes. k_factor=None rides the ksheet table live;
+        a float pins the override. seam is the closed cycle's single
+        unwrap number (paper law; the folded ring body is queued)."""
+        from . import sheetmetal as _sm
+        base = next((x for x in self.features
+                     if isinstance(x, FlangeFeature)
+                     and x.body == body), None)
+        if base is None:
+            raise _sm.SheetMetalError(
+                f"{body!r} is not a parametric sheet — New Sheet "
+                "opens one")
+        prior = [x for x in self.features
+                 if isinstance(x, FlangeFeature) and x.body == body]
+        legs = [float(x.leg) for x in prior] + [float(leg)]
+        bends = [(float(x.angle), float(x.ri),
+                  _sm.K_DEFAULT if x.k_factor is None
+                  else float(x.k_factor)) for x in prior[1:]]
+        bends.append((float(angle), float(ri),
+                      _sm.K_DEFAULT if k_factor is None
+                      else float(k_factor)))
+        _sm._param_check(base.t, base.width, legs, bends)   # law, now
+        n = len(prior)
+        feat = FlangeFeature(name=f"Flange {n} of {body}", body=body,
+                             t=base.t, width=base.width,
+                             material=base.material,
+                             leg=float(leg), angle=float(angle),
+                             ri=float(ri), k_factor=k_factor,
+                             relief_gap=relief_gap,
+                             relief_depth=relief_depth, seam=seam)
+        self.add(feat)
+        return feat
+
+    def sheet_states(self) -> dict:
+        """SM3 walk states from the last recompute: body -> {t, W,
+        legs, bends, reliefs, seam, flat, k_notes}. The paper rails
+        and the dialogs read the SAME dicts recompute wrote — one
+        derivation, no second computation to drift. None = never
+        recomputed (one recompute settles it; a sheet-free doc then
+        reads {} honestly, without re-running the stream per call)."""
+        if self._sheet_states is None or self.dirty:
+            self.recompute()
+        return self._sheet_states or {}
+
+    def sheet_flats(self) -> dict:
+        """SM3: body -> the LIVE flat-pattern dict (legs, bends,
+        reliefs, seam all INPUT) from the last recompute's walk —
+        the drawing's Flat branch reads these same floats recompute
+        wrote. Detector bodies have no entry: their paper stays the
+        M147 snapshot's business."""
+        return {name: st["flat"]
+                for name, st in self.sheet_states().items()
+                if st.get("flat") is not None}
+
+    def flat_slab(self, body: str):
+        """The live flat as a paper-thin slab for the projection
+        rails — FlatPatternFeature.build's honest 1/100 mm trick,
+        aimed at the live walk instead of a stored outline. Built
+        once per recompute (cached on the walk state): the view
+        derives, the PART never grows a second body (§4 law)."""
+        st = self.sheet_states().get(body)
+        if st is None or st.get("flat") is None:
+            return None
+        if st.get("slab") is None:
+            st["slab"] = Solid.extrude(
+                np.asarray(st["flat"]["outline"], float), height=0.01)
+        return st["slab"]
+
     def add_flat_pattern(self, body: str, K: float | None = None):
         """SM2: the flat pattern as a DERIVED, HIDDEN body — the outline
         of one flat_outline() computation at one K, frozen.
@@ -2298,6 +2433,7 @@ class Document:
         # "Body 1", exactly the single accumulator the world ran on.
         buckets: dict[str, Solid | None] = {}
         by_uid: dict[str, Solid] = {}
+        sheets: dict[str, dict] = {}          # SM3: per-body walk state
         for pos, f in enumerate(self.features):
             # M118: the log bridge's "who broke" — whichever feature the
             # loop was building when an exception escapes is the guilty
@@ -2405,6 +2541,75 @@ class Document:
                               if x["name"] == want), None)
                     sides.append(self._apply_placement(b, s))
                 solid = sides[0].intersect(sides[1])
+            elif isinstance(f, FlangeFeature):
+                # SM3: one walk PER SHEET BODY, in stream order. The
+                # base flange owns t, W and material (a later flange
+                # that moves them is refused, never ignored — M148's
+                # fingerprint reads every field, so a silent override
+                # there would be a teleport dressed as a move). K rides
+                # the ksheet table LIVE while k_factor is None; a float
+                # pins. The walk REPLACES the bucket: it IS the body.
+                from . import sheetmetal as _sm      # coil precedent
+                st = sheets.get(key)
+                if st is None:
+                    st = sheets[key] = dict(
+                        t=float(f.t), W=float(f.width),
+                        material=str(f.material), legs=[], bends=[],
+                        reliefs=[], seam=(None if f.seam is None
+                                          else float(f.seam)),
+                        k_notes=[], flat=None)
+                else:
+                    for attr, holder in (("t", "t"), ("width", "W"),
+                                         ("material", "material")):
+                        if getattr(f, attr) != st[holder]:
+                            raise _sm.SheetMetalError(
+                                f"{f.name!r} moves {attr} — one sheet "
+                                f"has ONE {holder}; the base flange "
+                                "owns it")
+                    if f.seam is not None:
+                        if st["seam"] is None:
+                            st["seam"] = float(f.seam)
+                        elif st["seam"] != float(f.seam):
+                            raise _sm.SheetMetalError(
+                                f"{f.name!r} moves the seam — one "
+                                "cycle unwraps at ONE cut")
+                if st["legs"]:                    # not the base: fold
+                    k = None if f.k_factor is None else float(f.k_factor)
+                    if k is None:                 # the table rides live
+                        from . import ksolver
+                        k, sourced = ksolver.k_or_default(
+                            st["material"], float(f.ri), st["t"],
+                            _sm.K_DEFAULT)
+                        if not sourced:
+                            st["k_notes"].append(
+                                f"no ksheet row for {st['material']!r} "
+                                f"at r/t = {float(f.ri) / st['t']:.2f} "
+                                f"({f.name!r}) — K_DEFAULT 0.44 stands")
+                    st["bends"].append((float(f.angle), float(f.ri), k))
+                    if (f.relief_gap is None) != (f.relief_depth is None):
+                        raise _sm.SheetMetalError(
+                            f"{f.name!r}: a relief needs BOTH gap and "
+                            "depth — half a relief is a whole surprise")
+                    if f.relief_gap is not None:
+                        st["reliefs"].append(dict(
+                            bend=len(st["bends"]) - 1,
+                            gap=float(f.relief_gap),
+                            depth=float(f.relief_depth)))
+                elif f.relief_gap is not None or f.relief_depth is not None:
+                    raise _sm.SheetMetalError(
+                        f"{f.name!r}: the base flange has no bend "
+                        "to relieve")
+                st["legs"].append(float(f.leg))
+                st["flat"] = _sm.param_flat(
+                    st["legs"], st["bends"], st["t"], st["W"],
+                    reliefs=st["reliefs"], seam=st["seam"])
+                solid = _sm.sheet_solid(st["legs"], st["bends"],
+                                        st["t"], st["W"],
+                                        reliefs=st["reliefs"],
+                                        seam=st["seam"])
+                buckets[key] = solid
+                by_uid[f.uid] = solid
+                continue
             elif isinstance(f, (BodyFilletFeature, ShellFeature,
                                 SplitFeature, MoveFeature, RotateFeature,
                                 CombineFeature)):
@@ -2434,6 +2639,12 @@ class Document:
                 buckets[key] = acc.subtract(solid)
             else:
                 buckets[key] = acc.intersect(solid)
+        # SM3: the paper rails and the dialogs read the walk states
+        # after the pass — flat dicts came from param_flat, the K
+        # notes surface once per recompute like joint_warnings.
+        self._sheet_states = sheets
+        self.sheet_warnings = [note for st in sheets.values()
+                               for note in st["k_notes"]]
         # Placement ≠ Feature (architecture [S]; kernel report actionable,
         # joint report §1 by name): a body's placement is KINEMATIC STATE,
         # applied AFTER its feature stream — moving a body creates no
@@ -2536,6 +2747,18 @@ class Document:
                          k_factor=float(f.k_factor),
                          thickness=float(f.thickness),
                          source=f.source)
+            elif isinstance(f, FlangeFeature):
+                d.update(t=float(f.t), width=float(f.width),
+                         leg=float(f.leg), angle=float(f.angle),
+                         ri=float(f.ri), material=f.material,
+                         k_factor=(None if f.k_factor is None
+                                   else float(f.k_factor)),
+                         seam=(None if f.seam is None
+                               else float(f.seam)),
+                         relief_gap=(None if f.relief_gap is None
+                                     else float(f.relief_gap)),
+                         relief_depth=(None if f.relief_depth is None
+                                       else float(f.relief_depth)))
             elif isinstance(f, LinearPatternFeature):
                 d.update(source_uid=f.source_uid,
                          vector=list(map(float, f.vector)),
@@ -2734,6 +2957,14 @@ class Document:
                     flat_length=fd["flat_length"], width=fd["width"],
                     k_factor=fd["k_factor"], thickness=fd["thickness"],
                     source=fd.get("source", ""), **base))
+            elif t == "FlangeFeature":
+                doc.features.append(FlangeFeature(
+                    name=fd["name"], t=fd["t"], width=fd["width"],
+                    leg=fd["leg"], angle=fd["angle"], ri=fd["ri"],
+                    material=fd.get("material", "mild-steel"),
+                    k_factor=fd.get("k_factor"), seam=fd.get("seam"),
+                    relief_gap=fd.get("relief_gap"),
+                    relief_depth=fd.get("relief_depth"), **base))
             elif t == "LinearPatternFeature":
                 doc.features.append(LinearPatternFeature(
                     name=fd["name"], source_uid=fd["source_uid"],

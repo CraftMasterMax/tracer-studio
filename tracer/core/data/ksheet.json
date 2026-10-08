@@ -1,0 +1,84 @@
+{
+  "$schema": "tracer-kfactor-table-v1",
+  "key": "k_factor",
+  "standard": "Shop air-bend folklore \u2014 NO standard cited, and none exists (the phantom number this project names only in its research notes stays out of product text)",
+  "edition": "compact consensus 2026",
+  "title": "K-factor (neutral axis location) by material and r/t",
+  "unit": "dimensionless",
+  "columns": [
+    "K"
+  ],
+  "verified": "2026-10-08",
+  "provenance": [
+    "air-bend K values circulating in brake-shop practice (0.33..0.50 by r/t); the same folklore SM1 names K_DEFAULT = 0.44",
+    "bin culture follows the r/t keyed lookup of FreeCAD SheetMetalKfactor (open source, read as prior art \u2014 no data copied)"
+  ],
+  "notes": "K is a PROCESS constant: the neutral fibre sits between the faces (0 < K <= 1 by the bend_allowance law). These bins are a starting point, not a measurement of YOUR brake. Unknown material or r/t answers None and the caller keeps K_DEFAULT LOUDLY \u2014 never a silent average.",
+  "license": "Folklore numbers, restated as fact; no table artwork mirrored.",
+  "rows": [
+    {
+      "material": "mild-steel",
+      "r_over_t": [
+        0.0,
+        3.0
+      ],
+      "K": 0.33
+    },
+    {
+      "material": "mild-steel",
+      "r_over_t": [
+        3.0,
+        6.0
+      ],
+      "K": 0.4
+    },
+    {
+      "material": "mild-steel",
+      "r_over_t": [
+        6.0,
+        1000000000.0
+      ],
+      "K": 0.44
+    },
+    {
+      "material": "stainless",
+      "r_over_t": [
+        0.0,
+        3.0
+      ],
+      "K": 0.33
+    },
+    {
+      "material": "stainless",
+      "r_over_t": [
+        3.0,
+        6.0
+      ],
+      "K": 0.44
+    },
+    {
+      "material": "stainless",
+      "r_over_t": [
+        6.0,
+        1000000000.0
+      ],
+      "K": 0.5
+    },
+    {
+      "material": "aluminum",
+      "r_over_t": [
+        0.0,
+        1000000000.0
+      ],
+      "K": 0.44
+    },
+    {
+      "material": "brass-copper",
+      "r_over_t": [
+        0.0,
+        1000000000.0
+      ],
+      "K": 0.44
+    }
+  ]
+}

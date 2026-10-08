@@ -546,3 +546,275 @@ def flat_outline(solid, K: float = K_DEFAULT) -> dict:
     return dict(runs=runs, outline=outline, bend_lines=bend_lines,
                 flat_length=flat, width=w, K=float(u["K"]),
                 thickness=u["thickness"], bands=bands)
+
+
+# ---- SM3 (M149): the parametric sheet — inputs are law ----------------
+#
+# The detector path reads what a mesh confesses; the parametric path
+# OWNS the bend: t, W, tangent-length legs and (angle, ri, K) bends
+# are INPUTS, so the flat is FORMULA — `==`, not ~. Two derivations
+# from one (legs, bends) walk:
+#
+#   param_flat     the developed blank: SM2's rectangle (plus relief
+#                  notches), BA-wide slots, one centre line per bend.
+#                  The annulus stays ORACLE, never ink (SM2 law); a
+#                  closed cycle unwraps by ONE user-named seam.
+#   fold_section   the folded cross-section: a centreline walk —
+#                  legs tangent-to-tangent, bends circular arcs of
+#                  centreline radius ri + t/2 — with the edges
+#                  offset +-t/2 to the TRAVEL side (never
+#                  inner/outer, so an S-bend cannot self-cross). A
+#                  lone leg is the exact rectangle prism; the 90 deg
+#                  twin reproduces the p13 recipe the detector reads.
+#
+# Fixed association order: the walk advances x += leg, then x += ba,
+# in stream order — and every golden re-uses THAT order, because
+# float addition is not associative. The order IS law.
+
+
+def _param_check(t, W, legs, bends):
+    """The parametric path's ONE refusal choke — SM1's discipline:
+    one body, one law, one voice. K/ri/t law rides bend_allowance."""
+    if t <= 0 or W <= 0:
+        raise SheetMetalError("a sheet needs positive thickness and "
+                              "width — this one has neither from you")
+    if not len(legs):
+        raise SheetMetalError("a sheet needs at least one leg")
+    if any(float(L) <= 0 for L in legs):
+        raise SheetMetalError("a leg of length zero is not a leg — "
+                              "every leg must be positive")
+    n = len(legs)
+    if len(bends) not in (n - 1, n):
+        raise SheetMetalError(
+            f"{n} legs and {len(bends)} bends is neither an open strip "
+            f"(wants {n - 1}) nor a closed cycle (wants {n})")
+    for (a, r, k) in bends:
+        if abs(float(a)) >= 180.0:
+            raise SheetMetalError(
+                f"a {abs(float(a)):g}-degree fold lies back on itself — "
+                "v1 bends stay under 180 degrees")
+        bend_allowance(t, r, a, k)          # K, ri, t law, SM1's voice
+
+
+def param_flat(legs, bends, t, W, reliefs=(), seam=None) -> dict:
+    """THE developed-blank law of a parametric chain, every float
+    from formula. Open strip: len(bends) == len(legs) - 1. Closed
+    cycle (len(bends) == len(legs), signed angles summing to +-360)
+    needs a `seam` — ONE number on a flat leg — and the outline
+    stays EXACTLY the rectangle [0, Lc] x [0, W]: the seam picks
+    where the rectangle's edge falls on the cycle, it cuts nothing
+    (kerf 0, v1). Bend lines ride (x - s) mod Lc; a seam inside a
+    bend slot splits the band and refuses, named. `reliefs`
+    ([{"bend": i, "gap": g, "depth": d}]) turn SM2's 5-point
+    rectangle into the SAME chain plus notch vertices — without
+    them the outline is SM2's, byte for byte.
+    """
+    _param_check(t, W, legs, bends)
+    closed = len(bends) == len(legs)
+    if reliefs and closed:
+        raise SheetMetalError(
+            "reliefs on a closed cycle wait for split-band seams — "
+            "v1 notches the open strip only")
+    runs: list = []
+    x = 0.0
+    runs.append(dict(kind="leg", x0=x, extent=float(legs[0])))
+    x += float(legs[0])
+    for i, (a, r, k) in enumerate(bends):
+        b = bend_allowance(t, r, a, k)
+        runs.append(dict(kind="band", x0=x, ba=b, ri=float(r),
+                         K=float(k), angle=float(a)))
+        x += b
+        if i + 1 < len(legs):
+            runs.append(dict(kind="leg", x0=x, extent=float(legs[i + 1])))
+            x += float(legs[i + 1])
+    flat = float(x)
+    w = float(W)
+    if closed:
+        turn = sum(float(a) for (a, _r, _k) in bends)
+        if abs(abs(turn) - 360.0) > 1e-9:
+            raise SheetMetalError(
+                f"the cycle turns {turn:g} degrees, not 360 — those "
+                "legs and bends do not close")
+        if seam is None:
+            raise SheetMetalError(
+                "this is a CLOSED SECTION: the bend chain loops back on "
+                "itself and the flat needs a SEAM — a seam is a cut a "
+                "draughtsman chooses; on the parametric path, NAME it: "
+                "seam = a number on a flat leg")
+        s = float(seam) % flat
+        for rn in runs:
+            if (rn["kind"] == "band"
+                    and rn["x0"] <= s < rn["x0"] + rn["ba"]):
+                raise SheetMetalError(
+                    "the seam must live on a FLAT LEG (v1): a seam "
+                    "through a bend slot splits the band")
+        lines = [dict(x=(rn["x0"] + rn["ba"] / 2.0 - s) % flat,
+                      y0=0.0, y1=float(W), band=j)
+                 for j, rn in enumerate(runs) if rn["kind"] == "band"]
+        lines.sort(key=lambda d: d["x"])
+        for rn in runs:                 # slots read the unwrapped x too
+            if rn["kind"] == "band":
+                rn["x0"] = (rn["x0"] - s) % flat
+    else:
+        lines = [dict(x=rn["x0"] + rn["ba"] / 2.0, y0=0.0, y1=float(W),
+                      band=j)
+                 for j, rn in enumerate(runs) if rn["kind"] == "band"]
+    outline = [(0.0, 0.0), (flat, 0.0), (flat, w), (0.0, w), (0.0, 0.0)]
+    if reliefs:
+        outline = _relief_outline(runs, flat, w, reliefs)
+    return dict(runs=runs, outline=outline, bend_lines=lines,
+                flat_length=flat, width=w, thickness=float(t),
+                closed=closed,
+                seam=(None if seam is None else float(seam) % flat))
+
+
+def _relief_cuts(runs, reliefs, W):
+    """Validated, sorted (lo, hi, depth, band) notch cuts — the ONE
+    voice reliefs obey, read alike by the flat outline and the 3-D
+    blade. v1 laws: the notch lives inside its BA-wide slot (a wider
+    relief waits for the leg-cutting v2), both edges' notches stop
+    short of meeting mid-sheet, and a notch needs positive t."""
+    band_runs = [rn for rn in runs if rn["kind"] == "band"]
+    cuts = []
+    for r in reliefs:
+        i = int(r["bend"])
+        if not 0 <= i < len(band_runs):
+            raise SheetMetalError(
+                f"relief on bend {i}: this strip has {len(band_runs)} "
+                "bend(s) to relieve")
+        g, d = float(r["gap"]), float(r["depth"])
+        if g <= 0 or d <= 0:
+            raise SheetMetalError("a relief needs positive gap and "
+                                  "depth — or no relief at all")
+        if 2.0 * d >= W:
+            raise SheetMetalError(
+                f"a {d:g} mm relief from both edges meets across the "
+                f"middle of a {W:g} mm sheet — that severs the bend")
+        rn = band_runs[i]
+        if g >= rn["ba"]:
+            raise SheetMetalError(
+                f"a v1 relief must live inside its {rn['ba']:.3f} mm "
+                f"bend slot (gap {g:g} is as wide) — reliefs that cut "
+                "onto the legs wait for v2")
+        xc = rn["x0"] + rn["ba"] / 2.0
+        cuts.append((xc - g / 2.0, xc + g / 2.0, d, i))
+    cuts.sort(key=lambda c: (c[0], c[1], c[2], c[3]))
+    for (lo, hi, _d, _j), (lo2, _hi2, _d2, _j2) in zip(cuts, cuts[1:]):
+        if lo2 <= hi:
+            raise SheetMetalError(
+                "two reliefs overlap on the blank — widen the bends "
+                "or spare one")
+    return cuts
+
+
+def _relief_outline(runs, flat, W, reliefs):
+    """The SM2 rectangle PLUS axis-aligned notch vertices at both
+    free edges of each relieved bend: still ONE closed chain, still
+    line-only ink (SM2's DXF op grammar carries it unchanged)."""
+    cuts = _relief_cuts(runs, reliefs, W)
+    out = [(0.0, 0.0)]
+    for (lo, hi, d, _j) in cuts:
+        out += [(lo, 0.0), (lo, d), (hi, d), (hi, 0.0)]
+    out += [(flat, 0.0), (flat, W)]
+    for (lo, hi, d, _j) in reversed(cuts):
+        out += [(hi, W), (hi, W - d), (lo, W - d), (lo, W)]
+    out += [(0.0, W), (0.0, 0.0)]
+    return out
+
+
+def fold_section(legs, bends, t, n=15):
+    """The folded cross-section as a CENTRELINE-offset polygon, and
+    the band frames the relief blades read. The walk: legs at their
+    tangent-to-tangent length, each bend a circular arc of centreline
+    radius ri + t/2 spanning the signed angle; both edges sit +-t/2
+    to the TRAVEL side — one rule everywhere, so an S-bend's edges
+    never cross (an inner/outer rule inverts mid-leg and self-crosses).
+    TANGENT LAW, earned the hard way: the tangent station is an
+    explicit vertex (a chord that skips it shaves the corner, and the
+    detector — correctly — reads the shave as the leg: leg 60 came
+    back 60 + ro*sin(facet)). n is segments per QUADRANT, defaulting
+    to p13's 15 so the folded twin carries the SM fixtures' arc
+    density; law-volume gates raise it (chord deficits fall with 1/n).
+    Refuses the closed cycle: the folded ring is v1 PAPER law only.
+    """
+    _param_check(t, 1.0, legs, bends)
+    if len(bends) == len(legs):
+        raise SheetMetalError(
+            "a closed cycle is seam-law PAPER in v1 — the folded ring "
+            "body (slit/kerf geometry) is queued; open the chain or "
+            "drop a bend")
+    pts, dirs = [], []
+    pos = np.zeros(2)
+    d = np.array([1.0, 0.0])
+    pts.append(pos.copy())
+    dirs.append(d.copy())
+    frames: list = []
+    x = 0.0
+    for i, L in enumerate(legs):
+        pos = pos + float(L) * d
+        pts.append(pos.copy())
+        dirs.append(d.copy())                       # tangent, or free end
+        x += float(L)
+        if i >= len(bends):
+            break
+        a, r, k = bends[i]
+        th = math.radians(float(a))
+        R = float(r) + float(t) / 2.0
+        ba = bend_allowance(float(t), float(r), float(a), float(k))
+        sgn = 1.0 if th >= 0 else -1.0
+        C = pos + R * sgn * np.array([-d[1], d[0]])
+        phi0 = math.atan2(pos[1] - C[1], pos[0] - C[0])
+        segs = max(1, int(math.ceil(abs(th) / math.radians(90.0) * n)))
+        for s_i in range(1, segs + 1):              # ends ON exit tangent
+            phi = phi0 + th * s_i / segs
+            pts.append(C + R * np.array([math.cos(phi), math.sin(phi)]))
+            dirs.append(sgn * np.array([-math.sin(phi), math.cos(phi)]))
+        pos, d = pts[-1], dirs[-1]
+        frames.append(dict(cx=float(C[0]), cy=float(C[1]),
+                           phi0=float(phi0), th=float(th), ba=float(ba),
+                           x0=float(x), ri=float(r), K=float(k),
+                           angle=float(a)))
+        x += ba
+    P, D = np.asarray(pts), np.asarray(dirs)
+    nrm = np.column_stack([-D[:, 1], D[:, 0]])
+    return (np.vstack([P + (t / 2.0) * nrm, (P - (t / 2.0) * nrm)[::-1]]),
+            frames)
+
+
+def sheet_solid(legs, bends, t, W, reliefs=(), seam=None, n=15):
+    """The folded parametric sheet AS A SOLID; reliefs cut by radial
+    blades (§2.5): developed x maps to angle about the band's centre
+    (theta = phi0 + sweep * (x - x0) / BA), so a notch edge is a
+    radial plane and each blade removes an EXACT annular sector —
+    per side g * (rm / rc) * t * d, with rm = ri + t/2 (the part's
+    geometric mid-surface) and rc = ri + K * t (the law's neutral
+    radius): the K-mismatch made VISIBLE as a formula-predicted
+    volume, never a measurement. n rides fold_section's p13
+    convention; the blade samples at ~1 degree per chord so its
+    chord-truncation error stays far under the 1e-2 dV law budget."""
+    from .geometry import Solid
+    pl = param_flat(legs, bends, t, W, reliefs=reliefs,
+                    seam=seam)                    # the law, named
+    sec, frames = fold_section(legs, bends, t, n=n)
+    body = Solid.extrude(sec, height=float(W))
+    cuts = _relief_cuts(pl["runs"], reliefs, W)
+    if not cuts:
+        return body
+    tools = []
+    for (lo, hi, d, j) in cuts:
+        fr = frames[j]
+        phi_a = fr["phi0"] + fr["th"] * (lo - fr["x0"]) / fr["ba"]
+        phi_b = fr["phi0"] + fr["th"] * (hi - fr["x0"]) / fr["ba"]
+        ri, ro = fr["ri"], fr["ri"] + float(t)
+        a = np.linspace(phi_a, phi_b,
+                        max(4, int(math.ceil(abs(phi_b - phi_a)
+                                             / math.radians(1.0)))) + 1)
+        C = np.array([fr["cx"], fr["cy"]])
+        outer = C + np.column_stack([(ro + t) * np.cos(a),
+                                     (ro + t) * np.sin(a)])
+        inner = C + np.column_stack([0.25 * ri * np.cos(a[::-1]),
+                                     0.25 * ri * np.sin(a[::-1])])
+        blade = Solid.extrude(np.vstack([outer, inner]), height=d)
+        tools.append(blade)
+        tools.append(blade.translated((0.0, 0.0, float(W) - d)))
+    return body.subtract(Solid.batch_union(tools))

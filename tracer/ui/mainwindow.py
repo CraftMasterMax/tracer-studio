@@ -705,6 +705,12 @@ class MainWindow(QMainWindow):
         m_tools.addAction("Flat Pattern — unfold a sheet…",
                           lambda checked=False:
                           self.action_flat_pattern())
+        m_tools.addAction("New Sheet — parametric sheet metal…",
+                          lambda checked=False:
+                          self.action_new_sheet())
+        m_tools.addAction("Add Flange — fold the free end…",
+                          lambda checked=False:
+                          self.action_add_flange())
         m_tools.addAction("Show Extents…",
                           lambda checked=False:
                           self.action_show_extents())
@@ -2052,6 +2058,9 @@ class MainWindow(QMainWindow):
                     for c in self.drawing.bends_page(name):   # bend of
                         ops.append(("poly", [tuple(p) for p in c],  # the flat
                                     False))
+                for name in placed:            # SM3: bend labels travel
+                    for at, txt in self.drawing.bend_labels(name):
+                        ops.append(("text", txt, tuple(at), 2.5))
                 # M102: section hatching travels as honest line geometry
                 from ..core import drawing as _dr
                 for loops in self.drawing.cuts_page().values():
@@ -3573,6 +3582,14 @@ class MainWindow(QMainWindow):
         solid = self.doc.result
         if solid is None:
             return
+        st = self.doc.sheet_states()               # SM3: a parametric
+        if st and self.doc.active_body in st:      # sheet OWNS its
+            fl = st[self.doc.active_body]["flat"]  # numbers — the K
+            self.status.showMessage(               # prompt would be
+                f"Parametric sheet: flat {fl['flat_length']:.4f} mm "
+                "from the FEATURES; the live 'Flat' view (labels from "
+                "the inputs) rides every drawing sheet", 8000)
+            return
         from ..core import sheetmetal
         from . import cmddialog
         try:
@@ -3637,6 +3654,110 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             f"Flat: {u['flat_length']:.2f} mm blank · "
             f"{len(u['bands'])} bend(s) · K {u['K']:g}", 5000)
+
+    def action_new_sheet(self):
+        """Tools ▸ New Sheet (M149, sheet metal SM3): open a
+        PARAMETRIC sheet — the flange features OWN the bends, so the
+        flat is FORMULA (== the shop law), not a measurement. SM1's
+        detector path stays the import job (a sheet is still any
+        detectable body); this is the native edge. t, W and the
+        material ride the base flange; Add Flange then folds the free
+        end, chain order — the v1 attach limit, said out loud."""
+        if self.doc is None:
+            return
+        from ..core import ksolver, sheetmetal
+        from . import cmddialog
+        v = cmddialog.ask(self, "New Sheet", [
+            dict(key="t", kind="double", label="Thickness t (mm)",
+                 default=2.0, min=0.01),
+            dict(key="width", kind="double", label="Width W (mm)",
+                 default=40.0, min=0.01),
+            dict(key="leg", kind="double", label="Base leg (mm)",
+                 default=60.0, min=0.01),
+            dict(key="material", kind="combo",
+                 label="Material (picks the ksheet bins)",
+                 choices=ksolver.materials())])
+        if v is None:
+            return
+        self._capture()
+        try:
+            b, feat = self.doc.add_sheet(
+                t=float(v["t"]), width=float(v["width"]),
+                leg=float(v["leg"]), material=str(v["material"]))
+        except (sheetmetal.SheetMetalError, ValueError) as e:
+            QMessageBox.warning(self, "New Sheet", str(e))
+            return
+        self.recompute()
+        self.rail.tree.reload()
+        self.status.showMessage(
+            f"Parametric sheet '{b['name']}': t {v['t']:g} · W "
+            f"{v['width']:g} · leg {v['leg']:g} · {v['material']} — "
+            "Add Flange folds the free end of the last leg", 7000)
+
+    def action_add_flange(self):
+        """Tools ▸ Add Flange (M149, SM3): the chain grows at the
+        FREE END of the last leg (v1 attach, the dialog's own words —
+        never a silent surprise). Guard-first like SM1: a body that
+        is not a parametric sheet gets the status line, not a dialog.
+        K rides the ksheet table LIVE unless the override is pinned;
+        reliefs carry the shop defaults gap = t, depth = ri + t, both
+        editable, and the pure law refuses anything that would sever
+        the bend."""
+        if self.doc is None or self.doc.result is None:
+            return
+        from ..core import ksolver, sheetmetal
+        from . import cmddialog
+        st = self.doc.sheet_states()
+        body = self.doc.active_body
+        if body not in st:
+            self.status.showMessage(
+                f"Add Flange: '{body}' is not a parametric sheet — "
+                "Tools ▸ New Sheet opens one (flanges chain at the "
+                "free end of the last leg)", 6000)
+            return
+        state = st[body]
+        v = cmddialog.ask(self, "Add Flange", [
+            dict(key="leg", kind="double",
+                 label="New leg at the free end (mm) — chain order",
+                 default=40.0, min=0.01),
+            dict(key="angle", kind="double",
+                 label="Fold angle (deg; sign = side)", default=90.0,
+                 min=-179.9, max=179.9),
+            dict(key="ri", kind="double", label="Inside radius (mm)",
+                 default=3.0, min=0.01),
+            dict(key="pin", kind="check",
+                 label="Pin K-factor (off: the ksheet table rides "
+                       "the material live)"),
+            dict(key="k", kind="double", label="K-factor override",
+                 default=sheetmetal.K_DEFAULT, min=0.001, max=1.0),
+            dict(key="rel", kind="check", label="Bend relief — "
+                 "square notches at both free edges"),
+            dict(key="gap", kind="double", label="Relief gap "
+                 "(shop default: t)", default=state["t"], min=0.01),
+            dict(key="depth", kind="double",
+                 label="Relief depth (shop default: ri + t)",
+                 default=state["t"] + 3.0, min=0.01)])
+        if v is None:
+            return
+        self._capture()
+        try:
+            feat = self.doc.add_flange(
+                body, leg=float(v["leg"]), angle=float(v["angle"]),
+                ri=float(v["ri"]),
+                k_factor=float(v["k"]) if v["pin"] else None,
+                relief_gap=float(v["gap"]) if v["rel"] else None,
+                relief_depth=float(v["depth"]) if v["rel"] else None)
+        except (sheetmetal.SheetMetalError, ValueError) as e:
+            QMessageBox.warning(self, "Add Flange", str(e))
+            return
+        self.recompute()
+        self.rail.tree.reload()
+        k_used = self.doc.sheet_states()[body]["bends"][-1][2]
+        warn = self.doc.sheet_warnings
+        self.status.showMessage(
+            f"Flange: {feat.leg:g} mm at {feat.angle:g}° · K "
+            f"{k_used:g}{' (pinned)' if feat.k_factor is not None else ' (table)'}"
+            + (f" — {warn[-1]}" if warn else ""), 7000)
 
     def action_joint(self):
         """Tools ▸ Joint (M146, assembly rung 1): As-Built Rigid —
