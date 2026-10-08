@@ -1646,6 +1646,42 @@ M125; items 1-11 below are history.*
   (§6: LibreDWG's own README admits R2010-writer pain — our
   baseline; the "open the DXF in a DWG tool" cure is documented).
   (1530.)
+- **GD&T RUNG 1 SHIPPED (M144)** — the feature control frame,
+  hosted by dimensions (the probe's §4 verdict: the FCF is a dim
+  property — model-space anchors make travel free). SIX controls
+  (straightness/flatness/circularity/cylindricity/perpendicularity/
+  position) with PAINTED glyphs — the machine-verified fact that
+  the whole Unicode GD&T block is TOFU on real paper fonts makes
+  vector coordinates the only honest ink; core/gdt.py ships the
+  §1 unit-box specs (Wikimedia PD SVGs confirmed numerically) +
+  the §2 CONTROL_TABLE (ISO 1101:2012 Table doctrine + ASME
+  Y14.5-2018 6.4 compartment grammar, fetched text). Validator is
+  the ONE choke (fits.callout's voice — raises NAMING the broken
+  law, dialog undo-pops + warns): ⌀ illegal on form controls,
+  spherical S⌀ only for location, M/L per Table, datum arity
+  (form 0, perpendicularity ≥1, position 0-3 with a 0-datum
+  WARN), separate compartments per datum (6.4.3 — the vendor's
+  "|B C|" stack is NOT ASME; the ISO COMMON datum A-B is the one
+  legitimate shared cell), reserved letters imported from the
+  M136 section registry — SAME OBJECT (gdt.RESERVED_LETTERS is
+  drawing.RESERVED_LETTERS), one alphabet, two users. The frame:
+  [_gdt_cells_widths = one source for painter AND gate (rect is
+  always the sum)], 1.5·h_text box, host's own red pen (never
+  overpowers its dim), stacked-list shape ("gdt" is a LIST so
+  rung-2 ISO cl.6.4 stacking needs no re-shape — rung 1 writes
+  length-1 honestly). Basic box = cl.11's "enclosed in a frame"
+  drawn AT the knockout gap; a boxed dim refuses an ISO fit class
+  (two tolerance voices, one truth). Editing mirrors the fit flow
+  verbatim: G key / GD&T… button (five-way exclusion web grown,
+  not re-nested), _dim_at hit, cmddialog ask, "— none —" pops the
+  key. Paper-only proven: DXF line-art op count identical with
+  frames + boxes on; save/load rides the shallow dict (plain JSON).
+  ⌀ entered (U+2300) normalises to the printable letter Ø the
+  repo owns (wave-11a: values are STRINGS — resolve_dims never
+  touches a typed tolerance). Deferred loudly, each with reason in
+  the contract: remaining 6 symbols (profile needs the (ADBEHIK)
+  zone cells), Ⓜ arithmetic (needs size limits), Ⓟ projected zone,
+  feature targets as first-class objects. (1564.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

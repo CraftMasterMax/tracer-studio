@@ -1316,6 +1316,20 @@ class MainWindow(QMainWindow):
                         on and balb.setChecked(False)))
         bl.addWidget(fitb)
         self._fit_btn = fitb
+        gtb = QPushButton("GD&T\u2026")                # M144 FCF frame
+        gtb.setProperty("tb", True)
+        gtb.setCheckable(True)
+        gtb.setToolTip("Click a dimension bubble to pin a feature "
+                       "control frame — symbol painted from vectors, "
+                       "ISO-checked cells; the model stays nominal")
+        gtb.toggled.connect(
+            lambda on: (self.drawing.set_gdt_mode(on),
+                        on and dimb.setChecked(False),
+                        on and balb.setChecked(False),
+                        on and fitb.setChecked(False),
+                        on and slb.setChecked(False)))
+        bl.addWidget(gtb)
+        self._gdt_btn = gtb
         dimb.toggled.connect(                          # M110: one tool
             lambda on: on and balb.setChecked(False))
         dimb.toggled.connect(lambda on: on and fitb.setChecked(False))
@@ -1325,6 +1339,9 @@ class MainWindow(QMainWindow):
                 lambda on, o=other: on and o.setChecked(False))
             other.toggled.connect(
                 lambda on: on and slb.setChecked(False))
+        for peer in (dimb, balb, fitb, slb):           # M144: the web
+            peer.toggled.connect(                      #     grew one —
+                lambda on, o=gtb: on and o.setChecked(False))   # five-way
         bl.addStretch(1)
         lay.addWidget(bar)
         from .drawingview import DrawingCanvas
@@ -1334,6 +1351,8 @@ class MainWindow(QMainWindow):
             self._add_balloon)
         self.drawing.fit_requested.connect(               # M114 ISO 286
             self._annotate_fit)
+        self.drawing.gdt_requested.connect(               # M144 FCF
+            self._annotate_gdt)
         self.drawing.view_drag_begin.connect(            # M96 undo capture
             self._capture)
         self.drawing.view_scale_requested.connect(       # M100 scales
@@ -1349,7 +1368,8 @@ class MainWindow(QMainWindow):
         # balloon, F fit callout, Esc stands every tool down (Fusion
         # drawing keys; page-scoped so they sleep outside the sheet)
         for seq, fn in (("D", dimb.click), ("B", balb.click),
-                        ("F", fitb.click), ("S", slb.click)):
+                        ("F", fitb.click), ("S", slb.click),
+                        ("G", gtb.click)):
             QShortcut(QKeySequence(seq), page, activated=fn)
         QShortcut(QKeySequence(Qt.Key_Escape), page,
                   activated=self._stand_down_drawing)
@@ -1364,7 +1384,7 @@ class MainWindow(QMainWindow):
         if self.drawing.restart_section_line():
             return
         for b in (self._dim_btn, self._balloon_btn, self._fit_btn,
-                  self._sec_btn):                      # M136 joins
+                  self._sec_btn, self._gdt_btn):       # M136/M144 join
             if b.isChecked():
                 b.setChecked(False)
 
@@ -1898,6 +1918,85 @@ class MainWindow(QMainWindow):
         self.doc.dirty = True
         self.drawing.update()
         self.status.showMessage(msg, 4000)
+
+    def _annotate_gdt(self, view: str, idx: int):
+        """M144: the feature control frame picker for one dimension
+        bubble — the frame is the dim's paper suit, worn over nominal
+        geometry. The validator in core.gdt is the ONE choke and it
+        raises naming the broken law; the fit flow's capture/warning/
+        undo-pop shape is copied verbatim because it is right."""
+        from . import cmddialog
+        from ..core import gdt
+        if self.doc is None or not self.doc.drawings:
+            return
+        g = self.drawing.sheet()
+        dims = g.get("dims", [])
+        if not 0 <= idx < len(dims):
+            return
+        d = dims[idx]
+        cur = (d.get("gdt") or [{}])[0]
+        names = ["\u2014 none \u2014"] + [r["name"]
+                                          for r in gdt.CONTROL_TABLE.values()]
+        v = cmddialog.ask(self, "Feature control frame \u2014 GD&T", [
+            dict(key="sym", kind="combo", label="Control",
+                 default=gdt.CONTROL_TABLE[cur["sym"]]["name"]
+                 if cur.get("sym") in gdt.CONTROL_TABLE else names[0],
+                 choices=names),
+            dict(key="tol", kind="text",
+                 label="Tolerance (\u2300 0.2 or S\u2300 0.3)",
+                 default=str(cur.get("tol", ""))),
+            dict(key="mod", kind="combo", label="Modifier",
+                 default=str(cur.get("mod", "") or ""),
+                 choices=["", "M", "L"]),
+            dict(key="datums", kind="text",
+                 label="Datums (A, A-B; comma separated)",
+                 default=", ".join(cur.get("datums", []))),
+            dict(key="basic", kind="check", label="Basic dimension "
+                 "(boxed) \u2014 the true exact of ISO cl.11",
+                 default=bool(d.get("basic")))])
+        if v is None:
+            return
+        label = str(v["sym"]).strip()
+        datums = [s.strip().upper()
+                  for s in str(v["datums"]).replace(";", ",").split(",")
+                  if s.strip()]
+        self._capture()
+        if bool(v["basic"]) and d.get("fit"):
+            self._undo.pop()
+            QMessageBox.warning(
+                self, "GD&T", "a boxed BASIC dimension takes its "
+                "tolerance from the frame \u2014 strip the fit class")
+            return
+        if label == "\u2014 none \u2014":
+            d.pop("gdt", None)                         # strip, as a
+            msg = "frame removed"                      # fit strip
+        else:
+            entry = {"sym": gdt.key_for_name(label),
+                     "tol": str(v["tol"]).strip(),
+                     "mod": str(v["mod"]).strip(),
+                     "datums": datums}
+            try:
+                warns = gdt.gdt_validate(entry)
+            except ValueError as e:
+                self._undo.pop()             # rejected: no edit happened
+                QMessageBox.warning(self, "GD&T", str(e))
+                return
+            d["gdt"] = [entry]          # rung 1 writes ONE frame; the
+            #                           LIST shape already fits stacking
+            msg = "FCF " + label
+            if entry["tol"]:
+                msg += " " + entry["tol"]
+            if entry["mod"]:
+                msg += " " + entry["mod"]
+            if warns:
+                msg = warns[0]
+        if bool(v["basic"]):
+            d["basic"] = True
+        else:
+            d.pop("basic", None)
+        self.doc.dirty = True
+        self.drawing.update()
+        self.status.showMessage(msg, 5000)
 
     def _open_drawing(self, idx: int):
         if self.doc is None or not (0 <= idx < len(self.doc.drawings)):

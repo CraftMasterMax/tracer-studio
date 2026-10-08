@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M143**
+**Status: M144**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -334,7 +334,15 @@ independent project with no Autodesk assets or affiliation.)
   art); **Publish PDF…** (M143) bundles EVERY sheet into one vector
   PDF at true paper size — 1:1, real line weights, selectable text —
   one filename, creation order, the same paintPage on a print device
-  (the desk grey and any half-drawn tool stay on screen)
+  (the desk grey and any half-drawn tool stay on screen); and **GD&T**
+  (M144) pins a real **feature control frame** on any dimension —
+  symbols PAINTED from vectors (the Unicode GD&T block is tofu on
+  paper fonts), cells checked against ISO 1101/ASME Y14.5 at entry
+  (flatness refuses a ⌀, datums get separate compartments |A|B|C,
+  reserved letters I O Q S X Z are refused), a modifier sharing the
+  value cell, the ISO **basic box** for true-exact dimensions, and
+  the model stays nominal: the frame is paper furniture that travels
+  with its dimension
 - **Configurations**: multiple design variants in one file — a text
   table per config (`Small: width = 18, height = 10`) overrides
   parameters on the fly; switch the active config and the solid,
@@ -434,7 +442,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1530 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1564 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

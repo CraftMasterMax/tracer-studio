@@ -143,6 +143,10 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("Double-click a section view", "Its props: depth (full / "
          "slice / distance slab), kept side, hidden lines, scale",
          False),
+        ("G", "GD&T frame: click a dimension bubble to pin a feature "
+              "control frame — painted symbols, ISO-checked cells, "
+              "separate datums |A|B|C; tick Basic to box the dim",
+         True),
         ("Esc", "Stand every sheet tool down", True),
     ]),
     ("Document & features", [

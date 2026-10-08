@@ -27,6 +27,8 @@ VIEWS = {
 }
 STANDARD = ["top", "front", "right", "iso"]
 PAGES = {"A3": (420.0, 297.0), "A4": (297.0, 210.0)}     # landscape mm
+RESERVED_LETTERS = "IOQSXZ"   # the standards' exclusions (M136/M144):
+#                              sections AND datums letter from here
 
 # The editable title-block fields (M108): what a draughtsman types.  Scale,
 # page size and sheet number are DERIVED at draw time, never stored here.
@@ -627,9 +629,10 @@ def section_letter(n: int) -> str:
     section — past the twenty usable letters the label doubles up
     (AA, BB) rather than repeat a single one. Both section makers
     (the M102 dialog and the M136 line) letter from here, so one
-    registry, one alphabet, no collision."""
+    registry, one alphabet, no collision. M144: datums read the
+    SAME RESERVED_LETTERS object — one family, two users."""
     alphabet = [c for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                if c not in "IOQSXZ"]
+                if c not in RESERVED_LETTERS]
     if n < len(alphabet):
         return alphabet[n]
     return alphabet[n % len(alphabet)] * 2        # double up past 20

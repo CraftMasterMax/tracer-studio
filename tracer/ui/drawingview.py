@@ -10,13 +10,15 @@ import math
 
 import numpy as np
 from PySide6.QtCore import QMarginsF, QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import (QColor, QPainter, QPainterPath, QPageLayout,
-                           QPageSize, QPen, QPdfWriter)
+from PySide6.QtGui import (QColor, QFont, QFontMetrics, QPainter,
+                           QPainterPath, QPageLayout, QPageSize,
+                           QPen, QPdfWriter)
 
 from PySide6.QtWidgets import QWidget
 
 from ..core import drawing
 from ..core import fits
+from ..core import gdt
 from ..core.geometry import Solid
 from .theme import DRAWING
 
@@ -49,6 +51,7 @@ class DrawingCanvas(QWidget):
     dim_added = Signal(str, tuple, tuple, dict)  # view, a, b, opts (M94/95)
     balloon_added = Signal(str, tuple, int)      # view, model xy, item (M110)
     fit_requested = Signal(str, int)             # M114: view, dim index
+    gdt_requested = Signal(str, int)             # M144: view, dim index
     view_drag_begin = Signal()                   # M96: undo capture hook
     view_scale_requested = Signal(str)           # M100: Scale dialog ask
     section_added = Signal(dict)                 # M136: {parent,p0,p1,flip}
@@ -74,6 +77,7 @@ class DrawingCanvas(QWidget):
         self._sec_hover = None                 # page xy of the rubber tip
         self._printing = False                 # M143: publishing to paper
         self._fit_mode = False                 # M114: fit-callout armed?
+        self._gdt_mode = False                 # M144: FCF editor armed?
         self._view_drag = None                 # M96: (view, start, base)
         self.setMinimumSize(320, 240)
         self.setMouseTracking(True)
@@ -355,6 +359,7 @@ class DrawingCanvas(QWidget):
             self._balloon_mode = False        # M110: one tool at a time
             self._fit_mode = False            # M114
             self._sec_mode = False            # M136
+            self._gdt_mode = False            # M144
         self.update()
 
     def set_balloon_mode(self, on: bool):
@@ -367,6 +372,7 @@ class DrawingCanvas(QWidget):
             self._dim_first = None
             self._fit_mode = False            # M114
             self._sec_mode = False            # M136
+            self._gdt_mode = False            # M144
         self.update()
 
     def set_fit_mode(self, on: bool):
@@ -378,6 +384,21 @@ class DrawingCanvas(QWidget):
             self._balloon_mode = False
             self._dim_first = None
             self._sec_mode = False            # M136
+            self._gdt_mode = False            # M144
+        self.update()
+
+    def set_gdt_mode(self, on: bool):
+        """M144: arm the GD&T frame click — one click NEAR a dimension
+        bubble opens the feature-control dialog for that dim. The
+        frame rides the dim (model-space anchor), so it travels,
+        spins and saves with its host for free."""
+        self._gdt_mode = bool(on)
+        if on:
+            self._dim_mode = False
+            self._dim_first = None
+            self._balloon_mode = False
+            self._fit_mode = False
+            self._sec_mode = False
         self.update()
 
     def set_section_mode(self, on: bool):
@@ -395,6 +416,7 @@ class DrawingCanvas(QWidget):
             self._dim_first = None
             self._balloon_mode = False
             self._fit_mode = False
+            self._gdt_mode = False            # M144
             self.tool_note.emit("Section line: click where the cut "
                                 "BEGINS on the top, front or right "
                                 "view")
@@ -1157,6 +1179,7 @@ class DrawingCanvas(QWidget):
             p.setPen(QPen(_RED))
             p.setFont(f)
             p.drawText(gap, Qt.AlignCenter, disp)
+            self._draw_gdt(p, d, gap)        # M144: frame + basic box
 
     def _draw_diameter(self, p: QPainter, f, ink, d, fr):
         """A Ø bubble spans the whole circle: from the far rim through
@@ -1210,6 +1233,7 @@ class DrawingCanvas(QWidget):
         p.setPen(QPen(_RED))
         p.setFont(f)
         p.drawText(gap, Qt.AlignCenter, disp)
+        self._draw_gdt(p, d, gap)                        # M144
 
     def _draw_radius(self, p: QPainter, f, ink, d, fr):
         """M103: an R leader runs from the arc's centre out to the rim,
@@ -1257,6 +1281,104 @@ class DrawingCanvas(QWidget):
         p.setPen(QPen(_RED))
         p.setFont(f)
         p.drawText(gap, Qt.AlignCenter, disp)
+        self._draw_gdt(p, d, gap)                        # M144
+
+    # ---- GD&T frames (M144) ------------------------------------------------
+    def _dim_font(self) -> QFont:
+        """The dim/bubble typeface in ONE place: the FCF cell widths
+        must measure the same metrics the host text paints with."""
+        f = QFont(self.font())
+        f.setPointSizeF(max(6.5, 9.0 * min(self._zoom, 2.0)))
+        return f
+
+    def _gdt_cells_widths(self, gap, frame) -> list[float]:
+        """Honest cell widths for one frame under this host text:
+        the SYMBOL cell is the square box height, the value cell is
+        its advance plus padding, datum cells at least 0.75 box.
+        Shared by painter and gate — the rect is always the sum."""
+        fm = QFontMetrics(self._dim_font())
+        box = 1.5 * max(8.0, gap.height() - 4.0)      # 1.5 h_text law
+        widths = []
+        for c in gdt.gdt_cells(frame):
+            if c["kind"] == "glyph":
+                widths.append(box)
+            elif c["kind"] == "text":
+                widths.append(fm.horizontalAdvance(c["s"]) + 0.5 * box)
+            else:
+                widths.append(max(0.75 * box,
+                                  fm.horizontalAdvance(c["s"])
+                                  + 0.4 * box))
+        return widths
+
+    def _paint_glyph(self, p, key, cell, box):
+        """Unit box -> cell, y running DOWN like the page (the §1
+        specs are authored in screen orientation — the perpendicular
+        bar sits at y=0.90). PAINTED shapes: the probe verified the
+        whole U+2300 block is TOFU on real paper fonts."""
+        side = (2.0 / 3.0) * box
+        ox = cell.center().x() - side / 2.0
+        oy = cell.center().y() - side / 2.0
+        for op in gdt.GLYPHS[key]:
+            if op[0] == "poly":
+                pts = [QPointF(ox + x * side, oy + y * side)
+                       for x, y in op[1]]
+                if len(op) > 2 and op[2]:
+                    path = QPainterPath()
+                    path.moveTo(pts[0])
+                    for q in pts[1:]:
+                        path.lineTo(q)
+                    path.closeSubpath()
+                    p.drawPath(path)
+                else:
+                    for a, b in zip(pts, pts[1:]):
+                        p.drawLine(a, b)
+            else:
+                (_, (ccx, ccy), r) = op
+                p.drawEllipse(QPointF(ox + ccx * side, oy + ccy * side),
+                              r * side, r * side)
+
+    def _draw_gdt_frame(self, p, frame, gap) -> QRectF:
+        """One [|sym][value][A][B] box centred under its host, in
+        the host's OWN red pen — the frame never overpowers the
+        dimension it annotates. Returns the rect: rung-2 stacked
+        frames hang off each other (ISO cl.6.4)."""
+        cells = gdt.gdt_cells(frame)
+        widths = self._gdt_cells_widths(gap, frame)
+        box = 1.5 * max(8.0, gap.height() - 4.0)
+        total = sum(widths)
+        x = gap.center().x() - total / 2.0
+        top = gap.bottom() + 0.25 * box
+        rect = QRectF(x, top, total, box)
+        p.setPen(QPen(_RED, max(1.0, 0.5 * self._zoom)))
+        p.setFont(self._dim_font())
+        p.drawRect(rect)
+        cx = x
+        for c, w in zip(cells, widths):
+            cell = QRectF(cx, top, w, box)
+            if cx > x:
+                p.drawLine(QPointF(cx, top), QPointF(cx, top + box))
+            if c["kind"] == "glyph":
+                self._paint_glyph(p, c["key"], cell, box)
+            else:
+                p.drawText(cell, Qt.AlignCenter, c["s"])
+            cx += w
+        return rect
+
+    def _draw_gdt(self, p, d, gap):
+        """The dim's paper kit: the ISO box (cl.11 — a TED "shall
+        ... be enclosed in a frame") and the FCF stack below it.
+        A stale entry that no longer validates never eats the sheet:
+        cells raise -> this dim simply carries no frame."""
+        anchor = gap
+        if d.get("basic"):
+            anchor = QRectF(gap)                       # the box IS
+            p.setPen(QPen(_RED, max(1.0, 0.5 * self._zoom)))   # the
+            p.drawRect(anchor)                                # gap's
+        for frame in d.get("gdt", []):                 # own edge
+            try:
+                anchor = self._draw_gdt_frame(p, frame, anchor)
+            except (KeyError, ValueError):
+                return
 
     def page_scale(self) -> float:
         views = self.views()
@@ -1284,6 +1406,13 @@ class DrawingCanvas(QWidget):
                 hit = self._dim_at(self.p2s(ev.position()), placed)
                 if hit is not None:
                     self.fit_requested.emit(*hit)
+            return
+        if self._gdt_mode and ev.button() == Qt.LeftButton:
+            placed = self.placed()                # M144: frame it too
+            if placed:
+                hit = self._dim_at(self.p2s(ev.position()), placed)
+                if hit is not None:
+                    self.gdt_requested.emit(*hit)
             return
         if self._dim_mode and ev.button() == Qt.LeftButton:
             self._dim_click(ev)          # M94: bubbles, not panning
