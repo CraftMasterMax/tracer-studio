@@ -312,10 +312,15 @@ class DrawingCanvas(QWidget):
         bends = self.doc.sheet_states()[body]["bends"]
         out = []
         for bl in flats[body]["bend_lines"]:
-            a, r, k = bends[bl["band"]]
+            n = bl["band"]
+            a, r, k = bends[n]
             arrow = "\u2191" if float(a) >= 0 else "\u2193"
+            # the shop stamps ALTERNATE sides: two labels on one
+            # baseline collide the moment bends sit close together
+            yy = (float(bl["y1"]) + 1.5 if n % 2 == 0
+                  else float(bl["y0"]) - 3.3)
             out.append(((float(bl["x"]) * sc + off[0],
-                         float(bl["y0"]) * sc + off[1] + 1.2),
+                         yy * sc + off[1]),
                         f"{abs(float(a)):g}\u00b0 {arrow} "
                         f"R{float(r):.2f} K={float(k):g}"))
         return out
@@ -814,8 +819,8 @@ class DrawingCanvas(QWidget):
             p.setPen(QPen(_DETAIL))
             for at, txt in labels:
                 pt = self.s2p(*at)
-                p.drawText(QRectF(pt.x() - 46, pt.y() - 9, 92, 16),
-                           Qt.AlignCenter, txt)
+                w2 = p.fontMetrics().horizontalAdvance(txt) / 2.0
+                p.drawText(QPointF(pt.x() - w2, pt.y()), txt)
         # M100: a view on an explicit scale wears its ratio as a caption;
         # M102: a section wears its letter (A-A · 1:2 when both)
         vs = self.sheet().get("vscale") or {}
