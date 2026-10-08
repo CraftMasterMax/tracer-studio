@@ -11,7 +11,8 @@ import math
 
 import numpy as np
 import trimesh
-from PySide6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, QSize, Signal
+from PySide6.QtCore import (Qt, QPoint, QPointF, QRect, QRectF, QSize,
+                            QTimer, Signal)
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QCursor
 from PySide6.QtWidgets import QWidget
 
@@ -21,6 +22,7 @@ from .camera import Camera, perspective
 from .renderer import SceneRenderer
 from . import theme
 from .viewcube import NavWidget, ViewCube
+from .wheel import HOLD_MS, MarkingWheel
 
 
 def draw_triad(p: QPainter, cam, w: float, h: float, palette: dict):
@@ -76,6 +78,12 @@ class Viewport(QWidget):
         self._sel: list[int] = []
         self._body_rng: list = []          # M131 stitch ranges (body->faces)
         self._body_hi: list[int] = []      # M131 browser-picked body wash
+        self._wheel = None                 # M132 open MarkingWheel, if any
+        self._wheel_cmds: list = []        # (label, fn) pairs, N/E/S/W
+        self._wheel_provider = None        # callable -> those cmds
+        self._rmb_timer: QTimer | None = None   # hold-to-open arming
+        self._rmb_at: QPoint | None = None
+        self._dragged = False              # a press has moved past a click
         self._pp = None                    # press-pull drag state
         self.show_cube = True              # Ctrl+Alt+V (M113 layout layer)
         self.show_nav = True               # Ctrl+Alt+N
@@ -215,6 +223,8 @@ class Viewport(QWidget):
         self._nav.place(self.width(), self._cube.rect.bottom() + 8)
         if self.show_nav:
             self._nav.draw(p)
+        if self._wheel is not None:
+            self._wheel.paint(p, self.font())   # M132: the ring rides last
         p.end()
 
     @staticmethod
@@ -396,6 +406,12 @@ class Viewport(QWidget):
         return (pts.min(axis=0), pts.max(axis=0))
 
     def mousePressEvent(self, ev):
+        if self._wheel is not None:
+            # Ring is up (lingering or mid-hold): the press just parks
+            # until the release picks a wedge or dismisses. Start no
+            # orbit, box, or gesture underneath it.
+            ev.accept()
+            return
         hit = self._cube.hit(ev.position()) if self.show_cube else None
         if hit:
             self._cam.set_view(hit)
@@ -422,6 +438,16 @@ class Viewport(QWidget):
         self._pp_drag = False
         self._box = None
         self._box_drag = False
+        if ev.button() == Qt.RightButton and self._wheel_provider is not None:
+            # M132: hold a still right button and the marking wheel
+            # blooms; move first (an orbit) or release before HOLD_MS
+            # (a tap) and the timer is dead, the old grammar untouched.
+            self._rmb_at = ev.position().toPoint()
+            t = QTimer(self)
+            t.setSingleShot(True)
+            t.timeout.connect(self._arm_marking_wheel)
+            t.start(HOLD_MS)
+            self._rmb_timer = t
         if (self._zoom_win is not None and ev.button() == Qt.LeftButton
                 and Qt.KeyboardModifier(0) == ev.modifiers()):
             self._box = [ev.position().toPoint(), ev.position().toPoint()]
@@ -488,6 +514,11 @@ class Viewport(QWidget):
             self.setCursor(QCursor(Qt.ClosedHandCursor))
 
     def mouseMoveEvent(self, ev):
+        if self._wheel is not None:
+            if self._wheel.set_hover(ev.position()):
+                self.update()
+            ev.accept()
+            return
         if not self._buttons:
             self._hover_update(ev.position())
             hk = self._cube.hit(ev.position()) if self.show_cube else None
@@ -511,6 +542,7 @@ class Viewport(QWidget):
         d = ev.position().toPoint() - self._last
         if d.manhattanLength() > 2:
             self._dragged = True
+            self._kill_rmb_hold()          # M132: an orbit was intended
         self._last = ev.position().toPoint()
         if (self._rot is not None and self._rot["axis"] is not None
                 and Qt.LeftButton in self._buttons):
@@ -563,6 +595,15 @@ class Viewport(QWidget):
             self.update()
 
     def mouseReleaseEvent(self, ev):
+        if self._wheel is not None:
+            # The ring owns the release the instant it is up: land on a
+            # wedge and it runs, land on hub/void and it just dismisses.
+            idx = self._wheel.pick(ev.position())
+            if idx is not None:
+                self._run_wheel_cmd(idx)
+            self.close_marking_wheel()
+            ev.accept()
+            return
         self._buttons &= ~ev.button()
         if ev.button() == Qt.LeftButton and self._zoom_win is not None:
             p0, p1 = (self._box if self._box is not None
@@ -625,9 +666,15 @@ class Viewport(QWidget):
         elif ev.button() == Qt.LeftButton:
             self._pp, self._pp_drag = None, False
             self._box, self._box_drag = None, False
-        if ev.button() == Qt.RightButton \
-                and not getattr(self, "_dragged", False):
-            self.context_request.emit(ev.position().toPoint())
+        if ev.button() == Qt.RightButton:
+            self._kill_rmb_hold()
+            # A tap that never bloomed a wheel = the plain context menu
+            # (the old grammar, preserved); once the ring is open the
+            # popup owns the release, so the menu must not also fire.
+            if (not getattr(self, "_dragged", False)
+                    and self._wheel is None and self._rmb_at is not None):
+                self.context_request.emit(ev.position().toPoint())
+            self._rmb_at = None
         if ev.button() == Qt.MiddleButton:
             self.unsetCursor()
             if not getattr(self, "_dragged", False):
@@ -797,6 +844,57 @@ class Viewport(QWidget):
             out.append(g)
         return out
 
+    # ---- marking wheel (M132) -------------------------------------------
+    def set_wheel_commands(self, provider):
+        """MainWindow hands the viewport a callable that returns the
+        current four (label, fn) wedges — per-context tables live in
+        one place, and the wheel asks only when it opens."""
+        self._wheel_provider = provider
+
+    def _kill_rmb_hold(self):
+        if self._rmb_timer is not None:
+            self._rmb_timer.stop()
+            self._rmb_timer = None
+
+    def _arm_marking_wheel(self):
+        """Held long enough, and still, and still pressing → open."""
+        self._rmb_timer = None
+        at = self._rmb_at
+        self._rmb_at = None
+        if at is None:
+            return
+        if Qt.RightButton in self._buttons and not self._dragged:
+            self.open_marking_wheel(at)
+
+    def open_marking_wheel(self, center: QPoint):
+        """Bloom the ring at `center` (widget space) and grab the
+        mouse: every subsequent move/release/keypress is the wheel's
+        until it closes, wherever the cursor wanders. Idempotent."""
+        if self._wheel is not None or self._wheel_provider is None:
+            return None
+        cmds = list(self._wheel_provider())
+        if len(cmds) != 4:
+            return None
+        self._wheel = MarkingWheel(center, cmds)
+        self._wheel_cmds = cmds
+        self.grabMouse()
+        self.update()
+        return self._wheel
+
+    def close_marking_wheel(self):
+        if self._wheel is not None:
+            self.releaseMouse()
+            self._wheel = None
+            self._wheel_cmds = []
+            self.update()
+
+    def _run_wheel_cmd(self, idx: int):
+        """A wedge won: fire its command from the table it was built
+        from (kept even as the ring closes — a closure that could
+        chase its own teardown is a crash waiting for a slow machine)."""
+        if 0 <= idx < len(self._wheel_cmds):
+            self._wheel_cmds[idx][1]()
+
     # ---- cross-highlight (M131) ----------------------------------------
     def emphasize_body(self, name: str | None):
         """Browser -> canvas: wash one body in the selection blue just
@@ -938,6 +1036,9 @@ class Viewport(QWidget):
     def keyPressEvent(self, ev):
         k = ev.key()
         if k == Qt.Key_Escape:
+            if self._wheel is not None:              # dismiss the ring first
+                self.close_marking_wheel()
+                return
             if self._zoom_win is not None:           # abort a zoom window
                 self._cancel_zoom_window()
                 return

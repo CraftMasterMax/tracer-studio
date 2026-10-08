@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M131**
+**Status: M132**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -132,7 +132,16 @@ independent project with no Autodesk assets or affiliation.)
   wash is visual only: the picked-face selection that measure-on-pick
   and every face command trust never grows from clicking a row,
   because stitched bodies are contiguous face blocks (display_ranges)
-  and the highlight merges at one choke point**
+  and the highlight merges at one choke point**,
+  **marking wheel (M132): hold the right button still and a four-wedge
+  ring blooms at the cursor — Undo north, Extrude east, Sketch south,
+  Move west, the vendor's quadrant themes carrying the same guarded
+  verbs the ribbon calls. Hover highlights its wedge, release inside
+  fires it, hub/void/Esc dismisses. The ring is viewport state and
+  paint, not a window — so a quick tap still raises the context menu
+  and a drag still orbits, all three grammars pinned against each
+  other, and the hover fill, the pick and the label are pixel-pinned
+  to the same wedge**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -313,7 +322,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1408 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1422 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

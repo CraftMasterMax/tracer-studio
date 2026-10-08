@@ -154,6 +154,7 @@ class MainWindow(QMainWindow):
         self.viewport.move_drag.connect(self._on_move_drag)
         self.viewport.rotate_drag.connect(self._on_rotate_drag)
         self.viewport.context_request.connect(self._show_marking_menu)
+        self.viewport.set_wheel_commands(self._wheel_commands)
         self.viewport.zoom_window.connect(self._on_zoom_window)
         self._mark_menu = None               # open marking menu (M56)
         self._move_origin = None             # armed Move gesture (M53)
@@ -3068,6 +3069,17 @@ class MainWindow(QMainWindow):
             f"Document measures: {units.LABEL[self.doc.units]}", 4000)
 
     # ---- marking menu (M56) -----------------------------------------------------
+    def _wheel_commands(self):
+        """The marking wheel's four wedges (M132), one per quadrant in
+        Fusion's geometry: top = history (Undo), right = create
+        (Extrude), bottom = sketch, left = modify (Move). Commands are
+        the same guarded entry points the ribbon calls, so a wedge can
+        never do what its button wouldn't."""
+        return [("Undo", self.undo),
+                ("Extrude", self.action_extrude_key),
+                ("Sketch", self.action_new_sketch),
+                ("Move", self.action_move_body)]
+
     def _marking_menu(self):
         """Fusion's right-click quick menu: fit / zoom-to / the four
         views / visual styles / display toggles."""

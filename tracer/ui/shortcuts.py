@@ -24,8 +24,12 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("LMB drag on empty space", "Selection box: left→right window, "
          "right→left crossing", False),
         ("Esc", "Cancel the drag / clear the face selection", False),
-        ("MMB drag", "Pan the view", False),
-        ("Shift + MMB drag", "Orbit the model (RMB drag too)", False),
+        ("MMB drag", "Orbit the model (RMB drag too)", False),
+        ("Shift + MMB drag", "Pan the view", False),
+        ("RMB tap", "Context menu: views, styles, toggles", False),
+        ("RMB hold still", "Marking wheel: Undo · Extrude · Sketch · "
+         "Move — release on a wedge to fire it, on the hub to dismiss",
+         False),
         ("Mouse wheel", "Zoom toward the cursor", False),
         ("MMB click", "Home view (fit + isometric)", False),
         ("Double-click a face", "Start a sketch on that face", False),
@@ -143,7 +147,8 @@ TOUR_HIGHLIGHTS = [
     ("S", "command search — every command, two keys"),
     ("N", "sketch · L/R/C/Shift+C/A/Y/K to draw"),
     ("E or Enter", "finish → extrude"),
-    ("MMB / wheel", "pan · zoom to cursor (Shift+MMB or RMB orbit)"),
+    ("MMB / wheel", "orbit · zoom to cursor (Shift+MMB pans, RMB "
+     "orbits, hold RMB for the marking wheel)"),
     ("Double-click face", "sketch on it"),
     ("Drag a flat face", "press-pull material"),
     ("D + double-click", "dimension, then edit it"),

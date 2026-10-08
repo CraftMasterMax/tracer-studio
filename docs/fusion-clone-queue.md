@@ -1408,6 +1408,17 @@ M125; items 1-11 below are history.*
     resolve majority-body and light the row (signals blocked: no
     bounce-back), datum rows re-centre the orbit; the wash is visual
     — _sel never grows from a row click. Isolate/show-all remains.
+    NAV LADDER RUNG ONE SHIPPED (M132, suite 1422): the 4-wedge
+    hold-wheel — RMB still ≥200 ms blooms Undo/Extrude/Sketch/Move at
+    the cursor (guarded ribbon verbs under the vendor's quadrant
+    themes); release-on-wedge fires, hub/void/Esc dismisses, tap still
+    menus, drag still orbits — the three coexistences each pinned. The
+    ring is viewport-painted overlay state, not a top-level window:
+    deterministic grabs in CI, capturable in proof shots, and a pixel
+    test pins hover-fill to the wedge its label names (a one-quadrant
+    start-angle slip passes every pick test and lies on screen).
+    Nav-ladder tail from the probe: Shift+MBB re-pivot (orbit around
+    the pointed-at point), settable home, sketch-context second ring.
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff
