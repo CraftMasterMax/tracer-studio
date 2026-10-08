@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M145**
+**Status: M146**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -357,6 +357,21 @@ independent project with no Autodesk assets or affiliation.)
   one; mixed thicknesses in one chain are refused, never averaged.
   The flat GEOMETRY on paper is SM2; the parametric FlangeFeature is
   SM3
+- **Assembly, rung 1 (M146)**: Tools ▸ **Joint — As-Built Rigid**:
+  two bodies, the child's pose captured once, and **LAW R** from then
+  on — *a joint follows where a body is PLACED, not how it is BUILT*.
+  Drag the base and the whole subtree rides (one 4×4 multiply per
+  jointed body, re-applied deterministically every recompute); a
+  parametric edit rides too — and says so, because bodies own no
+  frame yet (rung 2's priced migration, not a silent fudge). Bodies
+  mint ids that joints bind, so **renaming a body cannot orphan its
+  joint** (the relink rewrites the name ledger; the joint holds the
+  id). The first body grounds itself, ground is a file fact, and a
+  grounded or jointed body refuses the Move/Rotate gesture **at arm
+  time** — the triad never appears. Browser ▸ **Joints (n)** rows
+  delete (delete-and-recreate is v1's edit). Self-join, second
+  parents, cycles and jointing an interference clash are refused by
+  name
 - **Configurations**: multiple design variants in one file — a text
   table per config (`Small: width = 18, height = 10`) overrides
   parameters on the fly; switch the active config and the solid,
@@ -388,7 +403,7 @@ independent project with no Autodesk assets or affiliation.)
   a playhead timeline of icon chips, and a blue-grey horizon viewport —
   plus first-launch shortcut tour and a persistent Shortcuts tab driven by
   one canonical key table
-- 1578 headless tests (EGL rendering + Qt pixel assertions)
+- 1592 headless tests (EGL rendering + Qt pixel assertions)
 
 ## Run it
 
@@ -456,7 +471,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1578 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1592 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

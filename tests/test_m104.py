@@ -258,7 +258,8 @@ def test_body_menu_bulb_hides_only_its_body(win, qapp, monkeypatch):
     win._body_menu("Body 2", win.geometry().center())
     labels = [a.text() for a in menus[-1].actions()]
     assert labels == ["Activate Body 2", "Paint Body 2…", "Hide Body 2",
-                      "Isolate Body 2", "Material"]   # M110 submenu,
+                      "Isolate Body 2", "Ground Body 2",
+                      "Material"]   # M110 submenu, M146 ground
     # M134 isolate
     menus[-1].actions()[2].trigger()             # the bulb
     qapp.processEvents()
@@ -269,6 +270,6 @@ def test_body_menu_bulb_hides_only_its_body(win, qapp, monkeypatch):
     win._body_menu("Body 2", win.geometry().center())
     assert [a.text() for a in menus[-1].actions()] == \
         ["Activate Body 2", "Paint Body 2…", "Show Body 2",
-         "Isolate Body 2", "Material"]
+         "Isolate Body 2", "Ground Body 2", "Material"]
     menus[-1].actions()[2].trigger()
     assert win.doc.bodies[1]["visible"] is True

@@ -829,6 +829,11 @@ class Document:
         self.drawings: list = []              # M93: [{name, page}]
         self.rollback_to: int | None = None   # M88 rubber band (view state)
         self.bodies: list[dict] = []          # M104: [{name, visible}]
+        self.joints: list[dict] = []          # M146: relations bind
+                                              # IDS — a file fact,
+                                              # like the bodies list
+        self.joint_warnings: list[str] = []   # session: degraded
+                                              # cycles, never saved
         self._iso: list = []                  # M134: [(scope, boosted)]
                                               # isolation stack — session
                                               # view state, never saved
@@ -851,8 +856,11 @@ class Document:
             name = f"Body {k}"
         b = {"name": name, "visible": True,
              "placement": [0.0, 0.0, 0.0],   # kinematic STATE, not a
-             "rot": None}                    # feature (Placement≠Feature)
-        self.bodies.append(b)
+             "rot": None,
+             "id": uuid.uuid4().hex[:8],     # M146: what joints bind
+             "grounded": not self.bodies}    # (names never); the FIRST
+        self.bodies.append(b)                # body grounds itself —
+                                             # the vendor's own rule
         self.active_body = name
         self.dirty = True
         return b
@@ -863,7 +871,9 @@ class Document:
         implicit Body 1 the moment anyone asks — the browser never lies."""
         if not self.bodies and self.features:
             self.bodies = [{"name": "Body 1", "visible": True,
-                            "placement": [0.0, 0.0, 0.0], "rot": None}]
+                            "placement": [0.0, 0.0, 0.0], "rot": None,
+                            "id": uuid.uuid4().hex[:8],
+                            "grounded": True}]
             if self.active_body is None:
                 self.active_body = "Body 1"
         return self.bodies
@@ -912,6 +922,224 @@ class Document:
         b["rot"] = (m @ prev).ravel().tolist()
         self.dirty = True
         return b
+
+    # ---- joints (M146, assembly rung 1: As-Built Rigid, no solver) ------
+    @staticmethod
+    def _placement_matrix(body: dict | None) -> np.ndarray:
+        """The state-layer 4x4 that MEANS the same thing as
+        _apply_placement: rotate (state matrix), then translate
+        (state vector): P = T @ R."""
+        if body is None:
+            return np.eye(4)
+        r = (np.asarray(body["rot"], float).reshape(4, 4)
+             if body.get("rot") is not None else np.eye(4))
+        pos = body.get("placement") or (0.0, 0.0, 0.0)
+        t = np.eye(4)
+        t[:3, 3] = [float(v) for v in pos]
+        return t @ r
+
+    def _body_by_id(self, bid) -> dict | None:
+        for b in self.body_list():
+            if b.get("id") == bid:
+                return b
+        return None
+
+    def _is_interference_body(self, name: str) -> bool:
+        return any(isinstance(f, InterferenceFeature)
+                   and (getattr(f, "body", None) or "Body 1") == name
+                   for f in self.features)
+
+    def add_joint(self, body_a: str, body_b: str,
+                  note: str = "") -> dict:
+        """As-Built Rigid — Fusion's As-Built Joint is the honest
+        shape (§7.1 F3): we pick no geometry and MOVE NOTHING at
+        creation. The child's pose-in-parent is BAKED from the two
+        state matrices, m = inv(P_A0) @ P_B0, and recompute re-
+        applies P'_child = P'_parent @ m forever after: LAW R, "a
+        joint follows where a body is PLACED, not how it is BUILT"
+        (a stream edit carries nothing — no per-body frame until
+        rung 2, and the dialog says so). a_home is bake CONTEXT:
+        the re-apply must NOT consume it — the contract's extra
+        inv(a_home) factor teleports a child whenever the base sat
+        off identity, and the spike hid that by being all eye(4).
+        Refusals, all ParamError: self, a second parent, a cycle,
+        an interference clash (F4 — the clash resolves inside the
+        feature loop, before any joint pass could tell it the
+        parent moved; a lying clash body is refused, not patched).
+        Note: an interference of two JOINTED operands still reads
+        their raw streams — v1 documents that, it does not fix it."""
+        a, b = self._body(body_a), self._body(body_b)
+        if a is b:
+            raise params.ParamError(
+                f"'{body_a}' cannot be jointed to itself")
+        if any(j["b"] == b["id"] for j in self.joints):
+            raise params.ParamError(
+                f"'{body_b}' already has a parent — v1 keeps one "
+                "joint per body (delete the old joint first)")
+        for nm in (body_a, body_b):
+            if self._is_interference_body(nm):
+                raise params.ParamError(
+                    f"'{nm}' is an interference solid — a clash is a "
+                    "RESULT, not a part; delete the clash to joint it")
+        anc, hops = a["id"], [body_a]
+        while True:                     # walk a's ancestors: meeting
+            pj = next((j for j in self.joints if j["b"] == anc), None)
+            if pj is None:
+                break
+            nb = self._body_by_id(pj["a"])
+            if nb is None:
+                break
+            if nb["id"] == b["id"]:
+                raise params.ParamError(
+                    "this joint would close a LOOP ("
+                    + " -> ".join(hops + [body_b])
+                    + ") — v1 trees have one parent per body")
+            hops.append(nb["name"])
+            anc = nb["id"]
+        pa = self._placement_matrix(a)
+        pb = self._placement_matrix(b)
+        j = {"id": uuid.uuid4().hex[:8], "kind": "rigid",
+             "a": a["id"], "b": b["id"],
+             "m": [float(x) for x in (np.linalg.inv(pa) @ pb).ravel()],
+             "a_home": [float(x) for x in pa.ravel()],
+             "note": str(note)}
+        self.joints.append(j)
+        a["grounded"] = True            # the base of a tree is the
+        self.dirty = True               # ground (vendor's own rule)
+        return j
+
+    def remove_joint(self, joint_id: str) -> None:
+        """Delete is the v1 EDIT (no Edit Joint: the vendor's dialog
+        is the Position/Motion tabs we are not cloning). The child
+        keeps the pose the joint held it at — its own placement was
+        the bake-time pose, so deletion is continuous."""
+        self.joints = [j for j in self.joints if j["id"] != joint_id]
+        self.dirty = True
+
+    def ground_body(self, name: str, on: bool = True) -> dict:
+        """Ground is a body flag and a FILE fact (vendor: a per-
+        occurrence boolean; FreeCAD: a read-only lock on Placement).
+        It refuses DRAGS (see move_blocker); it never rewrites
+        geometry."""
+        b = self._body(name)
+        b["grounded"] = bool(on)
+        return b
+
+    def move_blocker(self, name: str) -> str | None:
+        """Why a drag must not start on this body (§5.4's choke), or
+        None. Sentences for the status line, in the house voice.
+        THE CONTEXT LAW the suite taught (M53/M55 spoke up): the
+        vendor's ground law is an ASSEMBLY-context law, so in a
+        JOINT-FREE document the flag is INERT — a single-body part
+        moves exactly the way it always did. Grounding bites when
+        there is a tree to anchor."""
+        if not self.joints:
+            return None
+        b = self._body(name)
+        if b.get("grounded"):
+            return (f"{name} is grounded — a grounded body never "
+                    "moves. Unground it (right-click the row) to "
+                    "move it.")
+        for j in self.joints:
+            if j["b"] == b.get("id"):
+                pb = self._body_by_id(j["a"])
+                pn = pb["name"] if pb else "?"
+                return (f"{name} is rigidly jointed to {pn} — v1 "
+                        "keeps jointed bodies where the joint put "
+                        "them. Delete the joint (browser ▸ Joints) "
+                        "to move it freely.")
+        return None
+
+    def is_movable(self, name: str) -> bool:
+        return self.move_blocker(name) is None
+
+    def rename_body(self, old: str, new: str) -> int:
+        """M130's law for bodies: rename is a RELINK, not a string
+        edit — features bind their stream by name, so the ledger is
+        rewritten here (counted, in rename_datum's voice). The
+        joint is deliberately NOT touched: it binds the id (§3.4),
+        which is exactly why a rename cannot orphan it."""
+        new = str(new).strip()
+        if not new:
+            raise params.ParamError(
+                f"rename failed: {old!r} needs a name — blank was "
+                "offered")
+        if new == old:
+            return 0
+        if any(x["name"] == new for x in self.body_list()):
+            raise params.ParamError(
+                f"rename failed: {new!r} is already taken — body "
+                "names are what streams and browser rows bind to, "
+                "so one name must mean one body")
+        b = self._body(old)              # honest KeyError early
+        n = 0
+        for f in self.features:
+            if getattr(f, "body", None) == old:
+                f.body = new
+                n += 1
+            if isinstance(f, InterferenceFeature):
+                if f.body_a == old:
+                    f.body_a = new
+                    n += 1
+                if f.body_b == old:
+                    f.body_b = new
+                    n += 1
+        b["name"] = new
+        if self.active_body == old:
+            self.active_body = new
+        self.dirty = True
+        return n
+
+    def _apply_joints(self, buckets: dict, placed: dict) -> dict:
+        """LAW R re-apply, topological order (parents first; list
+        order only breaks true ties, so a star is invariant to the
+        bodies order): P'_child = P'_parent @ m. The child's OWN
+        placement was baked into m and is not re-read here — the
+        UI refuses to drag a jointed body long before this could
+        silently disagree with it. Cycles (only a hand-edited file
+        can hold one; creation refuses them) degrade to own
+        placement and name the offenders in joint_warnings — a
+        loud note, never a crash mid-model."""
+        listed = self.body_list()
+        by_name = {b["name"]: b for b in listed}
+        name_of = {b.get("id"): b["name"] for b in listed}
+        self.joint_warnings = []
+        resolved = []
+        for j in self.joints:
+            pn, cn = name_of.get(j["a"]), name_of.get(j["b"])
+            if pn is None or cn is None:
+                self.joint_warnings.append(
+                    f"joint {j['id']}: a body id it names is gone — "
+                    "the joint is ignored")
+                continue
+            resolved.append((pn, cn,
+                             np.asarray(j["m"], float).reshape(4, 4)))
+        children = {cn for _, cn, _ in resolved}
+        mats: dict = {}
+        todo = list(resolved)
+        progress = True
+        while todo and progress:
+            progress = False
+            for t in list(todo):
+                pn, cn, m = t
+                pm = mats.get(pn)
+                if pm is None:
+                    if pn in children:
+                        continue         # wait: parents first
+                    pm = self._placement_matrix(by_name.get(pn))
+                mats[cn] = pm @ m
+                todo.remove(t)
+                progress = True
+        for pn, cn, _m in todo:
+            self.joint_warnings.append(
+                f"joint cycle through {pn!r} and {cn!r} — v1 cannot "
+                "solve it; the bodies sit at their own placement")
+        out = dict(placed)
+        for cn, pm in mats.items():
+            s = buckets.get(cn)
+            if s is not None:
+                out[cn] = s.transformed(pm)
+        return out
 
     def reset_body_placement(self, name: str) -> dict:
         b = self._body(name)
@@ -1986,6 +2214,9 @@ class Document:
             b = next((x for x in self.bodies if x["name"] == k), None)
             placed[k] = self._apply_placement(b, v)
         self._body_solids = placed
+        if self.joints:                        # M146: LAW R — a joint
+            placed = self._apply_joints(buckets, placed)   # follows
+            self._body_solids = placed                      # PLACEMENT
         solids = list(self._body_solids.values())
         if not solids:
             self._result = None
@@ -2183,6 +2414,7 @@ class Document:
                 "active_config": self.active_config,
                 "drawings": [dict(g) for g in self.drawings],   # M93
                 "bodies": [dict(b) for b in self.bodies],       # M104
+                "joints": [dict(j) for j in self.joints],       # M146
                 "active_body": self.active_body,
                 "features": [_feat(f) for f in self.features],
                 "planes": [dict(p) for p in self.planes],
@@ -2205,6 +2437,10 @@ class Document:
         # M104: bodies travel with the file; a bodyless (pre-M104) file
         # simply reads as one implicit Body 1 (body_list materializes it).
         doc.bodies = [dict(b) for b in (data.get("bodies") or [])]
+        for brec in doc.bodies:        # M146: pre-id files hydrate;
+            brec.setdefault("id", uuid.uuid4().hex[:8])
+            brec.setdefault("grounded", False)  # ground is a FILE
+        doc.joints = [dict(j) for j in (data.get("joints") or [])]
         doc.active_body = data.get("active_body")
         for fd in data.get("features", []):
             t = fd["type"]

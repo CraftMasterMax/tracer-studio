@@ -121,6 +121,7 @@ class MainWindow(QMainWindow):
         self.rail.tree.cplane_menu.connect(self._cplane_menu)
         self.rail.tree.caxis_menu.connect(self._caxis_menu)
         self.rail.tree.body_menu.connect(self._body_menu)
+        self.rail.tree.joint_menu.connect(self._joint_menu)
         self.rail.tree.root_menu.connect(self._root_menu)
         self.rail.tree.feature_delete.connect(self._delete_feature)
         self.rail.tree.feature_rename.connect(self._rename_feature)
@@ -699,6 +700,8 @@ class MainWindow(QMainWindow):
         m_tools.addAction("Interference — where bodies clash…",
                           lambda checked=False:
                           self.action_interference())
+        m_tools.addAction("Joint — rigid (2 bodies)…",
+                          lambda checked=False: self.action_joint())
         m_tools.addAction("Flat Pattern — unfold a sheet…",
                           lambda checked=False:
                           self.action_flat_pattern())
@@ -2664,6 +2667,9 @@ class MainWindow(QMainWindow):
         # differentiator, per the probe.)
         menu.addAction("Isolate " + name,
                        lambda checked=False: self._isolate_body(name))
+        grounded = bool((entry or {}).get("grounded"))
+        menu.addAction(("Unground " if grounded else "Ground ") + name,
+                       lambda checked=False: self._toggle_grounded(name))
         if self.doc.isolation_active():
             menu.addAction("Unisolate All", self._unisolate_all)
         mat = menu.addMenu("Material")
@@ -2680,6 +2686,61 @@ class MainWindow(QMainWindow):
                                   self._set_body_material(name, c))
             mat.addAction(act)
         menu.exec_(pos)
+
+    def _move_blocker_msg(self):
+        """LAW R choke (§5.4): a grounded or jointed body refuses the
+        Move/Rotate gesture AT ARM TIME — the triad never appears,
+        because a refused COMMIT would leave the user holding a
+        half-dragged preview to explain. The core says why; we say
+        it in the status line."""
+        if self.doc is None:
+            return None
+        nm = self.doc.active_body
+        try:
+            return self.doc.move_blocker(nm) if nm else None
+        except KeyError:
+            return None
+
+    def _toggle_grounded(self, name):
+        """M146: ground is a body flag and a FILE fact (the vendor's
+        per-occurrence boolean) — it refuses drags, never rewrites
+        geometry, and needs no recompute."""
+        if self.doc is None:
+            return
+        cur = next((x for x in self.doc.body_list()
+                    if x["name"] == name), None)
+        if cur is None:
+            return
+        self._capture()
+        on = not bool(cur.get("grounded"))
+        self.doc.ground_body(name, on)
+        self.rail.tree.reload()
+        self.status.showMessage(
+            f"{name} " + ("grounded — it anchors its joint tree and "
+                          "refuses drags" if on else
+                          "ungrounded — it may be dragged again"), 5000)
+
+    def _joint_menu(self, joint_id, pos):
+        """M146 browser joint-row menu: v1's whole edit UI is delete
+        (no Edit Joint — the vendor's dialog is the Position/Motion
+        tabs we are not cloning; edit IS delete-and-recreate)."""
+        if self.doc is None:
+            return
+        menu = QMenu(self)
+        menu.addAction("Delete Joint",
+                       lambda checked=False: self._delete_joint(joint_id))
+        menu.exec_(pos)
+
+    def _delete_joint(self, joint_id):
+        if self.doc is None:
+            return
+        self._capture()
+        self.doc.remove_joint(joint_id)
+        self.recompute()
+        self.viewport.refresh()
+        self.rail.tree.reload()
+        self.status.showMessage(
+            "Joint deleted — the body keeps its placed pose", 5000)
 
     def _set_body_material(self, name, material):
         """M110: the physical material behind the parts list.  'Paint'
@@ -3548,6 +3609,54 @@ class MainWindow(QMainWindow):
             f"Flat: {u['flat_length']:.2f} mm blank · "
             f"{len(u['bands'])} bend(s) · K {u['K']:g}", 5000)
 
+    def action_joint(self):
+        """Tools ▸ Joint (M146, assembly rung 1): As-Built Rigid —
+        Fusion's As-Built Joint is the honest shape (we pick no
+        geometry and MOVE NOTHING at creation; the vendor's own
+        Joint command, the one that teleports a component to its
+        mate, is a later rung). Two combos and a ground checkbox —
+        the names are display only, the record binds ids. LAW R in
+        the status line's every word: position captured, and from
+        now on this body follows where the BASE is placed — not
+        how it is built."""
+        if self.doc is None:
+            return
+        names = [b["name"] for b in self.doc.body_list()]
+        if len(names) < 2:
+            self.status.showMessage(
+                "Joint needs two bodies — New Body first (right-click "
+                "the browser)", 6000)
+            return
+        from . import cmddialog
+        prefill = self.doc.active_body if self.doc.active_body in names \
+            else names[0]
+        others = [n for n in names if n != prefill]
+        v = cmddialog.ask(self, "Joint — As-Built Rigid", [
+            dict(key="base", kind="combo", label="Base component",
+                 choices=names, default=prefill),
+            dict(key="mover", kind="combo", label="Moving component",
+                 choices=others, default=others[0] if others else None),
+            dict(key="ground", kind="check",
+                 label="Ground the base (it anchors the tree)",
+                 default=True)])
+        if v is None:
+            return
+        base, mover = v.get("base"), v.get("mover")
+        self._capture()
+        try:
+            self.doc.add_joint(str(base), str(mover))
+        except ValueError as e:      # ParamError IS a ValueError
+            QMessageBox.warning(self, "Joint", str(e))
+            return
+        if not v.get("ground", True):
+            self.doc.ground_body(str(base), False)
+        self.recompute()
+        self.viewport.refresh()
+        self.rail.tree.reload()
+        self.status.showMessage(
+            f"Joint {mover!r} \u2192 {base!r} — position captured "
+            "(rigid, 0 DOF)", 6000)
+
     def action_interference(self):
         """Tools ▸ Interference (M122, assembly phase 1): where do my
         bodies hurt?  Every clashing PAIR is reported with its exact
@@ -3850,6 +3959,10 @@ class MainWindow(QMainWindow):
                                 "Nothing to move yet — extrude or "
                                 "import a solid first.")
             return
+        blocker = self._move_blocker_msg()
+        if blocker:
+            self.status.showMessage(blocker, 6000)
+            return
         lo, hi = self.doc.result.bounding_box
         self._move_origin = (np.asarray(lo, float)
                              + np.asarray(hi, float)) / 2.0
@@ -3903,6 +4016,10 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Rotate",
                                 "Nothing to rotate yet — extrude or "
                                 "import a solid first.")
+            return
+        blocker = self._move_blocker_msg()
+        if blocker:
+            self.status.showMessage(blocker, 6000)
             return
         lo = np.asarray(self.doc.result.bounding_box[0], float)
         hi = np.asarray(self.doc.result.bounding_box[1], float)

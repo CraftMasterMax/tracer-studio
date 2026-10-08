@@ -56,6 +56,7 @@ class FeatureTree(QTreeWidget):
     cplane_menu = Signal(str, object)       # plane name, global QPoint
     caxis_menu = Signal(str, object)        # M125 work axis, same grammar
     body_menu = Signal(object, object)        # body name, global QPoint
+    joint_menu = Signal(object, object)       # M146: joint id, QPoint
     root_menu = Signal(object)                # M134: doc-row (isolation
                                               # exits live here — leaving
                                               # must not require finding
@@ -92,6 +93,8 @@ class FeatureTree(QTreeWidget):
             self.caxis_menu.emit(role[1], self.viewport().mapToGlobal(pos))
         elif role and role[0] == "body":
             self.body_menu.emit(role[1], self.viewport().mapToGlobal(pos))
+        elif role and role[0] == "joint":      # M146: Delete Joint
+            self.joint_menu.emit(role[1], self.viewport().mapToGlobal(pos))
         elif role and role[0] == "root":
             self.root_menu.emit(self.viewport().mapToGlobal(pos))
 
@@ -165,6 +168,25 @@ class FeatureTree(QTreeWidget):
             body_nodes[nm] = body_item
         if names:
             bodies.setExpanded(True)
+
+        # ---- Joints (n) ▸ one row per relation (M146, assembly rung 1).
+        # The folder appears ONLY when joints exist: a plain part's
+        # browser stays exactly what it always was. Rows name the pair
+        # by DISPLAY name — the record underneath binds ids.
+        joints = list(getattr(self._doc, "joints", []) or [])
+        if joints:
+            jf = QTreeWidgetItem([f"Joints ({len(joints)})"])
+            jf.setData(0, Qt.UserRole, ("folder", "joints"))
+            root.addChild(jf)
+            by_id = {b.get("id"): b["name"] for b in listed}
+            for j in joints:
+                it = QTreeWidgetItem([
+                    "\u27f7 " + by_id.get(j["b"], "?") + " \u2192 "
+                    + by_id.get(j["a"], "?")])
+                it.setData(0, Qt.UserRole, ("joint", j["id"]))
+                jf.addChild(it)
+            jf.setExpanded(True)
+
         default = names[0] if names else "Body 1"
         for i, f in enumerate(feats):
             fillet = isinstance(f, BodyFilletFeature)

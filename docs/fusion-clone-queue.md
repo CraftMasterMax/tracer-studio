@@ -1723,6 +1723,67 @@ M125; items 1-11 below are history.*
   projects to exactly one closed chain); SM3 = parametric
   FlangeFeature owning band geometry (ends the detector fuzz,
   starts the relief conversation). (1578.)
+- **ASSEMBLY RUNG 1 SHIPPED (M146)** — Tools > Joint - As-Built
+  Rigid: the first rung of the assembly ladder, NO solver. LAW R:
+  "a joint follows where a body is PLACED, not how it is BUILT"
+  (§7.1 F2a). Body records mint ids (uuid4().hex[:8]) at creation
+  and joints bind ids; the first body grounds itself (the vendor's
+  own rule for the first component) and the flag rides the file;
+  Document.joints is a file-level list of 7-field records {id,
+  kind, a, b, m, a_home, note}. THE CONTEXT LAW (the suite's own
+  pre-commit catch): the vendor's ground rule is an ASSEMBLY-context
+  rule, so move_blocker INERTS the flag in a joint-free document —
+  a single-body part moves exactly as M53 always allowed; auto-
+  ground biting part-mode failed M53/M55 loudly first, which is
+  what the full suite is for. Recompute re-applies
+  P'_child = P'_parent @ m in topological order (parents first,
+  list order only ties; a star is invariant to bodies order)
+  AFTER the placement loop — one 4x4 multiply per jointed child,
+  and the identity short-circuit is pinned: a joint-free doc
+  never calls Solid.transformed at all. THE CORRECTION (second
+  golden of this kind after SM1's 96.09): the contract's §7.1
+  formula carried an extra factor, P'_child = P'_parent @
+  inv(a_home) @ m — but m is the DELTA inv(P_A0) @ P_B0, so at
+  creation the formula returns m, not P_B0: the child TELEPORTS
+  whenever the base sat off identity. The spike ran green because
+  EVERY pose in it was eye(4) — a law tested only at the identity
+  is not tested. The gate's chain test lands the grandchild at
+  its measured HOME with the base pose at (12,0,0): the buggy
+  formula parks it at (-12,7,0) and the assert IS the correction.
+  a_home rides the record as bake context; the re-apply never
+  consumes it. What LAW R will not fake: a parametric (stream)
+  edit to the base does NOT carry (§7.1 F2 — no per-body frame
+  yet; rung 2's migration is priced, not invented), and the gate
+  pins that too — the product wording ("where a body is PLACED")
+  is the dialog's own title. Refusals loud: self-join, second
+  parent, creation cycles (ancestor walk names the chain), and
+  jointing an interference clash (F4 — the clash resolves inside
+  the feature loop before any joint pass could tell it the parent
+  moved; a lying clash body is REFUSED, not patched). A
+  hand-edited cycle degrades to own placement and NAMES the
+  offenders in doc.joint_warnings — never a crash mid-model.
+  rename_body is M130's counted relink over the name ledger
+  (features + InterferenceFeature body_a/b); the joint is NOT
+  touched — it holds ids, so a rename cannot orphan it
+  (byte-identical asserted). UI: browser gains Joints (n)
+  (folder appears ONLY when joints exist — part browsers stay
+  pixel-identical) with per-row Delete Joint (v1's edit is
+  delete-and-recreate; the vendor's Edit Joint is the
+  Position/Motion tabs we do not clone); body rows gain
+  Ground/Unground (a file fact, refuses drags, rewrites no
+  geometry); Move/Rotate refuse grounded and jointed bodies AT
+  ARM TIME — the triad never appears, because a refused COMMIT
+  leaves a half-dragged preview to explain (§5.4). move_body/
+  rotate_body stay the permissive state-layer primitives (the
+  choke is the gesture, and jointed children's own placements
+  are silently subsumed by the bake — the UI refuses before the
+  kernel ever has to argue). As-Built != vendor Joint: we pick
+  no geometry and teleport nothing at creation, and the dialog
+  title says the honest name. Rung 2 named, not silently
+  deferred: per-body frames (b["frame"]) + param-follows-motion;
+  joint origins (the vendor's Joint with capture); occurrence
+  layer (the vendor binds occurrences — we bind bodies, stated
+  in §3.4's deviation note). (1592.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff
