@@ -160,12 +160,18 @@ def win(qapp):
 
 
 def _red_px(cv):
+    """Blend-tolerant red counter (M144 CI lesson): a 1 px red line on
+    paper anti-aliases into fringes whose red-minus-green can fall to
+    ~27 at 20% coverage, and the runner's font family decides where
+    the box edges land. A paper->#c33c3c blend has red-green = 135t,
+    so >25 counts EVERY visible red pixel (>=20% coverage) whatever
+    the font — deltas then measure ink, not font luck."""
     img = cv.grab().toImage()
     n = 0
     for y in range(0, img.height(), 2):
         for x in range(0, img.width(), 2):
             c = img.pixelColor(x, y)
-            if c.red() > 130 and c.red() - c.green() > 60:
+            if c.red() > 150 and c.red() - c.green() > 25:
                 n += 1
     return n
 
