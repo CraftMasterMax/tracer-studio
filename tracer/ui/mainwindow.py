@@ -2129,9 +2129,9 @@ class MainWindow(QMainWindow):
                     "9.995/10.010)") from None
         elif txt:
             from ..core import fits
-            try:
-                lo, hi = fits.limits(d_act, txt)     # fits' own voice
-            except (ValueError, KeyError):
+            try:                              # the class rides the
+                lo, hi = fits.limits(round(d_act, 1), txt)  # NOMINAL,
+            except (ValueError, KeyError):    # never the as-built
                 raise ValueError(
                     f"'{txt}' is neither lo/hi nor a fit class the "
                     "table knows") from None

@@ -1455,6 +1455,14 @@ class DrawingCanvas(QWidget):
                 widths.append(box)
             elif c["kind"] == "text":
                 widths.append(fm.horizontalAdvance(c["s"]) + 0.5 * box)
+            elif c["kind"] == "proj":
+                # the CIRCLE belongs to the width math (one-source
+                # law): P inside it, height beside it, nothing eats
+                # the neighbour's compartment.
+                rr = max(2.5, 0.5 * fm.horizontalAdvance("P")
+                         + 0.10 * box)
+                widths.append(2 * rr + fm.horizontalAdvance(
+                    c["s"][2:]) + 0.3 * box)
             else:
                 widths.append(max(0.75 * box,
                                   fm.horizontalAdvance(c["s"])
@@ -1534,14 +1542,13 @@ class DrawingCanvas(QWidget):
             elif c["kind"] == "proj":
                 # M150: the projected-zone compartment — a painted
                 # circle around P (the balloon family, not the
-                # tofu U+24C5) and the height beside it.
+                # tofu U+24C5) and the height beside it; the width
+                # function already reserved exactly this.
                 fm = QFontMetrics(self._dim_font())
                 s = c["s"]
-                full = fm.horizontalAdvance(s)
-                x0 = cell.center().x() - full / 2.0
                 rr = max(2.5, 0.5 * fm.horizontalAdvance("P")
                          + 0.10 * box)
-                pcx = cell.center().x() - full / 2.0 + rr
+                pcx = cell.left() + rr
                 p.drawEllipse(QPointF(pcx, cell.center().y()), rr, rr)
                 p.drawText(QRectF(pcx - rr, cell.top(), 2 * rr, box),
                            Qt.AlignCenter, "P")
