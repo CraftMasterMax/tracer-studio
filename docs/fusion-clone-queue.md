@@ -1454,11 +1454,38 @@ M125; items 1-11 below are history.*
     Esc's ladder = gestures → cut → selection → isolation, and
     session state absent from the save file. Origin-plane rows got a
     menu at last (section yes, rename/delete no — not ours to kill).
-    Drawings rung (a)'s PAPER side (hatched section views from these
-    caps) remains; cap-hatch in the plane's 2D frame is the cheapest
-    follow-up (60-90 LOC). Cosmetic backlog: grazing-angle zebra on
+    Drawings rung (a)'s PAPER side (hatched section views) followed
+    one milestone later as M136 — and NOT by the predicted cap-hatch
+    in the plane's 2D frame: the queue's own archaeology found M102's
+    half-solids/cap-loops/page-hatch already in stock. Cosmetic
+    backlog: grazing-angle zebra on
     coplanar boolean rims (predates M135 — control shot proved it;
     candidate: polygon-offset or coplanar merge in the renderer).
+    PAPER SECTION RUNG ONE SHIPPED (M136, suite 1463): the cutting
+    line drawn ON a view — two clicks on top/front/right stand a
+    dash-dot line (thick caps, arrows toward the kept side, letter
+    at both ends); the child A-A lands middle-band, hatched, live.
+    Wave-10a priced the rung ~950 LOC; the truth was grammar-only:
+    plane_from_line (line -> plane; the classic drag across the TOP
+    view drops the arrow to the FRONT, volume-exact), section_on
+    (child = BASIS TUPLE the whole pipeline already carries — HLR,
+    hidden ink, nudge, scale, DXF: zero consumer changes),
+    section_letter (reserved-letter alphabet, no I O Q S X Z; one
+    registry for dialog and line), Shift flips the kept side, Esc
+    rung one erases the half-line (the ladder lives in
+    _stand_down_drawing — the sheet's Esc is a QShortcut, so a
+    canvas keyPress handler would have been dead code). Banked
+    lessons: a new _p2m instance method SHADOWED the classmethod of
+    the same name (m94/m100 bled, the batch SEGFAULTED — the
+    adjacent suite caught it in seconds; grep the class before
+    naming a member); and union truth — a fused plate+stud yields
+    TWO cap loops at the bore split, the stud's wound joined the
+    plate's loop as one ten-sided polygon, not three regions.
+    Rung two (queued): depth modes Full|Slice|Distance, hidden
+    lines default OFF on section children, section-aware hatch
+    (thread crest per ISO 6410-1 3.2.4, hatch avoids annotations).
+    Rung three: jogged/offset polylines (UsePreviousCut-style
+    feed-forward) + fastener exclusion (excluded shows UNCUT).
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

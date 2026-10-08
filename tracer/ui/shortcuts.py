@@ -135,6 +135,9 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("F", "Fit callout (ISO 286): click a dimension bubble, pick H7, "
               "g6, H7/g6… — paper carries the fit, model stays nominal",
          True),
+        ("S", "Cut-line tool: two clicks on the top, front or right "
+              "view stand a lettered section (A-A…) there; Shift "
+              "flips the kept half", True),
         ("Esc", "Stand every sheet tool down", True),
     ]),
     ("Document & features", [

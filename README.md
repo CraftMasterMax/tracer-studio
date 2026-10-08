@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M135**
+**Status: M136**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -177,7 +177,23 @@ independent project with no Autodesk assets or affiliation.)
   cut's. The cut rides a plane BY NAME, so renaming the datum relinks
   the living section (M130's law, grown a new limb); flip keeps the
   other half; Esc ends it after the gestures yield; and like
-  isolation it is session state that never touches the file**
+  isolation it is session state that never touches the file**,
+  **and on PAPER (M136) the section is drawn where it is used:
+  Cut-line — two clicks on the top, front or right view stand a
+  dash-dot cutting line with thick end caps, arrows toward the kept
+  half and a letter at each end; the child view A-A lands in the
+  middle band, hatched and live, re-deriving from the solid on every
+  repaint. The wave-10 probe priced this rung at ~950 lines; M102's
+  inventory said otherwise — the half-solids, cap loops and page
+  hatch already existed, what was missing was grammar. plane_from_line
+  turns the drawn line into the plane (the classic left→right drag
+  across the TOP view drops the arrow toward the FRONT, volume-exact
+  to the analytic half); section_on hands the child a basis TUPLE
+  that the whole projection pipeline already carries — HLR, hidden
+  ink, nudges, scale, DXF: zero consumer changes. Letters obey the
+  reserved-letter law (no I, O, Q, S, X, Z), one registry shared by
+  both cutters, Shift flips the kept side, and Esc's first rung
+  erases the half-drawn line before the tools stand down**
 - Solids: extrude (join/cut/intersect, fillet/chamfer profile corners),
   revolve, **Sweep (W): pipe the sketch's circle along a drawn path —
   lines and arcs, open or a closed ring (true torus): tubes, handles,
@@ -358,7 +374,7 @@ Full list: **?** / the Shortcuts tab.
 ## Test it
 
 ```bash
-./.venv/bin/python -m pytest -q          # 1451 tests, fully headless
+./.venv/bin/python -m pytest -q          # 1463 tests, fully headless
 ./.venv/bin/python tools/snapshot.py     # render demo model to PNGs
 ./.venv/bin/python tools/sketch_shot.py  # render demo sketch to PNG
 ```

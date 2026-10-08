@@ -49,6 +49,8 @@ class DrawingCanvas(QWidget):
     fit_requested = Signal(str, int)             # M114: view, dim index
     view_drag_begin = Signal()                   # M96: undo capture hook
     view_scale_requested = Signal(str)           # M100: Scale dialog ask
+    section_added = Signal(dict)                 # M136: {parent,p0,p1,flip}
+    tool_note = Signal(str)                      # M136: canvas says, status
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -61,6 +63,10 @@ class DrawingCanvas(QWidget):
         self._dim_mode = False                 # M94: bubble tool armed?
         self._dim_first = None                 # first endpoint (view, xy)
         self._balloon_mode = False             # M110: balloon tool armed?
+        self._sec_mode = False                 # M136: section-line tool
+        self._sec_pts = []                     # parent MODEL xy of clicks
+        self._sec_view = None
+        self._sec_hover = None                 # page xy of the rubber tip
         self._fit_mode = False                 # M114: fit-callout armed?
         self._view_drag = None                 # M96: (view, start, base)
         self.setMinimumSize(320, 240)
@@ -92,8 +98,23 @@ class DrawingCanvas(QWidget):
 
     # ---- data -----------------------------------------------------------
     def sections(self) -> list:
-        """M102: the stored cuts on this sheet ({name, axis, at})."""
+        """M102: the stored cuts on this sheet ({name, axis, at} or
+        M136 line-on-view {name, parent, p0, p1, flip})."""
         return list(self.sheet().get("sections") or [])
+
+    def _sec_cut(self, sec) -> dict:
+        """M136: the one place a stored section entry becomes a cut —
+        the M102 axis dialog form or the two-click line on a parent;
+        both return {"half", "view", "cut"}, and a line section's
+        "view" is a basis TUPLE that the whole projection pipeline
+        already carries."""
+        if "parent" in sec:
+            o, a, dl = drawing.plane_from_line(
+                sec["parent"], sec["p0"], sec["p1"],
+                bool(sec.get("flip")))
+            return drawing.section_on(self.doc.result, o, a, right=dl)
+        return drawing.section(self.doc.result, sec["axis"],
+                               float(sec["at"]))
 
     def _sources(self) -> dict:
         """view name -> (solid to project, standard view key), live.
@@ -104,8 +125,7 @@ class DrawingCanvas(QWidget):
         out = {v: (self.doc.result, v) for v in drawing.STANDARD}
         for sec in self.sections():
             try:
-                d = drawing.section(self.doc.result, sec["axis"],
-                                    float(sec["at"]))
+                d = self._sec_cut(sec)
             except Exception:
                 continue
             out[sec["name"]] = (d["half"], d["view"])
@@ -148,8 +168,10 @@ class DrawingCanvas(QWidget):
             name = sec["name"]
             if name not in srcs or name not in placed:
                 continue
-            d = drawing.section(self.doc.result, sec["axis"],
-                                float(sec["at"]))
+            try:
+                d = self._sec_cut(sec)
+            except Exception:
+                continue
             out[name] = [[self._m2p(placed[name], p) for p in L]
                          for L in d["cut"]]
         return out
@@ -246,6 +268,7 @@ class DrawingCanvas(QWidget):
         if on:
             self._balloon_mode = False        # M110: one tool at a time
             self._fit_mode = False            # M114
+            self._sec_mode = False            # M136
         self.update()
 
     def set_balloon_mode(self, on: bool):
@@ -257,6 +280,7 @@ class DrawingCanvas(QWidget):
             self._dim_mode = False
             self._dim_first = None
             self._fit_mode = False            # M114
+            self._sec_mode = False            # M136
         self.update()
 
     def set_fit_mode(self, on: bool):
@@ -267,6 +291,27 @@ class DrawingCanvas(QWidget):
             self._dim_mode = False
             self._balloon_mode = False
             self._dim_first = None
+            self._sec_mode = False            # M136
+        self.update()
+
+    def set_section_mode(self, on: bool):
+        """M136: arm the section-line tool — two clicks ON a parent
+        view draw the cutting line where a draughtsman draws it, and
+        the child section view (A-A, hatched cap, live like every
+        other projection) arrives with it. Shift on the closing click
+        flips which half the section keeps; a second line can be
+        dragged without re-arming; click the button again to stand
+        down."""
+        self._sec_mode = bool(on)
+        self._sec_pts, self._sec_view, self._sec_hover = [], None, None
+        if on:
+            self._dim_mode = False
+            self._dim_first = None
+            self._balloon_mode = False
+            self._fit_mode = False
+            self.tool_note.emit("Section line: click where the cut "
+                                "BEGINS on the top, front or right "
+                                "view")
         self.update()
 
     def _dim_disp(self, d) -> str:
@@ -586,7 +631,81 @@ class DrawingCanvas(QWidget):
         self._draw_dims(p, placed)
         self._draw_balloons(p, placed)               # M110 item bubbles
         self._draw_hole_notes(p, placed)             # M129 table + marks
+        self._draw_section_lines(p, placed)          # M136 cutting lines
 
+    def _draw_section_lines(self, p, placed):
+        """M136: the cutting line rides its parent view — thin long
+        dashes along the cut, thick end caps, arrowheads standing off
+        toward the kept side, the letter past each end: the drafter's
+        sentence 'look here, from this side'. Entries store parent
+        MODEL xy (the line travels with a nudged view, like dims and
+        balloons); the page map is place()'s own, so the ink follows."""
+        line_secs = [s for s in self.sections() if "parent" in s]
+        if not line_secs and not (self._sec_pts and self._sec_view):
+            return
+        p.save()
+        for sec in line_secs:
+            fr = placed.get(sec["parent"])
+            if fr is None:
+                continue
+            q0 = np.asarray(self._m2p(fr, sec["p0"]), float)
+            q1 = np.asarray(self._m2p(fr, sec["p1"]), float)
+            u = q1 - q0
+            L = float(np.hypot(*u))
+            if L < 1e-9:
+                continue
+            u = u / L
+            n2 = np.array([u[1], -u[0]])
+            if sec.get("flip"):
+                n2 = -n2
+            ext = 3.0 * fr["sc"]          # page overhang: 3 model mm
+            self._cut_line_ink(p, q0 - u * ext, q1 + u * ext, n2,
+                               str(sec["name"][0]))
+        if self._sec_pts and self._sec_view in placed:
+            fr = placed[self._sec_view]
+            q0 = np.asarray(self._m2p(fr, self._sec_pts[0]), float)
+            tip = (np.asarray(self._sec_hover, float)
+                   if self._sec_hover is not None else q0)
+            p.setPen(QPen(_DETAIL, max(0.8, 0.2 * self._zoom),
+                          Qt.DashLine))
+            p.drawLine(self.s2p(*q0), self.s2p(*tip))
+        p.restore()
+
+    def _cut_line_ink(self, p, q0, q1, n2, letter):
+        """One finished cutting line in canonical page mm: dash body,
+        thick caps, open-V arrows toward the kept side, letter ends."""
+        u = q1 - q0
+        L = float(np.hypot(*u))
+        if L < 1e-9:
+            return
+        u = u / L
+        z = self._zoom
+        p.setPen(QPen(_VIEW_EDGE, max(0.7, 0.18 * z), Qt.DashLine,
+                      Qt.FlatCap))
+        p.drawLine(self.s2p(*q0), self.s2p(*q1))
+        p.setPen(QPen(_VIEW_EDGE, max(1.6, 0.5 * z), Qt.SolidLine,
+                      Qt.RoundCap))
+        cap = 2.5                                        # page-mm caps
+        for e in (q0, q1):
+            p.drawLine(self.s2p(*(e - u * cap)),
+                       self.s2p(*(e + u * cap)))
+        p.setPen(QPen(_VIEW_EDGE, max(1.0, 0.3 * z)))
+        ah = 3.2                                         # arrow height
+        for t in (0.3, 0.7):                             # the arrow pair
+            foot = q0 + u * (L * t)
+            tip = foot + n2 * ah
+            p.drawLine(self.s2p(*foot), self.s2p(*tip))
+            for wing in (tip - n2 * 1.0 + u * 1.2,
+                         tip - n2 * 1.0 - u * 1.2):
+                p.drawLine(self.s2p(*tip), self.s2p(*wing))
+        f2 = p.font()
+        f2.setPointSizeF(max(6.5, 8.0 * min(z, 2.0)))
+        p.setFont(f2)
+        p.setPen(QPen(_VIEW_EDGE))
+        for e, sgn in ((q0, -1.0), (q1, 1.0)):
+            at = self.s2p(*(e + u * sgn * 5.0 + n2 * 2.0))
+            p.drawText(QRectF(at.x() - 12, at.y() - 10, 24, 20),
+                       Qt.AlignCenter, letter)
 
     def _block_meta(self) -> dict:
         """Derived title-block strings the canvas (not the sheet) knows:
@@ -954,6 +1073,9 @@ class DrawingCanvas(QWidget):
         self.update()
 
     def mousePressEvent(self, ev):
+        if self._sec_mode and ev.button() == Qt.LeftButton:
+            self._sec_click(ev)              # M136: cutting line clicks
+            return
         if self._balloon_mode and ev.button() == Qt.LeftButton:
             self._balloon_click(ev)          # M110: pin, don't pan
             return
@@ -981,7 +1103,52 @@ class DrawingCanvas(QWidget):
         if ev.button() in (Qt.MiddleButton, Qt.LeftButton):
             self._drag = ev.position()
 
+    def _sec_click(self, ev):
+        """M136: the two clicks of a cutting line, drawn ON the parent.
+        Clicks live in the parent's MODEL xy (they must travel with the
+        view when it is nudged, like dims and balloons — and survive its
+        M109 spin, so they come through the de-rotating _p2m); the entry
+        leaves letterless — MainWindow letters and keeps it."""
+        placed = self.placed()
+        if not placed:
+            return
+        page = self.p2s(ev.position())
+        if not self._sec_pts:
+            view = self._view_at(page, placed, slack=6.0)
+            if view not in ("top", "front", "right"):
+                self.tool_note.emit(
+                    "Section lines start ON the top, front or right "
+                    "view" + (" (click inside one)" if view is None
+                              else f" — {view} is not a legal parent "
+                                   "(v1: the three orthogonal views)"))
+                return
+            self._sec_view = view
+            self._sec_pts = [self._p2m(placed[view], page)]
+            self.tool_note.emit(f"Section on {view}: click where the "
+                                "cut ENDS (Shift flips the kept side)")
+            self.update()
+            return
+        if self._view_at(page, placed, slack=6.0) != self._sec_view:
+            self.tool_note.emit("Stay inside the parent — the cutting "
+                                "line is drawn ON it")
+            return
+        p1 = self._p2m(placed[self._sec_view], page)
+        if math.dist(self._sec_pts[0], p1) < 0.5:
+            self.tool_note.emit("That line is too short to section on")
+            return
+        self.section_added.emit({
+            "parent": self._sec_view,
+            "p0": (float(self._sec_pts[0][0]), float(self._sec_pts[0][1])),
+            "p1": (float(p1[0]), float(p1[1])),
+            "flip": bool(ev.modifiers() & Qt.ShiftModifier)})
+        self._sec_pts, self._sec_view, self._sec_hover = [], None, None
+        self.update()
+
     def mouseMoveEvent(self, ev):
+        if self._sec_mode and self._sec_pts:          # M136 rubber band
+            self._sec_hover = self.p2s(ev.position())
+            self.update()
+            return
         if self._view_drag is not None:                  # M96: move a view
             view, start, base, moved = self._view_drag
             sp = self.s2p(start[0], start[1])
@@ -1009,6 +1176,18 @@ class DrawingCanvas(QWidget):
     def mouseReleaseEvent(self, ev):
         self._drag = None
         self._view_drag = None
+
+    def restart_section_line(self) -> bool:
+        """M136: erase a half-drawn cutting line (the tool stays
+        armed); True when there was one to erase. This is Esc's
+        first rung on the sheet — the in-flight line yields before
+        the tools, the same ladder law as the viewport."""
+        if not self._sec_pts:
+            return False
+        self._sec_pts, self._sec_view, self._sec_hover = [], None, None
+        self.tool_note.emit("Section line restarted")
+        self.update()
+        return True
 
     def mouseDoubleClickEvent(self, ev):
         # M100: double-click a view -> its Scale dialog

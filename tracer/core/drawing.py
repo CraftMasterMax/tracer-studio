@@ -91,7 +91,18 @@ def title_block(sheet: dict, meta: dict | None = None,
             "page": page}
 
 
-def _basis(view: str) -> tuple:
+def _basis(view) -> tuple:
+    """View key -> (eye, page-x, page-y). A named standard view reads
+    VIEWS; a 3-tuple of vectors (d, X, Y) is a section child's own
+    basis and passes straight through — the whole projection pipeline
+    is matrix maths over this triple, so arbitrary-direction sections
+    reuse every consumer unchanged (M136)."""
+    if isinstance(view, (tuple, list)):
+        d, X, Y = (np.asarray(a, float) for a in view)
+        d = d / np.linalg.norm(d)
+        X = X / np.linalg.norm(X)
+        Y = Y / np.linalg.norm(Y)
+        return d, X, Y
     d = np.asarray(VIEWS[view]["dir"], float)
     d = d / np.linalg.norm(d)
     up = np.asarray(VIEWS[view]["up"], float)
@@ -541,16 +552,28 @@ def section(solid, axis: str = "Y", at: float = 0.0) -> dict:
     M[:3, 3] = box_lo
     halfspace = Solid.box(*[box_hi[k] - box_lo[k] for k in range(3)])
     half = solid.intersect(halfspace.transformed(M))
-    import trimesh
     tm = solid.to_trimesh()
     nrm = np.zeros(3)
     nrm[i] = 1.0
-    _, X, Y = _basis(view)
+    X, Y = _basis(view)[1], _basis(view)[2]
+    loops = _cut_loops(tm, nrm * at, nrm, X, Y)
+    res = {"half": half, "view": view, "cut": loops}
+    if len(_section_cache) > 64:
+        _section_cache.clear()
+    _section_cache[key] = (solid, res)
+    return res
+
+
+def _cut_loops(tm, o, n, X, Y) -> list:
+    """Closed cut-face loops in the (X, Y) page basis, M102's honest
+    recipe: try the exact plane, then jitter off coplanar degeneracy
+    if the cut grazes a feature boundary; weld crumbs, close rings."""
     loops: list = []
     for off in (0.0, 1e-3, -1e-3):
         try:
-            sec = tm.section(plane_origin=nrm * (at + off),
-                             plane_normal=nrm)
+            sec = tm.section(plane_origin=np.asarray(o, float)
+                             + np.asarray(n, float) * off,
+                             plane_normal=np.asarray(n, float))
         except Exception:
             continue
         if sec is None or not len(sec.discrete):
@@ -566,10 +589,104 @@ def section(solid, axis: str = "Y", at: float = 0.0) -> dict:
                 loops.append([(float(x), float(y)) for x, y in xy])
         if loops:
             break
-    res = {"half": half, "view": view, "cut": loops}
-    if len(_section_cache) > 64:
+    return loops
+
+
+def section_letter(n: int) -> str:
+    """M136: the letter for the n-th section on a sheet. The
+    drafting-alphabet law (Onshape spells it out [official]): I, O,
+    Q, S, X and Z are reserved by the standards and never label a
+    section — past the twenty usable letters the label doubles up
+    (AA, BB) rather than repeat a single one. Both section makers
+    (the M102 dialog and the M136 line) letter from here, so one
+    registry, one alphabet, no collision."""
+    alphabet = [c for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                if c not in "IOQSXZ"]
+    if n < len(alphabet):
+        return alphabet[n]
+    return alphabet[n % len(alphabet)] * 2        # double up past 20
+
+
+def plane_from_line(parent: str, p0, p1, flip: bool = False):
+    """M136: the section plane a LINE ON A PARENT VIEW defines — the
+    drafting rule: the plane contains the drawn line and stands
+    perpendicular to the parent's projection plane. p0/p1 are points
+    in the parent view's MODEL coordinates (page coords un-scaled and
+    un-offset by the caller). Returns (origin, keep-normal, right):
+    the keep-normal points at the EYE (the arrows' side; that half is
+    what the section view looks at), RIGHT runs along the line and
+    becomes the child's page-x. Default arrow: 90° CW of the drag —
+    drag left→right across a TOP view and the arrow drops toward the
+    FRONT, exactly the classic front-section; flip negates.
+    Orthogonal parents only (top/front/right): an iso parent's page
+    axes tilt depth into the line and the plane stops being a
+    section-plane (v1 scope, banked in the queue doc)."""
+    if parent not in ("top", "front", "right"):
+        raise ValueError(f"section line needs an orthogonal parent "
+                         f"view, not {parent!r}")
+    _, X, Y = _basis(parent)
+    p0 = np.asarray(p0, float)
+    p1 = np.asarray(p1, float)
+    u2 = p1 - p0
+    L = float(np.linalg.norm(u2))
+    if L < 1e-9:
+        raise ValueError("section line needs two distinct points")
+    u2 = u2 / L
+    dl3 = u2[0] * X + u2[1] * Y                 # along the line
+    a2 = np.array([u2[1], -u2[0]])              # 90 deg CW in page
+    if flip:
+        a2 = -a2
+    a3 = a2[0] * X + a2[1] * Y                  # unit: X,Y orthonormal
+    o3 = p0[0] * X + p0[1] * Y                  # depth-0 point on plane
+    return o3, a3, dl3
+
+
+_section_on_cache: dict = {}
+
+
+def section_on(solid, o, n, right=None) -> dict:
+    """M136: the arbitrary-plane sibling of section() — same shape
+    ({"half", "view", "cut"}) but the plane is (origin o, keep-normal
+    n pointing at the eye), and the child's view key is a BASIS
+    TUPLE (eye, page-x, page-y) that _basis passes through, so
+    project_view/hidden/HLR/place/paint/export all take a slanted
+    section exactly like a named one. RIGHT (defaults to any
+    perpendicular) lays the cut line flat on the child's page."""
+    o = np.asarray(o, float)
+    n = np.asarray(n, float) / max(float(np.linalg.norm(n)), 1e-12)
+    if right is None:
+        ref = np.array([1.0, 0.0, 0.0]) if abs(n[0]) < 0.9 else \
+            np.array([0.0, 1.0, 0.0])
+        right = np.cross(ref, n)
+    X = np.asarray(right, float)
+    X = X - n * float(X @ n)
+    X = X / max(float(np.linalg.norm(X)), 1e-12)
+    Y = np.cross(n, X)                          # right-handed page
+    key = (id(solid), tuple(np.round(o, 9)), tuple(np.round(n, 9)),
+           tuple(np.round(X, 9)))
+    hit = _section_on_cache.get(key)
+    if hit is not None and hit[0] is solid:
+        return hit[1]
+    from .geometry import Solid
+    bb = np.asarray(solid.bounding_box, float)
+    L = float(np.linalg.norm(bb[1] - bb[0])) + 100.0
+    # prism: a big square in the plane extruded from the plane into
+    # the KEPT half-space — local +z rides n, so intersect keeps
+    # {p : (p - o) . n >= 0}, the eye side (slice_plane's rule and
+    # the draughtsman's: the near half is what you look at).
+    box = Solid.box(2 * L, 2 * L, L)            # corner at local 000
+    M = np.eye(4)
+    M[:3, :3] = np.column_stack([X, Y, n])
+    M[:3, 3] = o - (X + Y) * L                  # centre square on o
+    half = solid.intersect(box.transformed(M))
+    tm = solid.to_trimesh()
+    loops = _cut_loops(tm, o, n, X, Y)
+    res = {"half": half, "view": (tuple(n), tuple(X), tuple(Y)),
+           "cut": loops}
+    if len(_section_on_cache) > 64:
         _section_cache.clear()
-    _section_cache[key] = (solid, res)
+        _section_on_cache.clear()
+    _section_on_cache[key] = (solid, res)
     return res
 
 

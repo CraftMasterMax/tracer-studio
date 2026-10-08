@@ -1238,6 +1238,17 @@ class MainWindow(QMainWindow):
                         "that re-derives with the model")
         secb.clicked.connect(self.action_section_view)
         bl.addWidget(secb)
+        slb = QPushButton("Cut\u2011line")               # M136 tool
+        slb.setProperty("tb", True)
+        slb.setCheckable(True)
+        slb.setToolTip("Draw the cutting line ON a view: two clicks "
+                       "on the top, front or right view stand a "
+                       "section there — the lettered child view (A-A…) "
+                       "arrives hatched in the extra band; Shift at "
+                       "the closing click flips the kept half")
+        slb.toggled.connect(lambda on: self.drawing.set_section_mode(on))
+        bl.addWidget(slb)
+        self._sec_btn = slb
         tbb = QPushButton("Title\u2026")                 # M108 title block
         tbb.setProperty("tb", True)
         tbb.setToolTip("Fill the drawing title block — number, title, "
@@ -1297,6 +1308,11 @@ class MainWindow(QMainWindow):
             lambda on: on and balb.setChecked(False))
         dimb.toggled.connect(lambda on: on and fitb.setChecked(False))
         balb.toggled.connect(lambda on: on and fitb.setChecked(False))
+        for other in (dimb, balb, fitb):               # M136: four-way
+            slb.toggled.connect(                       # exclusion — the
+                lambda on, o=other: on and o.setChecked(False))
+            other.toggled.connect(
+                lambda on: on and slb.setChecked(False))
         bl.addStretch(1)
         lay.addWidget(bar)
         from .drawingview import DrawingCanvas
@@ -1310,20 +1326,31 @@ class MainWindow(QMainWindow):
             self._capture)
         self.drawing.view_scale_requested.connect(       # M100 scales
             self._on_view_scale)
+        self.drawing.section_added.connect(              # M136 cut line
+            self._on_section_line)
+        self.drawing.tool_note.connect(                  # M136 guidance
+            lambda t: self.status.showMessage(t, 6000))
         lay.addWidget(self.drawing, 1)
         # M113 queue-closer: the sheet's own voices — D dimension, B
         # balloon, F fit callout, Esc stands every tool down (Fusion
         # drawing keys; page-scoped so they sleep outside the sheet)
         for seq, fn in (("D", dimb.click), ("B", balb.click),
-                        ("F", fitb.click)):
+                        ("F", fitb.click), ("S", slb.click)):
             QShortcut(QKeySequence(seq), page, activated=fn)
         QShortcut(QKeySequence(Qt.Key_Escape), page,
                   activated=self._stand_down_drawing)
         return page
 
     def _stand_down_drawing(self):
-        """Esc on the sheet: every armed tool back in its rack."""
-        for b in (self._dim_btn, self._balloon_btn, self._fit_btn):
+        """Esc on the sheet: every armed tool back in its rack. M136:
+        a half-drawn cutting line is its own rung — the first Esc
+        erases the started line and the tool keeps its seat; the next
+        stands the tools down. (The page's Esc is a QShortcut, so the
+        ladder lives HERE, where the key actually lands.)"""
+        if self.drawing.restart_section_line():
+            return
+        for b in (self._dim_btn, self._balloon_btn, self._fit_btn,
+                  self._sec_btn):                      # M136 joins
             if b.isChecked():
                 b.setChecked(False)
 
@@ -1436,8 +1463,9 @@ class MainWindow(QMainWindow):
         axis = str(v["axis"]).strip()[0].upper()
         if axis not in ("X", "Y", "Z"):
             axis = "Y"
-        letter = chr(ord("A") + len(secs))
-        name = f"{letter}-{letter}"
+        from ..core import drawing as _d
+        letter = _d.section_letter(len(secs))          # M136: one
+        name = f"{letter}-{letter}"                    # alphabet now
         self._capture()
         secs.append({"name": name, "axis": axis, "at": float(v["at"])})
         g["sections"] = secs
@@ -1460,6 +1488,47 @@ class MainWindow(QMainWindow):
             if sp["holes"]:
                 msg += f", {sp['holes']} hole"
         self.status.showMessage(msg, 6000)
+
+    def _on_section_line(self, entry):
+        """M136: the two-click cutting line becomes a lettered section
+        entry — same registry and alphabet as the dialog cuts, same
+        undo, and the child view lands with the sheet's live views:
+        chains, hatch, hidden ink, bubbles and moves all re-derive on
+        every repaint because a section is a PROJECTION, never a
+        picture. The status tells the cut's numbers (M117's readout,
+        the line form earns it too)."""
+        if self.doc is None or self.doc.result is None:
+            return
+        g = self.drawing.sheet()
+        if not g:
+            return
+        secs = list(g.get("sections") or [])
+        from ..core import drawing as _dr
+        letter = _dr.section_letter(len(secs))
+        name = f"{letter}-{letter}"
+        entry = dict(entry, name=name)
+        self._capture()
+        secs.append(entry)
+        g["sections"] = secs
+        self.doc.dirty = True
+        self.drawing.update()
+        msg = (f"Section {name} on {entry['parent']}"
+               + (" (flipped)" if entry.get("flip") else "")
+               + " — drag it like any view")
+        try:
+            o, a, dl = _dr.plane_from_line(
+                entry["parent"], entry["p0"], entry["p1"],
+                bool(entry.get("flip")))
+            sp = section_properties(
+                _dr.section_on(self.doc.result, o, a, right=dl)["cut"])
+        except Exception:
+            sp = None
+        if sp:
+            msg += (f" \u00b7 {sp['area_mm2']:.2f} mm\u00b2, perimeter "
+                    f"{sp['perimeter_mm']:.2f} mm")
+            if sp["holes"]:
+                msg += f", {sp['holes']} hole"
+        self.status.showMessage(msg, 7000)
 
     def action_title_block(self):
         """M108: fill the sheet's ISO title block.  Only the human fields
