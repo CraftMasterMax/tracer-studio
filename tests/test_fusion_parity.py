@@ -317,5 +317,10 @@ def test_viewcube_projects_and_hits():
     region = face_px[:, 700:760]                     # cube corner area
     assert (region[:, :, 3] > 0).sum() > 200, "ViewCube not drawn"
     kind = cube.hit(QPointF(755, 40))                # dead center of cube
-    assert kind is None or kind in ("front", "back", "right", "left",
-                                    "top", "bottom")
+    # M154 RETARGET (cited): the OLD law ("None or a face") was the
+    # painter-order guess, and it LIED at the exact iso center — the
+    # three visible faces meet there and their shared EDGE projects
+    # through the middle, which the pick buffer now reports honestly.
+    # The surviving law: the cube answers with a ZONE NAME.
+    from tracer.ui.viewcube import ZONES
+    assert kind is None or kind in ZONES

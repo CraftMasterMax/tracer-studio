@@ -12,16 +12,16 @@ import math
 import numpy as np
 import trimesh
 from PySide6.QtCore import (Qt, QPoint, QPointF, QRect, QRectF, QSize,
-                            QTimer, Signal)
+                            QTimer, Signal, QDateTime, QEasingCurve)
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QCursor
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QWidget, QApplication
 
 from ..core.document import Document
 from ..core.geometry import Solid
-from .camera import Camera, perspective
+from .camera import Camera, perspective, view_orient
 from .renderer import SceneRenderer
 from . import theme
-from .viewcube import NavWidget, ViewCube
+from .viewcube import NavWidget, ViewCube, zone_look
 from .wheel import HOLD_MS, MarkingWheel
 
 
@@ -135,6 +135,17 @@ class Viewport(QWidget):
         self._rot = None                   # Rotate gesture state (M55)
         self._zoom_win = None              # Zoom-window arming (M62)
         self._cube_hover = None            # ViewCube face under cursor (M63)
+        # M154: one transition law for the viewport — cube clicks AND
+        # the orientation keys glide (L7: animated default, InOutCubic,
+        # 0.3 s inside the documented 0..3 s envelope; 0 = instant).
+        self.view_anim_s = 0.3
+        self._anim = None                  # (y0,p0,y1,p1,t0) mid-flight
+        self._anim_timer = QTimer(self)
+        self._anim_timer.setInterval(16)   # ~60 fps; the cube
+        #   counter-rotates DURING its own animation (L7.7 — it
+        #   projects the live camera every frame, free by architecture)
+        self._anim_timer.timeout.connect(self._anim_step)
+        self._cube_last = None             # (zone, ms): double-click law
         self.setMinimumSize(QSize(320, 240))
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -274,7 +285,8 @@ class Viewport(QWidget):
                                self.width(), self.height())
         self._cube.place(self.width(), self.height())
         if self.show_cube:
-            self._cube.draw(p, self._cam, self._cube_hover)
+            self._cube.draw(p, self._cam, self._cube_hover,
+                            self.devicePixelRatioF())
         self._nav.place(self.width(), self._cube.rect.bottom() + 8)
         if self.show_nav:
             self._nav.draw(p)
@@ -476,10 +488,11 @@ class Viewport(QWidget):
             # orbit, box, or gesture underneath it.
             ev.accept()
             return
-        hit = self._cube.hit(ev.position()) if self.show_cube else None
+        hit = (self._cube.hit(ev.position(), self.devicePixelRatioF())
+               if self.show_cube else None)
         if hit:
-            self._cam.set_view(hit)
-            self.update()
+            self._cube_click(hit)          # M154: 26 zones, gliding,
+            self.update()                  #   same-zone double FITS
             ev.accept()
             return
         nav = self._nav.hit(ev.position()) if self.show_nav else None
@@ -594,7 +607,8 @@ class Viewport(QWidget):
             return
         if not self._buttons:
             self._hover_update(ev.position())
-            hk = self._cube.hit(ev.position()) if self.show_cube else None
+            hk = (self._cube.hit(ev.position(), self.devicePixelRatioF())
+                  if self.show_cube else None)
             nav_changed = (self._nav.set_hover(ev.position())
                            if self.show_nav else False)
             if hk != self._cube_hover:
@@ -1150,6 +1164,63 @@ class Viewport(QWidget):
             self._cam.fit(self._bbox)
         self.update()
 
+    # ---- M154: the one transition law (cube clicks AND keys glide) ------
+    def _orbit_to(self, yaw: float, pitch: float):
+        """Glide the camera to an ABSOLUTE orientation. Re-targeting
+        mid-flight restarts from the LIVE camera (L7.6/AT-07: never a
+        snap-back; targets are absolute, so the vendor's
+        composition-accumulation bug is structurally impossible —
+        pinned anyway by the movement-forward gate)."""
+        dur = max(0.0, float(self.view_anim_s))
+        if dur == 0.0 or (yaw == self._cam.yaw and
+                          pitch == self._cam.pitch):
+            self._anim = None
+            self._anim_timer.stop()
+            self._cam.yaw, self._cam.pitch = yaw, pitch
+            self.update()
+            return
+        self._anim = (self._cam.yaw, self._cam.pitch, yaw, pitch,
+                      QDateTime.currentMSecsSinceEpoch() / 1000.0, dur)
+        if not self._anim_timer.isActive():
+            self._anim_timer.start()
+        self.update()
+
+    def _anim_step(self):
+        if self._anim is None:
+            self._anim_timer.stop()
+            return
+        y0, p0, y1, p1, t0, dur = self._anim
+        t = (QDateTime.currentMSecsSinceEpoch() / 1000.0 - t0) / dur
+        if t >= 1.0:
+            self._anim = None
+            self._anim_timer.stop()
+            self._cam.yaw, self._cam.pitch = y1, p1   # land ON the law
+            self.update()
+            return
+        e = QEasingCurve(QEasingCurve.Type.InOutCubic).valueForProgress(
+            max(0.0, t))
+        # yaw on the WRAPPED arc (receipt V3: naive lerp takes the
+        # scenic 340-deg route); pitch needs none (domain +/-89).
+        dyaw = (y1 - y0 + math.pi) % (2 * math.pi) - math.pi
+        self._cam.yaw = y0 + dyaw * e
+        self._cam.pitch = p0 + (p1 - p0) * e
+        self.update()
+
+    def _cube_click(self, zone: str):
+        """Click law (contract §3/§5): face/edge/corner -> the table's
+        own orientation, gliding; the SAME zone twice inside the
+        double-click interval ALSO fits (never a different zone)."""
+        yaw, pitch = zone_look(zone)
+        self._orbit_to(yaw, pitch)
+        now = QDateTime.currentMSecsSinceEpoch()
+        last = self._cube_last
+        if (last is not None and last[0] == zone and
+                now - last[1] < QApplication.doubleClickInterval() and
+                self._bbox is not None):
+            self._cam.fit(self._bbox)      # distance only — the
+            #   orientation stays the zone's own (AT-09: fit rides)
+        self._cube_last = (zone, now)
+
     # ---- keys (F fit, G grid, 0/1/2/3 views, Esc deselect) ------------------
     def selection_bbox(self):
         """bbox of the currently picked faces, or None (M56 zoom-to).
@@ -1204,9 +1275,10 @@ class Viewport(QWidget):
         _VIEWS = {Qt.Key_0: "iso", Qt.Key_1: "front",
                   Qt.Key_2: "top", Qt.Key_3: "right"}
         if k in _VIEWS:                 # our documented BEAT: Fusion
-            self._cam.set_view(_VIEWS[k])   # ships no orientation keys
-            self.update()
-            return
+            self._orbit_to(*view_orient(_VIEWS[k]))   # ships no
+            return                        # orientation keys — and M154
+            #   makes them ride the SAME transition law as the cube
+            #   (one viewport, one glide; iso keeps its 28-deg home art)
         # M113: everything else answers from the one model table
         # (MainWindow's commands.MODEL_KEYS) — F fillets, E extrudes,
         # Z zooms to the pick, Ctrl+Alt toggles panels. Nothing here.

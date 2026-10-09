@@ -1984,6 +1984,39 @@ M125; items 1-11 below are history.*
   per-entity identity), AA.. overflow (frozen grammar), datum-host
   follow (M125 law, kernel physics), best-match scoring (no law to
   score by). (1698.)
+- **THE CUBE LEARNED ITS CORNERS SHIPPED (M154)** — the ViewCube's
+  26-zone truth (checklist 7d2edfae §4/§6/§7, receipts
+  research/m154_spike1.md): 6 faces + 12 edges + 8 corners as DATA;
+  face rows BYTE-AGREE with set_view, corner rows land on the MEASURED
+  true isometric pitch asin(1/sqrt3) = 35.264390 deg while the
+  hand-set 28-deg "iso" stays home art, untouched (a new surface, not
+  a retarget). Picking is a real BUFFER, not rectangle maths:
+  Format_RGB32, AA OFF (AA would blend two ids into a phantom third),
+  24-bit ids (V4 caught pixel() reading BIG-endian — ids ride 24 bits,
+  never one byte), rebuilt per paint at PHYSICAL size (logical x DPR),
+  seam pixels repaired from the 4-neighbourhood. Free space answers
+  None; a "backside" flip is REFUSED — a 2-D buffer cannot honestly
+  see the far side of a convex cube and we will not fake an id.
+  Hover IS the pick id (glow rides the clicked polygon itself — face
+  core, edge band, corner wedge; never a whole-cube wash). TWO cited
+  retargets, both because the buffer's truth is stricter than the
+  painter-order guess it replaces: the parity centre pixel is the
+  projected top-right EDGE (assertion widened to zone names), and the
+  M44b label map carried the WRONG normals — "F"/front rode (0,0,-1),
+  so at the shipped front view the centre LETTER lied (measured: "D"
+  sat there); the pairing now matches Camera.set_view's own geometry.
+  One transition law for the viewport: cube clicks AND 0/1/2/3 keys
+  glide, InOutCubic 0.3 s (0 = instant; yaw interpolates WRAPPED or
+  170->-170 takes the scenic 340-deg route — receipt V3), re-target
+  mid-flight restarts from the LIVE camera (never a snap-back;
+  absolute targets make the vendor's accumulation bug structurally
+  impossible — pinned anyway), and the cube counter-rotates during
+  its own animation free by architecture. Same zone twice inside
+  doubleClickInterval ALSO fits (distance only — the fit steers
+  nothing); a fast DIFFERENT zone never fits. Deferred BY NAME:
+  inactive-opacity state machine, hysteresis, compass + roll arrows,
+  cube context menu, drag-to-orbit, 132-px sizing setting, backside.
+  (1713.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

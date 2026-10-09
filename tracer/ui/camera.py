@@ -137,19 +137,28 @@ class Camera:
         self.distance = radius / math.sin(math.radians(self.fov) / 2.0) * margin
 
     def set_view(self, kind: str):
-        """Axis views: front (-Y), back (+Y), right (+X), left (-X), top, bottom, iso."""
-        deg = math.radians
-        if kind == "top":
-            self.yaw, self.pitch = 0.0, deg(89.0)
-        elif kind == "bottom":
-            self.yaw, self.pitch = 0.0, deg(-89.0)
-        elif kind == "front":
-            self.yaw, self.pitch = deg(-90.0), 0.0
-        elif kind == "back":
-            self.yaw, self.pitch = deg(90.0), 0.0
-        elif kind == "right":
-            self.yaw, self.pitch = 0.0, 0.0
-        elif kind == "left":
-            self.yaw, self.pitch = deg(180.0), 0.0
-        else:
-            self.yaw, self.pitch = deg(45.0), deg(28.0)
+        self.yaw, self.pitch = view_orient(kind)
+
+
+# the axis views as DATA (M154: the animation law needs the same
+# orientations the instant law always shipped — one table, two doors).
+# top/bottom carry the shipped +/-89 pole clamp (look_at degeneracy).
+def view_orient(kind: str) -> tuple:
+    """(yaw, pitch) for front (-Y), back (+Y), right (+X), left (-X),
+    top, bottom, iso — byte-identical to the values set_view shipped
+    since M20; iso stays the hand-picked 28-deg HOME art (the true
+    isometric 35.264390 belongs to cube-corner clicks, receipt V2)."""
+    deg = math.radians
+    if kind == "top":
+        return 0.0, deg(89.0)
+    if kind == "bottom":
+        return 0.0, deg(-89.0)
+    if kind == "front":
+        return deg(-90.0), 0.0
+    if kind == "back":
+        return deg(90.0), 0.0
+    if kind == "right":
+        return 0.0, 0.0
+    if kind == "left":
+        return deg(180.0), 0.0
+    return deg(45.0), deg(28.0)
