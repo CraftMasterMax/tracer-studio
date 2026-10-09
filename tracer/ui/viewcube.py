@@ -112,6 +112,23 @@ HIT_CHAMFER = 0.22       # [ours] generous hit band: L4.2's arithmetic
 #   proves vendor-thin 0.1 bands are un-hittable without a pick buffer;
 #   WITH one we still choose a pointer-friendly ring, said out loud.
 
+DRAG_TH = 3.0            # M156 L8.2: logical px, Euclidean. Receipt
+#   V1: Qt's own startDragDistance measured 8 HERE — Qt's default is
+#   NOT the law; the cube's door pins its own constant.
+
+_DIR_TABLE = np.array([ZONES[z] for z in ZONE_IDS], float)
+
+
+def nearest_zone(camera) -> str:
+    """L8.4's snap door (receipt V3): argmax dot over the 26 zone
+    directions — total, self-maximal, ties by TABLE ORDER (first
+    wins, deterministic). The camera stands along
+    d = (cp*cy, cp*sy, sp), the inverse of zone_look's own law."""
+    cp, sp = math.cos(camera.pitch), math.sin(camera.pitch)
+    d = np.array([cp * math.cos(camera.yaw), cp * math.sin(camera.yaw),
+                  sp])
+    return ZONE_IDS[int(np.argmax(_DIR_TABLE @ d))]
+
 
 def _qcol(i: int) -> QColor:
     """pick id -> colour (V4: Format_RGB32 pixels read BIG-endian

@@ -2056,6 +2056,38 @@ M125; items 1-11 below are history.*
   spliced mid-__init__ silently ADOPTED the rest of __init__'s body
   — only a "FeatureTree already deleted" corpse witnessed it.
   (1727.)
+- **THE CUBE IS DRAGGABLE SHIPPED (M156)** — checklist §8, receipts
+  before every line (spike_m156/live_m156.py all green at 9e41e2e;
+  contract m156_cube_drag.md). THE PRESS ARMS, THE RELEASE DECIDES
+  (L8.3): a left-press on a zone highlights NOW (M155's bypass law
+  unchanged) and nothing else; the click law MOVED from press to
+  release — a CITED retarget (the moment moves, the M154 table never
+  moved; a past-threshold release must be able to refuse the click,
+  and a press that already fired cannot). Threshold 3.0 LOGICAL px
+  Euclidean (L8.2; receipt V1: Qt's own startDragDistance measured 8
+  HERE and is NOT the law; the general M56 path keeps its manhattan>2
+  for its own doors — each door pins its own constant); once past,
+  wasDragging is STICKY until release (a drag that wanders back
+  cannot un-drag or double-fit — V4). Drag orbits through the SAME
+  engine as MMB: Camera.orbit (upright lock STRUCTURAL for yaw/pitch
+  — L8.5 gated with a 2000-frame pole storm, never assumed; L8.6
+  suspension free: one press, one camera owner). Past-threshold
+  release NEVER clicks (no glide, no fit); with cube_snap ON (menu
+  toggle "Snap to Closest View", default ON [our call], QSettings)
+  it GLIDES to the nearest of the 26 (L8.4) — argmax dot over the
+  zone table, TABLE-ORDER ties, receipt V3: total, self-maximal,
+  deterministic; the glide rides M154's transition law (retarget from
+  the live camera for free). Snap OFF leaves the view free, said.
+  WIDGET-FRAME MOVE DRAG (L8.1's second mode) DECLINED WITH REASON:
+  the corner picker (M155) already answers where the cube lives; a
+  free-floating widget fights the corner law, the nav-stack follow
+  and the triad's rank — the queue's lawful decline, out loud. The
+  M155 exact-menu gate was cited-retargeted to six items (five old
+  keep byte order; ban-list stands); the M155 shot's menu assert was
+  made forward-compatible (head+tail+ban) so a banked receipt keeps
+  running against newer heads. Product bug the first run caught:
+  cube press/release early-returned without maintaining the _buttons
+  ledger — bookkeeping restored in both doors. (1734.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

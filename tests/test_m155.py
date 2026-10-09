@@ -155,8 +155,12 @@ def test_cube_menu_item_set_is_exact(vp, qapp, monkeypatch):
 
     monkeypatch.setattr(vp, "_show_menu", fake_show)
     vp._cube_menu(QPoint(0, 0))
+    # M156 RETARGET (cited): the menu grew "Snap to Closest View"
+    # (L8.4's documented option, a toggle — NOT a view list). The
+    # five old items keep byte order; the ban-list stands.
     assert seen["texts"] == ["Home", "Set Current View as Home",
                              "Parallel", "Perspective",
+                             "Snap to Closest View",
                              "ViewCube Settings..."], seen["texts"]
     for banned in ("Front", "Top", "Right", "Standard"):
         assert banned not in seen["texts"]      # measured correction

@@ -25,7 +25,8 @@ from ..core.geometry import Solid
 from .camera import Camera, perspective, view_orient
 from .renderer import SceneRenderer
 from . import theme
-from .viewcube import NavWidget, ViewCube, auto_size, zone_look
+from .viewcube import (DRAG_TH, NavWidget, ViewCube, auto_size,
+                       nearest_zone, zone_look)
 from .wheel import HOLD_MS, MarkingWheel
 
 
@@ -173,6 +174,13 @@ class Viewport(QWidget):
         self._fade_timer.setInterval(16)
         self._fade_timer.timeout.connect(self._fade_step)
         self._hyst_cand, self._hyst_run = None, 0   # L5.5 (N=3, OURS)
+        # M156 §8: the press ARMS, the release DECIDES (L8.3). The
+        # click law MOVED from press to release — cited retarget: the
+        # moment moves, the law stands (a past-threshold release must
+        # be able to refuse it).
+        self._cube_drag = None             # {p0,last,zone,drag}
+        self.cube_snap = str(QSettings().value(
+            "viewcube/snap_to_closest", "true")).lower() != "false"
         self.setMinimumSize(QSize(320, 240))
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -534,8 +542,13 @@ class Viewport(QWidget):
             self._cube_hover = hit       # L5.6: press highlights NOW —
             self._hyst_cand = None       #   hysteresis is BYPASSED on
             self._hyst_run = 0           #   press, never on a gesture
-            self._cube_click(hit)        # M154: 26 zones, gliding,
-            self.update()                #   same-zone double FITS
+            self._cube_drag = {"p0": QPointF(ev.position()),
+                               "last": QPointF(ev.position()),
+                               "zone": hit, "drag": False}
+            self._buttons |= ev.button()   # the release cleanup reads
+            #   the same ledger every gesture path keeps
+            # M156: the press ARMS; the release DECIDES (L8.3).
+            self.update()
             ev.accept()
             return
         if hit and ev.button() == Qt.MouseButton.RightButton:
@@ -655,6 +668,24 @@ class Viewport(QWidget):
                 self.update()
             ev.accept()
             return
+        if self._cube_drag is not None and Qt.LeftButton in self._buttons:
+            pos = ev.position()
+            cd = self._cube_drag
+            if not cd["drag"] and math.hypot(pos.x() - cd["p0"].x(),
+                                             pos.y() - cd["p0"].y()) \
+                    > DRAG_TH:
+                cd["drag"] = True        # STICKY until release (V4)
+            if cd["drag"]:
+                self._cam.orbit(float(pos.x() - cd["last"].x()),
+                                float(pos.y() - cd["last"].y()),
+                                self.height())   # the SAME engine the
+                #   MMB orbit rides — L8.5's upright lock comes free,
+                #   and L8.6's suspension is structural: one press,
+                #   one owner of the camera
+                cd["last"] = QPointF(pos)
+                self.update()
+            ev.accept()
+            return
         if not self._buttons:
             self._hover_update(ev.position())
             raw = (self._cube.hit(ev.position(), self.devicePixelRatioF())
@@ -749,6 +780,25 @@ class Viewport(QWidget):
             self._cube_hover = None      # L5.6: release CLEARS the
             self.update()                #   pressed highlight (the
                                          #   next move re-enters freely)
+        if (self._cube_drag is not None
+                and ev.button() == Qt.MouseButton.LeftButton):
+            cd = self._cube_drag
+            self._cube_drag = None
+            if cd["drag"]:
+                # L8.3: a drag NEVER fires the click law (no glide-
+                # to-zone, no double-fit); L8.4: it may still GLIDE
+                # to the nearest of the 26 (M154's transition law
+                # rides — retarget from the live camera for free).
+                if self.cube_snap:
+                    self._orbit_to(*zone_look(nearest_zone(self._cam)))
+            else:
+                self._cube_click(cd["zone"])   # M154's law verbatim,
+                #   now answered at release (cited retarget: the
+                #   moment moved, the table never moved)
+            self._buttons &= ~Qt.MouseButton.LeftButton
+            self.update()
+            ev.accept()
+            return
         if self._wheel is not None:
             # The ring owns the release the instant it is up: land on a
             # wedge and it runs, land on hub/void and it just dismisses.
@@ -1381,8 +1431,16 @@ class Viewport(QWidget):
         per.setCheckable(True)
         per.setChecked(not self._cam.parallel)
         m.addSeparator()
+        snap = m.addAction("Snap to Closest View", self._toggle_snap)
+        snap.setCheckable(True)
+        snap.setChecked(self.cube_snap)
         m.addAction("ViewCube Settings...", self._cube_settings)
         self._show_menu(m, at)
+
+    def _toggle_snap(self):
+        self.cube_snap = not self.cube_snap     # L8.4's documented
+        QSettings().setValue("viewcube/snap_to_closest",     # option
+                             "true" if self.cube_snap else "false")
 
     def _show_menu(self, menu, at):
         """The pop seam (tests drive the item set here; Shiboken's
