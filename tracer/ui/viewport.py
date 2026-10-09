@@ -51,6 +51,36 @@ def draw_triad(p: QPainter, cam, w: float, h: float, palette: dict):
                           16, 16), Qt.AlignCenter, lab)
 
 
+def draw_datum_letters(p: QPainter, cam, doc, palette: dict,
+                       w_px: float, h_px: float):
+    """M153: registered datum LETTERS in the 3-D view — paint-only
+    furniture on the triad's rank (unpickable in v1, said out loud).
+    Bracketed like the tree's [A] (letters are paint, never ink).
+    A MUTED letter is SKIPPED SILENTLY: datum_frame raises its named
+    voice for scripts (receipt L5), the amber badge is already that
+    letter's voice, and the 3-D view neither echoes nor crashes."""
+    if doc is None or not getattr(doc, "datums", None):
+        return
+    from ..core import params
+    fnt = p.font()
+    fnt.setPointSize(9)
+    fnt.setBold(True)
+    p.setFont(fnt)
+    p.setPen(QPen(QColor(palette["fg"])))        # theme fg is hex (the
+    #   palette is mixed-type: axis_* are 0..1 floats, fg is "#rrggbb")
+    for dt in doc.datums:
+        try:
+            fr = doc.datum_frame(dt["letter"])
+        except params.ParamError:
+            continue                        # mute: the badge speaks
+        xy = cam.project(fr[0], w_px, h_px)
+        if xy is None:
+            continue                        # behind: hide honestly
+        p.drawText(QRectF(xy[0] + 6.0, xy[1] - 20.0, 48.0, 18.0),
+                   Qt.AlignLeft | Qt.AlignVCenter,
+                   f"[{dt['letter']}]")
+
+
 class Viewport(QWidget):
     face_picked = Signal(object, object, object,
                          object)  # point, normal, body, tri (M141)
@@ -95,6 +125,8 @@ class Viewport(QWidget):
         self._pivot = None                 # pivot dot, alive with a gesture
         self._pp = None                    # press-pull drag state
         self.show_cube = True              # Ctrl+Alt+V (M113 layout layer)
+        self.show_datums = True            # Ctrl+Alt+D (M153): letters
+        #   that whisper on paper must not be mute in 3-D — default ON
         self.show_nav = True               # Ctrl+Alt+N
         self._pp_drag = False
         self._box: list | None = None      # rubber-band select [p0, p1]
@@ -237,6 +269,9 @@ class Viewport(QWidget):
             p.setBrush(br_c)
             p.drawRect(QRect(self._box[0], self._box[1]).normalized())
         draw_triad(p, self._cam, self.width(), self.height(), self._r.palette)
+        if self.show_datums:
+            draw_datum_letters(p, self._cam, self._doc, self._r.palette,
+                               self.width(), self.height())
         self._cube.place(self.width(), self.height())
         if self.show_cube:
             self._cube.draw(p, self._cam, self._cube_hover)

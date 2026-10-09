@@ -81,6 +81,8 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("Ctrl + Alt + V", "Show / hide the ViewCube", True),
         ("Ctrl + Alt + B", "Show / hide the browser", True),
         ("Ctrl + Alt + N", "Show / hide the navigation stack", True),
+        ("Ctrl + Alt + D", "Show / hide datum letters in the viewport",
+         True),
         ("Ctrl + Alt + R", "Reset panel layout", True),
     ]),
     ("Sketching", [

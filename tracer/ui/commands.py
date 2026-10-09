@@ -51,6 +51,7 @@ MODEL_KEYS: dict[str, tuple[str, str]] = {
     "Ctrl+Alt+V": ("Show/hide ViewCube", "layout:cube"),
     "Ctrl+Alt+B": ("Show/hide Browser", "layout:browser"),
     "Ctrl+Alt+N": ("Show/hide Navigation bar", "layout:nav"),
+    "Ctrl+Alt+D": ("Show/hide Datum letters", "layout:datums"),
     "Ctrl+Alt+R": ("Reset panel layout", "layout:reset"),
 }
 

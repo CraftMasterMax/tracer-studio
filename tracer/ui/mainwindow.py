@@ -13,7 +13,8 @@ from PySide6.QtGui import (QAction, QActionGroup, QKeySequence, QShortcut)
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, 
                                QLabel, QMainWindow, QMenu, QMessageBox,
                                QPushButton, QSplitter, QStackedWidget,
-                               QToolBar, QToolButton, QVBoxLayout, QWidget)
+                               QToolBar, QToolButton, QVBoxLayout, QWidget,
+                               QDialog)
 
 from ..core import import2d
 from ..core import export2d
@@ -678,6 +679,7 @@ class MainWindow(QMainWindow):
                 ("Show/hide ViewCube", "Ctrl+Alt+V", "cube"),
                 ("Show/hide Browser", "Ctrl+Alt+B", "browser"),
                 ("Show/hide Navigation bar", "Ctrl+Alt+N", "nav"),
+                ("Show/hide Datum letters", "Ctrl+Alt+D", "datums"),
                 ("Reset panel layout", "Ctrl+Alt+R", "reset")):
             m_view.addAction(
                 QAction(label, self, shortcut=key,
@@ -691,6 +693,8 @@ class MainWindow(QMainWindow):
         m_view.addAction(ml)
 
         m_tools = self.menuBar().addMenu("&Tools")
+        m_tools.addAction("Manage Lost Attachments\u2026",
+                          lambda checked=False: self._manage_attachments())
         m_tools.addAction("Document Measures…",
                           lambda checked=False:
                           self.action_document_measures())
@@ -3270,8 +3274,30 @@ class MainWindow(QMainWindow):
         menu.addAction("Show All", self._show_all_bodies)
         if self.doc.isolation_active():
             menu.addAction("Unisolate All", self._unisolate_all)
+        if self.doc.attachment_issues:      # M153: the badge's door —
+            #   offered ONLY when issues exist (a door onto nothing is
+            #   noise); the dialog reads the structured twins (§1.2).
+            menu.addSeparator()
+            menu.addAction("Manage Lost Attachments\u2026",
+                           self._manage_attachments)
         self._root_menu_open = menu               # inspectable, like
         menu.popup(pos)                           # _mark_menu
+
+    def _manage_attachments(self):
+        """M153: rung D's dialog — the amber badge becomes a door. The
+        rows are STRUCTURED ISSUE RECORDS, never parsed prose (M152
+        pinned the sentences byte-exact; this is their twin); every
+        verb is a kernel state-layer method, and each act recomputes
+        through the normal bridge so badges, tree and status all get
+        the last word."""
+        d = self.doc
+        if d is None:
+            return
+        if not d.attachment_issues:
+            self.status.showMessage("No lost attachments to manage — "
+                                    "every host is home", 4000)
+            return
+        _AttachmentsDialog(self).exec()
 
     def action_activate_body(self, name):
         """M104: make `name` the body every new feature lands in."""
@@ -5920,7 +5946,7 @@ class MainWindow(QMainWindow):
         if what == "browser":
             self.rail.setVisible(not self.rail.isVisible())
             return True
-        if what in ("cube", "nav"):
+        if what in ("cube", "nav", "datums"):
             attr = "show_" + what
             setattr(self.viewport, attr, not getattr(self.viewport, attr))
             self.viewport.update()
@@ -6629,3 +6655,150 @@ class MainWindow(QMainWindow):
             self.status.showMessage(f"Exported {out}", 6000)
         except Exception as e:
             QMessageBox.critical(self, "STEP export failed", str(e))
+
+
+class _AttachmentsDialog(QDialog):
+    """M153: rung D's "Manage Lost Attachments". One row per lost
+    attachment; verbs per species (§3 of the M153 contract): Re-Link
+    is offered exactly the candidate sets the kernel can RESOLVE today
+    (dead names drop — same predicate the warning uses; follow drops
+    self and downstream, the L4c silent-death door), and the breaking
+    verb speaks Detach / Stop Following / Retire Letter per species —
+    datum has no break, a letter without a ref is the silence rung D
+    ended. Refusals are the kernel's own named sentences, never a
+    paraphrase. Every act recomputes through win.recompute() — the
+    bridge keeps the badge, tree and status as the last word."""
+
+    BREAK_LABELS = {"host": "Detach", "follow": "Stop Following",
+                    "datum": "Retire Letter"}
+
+    def __init__(self, win):
+        super().__init__(win)
+        from PySide6.QtWidgets import (QComboBox, QDialogButtonBox,
+                                       QFormLayout)
+        self._win = win
+        self.setWindowTitle("Manage Lost Attachments")
+        self._issue = QComboBox()
+        self._detail = QLabel()
+        self._detail.setWordWrap(True)
+        self._cands = QComboBox()
+        self._relink_btn = QPushButton("Re-Link")
+        self._break_btn = QPushButton("Detach")
+        form = QFormLayout(self)
+        form.addRow("Lost attachment:", self._issue)
+        form.addRow("", self._detail)
+        form.addRow("New host:", self._cands)
+        bb = QDialogButtonBox(Qt.Horizontal)
+        bb.addButton(self._relink_btn, QDialogButtonBox.ButtonRole.ActionRole)
+        bb.addButton(self._break_btn, QDialogButtonBox.ButtonRole.ActionRole)
+        bb.addButton(QDialogButtonBox.StandardButton.Close)
+        form.addRow(bb)
+        bb.rejected.connect(self.reject)
+        self._issue.currentIndexChanged.connect(self._on_issue)
+        self._relink_btn.clicked.connect(self._relink)
+        self._break_btn.clicked.connect(self._break)
+        self._reload()
+
+    # ---- model ----------------------------------------------------------
+    def _issues(self):
+        return self._win.doc.attachment_issues
+
+    def _current(self):
+        issues = self._issues()
+        idx = self._issue.currentIndex()
+        return issues[idx] if 0 <= idx < len(issues) else None
+
+    def _datum_kind(self, letter):
+        dt = next((x for x in self._win.doc.datums
+                   if x["letter"] == letter), None)
+        return dt["kind"] if dt else "plane"
+
+    def _candidates(self, i):
+        """(DISPLAY, BIND) pairs — names bind names, hole-axes display
+        names but bind uids (M146: ids are identity, names are paint)."""
+        d = self._win.doc
+        if i["species"] == "host":
+            return [(n, n) for n in d.plane_candidates()]
+        if i["species"] == "follow":
+            return [(n, n) for n in d.follow_candidates(i["owner"])]
+        kind = self._datum_kind(i["owner"])
+        if kind == "plane":
+            return [(n, n) for n in d.plane_candidates()]
+        if kind == "axis":
+            return [(n, n) for n in d.axis_candidates()]
+        return [(nm, uid) for nm, uid in d.hole_axis_candidates()]
+
+    # ---- view -----------------------------------------------------------
+    def _reload(self):
+        issues = self._issues()
+        self._issue.blockSignals(True)
+        self._issue.clear()
+        for i in issues:
+            self._issue.addItem(f"{i['species']}: {i['owner']} \u2014 "
+                                f"lost {i['dead']!r}")
+        self._issue.blockSignals(False)
+        empty = not issues
+        self._relink_btn.setEnabled(not empty)
+        self._break_btn.setEnabled(not empty)
+        self._cands.setEnabled(not empty)
+        if empty:
+            self._detail.setText("Nothing is lost any more — every "
+                                 "attachment is home.")
+            self._cands.clear()
+        else:
+            self._on_issue()
+
+    def _on_issue(self):
+        i = self._current()
+        if i is None:
+            return
+        if i["species"] == "datum":
+            self._detail.setText(
+                f"Datum {i['owner']} (kind {self._datum_kind(i['owner'])})"
+                f" lost {i['dead']!r}. Re-link re-binds it atomically; "
+                "retiring takes the letter out of service.")
+        else:
+            self._detail.setText(
+                f"{i['owner']} lost {i['dead']!r}. Re-linking does not "
+                "move geometry — the frame stays frozen until an edit "
+                "rides the new host.")
+        self._cands.clear()
+        for label, val in self._candidates(i):
+            self._cands.addItem(label, val)
+        self._break_btn.setText(self.BREAK_LABELS[i["species"]])
+
+    # ---- verbs (kernel state layer; the bridge owns the recompute) ------
+    def _act(self, fn, *a):
+        try:
+            fn(*a)
+        except params.ParamError as e:
+            QMessageBox.warning(self, "Tracer", str(e))   # the kernel's
+            return                                         # own sentence
+        self._win.recompute()
+        self._reload()
+
+    def _relink(self):
+        i = self._current()
+        ref = self._cands.currentData()
+        if i is None or ref is None:
+            return
+        d = self._win.doc
+        if i["species"] == "host":
+            self._act(d.relink_sketch, i["owner"], ref)
+        elif i["species"] == "follow":
+            self._act(d.relink_follow, i["owner"], ref)
+        else:
+            self._act(d.relink_datum, i["owner"],
+                      self._datum_kind(i["owner"]), ref)
+
+    def _break(self):
+        i = self._current()
+        if i is None:
+            return
+        d = self._win.doc
+        if i["species"] == "host":
+            self._act(d.break_sketch, i["owner"])
+        elif i["species"] == "follow":
+            self._act(d.break_follow, i["owner"])
+        else:
+            self._act(d.datum_remove, i["owner"])

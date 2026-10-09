@@ -953,6 +953,12 @@ class Document:
         #   datum letter, a sketch host that is gone. Filled EVERY
         #   clean recompute (never serialized, never fatal): freeze,
         #   never blank — but never silent either.
+        self.attachment_issues: list[dict] = []  # M153: the SAME three
+        #   states as STRUCTURED records — dict(species, owner, dead) —
+        #   filled beside each warning line (one predicate, two voices:
+        #   the prose is pinned byte-exact by M152's gates, the dialog
+        #   reads THIS list and never parses sentences). Same session
+        #   law: cleared every clean pass, never saved.
                                               # cycles, never saved
         self._sheet_states: dict | None = None   # SM3: set by recompute
         self.sheet_warnings: list[str] = []   # session: K defaults
@@ -1934,6 +1940,9 @@ class Document:
                 self.face_frame(h)
             except params.ParamError as e:
                 self.attachment_warnings.append(f"{f.name} — {e}")
+                self.attachment_issues.append(
+                    dict(species="follow", owner=f.name,
+                         dead=str(h.get("feature", ""))))
             return f
         try:
             pt, n = self.face_frame(h)
@@ -1942,6 +1951,9 @@ class Document:
             # the sentence face_frame already spoke to scripts now
             # reaches the maker (badge + log), geometry unchanged
             self.attachment_warnings.append(f"{f.name} — {e}")
+            self.attachment_issues.append(
+                dict(species="follow", owner=f.name,
+                     dead=str(h.get("feature", ""))))
             return f
         u, v = plane_uv(f.plane, f.axes)
         nu, nv = face_axes(n)
@@ -2247,6 +2259,127 @@ class Document:
                 f"uid {d['ref']!r} to carry its axis")
         return [float(c) for c in f.center], [float(n) for n in
                                               f.normal]
+
+    # ---- rung D's dialog verbs (M153) -----------------------------------
+    def plane_candidates(self) -> list[str]:
+        """Every plane name the kernel can RESOLVE today (receipt L2):
+        live planes + the origin trio; dead ones fail the same
+        predicate the host warning uses, so they are simply absent."""
+        return sorted({p["name"] for p in self.planes} | {"XY", "XZ", "YZ"})
+
+    def axis_candidates(self) -> list[str]:
+        """axis_frame's own domain (receipt: built-ins resolve)."""
+        return sorted({"X", "Y", "Z"} | {a["name"] for a in self.axes})
+
+    def hole_axis_candidates(self) -> list[tuple[str, str]]:
+        """Live hole features: DISPLAYED by name, BOUND by uid — the
+        M146 relations law (names are display; ids are identity)."""
+        return sorted((f.name, f.uid) for f in self.features
+                      if isinstance(f, HoleFeature))
+
+    def follow_candidates(self, name: str) -> list[str]:
+        """STRICTLY-UPSTREAM feature names, minus self (receipt L4c:
+        a downstream host rebind is SILENTLY DEAD — the fold saw no
+        body to follow, the frozen boss stays buried forever)."""
+        names = [x.name for x in self.features]
+        if name not in names:
+            return []
+        return sorted(set(names[:names.index(name)]) - {name})
+
+    def _attach_feat(self, name: str):
+        f = next((x for x in self.features if x.name == name), None)
+        if f is None:
+            raise params.ParamError(
+                f"no feature named {name!r} to re-link — that row's "
+                "owner is already gone; re-open the list")
+        return f
+
+    def relink_sketch(self, name: str, new_host: str) -> None:
+        """Host species: the sketch dict re-homes onto a LIVE plane.
+        The frame stays the FROZEN copy — measured a byte-zero geometry
+        event (24000.0); the next EDIT rides the new host. The warning
+        clears on the next clean recompute (its predicate passes)."""
+        f = self._attach_feat(name)
+        sk = getattr(f, "sketch", None)
+        if not isinstance(sk, dict):
+            raise params.ParamError(
+                f"{name!r} carries no sketch host to re-link — this "
+                "verb belongs to plane-hosted sketches")
+        live = self.plane_candidates()
+        if new_host not in live:
+            raise params.ParamError(
+                f"re-link refused: plane {new_host!r} is not live — "
+                f"candidates: {', '.join(live)}")
+        sk["host"] = str(new_host)
+        self.dirty = True
+
+    def break_sketch(self, name: str) -> None:
+        """Host species BREAK: host "" is ALREADY lawful (receipt L3) —
+        silence, geometry intact; no new kernel state was invented."""
+        f = self._attach_feat(name)
+        sk = getattr(f, "sketch", None)
+        if not isinstance(sk, dict):
+            raise params.ParamError(
+                f"{name!r} carries no sketch host to break")
+        sk["host"] = ""
+        self.dirty = True
+
+    def relink_follow(self, name: str, new_host: str) -> None:
+        """Follow species: re-attach to an UPSTREAM live feature —
+        measured: silence, churn 25500.0, and the new host's FUTURE
+        edits FOLLOW live (49500.0). Downstream, self and dead hosts
+        refuse by name (the dialog must never sell the silent death
+        receipt L4c measured)."""
+        f = self._attach_feat(name)
+        if not getattr(f, "handle", None):
+            raise params.ParamError(
+                f"{name!r} follows no face — there is nothing to "
+                "re-link (this is an extrude, not a handled one)")
+        if new_host == name:
+            raise params.ParamError(
+                f"{name!r} cannot follow itself — pick an earlier "
+                "feature")
+        cands = self.follow_candidates(name)
+        if new_host not in cands:
+            raise params.ParamError(
+                f"re-link refused: {new_host!r} does not sit strictly "
+                f"before {name!r} in the stream — at fold time its "
+                "body would not exist yet (the link would silently "
+                f"freeze); candidates: {', '.join(cands) or '(none)'}")
+        f.handle["feature"] = str(new_host)
+        self.dirty = True
+
+    def break_follow(self, name: str) -> None:
+        """Follow species BREAK: the lawful stop is handle=None, NOT
+        "" — an empty feature name MANUFACTURES a fresh warning
+        ("no feature named '' to follow", measured), while None is
+        silent, PERMANENT (host recreation leaves the freeze buried,
+        72000.0) and round-trips as "handle": null."""
+        f = self._attach_feat(name)
+        if not getattr(f, "handle", None):
+            raise params.ParamError(
+                f"{name!r} follows nothing — there is no link to break")
+        f.handle = None
+        self.dirty = True
+
+    def relink_datum(self, letter: str, kind: str, ref: str) -> dict:
+        """Datum species: ATOMIC by guard-first law — the NEW ref is
+        resolved BEFORE the swap, so a bad pick raises and the letter
+        KEEPS its old (even mute) binding; half-broken is worse than
+        broken. There is no BREAK verb here: RETIRE is datum_remove —
+        a letter without a ref is exactly the silence rung D ended."""
+        d = next((x for x in self.datums
+                  if x["letter"] == str(letter).strip().upper()), None)
+        if d is None:
+            raise params.ParamError(
+                f"no datum letter {letter!r} to re-link — register it "
+                "fresh instead (one letter, one datum)")
+        trial = {"letter": d["letter"], "kind": str(kind), "ref": str(ref)}
+        self.datum_frame_of(trial)            # resolves or raises —
+        #   the OLD binding survives every refusal (atomicity gate G7)
+        d.update(trial)
+        self.dirty = True
+        return d
 
     # ---- editing -------------------------------------------------------
     def add(self, feature: Feature) -> Feature:
@@ -2638,6 +2771,8 @@ class Document:
         fnodes: dict[str, list] = {}          # SM4: stream-order nodes
         self.attachment_warnings = []         # rung D: filled fresh by
         #   EVERY clean pass — a session list like the K notes (M152)
+        self.attachment_issues = []           # M153: same pass, same
+        #   order — the dialog's structured twin (one predicate/site)
         for pos, f in enumerate(self.features):
             # M118: the log bridge's "who broke" — whichever feature the
             # loop was building when an exception escapes is the guilty
@@ -2911,6 +3046,9 @@ class Document:
             except params.ParamError as e:
                 self.attachment_warnings.append(
                     f"datum {dt['letter']} is mute \u2014 {e}")
+                self.attachment_issues.append(
+                    dict(species="datum", owner=dt["letter"],
+                         dead=str(dt["ref"])))
         plane_names = {p["name"] for p in self.planes} | {"XY", "XZ", "YZ"}
         for f in self.features:
             sk = getattr(f, "sketch", None)
@@ -2919,6 +3057,8 @@ class Document:
                 self.attachment_warnings.append(
                     f"{f.name}'s datum '{host}' is gone \u2014 its "
                     "frame is frozen where the plane left it")
+                self.attachment_issues.append(
+                    dict(species="host", owner=f.name, dead=str(host)))
         self.dirty = False
         return self._result
 

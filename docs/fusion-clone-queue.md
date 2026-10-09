@@ -1952,6 +1952,38 @@ M125; items 1-11 below are history.*
   names "(datum A)" BEFORE the click. One cited retarget: M130's
   duplicate-names gate reached its state through the raw write —
   the mechanism moved, the law stands. (1681.)
+- **THE BADGE BECOMES A DOOR SHIPPED (M153)** — rung D's named
+  deferrals, the UI half: the amber badge was M152's LAST WORD, but a
+  warning nobody can act on is a painting of an error. Now: the
+  browser root menu grows "Manage Lost Attachments…" ONLY when issues
+  exist (a door onto nothing is noise), and the viewport paints
+  registered datum letters "[A]" at the datum's own world frame
+  (Camera.project is the whole projection law; behind-camera returns
+  None, so letters hide honestly; paint-only on the triad's rank —
+  picking is said-deferred, Ctrl+Alt+D toggles). The dialog reads
+  STRUCTURED RECORDS — attachment_issues, the same three emit sites'
+  twin (species/owner/dead), because M152 pinned the warning SENTENCES
+  byte-exact and prose is not an API. Six kernel verbs, receipts
+  before every line (spike: research/m153_spike1.md): relink_sketch /
+  break_sketch (frozen frame survives both — 24000.0 byte-equal),
+  relink_follow / break_follow, relink_datum (ATOMIC — a bad new ref
+  raises and the letter keeps its old binding). The stream-order law
+  is the milestone's real fight: follow candidates are features
+  STRICTLY UPSTREAM, never self — receipt L4c measured what a
+  downstream relink really sells (silent freeze, buried 72000.0
+  forever, no warning), and an upstream relink's promise holds
+  (25500.0 → host edit → 49500.0 FOLLOWING). BREAK speaks per species
+  and the follow-break writes handle=None, never "" — the empty name
+  MANUFACTURES a fresh warning ("no feature named '' to follow");
+  None is silent, permanent (72000.0 on host edits) and round-trips.
+  Datum has no break: RETIRE is datum_remove, a letter without a ref
+  is exactly the silence rung D ended. Mute letters skip the overlay
+  SILENTLY — datum_frame raises for scripts, the badge is that
+  letter's voice, 3-D neither echoes nor crashes. Still deferred BY
+  MEASUREMENT: canvas projection highlight (model.project stores no
+  per-entity identity), AA.. overflow (frozen grammar), datum-host
+  follow (M125 law, kernel physics), best-match scoring (no law to
+  score by). (1698.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff
