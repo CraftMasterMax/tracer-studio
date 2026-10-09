@@ -146,11 +146,12 @@ def auto_size(viewport_w: int, viewport_h: int) -> int:
 class ViewCube:
     def __init__(self):
         self.rect = QRectF(0, 0, SIZE, SIZE)
+        self.gear = QRectF(1, 1, 14, 14)    # L12.5 door (place moves it)
         self.size_px = SIZE              # LOGICAL (L10.5; AUTO mode
         #   is the viewport's decision, this is the outcome)
         self.corner = "top-right"        # L10.1 corner picker
         self._screen: dict = {}     # label -> (path_pts_2d, view_kind)
-        self._zones: dict = {}      # zone name -> list of QPolygonF pts
+        self._zones: list = []        # EVERY (name, ring) painted last
         self._pick: QImage | None = None
         self._pick_dpr = 1.0
 
@@ -160,11 +161,29 @@ class ViewCube:
         x = m if self.corner.endswith("left") else widget_w - s - m
         y = m if self.corner.startswith("top") else widget_h - h - m
         self.rect = QRectF(x, y, s, h)
+        # M157 L12.5: the menu's drawn door sits OUTSIDE the cube's
+        #   box, in the widget margin beside its top-left (flipped to
+        #   the right at left corners) — MEASURED LAW, not taste: a
+        #   probe at a corner pose found the silhouette band running
+        #   THROUGH the box-corner pixel (the hexagon edge passes ~5
+        #   px inside the bbox corner and the vertex itself lands
+        #   outside the clipped buffer), so a door inside the box ate
+        #   REAL zone pixels in the commonest poses. Outside, the
+        #   door never competes: the buffer's entry gate (±8 px)
+        #   cannot even see it. [ours] the side rule; the vendor
+        #   hangs theirs on the compass, which §1.7 defers (L11.5).
+        self.gear = (QRectF(x - 16, y + 1, 14, 14)
+                     if self.corner.endswith("right")
+                     else QRectF(x + s + 2, y + 1, 14, 14))
     # ---- drawing -----------------------------------------------------------
     def project(self, camera: Camera):
         cam = Camera(fov=30.0)
         cam.distance = 2.6
         cam.yaw, cam.pitch, cam.target = camera.yaw, camera.pitch, np.zeros(3)
+        cam.roll = camera.roll         # M157 (contract §1.3): the
+        #   widget RIDES THE WRIST — the uniform-cube law extends to
+        #   the fourth dial; the buffer rebuilds per paint, so hit
+        #   follows automatically (gate G4 proves it as ink).
         view = cam.view_matrix()
         proj = perspective(30.0, 1.0, 0.1, 20.0)
         vp = proj @ view
@@ -199,7 +218,7 @@ class ViewCube:
         ndc, vis, eye = self._visible_faces(camera)
         pts = {i: self._to_px(ndc[i], self.rect) for i in range(8)}
         self._screen = {}
-        self._zones = {}
+        self._zones = []
         layers = []                                # paint order (both
         #   buffer and screen share it: face full -> edge -> corner ->
         #   core; ids agree by construction, hover IS the pick id)
@@ -225,6 +244,10 @@ class ViewCube:
                 layers.append((zname, [pts[v], core[(n - 1) % 4],
                                        core[(n + 1) % 4]]))
             layers.append((kind, core))
+        self._zones = list(layers)         # M157 honesty: EVERY ring
+        #   that drove the LAST paint, in paint order (M154 left the
+        #   dict orphaned-empty; same-named rings are legal, so this
+        #   is a list — a probe must read the geometry that painted)
         # the pick buffer: SAME geometry, flat ids, AA OFF, NoPen
         bw = max(1, int(round(self.rect.width() * dpr)))
         bh = max(1, int(round(self.rect.height() * dpr)))
@@ -277,6 +300,18 @@ class ViewCube:
             for zname, ring in layers:
                 if zname == hover:
                     p.drawPolygon(QPolygonF(ring))
+        # M157 L12.5: the DRAWN door — a small chevron (the menu
+        # opens below it). Vector lines, not a font glyph (the shots
+        # are deterministic law); opacity rides the painter's state
+        # exactly like the cube, so a whispering cube whispers its
+        # door too.
+        g = self.gear
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor(VIEWCUBE["nav_glyph"]), 1.6))
+        p.drawLine(QPointF(g.left() + 3, g.top() + 5),
+                   QPointF(g.center().x(), g.top() + 9))
+        p.drawLine(QPointF(g.center().x(), g.top() + 9),
+                   QPointF(g.right() - 3, g.top() + 5))
 
     # ---- hit test ------------------------------------------------------------
     def hit(self, pos: QPointF, dpr: float | None = None) -> str | None:
@@ -321,7 +356,11 @@ class NavWidget:
     SIZE = 24
     GAP = 4
 
-    KINDS = ("home", "in", "out")
+    KINDS = ("home", "in", "out", "roll-left", "roll-right")
+    #   M157 (L4.1's ArrowLeft/Right click class): the roll arrows
+    #   join the stack — [ours] placement, said: the vendor hangs
+    #   them on the compass, which §1.7 defers WITH REASON (no North
+    #   in mechanical CAD, L11.5's own law).
 
     def __init__(self):
         self.rects: dict[str, QRectF] = {}
@@ -370,5 +409,19 @@ class NavWidget:
             elif kind == "in":
                 p.drawLine(QPointF(cx - 5, cy), QPointF(cx + 5, cy))
                 p.drawLine(QPointF(cx, cy - 5), QPointF(cx, cy + 5))
-            else:
+            elif kind == "out":
                 p.drawLine(QPointF(cx - 5, cy), QPointF(cx + 5, cy))
+            elif kind in ("roll-right", "roll-left"):
+                # M157: arc + head ticks, mirrored. Vector lines for
+                # the determinism law (no font glyphs in this HUD).
+                rr = QRectF(cx - 6, cy - 6, 12, 12)
+                if kind == "roll-right":
+                    p.drawArc(rr, 90 * 16, -270 * 16)
+                    a = ((cx - 6, cy), (cx - 9, cy + 3),
+                         (cx - 6, cy), (cx - 3, cy + 4))
+                else:
+                    p.drawArc(rr, 90 * 16, 270 * 16)
+                    a = ((cx + 6, cy), (cx + 9, cy + 3),
+                         (cx + 6, cy), (cx + 3, cy + 4))
+                p.drawLine(QPointF(*a[0]), QPointF(*a[1]))
+                p.drawLine(QPointF(*a[2]), QPointF(*a[3]))

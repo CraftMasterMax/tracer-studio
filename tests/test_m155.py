@@ -200,7 +200,11 @@ def test_set_home_and_restore(vp, qapp):
     vp._cam.yaw, vp._cam.pitch, vp._cam.distance = 0.3, 0.5, 77.0
     vp._set_home_from_view()
     assert fired == [1]                          # the dot must know
-    assert vp._doc.home == {"yaw": 0.3, "pitch": 0.5, "distance": 77.0}
+    # M157 RETARGET (cited, contract §1.6): home grows a FOURTH key,
+    # roll — the old triple keeps byte-value, the wrist rides with
+    # it (receipt V7 proves pre-M157 files restore at roll 0).
+    assert vp._doc.home == {"yaw": 0.3, "pitch": 0.5,
+                            "distance": 77.0, "roll": 0.0}
     vp._cam.yaw, vp._cam.pitch, vp._cam.distance = 0.0, 0.0, 10.0
     vp.home()
     assert (vp._cam.yaw, vp._cam.pitch, vp._cam.distance) == (

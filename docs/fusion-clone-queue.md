@@ -2088,6 +2088,44 @@ M125; items 1-11 below are history.*
   running against newer heads. Product bug the first run caught:
   cube press/release early-returned without maintaining the _buttons
   ledger — bookkeeping restored in both doors. (1734.)
+- **THE CUBE GOT ITS WRIST SHIPPED (M157)** — checklist §11/§12's
+  last living sections, ARCHITECTURE SPIKE FIRST (spike_m157 V1–V9
+  green at 2c27e92; contract m157_cube_wrist.md). THE ADDITIVITY
+  LAW held as the strongest form: at roll=0 the view matrix is the
+  SHIPPED call — look_at(eye,target) — byte-exactness by identity,
+  not luck (G1: all 26 poses + home iso array_equal; the whole old
+  suite riding green is that theorem, not hope). Non-zero roll
+  Rodrigues-spins the UP vector about the forward axis into the
+  SAME look_at: view-space radius AND depth frozen, image turns
+  EXACTLY ±90° (receipt V2, sign pinned); projection never touched.
+  Camera.orbit SPENDS NOTHING (G3: 300-step storm keeps roll and
+  the upright lock). THE WIDGET RIDES: project() copies roll to its
+  private fixed-fov camera — uniform-cube law extends to the fourth
+  dial, gate G4 proves it as >300 px ink differential + byte-exact
+  revert. THE ARROWS (L4.1 ArrowLeft/Right class, L6.7 step =
+  full-turn/clamp(n,4,36), QSettings viewcube/roll_steps default 4
+  = classic 90°): two new nav-stack doors (placement OURS — the
+  vendor hangs them on the compass, which is DEAD HERE by the
+  checklist's OWN law L11.5: mechanical CAD has no North; deferred
+  WITH that reason, a compass would be a painting of a feature).
+  Four default clicks wrap EXACTLY home (V8); the wrap is rotation-
+  identical (V5) so the glide takes no detours. CANONICAL MEANS
+  CANONICAL (L6.3a exact mode): zone clicks, the M156 snap and the
+  keys all land roll 0 — the snap is roll-blind by direction (V6).
+  HOME REMEMBERS THE WRIST: fourth key, old files restore at 0.0
+  (V7); M155's exact-3-key gate cited-retargeted to four. THE GEAR
+  DOOR (L12.5) nearly shipped WRONG: the first draft sat it INSIDE
+  the box corner on a hexagon-free-space THEORY; a ring-level probe
+  killed it — the silhouette band runs THROUGH that corner (edge ~5
+  px inside, vertex at x=-4.7 outside the clipped buffer). M154 was
+  EXONERATED (the buffer's answer was correct geometry; the gate's
+  assumption died before becoming law) and the door shipped where
+  the entry gate cannot even see it: outside the box, flipped per
+  corner, part of the cube's presence (wakes it, right-clicks to
+  the same menu). A second law learned the hard way: an exception
+  raised inside Qt's paint path SEGFAULTS the suite. Nearest-mode
+  roll quantisation (L6.3b/L6.4) deferred by name — exact mode
+  ships. (1746.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

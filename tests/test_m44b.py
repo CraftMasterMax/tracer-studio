@@ -42,7 +42,12 @@ def win(qapp):
 def test_nav_geometry_and_hit():
     n = NavWidget()
     n.place(800, 70)
-    assert set(n.rects) == {"home", "in", "out"}
+    # M157 RETARGET (cited, contract m157_cube_wrist.md §1.4): the
+    # stack grew two doors — the roll arrows join home/in/out. The
+    # three originals keep their order, stacking and hit law below;
+    # only the SET grew.
+    assert set(n.rects) == {"home", "in", "out",
+                            "roll-left", "roll-right"}
     assert n.rects["in"].top() > n.rects["home"].bottom()      # stacked
     cx = n.rects["home"].center()
     assert n.hit(cx) == "home"

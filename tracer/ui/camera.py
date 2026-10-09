@@ -62,6 +62,10 @@ class Camera:
         self.parallel = False              # M155: Parallel/Perspective
         #   (the ViewCube widget keeps its own fixed-fov perspective —
         #   uniform-cube law L9: the scene toggles, the cube never does)
+        self.roll = 0.0                    # M157 (contract m157_cube_
+        #   wrist.md, receipt V1): the FOURTH dial. At 0.0 the view
+        #   law below is the SHIPPED call byte-for-byte — roll is
+        #   additive growth, the old dials never move.
         self.model = np.eye(4)             # model matrix (identity for now)
 
     # ---- derived state ---------------------------------------------------
@@ -72,7 +76,19 @@ class Camera:
             [cp * math.cos(self.yaw), cp * math.sin(self.yaw), sp])
 
     def view_matrix(self) -> np.ndarray:
-        return look_at(self.position, self.target)
+        if self.roll == 0.0:
+            return look_at(self.position, self.target)
+        # M157 (receipt V2): the wrist rotates the UP vector about
+        # the forward axis (Rodrigues) and hands it to the SAME
+        # look_at — depth and view-space radius are unchanged, the
+        # image spins exactly by roll. The projection is never
+        # touched: aspect belongs to the screen, not the wrist.
+        f = self.target - self.position
+        f = f / max(np.linalg.norm(f), 1e-12)
+        k = self.roll
+        up = (_UP * math.cos(k) + np.cross(f, _UP) * math.sin(k)
+              + f * (f @ _UP) * (1.0 - math.cos(k)))
+        return look_at(self.position, self.target, up)
 
     def ray(self, px: float, py: float, w_px: float, h_px: float):
         """Screen pixel -> (world origin, unit direction)."""

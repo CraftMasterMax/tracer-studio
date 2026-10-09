@@ -174,6 +174,14 @@ class Viewport(QWidget):
         self._fade_timer.setInterval(16)
         self._fade_timer.timeout.connect(self._fade_step)
         self._hyst_cand, self._hyst_run = None, 0   # L5.5 (N=3, OURS)
+        self._gear_hov = False                 # M157 L12.5 cursor
+        #   door's last known state (the gear is not a zone: it
+        #   changes the CURSOR, never the glow)
+        self.roll_steps = max(4, min(36, int(float(
+            QSettings().value("viewcube/roll_steps", 4))))
+        )                               # M157 L6.7: clamp at the door
+        #   (receipt V8 — a rogue 2 or 40 can never smuggle a 180-deg
+        #    or 9-deg step past the field); persisted by the writer.
         # M156 §8: the press ARMS, the release DECIDES (L8.3). The
         # click law MOVED from press to release — cited retarget: the
         # moment moves, the law stands (a past-threshold release must
@@ -329,7 +337,8 @@ class Viewport(QWidget):
             #   rebuilds the pick buffer — the invisible slot still
             #   hit-tests (L5.3, receipt V1: zero ink, hit answers).
             p.setOpacity(1.0)
-        nav_h = 3 * self._nav.SIZE + 2 * self._nav.GAP
+        nav_n = len(self._nav.KINDS)
+        nav_h = nav_n * self._nav.SIZE + (nav_n - 1) * self._nav.GAP
         self._nav.place(
             self.width(),
             (self._cube.rect.bottom() + 8
@@ -536,6 +545,17 @@ class Viewport(QWidget):
             # orbit, box, or gesture underneath it.
             ev.accept()
             return
+        if (self.show_cube
+                and self._cube.gear.contains(ev.position())
+                and ev.button() == Qt.MouseButton.LeftButton):
+            self._cube_menu(ev.globalPosition().toPoint())
+            # M157 L12.5: the DRAWN door to the menu — discoverable
+            # without knowing the right-click secret. The gear
+            # outranks the buffer where they meet (contract §1.8,
+            # said; in practice its corner is hexagon-free, receipt
+            # V4's free-space law).
+            ev.accept()
+            return
         hit = (self._cube.hit(ev.position(), self.devicePixelRatioF())
                if self.show_cube else None)
         if hit and ev.button() == Qt.MouseButton.LeftButton:
@@ -565,6 +585,10 @@ class Viewport(QWidget):
             elif nav == "in":
                 self._cam.zoom(1 / 1.25)
                 self.update()
+            elif nav == "roll-right":            # M157 L4.1/L6.7:
+                self._roll_by(+1)                #   the wrist's arrows
+            elif nav == "roll-left":             #   ride the same glide
+                self._roll_by(-1)
             else:
                 self._cam.zoom(1.25)
                 self.update()
@@ -691,17 +715,28 @@ class Viewport(QWidget):
             raw = (self._cube.hit(ev.position(), self.devicePixelRatioF())
                    if self.show_cube else None)
             hk = self._cube_hysteresis(raw)   # M155 L5.5: N=3 (OURS)
+            gear = (self.show_cube
+                    and self._cube.gear.contains(ev.position()))
             box = (self.show_cube
-                   and self._cube.rect.contains(ev.position()))
+                   and (self._cube.rect.contains(ev.position())
+                        or gear))
+            # L5.1 inside-the-box is active; M157: the door beside the
+            #   box belongs to the cube's presence — hovering the
+            #   door wakes the cube it opens.
+            # M157 L12.5: the gear is a CURSOR-confirmed affordance
+            # (it is not a zone — no glow, said; its pixels are the
+            # menu's door).
+            gear_changed = gear != self._gear_hov
+            self._gear_hov = gear
             # L5.1: inside the BOX is active (even on a free pixel);
             # anywhere else rides the inactive setting.
             self._cube_fade_to(1.0 if (box or hk)
                                else self.cube_inactive_op)
             nav_changed = (self._nav.set_hover(ev.position())
                            if self.show_nav else False)
-            if hk != self._cube_hover:
+            if hk != self._cube_hover or gear_changed:
                 self._cube_hover = hk
-                if hk is not None:
+                if hk is not None or gear:
                     self.setCursor(QCursor(Qt.PointingHandCursor))
                 elif not self._nav.hover:
                     self.unsetCursor()
@@ -1278,6 +1313,9 @@ class Viewport(QWidget):
             self._cam.yaw = float(stored["yaw"])      # restore steers AND
             self._cam.pitch = float(stored["pitch"])  #   zooms; no
             self._cam.distance = float(stored["distance"])   # re-fit law
+            self._cam.roll = float(stored.get("roll", 0.0))
+            #   M157 (receipt V7): pre-M157 files carry no roll key —
+            #   they restore at the wrist's ZERO, old triple faithful.
             self.update()
             return
         if self._bbox is not None:       # the shipped iso+fit pin stands
@@ -1286,21 +1324,28 @@ class Viewport(QWidget):
         self.update()
 
     # ---- M154: the one transition law (cube clicks AND keys glide) ------
-    def _orbit_to(self, yaw: float, pitch: float):
+    def _orbit_to(self, yaw: float, pitch: float, roll: float = 0.0):
         """Glide the camera to an ABSOLUTE orientation. Re-targeting
         mid-flight restarts from the LIVE camera (L7.6/AT-07: never a
         snap-back; targets are absolute, so the vendor's
         composition-accumulation bug is structurally impossible —
-        pinned anyway by the movement-forward gate)."""
+        pinned anyway by the movement-forward gate).
+        M157: the law grows to the FOURTH dial — zone clicks and the
+        snap default roll to 0 (canonical means canonical, L6.3a),
+        the roll arrows pass an explicit wrapped target (contract
+        §1.4)."""
         dur = max(0.0, float(self.view_anim_s))
         if dur == 0.0 or (yaw == self._cam.yaw and
-                          pitch == self._cam.pitch):
+                          pitch == self._cam.pitch and
+                          roll == self._cam.roll):
             self._anim = None
             self._anim_timer.stop()
             self._cam.yaw, self._cam.pitch = yaw, pitch
+            self._cam.roll = roll
             self.update()
             return
-        self._anim = (self._cam.yaw, self._cam.pitch, yaw, pitch,
+        self._anim = (self._cam.yaw, self._cam.pitch, self._cam.roll,
+                      yaw, pitch, roll,
                       QDateTime.currentMSecsSinceEpoch() / 1000.0, dur)
         if not self._anim_timer.isActive():
             self._anim_timer.start()
@@ -1310,21 +1355,26 @@ class Viewport(QWidget):
         if self._anim is None:
             self._anim_timer.stop()
             return
-        y0, p0, y1, p1, t0, dur = self._anim
+        y0, p0, r0, y1, p1, r1, t0, dur = self._anim
         t = (QDateTime.currentMSecsSinceEpoch() / 1000.0 - t0) / dur
         if t >= 1.0:
             self._anim = None
             self._anim_timer.stop()
             self._cam.yaw, self._cam.pitch = y1, p1   # land ON the law
+            self._cam.roll = r1
             self.update()
             return
         e = QEasingCurve(QEasingCurve.Type.InOutCubic).valueForProgress(
             max(0.0, t))
         # yaw on the WRAPPED arc (receipt V3: naive lerp takes the
-        # scenic 340-deg route); pitch needs none (domain +/-89).
+        # scenic 340-deg route); pitch needs none (domain +/-89);
+        # roll rides the SAME short-arc wrap (V5: wrapping the
+        # target is rotation-identical, so the glide never detours).
         dyaw = (y1 - y0 + math.pi) % (2 * math.pi) - math.pi
         self._cam.yaw = y0 + dyaw * e
         self._cam.pitch = p0 + (p1 - p0) * e
+        self._cam.roll = r0 + ((r1 - r0 + math.pi) % (2 * math.pi)
+                               - math.pi) * e
         self.update()
 
     def _cube_click(self, zone: str):
@@ -1409,10 +1459,13 @@ class Viewport(QWidget):
 
     def contextMenuEvent(self, ev):
         """L12.1: right-click on the widget box opens the cube's OWN
-        menu. Measured correction: NO standard-view list lives here."""
+        menu. Measured correction: NO standard-view list lives here.
+        M157: the door outside the box belongs to the cube's presence
+        too — right-clicking the gear opens the same menu."""
         pos = QPointF(ev.pos())
-        if (self.show_cube and self._cube.rect.contains(pos)
-                and not self._buttons):
+        if (self.show_cube and not self._buttons
+                and (self._cube.rect.contains(pos)
+                     or self._cube.gear.contains(pos))):
             self._cube_menu(ev.globalPos())
             ev.accept()
             return
@@ -1457,13 +1510,31 @@ class Viewport(QWidget):
             return
         self._doc.home = {"yaw": float(self._cam.yaw),
                           "pitch": float(self._cam.pitch),
-                          "distance": float(self._cam.distance)}
+                          "distance": float(self._cam.distance),
+                          "roll": float(self._cam.roll)}
+        # M157 (contract §1.6): the FOURTH key rides with the triple;
+        # pre-M157 files never had it and restore at roll 0 (receipt
+        # V7) — the appearance-pattern growth, version stays 2.
         # L12.2's care, by NAMING: this overwrites the stored home —
         # the menu says exactly that, and there is no hidden undo to
         # pretend to (same honesty as rename_body).
         self.home_changed.emit()
 
     home_changed = Signal()      # mainwindow marks the window dirty
+
+    # ---- M157: the wrist's verbs ------------------------------------------
+    def _roll_step(self) -> float:
+        """L6.7 [documented reference formula]: step = full turn /
+        clamp(n, 4, 36); the classic default 4 is the 90-deg quarter
+        (receipt V8: four default clicks wrap EXACTLY home)."""
+        return 2.0 * math.pi / max(4, min(36, self.roll_steps))
+
+    def _roll_by(self, sign: int):
+        target = ((self._cam.roll + sign * self._roll_step()
+                   + math.pi) % (2 * math.pi)) - math.pi
+        # V5: the wrap BEFORE the glide is rotation-identical — the
+        # numeric hygiene is pixel-invisible, so it is always safe.
+        self._orbit_to(self._cam.yaw, self._cam.pitch, roll=target)
 
     def _cube_settings(self):
         dlg = _CubeSettingsDialog(self)
