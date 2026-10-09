@@ -267,25 +267,27 @@ def test_candidate_sets_are_the_kernels_own_domain():
 
 # ---- G9: the letter overlay — paint-only, mute-silent, toggleable ------
 
-def test_datum_letter_paints_hides_and_toggles(win):
+def test_datum_letter_paints_hides_and_toggles(win, qapp):
     d = win.doc
     d.add(PrimitiveFeature(name="Pad", kind="box",
                            dims={"dx": 60, "dy": 40, "dz": 10}))
     d.datum_register("A", "plane", "XY")
     win.recompute()
     vp = win.viewport
-    xy = vp._cam.project((0.0, 0.0, 0.0), vp.width(), vp.height())
-    assert xy is not None
-    x0, y0 = int(xy[0]) + 2, int(xy[1]) - 26
-    on = _px(vp)[max(0, y0):y0 + 26, max(0, x0):x0 + 52]
+    for _ in range(3):                             # flush layout before
+        qapp.processEvents()                       #  the pixel pair
+    # differential law, not projected-position guesses (the camera may
+    # re-fit after attach — the ink delta between show/hide frames is
+    # what the renderer actually measured):
+    on = _px(vp)
     vp.show_datums = False
     vp.update()
-    off1 = _px(vp)[max(0, y0):y0 + 26, max(0, x0):x0 + 52]
-    assert not np.array_equal(on, off1), "the [A] never painted"
-    vp.show_datums = False
+    off = _px(vp)
+    lit = int((np.abs(on - off).sum(axis=2) > 30).sum())
+    assert lit > 40, f"the [A] never painted ({lit} px)"
+    vp.show_datums = True
     vp.update()
-    off2 = _px(vp)[max(0, y0):y0 + 26, max(0, x0):x0 + 52]
-    assert np.array_equal(off1, off2), "paint must be deterministic"
+    assert np.array_equal(_px(vp), on), "paint must be deterministic"
 
 
 def test_mute_letter_paints_nothing_and_never_raises(win):
