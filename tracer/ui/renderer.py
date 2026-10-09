@@ -209,6 +209,8 @@ class SceneRenderer:
 
     # ---- resources ---------------------------------------------------------
     def resize(self, w: int, h: int):
+        if self.ctx is None:
+            return                          # closed: no GL left to hold
         w, h = max(int(w), 2), max(int(h), 2)
         if (w, h) == self._size and self._fbo is not None:
             return
@@ -236,6 +238,44 @@ class SceneRenderer:
         if self._resolve:
             self._resolve.release()
             self._resolve = None
+
+    def close(self):
+        """Release every GL object, then the standalone context itself.
+        A moderngl standalone (EGL) context is a process-lifetime GPU
+        allocation: closing the WINDOW without this keeps the whole
+        context — programs, VAOs, FBO textures — resident until the
+        interpreter exits. The app closes one window per run, but the
+        TEST SUITE opens a dozen; on the shared-runner memory budget
+        (GitHub ubuntu: ~7 GB, llvmpipe software GL) the leaked dozen
+        OOM-killed pytest at the suite tail (SIGKILL 137, CI attempts
+        1-8, cited). Idempotent and never raises: teardown law."""
+        for name in ("_solid_vao", "_grid_vao", "_plane_vao",
+                     "_triad_vao", "_bg_vao"):
+            vao = getattr(self, name, None)
+            if vao is not None:
+                try:
+                    vao.release()
+                except Exception:
+                    pass
+                setattr(self, name, None)
+        self._solid_count = self._grid_count = 0
+        self._plane_count = self._triad_count = 0
+        self._solid_buf = None
+        self._release_fbo()
+        for name in ("_solid_prog", "_line_prog", "_bg_prog"):
+            prog = getattr(self, name, None)
+            if prog is not None:
+                try:
+                    prog.release()
+                except Exception:
+                    pass
+                setattr(self, name, None)
+        ctx, self.ctx = getattr(self, "ctx", None), None
+        if ctx is not None:
+            try:
+                ctx.release()          # the context itself: EGL teardown
+            except Exception:
+                pass
 
     def set_mesh(self, verts: np.ndarray, normals: np.ndarray,
                  faces: np.ndarray, face_colors: np.ndarray | None = None):
@@ -551,6 +591,8 @@ class SceneRenderer:
 
     # ---- drawing --------------------------------------------------------------
     def render(self, camera: Camera, bbox: np.ndarray | None = None) -> np.ndarray:
+        if self.ctx is None:
+            return None                     # closed: nothing to paint on
         c = self.ctx
         w, h = self._size
         p = self.palette

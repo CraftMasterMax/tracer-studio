@@ -124,7 +124,7 @@ def win(qapp):
     yield w
     w._unsaved = False
     w.close()
-    r.ctx.release()
+    r.close()
 
 
 def _sketch_extrude(win, qapp, name, sx, sy, z):

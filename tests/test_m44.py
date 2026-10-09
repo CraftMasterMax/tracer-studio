@@ -35,7 +35,7 @@ def renderer():
     except Exception as e:  # no GPU/EGL -> explicit skip, never silent
         pytest.skip(f"no headless GL available: {e}")
     yield r
-    r.ctx.release()
+    r.close()
 
 
 def _rowbg(h):
@@ -121,4 +121,4 @@ def test_screenshot_proof(qapp):
     assert w.grab().save(f"{out}/m44_shading.png")
     w._unsaved = False
     w.close()
-    r.ctx.release()
+    r.close()

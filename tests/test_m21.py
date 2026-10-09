@@ -44,7 +44,7 @@ def win(qapp):
     qapp.processEvents()
     yield w
     w._unsaved = False
-    r.ctx.release()
+    r.close()
     w.close()
 
 

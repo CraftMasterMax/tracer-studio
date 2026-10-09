@@ -37,7 +37,7 @@ def renderer():
     except Exception as e:  # no GPU/EGL at all -> explicit skip, never silent
         pytest.skip(f"no headless GL available: {e}")
     yield r
-    r.ctx.release()
+    r.close()
 
 
 def _render_doc(renderer, cam_kind="iso"):

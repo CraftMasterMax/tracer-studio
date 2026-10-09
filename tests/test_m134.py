@@ -162,7 +162,7 @@ def win(qapp):
     yield w
     w._unsaved = False
     w.close()
-    r.ctx.release()
+    r.close()
 
 
 def test_the_root_row_carries_the_always_findable_exits(win, qapp):

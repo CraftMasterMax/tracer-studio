@@ -70,7 +70,7 @@ def win(qapp):
     yield w
     w._unsaved = False
     w.close()
-    r.ctx.release()
+    r.close()
 
 
 def test_triad_paints_all_three_axis_colors(qapp):

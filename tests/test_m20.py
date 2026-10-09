@@ -39,7 +39,7 @@ def win(qapp):
     qapp.processEvents()
     yield w
     w._unsaved = False
-    r.ctx.release()
+    r.close()
     w.close()
 
 
@@ -143,7 +143,7 @@ def test_highlight_changes_pixels():
         assert np.abs(clear - base).mean() < 1.0
         r.show_grid, r.show_edges = show_grid, show_edges
     finally:
-        r.ctx.release()
+        r.close()
 
 
 # ---- viewport interaction ----------------------------------------------------

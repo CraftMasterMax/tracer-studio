@@ -108,7 +108,7 @@ def renderer():
     except Exception as e:
         pytest.skip(f"no headless GL available: {e}")
     yield r
-    r.ctx.release()
+    r.close()
 
 
 def _front_patch(r, face_colors):
@@ -156,7 +156,7 @@ def win(qapp):
         w._unsaved = False
         w._discard_guard = lambda: True
         w.close()
-        r.ctx.release()
+        r.close()
     except Exception:
         raise
 

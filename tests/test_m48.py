@@ -29,7 +29,7 @@ def renderer(qapp):
     except Exception as e:                     # CI windows runners: no GL
         pytest.skip(f"no headless GL available: {e}")
     yield r
-    r.ctx.release()
+    r.close()
 
 
 @pytest.fixture
@@ -119,7 +119,7 @@ def test_screenshot_proof(qapp):
     assert w.grab().save(f"{out}/m48_section.png")
     w._unsaved = False
     w.close()
-    r.ctx.release()
+    r.close()
 
 
 # ---- viewport plumbing -------------------------------------------------------

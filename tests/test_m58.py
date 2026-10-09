@@ -43,7 +43,7 @@ def win(qapp):
         yield w
         w._unsaved = False
         w.close()
-        r.ctx.release()
+        r.close()
     finally:
         s2 = QSettings()
         if saved:

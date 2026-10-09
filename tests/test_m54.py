@@ -24,7 +24,7 @@ def renderer():
     except Exception as e:                     # CI windows runners: no GL
         pytest.skip(f"no headless GL available: {e}")
     yield r
-    r.ctx.release()
+    r.close()
 
 
 def _patch(r):
@@ -95,7 +95,7 @@ def win(qapp):
     yield w
     w._unsaved = False
     w.close()
-    r.ctx.release()
+    r.close()
 
 
 def test_visual_style_menu_action(win, qapp):

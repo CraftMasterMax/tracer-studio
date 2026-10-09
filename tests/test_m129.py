@@ -41,7 +41,7 @@ def win(qapp):
     w._unsaved = False
     w._discard_guard = lambda: True
     w.close()
-    r.ctx.release()
+    r.close()
 
 
 def _holed_plate(win, qapp):

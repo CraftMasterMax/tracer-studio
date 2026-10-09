@@ -225,6 +225,8 @@ class Viewport(QWidget):
         w, h = int(self.width() * dpr), int(self.height() * dpr)
         self._r.resize(w, h)
         img = self._r.render(self._cam, self._bbox)
+        if img is None:
+            return                          # renderer closed with its window
         qimg = QImage(img.tobytes(), w, h, QImage.Format_RGBA8888).copy()
         qimg.setDevicePixelRatio(dpr)
         p = QPainter(self)

@@ -41,7 +41,7 @@ def win(qapp):
     yield w
     w._unsaved = False
     w.close()
-    r.ctx.release()
+    r.close()
 
 
 # ---- core: plane creation methods --------------------------------------
@@ -455,4 +455,4 @@ def test_renderer_draws_axes_without_any_plane(qapp):
     r.set_planes([], [{"name": "Axis 1", "origin": [0, 0, 5],
                        "dir": [0, 0, 1]}])
     assert r._plane_count == 2                     # one line, two verts
-    r.ctx.release()
+    r.close()

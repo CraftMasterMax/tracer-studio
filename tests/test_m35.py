@@ -185,7 +185,7 @@ def win(qapp):
     yield w
     w._unsaved = False
     w.close()
-    r.ctx.release()
+    r.close()
 
 
 def _sweep_sketch(win, qapp, coords=((-20, 0), (20, 0), (20, 25)),

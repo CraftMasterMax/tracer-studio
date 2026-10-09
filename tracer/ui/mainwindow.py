@@ -6482,6 +6482,11 @@ class MainWindow(QMainWindow):
                     ev.ignore()
                     return
         self._clear_autosave()      # on disk or discarded: nothing to recover
+        # the GPU goes home with the window: a moderngl standalone
+        # context is a process-lifetime allocation, and leaving it
+        # alive behind a closed window is what OOM-killed the CI
+        # suite tail (renderer.close law, cited M152)
+        self._renderer.close()
         ev.accept()
 
     def action_import_profile(self, path=None):

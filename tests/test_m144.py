@@ -202,7 +202,7 @@ def win(qapp):
     yield w
     w._unsaved = False          # m56/m63 law: leave no mapped window
     w.close()
-    r.ctx.release()
+    r.close()
     qapp.processEvents()
 
 

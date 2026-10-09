@@ -40,7 +40,7 @@ def win(qapp):
     yield w
     w._unsaved = False
     w.close()
-    r.ctx.release()
+    r.close()
 
 
 def _box(d, at=(0.0, 0.0, 0.0), s=2.0, name="src"):

@@ -67,7 +67,7 @@ def win(qapp):
     yield w
     w._unsaved = False
     w.close()
-    r.ctx.release()
+    r.close()
 
 
 RING = {"kind": "Torus", "dx": 20.0, "dy": 20.0, "dz": 20.0,

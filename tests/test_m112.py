@@ -128,7 +128,7 @@ def test_ghost_preview_roundtrip():
         assert r._base_override == (0.1, 0.2, 0.3)  # appearance restored
         assert r._base_alpha == 1.0
     finally:
-        r.ctx.release()
+        r.close()
 
 
 def test_rubber_band_voices_are_tokens():

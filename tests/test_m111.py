@@ -155,7 +155,7 @@ def win(qapp, tmp_path):
         yield w
         w._unsaved = False
         w.close()
-        r.ctx.release()
+        r.close()
     finally:
         s2 = QSettings()
         if saved is None:

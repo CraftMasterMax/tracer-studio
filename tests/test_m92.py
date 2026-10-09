@@ -140,7 +140,7 @@ def win(qapp):
         yield w
         w._unsaved = False
         w.close()
-        r.ctx.release()
+        r.close()
     except Exception:
         raise
 

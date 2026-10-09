@@ -53,7 +53,7 @@ def win(qapp):
     yield w
     w._unsaved = False
     w.close()
-    r.ctx.release()
+    r.close()
 
 
 # ---- the pure seam: press decides, geometry decides ------------------------

@@ -163,7 +163,7 @@ def win(qapp):
     yield w
     w._unsaved = False
     w.close()
-    r.ctx.release()
+    r.close()
 
 
 def _menu_labels(win, name, monkeypatch):

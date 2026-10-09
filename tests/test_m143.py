@@ -57,7 +57,7 @@ def win(qapp):
     yield w
     w._unsaved = False          # m56/m63 house law: close the window
     w.close()
-    r.ctx.release()
+    r.close()
     qapp.processEvents()
 
 

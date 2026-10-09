@@ -164,7 +164,7 @@ def win(qapp):
     yield w
     w._unsaved = False
     w.close()
-    r.ctx.release()
+    r.close()
 
 
 def test_dialog_default_is_custom_and_leaves_no_override(qapp):

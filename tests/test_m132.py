@@ -52,7 +52,7 @@ def win(qapp):
         pass
     w._unsaved = False
     w.close()
-    r.ctx.release()
+    r.close()
 
 
 # ---- the one pure function ------------------------------------------------

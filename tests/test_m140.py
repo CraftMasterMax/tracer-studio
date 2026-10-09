@@ -69,7 +69,7 @@ def win(qapp):
     # deterministic in-suite).
     w._unsaved = False
     w.close()
-    r.ctx.release()
+    r.close()
     qapp.processEvents()
 
 

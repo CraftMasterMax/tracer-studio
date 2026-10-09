@@ -90,7 +90,7 @@ def win(qapp):
     w._unsaved = False
     w._discard_guard = lambda: True
     w.close()
-    r.ctx.release()
+    r.close()
 
 
 def _dialog(qapp, monkeypatch, cut, **over):
