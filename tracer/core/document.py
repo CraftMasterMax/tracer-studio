@@ -936,6 +936,9 @@ class Document:
         self.planes: list[dict] = []      # construction planes (Construct ▸)
         self.axes: list[dict] = []        # work axes (M125 datum store)
         self.appearance: dict | None = None   # Appearance ▸ material paint
+        self.home: dict | None = None     # M155 (L12.3): "Set Current
+        #   View as Home" stores {yaw,pitch,distance} WITH the document;
+        #   None until named — a home-less doc keeps the shipped law.
         self.params: dict = {}                # user parameters (M81)
         self.configs: dict = {}               # M91: name -> {param: raw}
         self.active_config: str | None = None # M91: the one overlaying
@@ -3274,7 +3277,8 @@ class Document:
                 "planes": [dict(p) for p in self.planes],
                 "axes": [dict(a) for a in self.axes],   # M125
                 "appearance": (dict(self.appearance)
-                               if self.appearance else None)}
+                               if self.appearance else None),
+                "home": (dict(self.home) if self.home else None)}
 
     @classmethod
     def from_dict(cls, data: dict) -> "Document":
@@ -3297,6 +3301,9 @@ class Document:
         doc.joints = [dict(j) for j in (data.get("joints") or [])]
         doc.datums = [dict(d) for d in (data.get("datums") or [])]
         doc.active_body = data.get("active_body")
+        doc.home = (dict(data["home"]) if data.get("home") else None)
+        # M155: home-less (pre-M155) files simply read as None — the
+        # shipped 28-deg iso law stays their home, byte-exact.
         for fd in data.get("features", []):
             t = fd["type"]
             base = dict(op=fd["op"], uid=fd.get("uid") or uuid.uuid4().hex[:8],

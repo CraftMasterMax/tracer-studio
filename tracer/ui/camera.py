@@ -38,6 +38,20 @@ def perspective(fov_deg: float, aspect: float, near: float, far: float) -> np.nd
     return m
 
 
+def ortho(left: float, right: float, bottom: float, top: float,
+          near: float, far: float) -> np.ndarray:
+    """Orthographic partner of perspective() (M155 Parallel view)."""
+    m = np.zeros((4, 4))
+    m[0, 0] = 2.0 / (right - left)
+    m[1, 1] = 2.0 / (top - bottom)
+    m[2, 2] = -2.0 / (far - near)
+    m[0, 3] = -(right + left) / (right - left)
+    m[1, 3] = -(top + bottom) / (top - bottom)
+    m[2, 3] = -(far + near) / (far - near)
+    m[3, 3] = 1.0
+    return m
+
+
 class Camera:
     def __init__(self, fov: float = 38.0):
         self.target = np.zeros(3)
@@ -45,6 +59,9 @@ class Camera:
         self.yaw = math.radians(45.0)      # azimuth around Z
         self.pitch = math.radians(28.0)    # elevation, clamped to +/-89deg
         self.fov = fov
+        self.parallel = False              # M155: Parallel/Perspective
+        #   (the ViewCube widget keeps its own fixed-fov perspective —
+        #   uniform-cube law L9: the scene toggles, the cube never does)
         self.model = np.eye(4)             # model matrix (identity for now)
 
     # ---- derived state ---------------------------------------------------
@@ -70,8 +87,17 @@ class Camera:
 
     def proj_matrix(self, aspect: float) -> np.ndarray:
         radius = max(self.distance, 1e-3)
-        return perspective(self.fov, aspect, max(radius * 0.002, 0.05),
-                           radius * 20.0)
+        near, far = max(radius * 0.002, 0.05), radius * 20.0
+        if self.parallel:
+            # M155 (L12.1 Parallel): orthographic, framed so the
+            # world-height at the TARGET plane matches the shipped
+            # perspective exactly — toggling flips the PERSPECTIVE
+            # effect, never the zoom (receipt V4: the matrices
+            # compose with our view law).
+            half = radius * math.tan(math.radians(self.fov) / 2.0)
+            return ortho(-half * aspect, half * aspect, -half, half,
+                         near, far)
+        return perspective(self.fov, aspect, near, far)
 
     # ---- interaction -------------------------------------------------------
     def screen_axes(self):

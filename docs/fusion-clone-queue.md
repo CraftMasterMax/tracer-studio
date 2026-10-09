@@ -2017,6 +2017,45 @@ M125; items 1-11 below are history.*
   inactive-opacity state machine, hysteresis, compass + roll arrows,
   cube context menu, drag-to-orbit, 132-px sizing setting, backside.
   (1713.)
+- **THE CUBE LEARNED ITS MANNERS SHIPPED (M155)** — the navcube
+  checklist's §5/§10/§12, receipts before every line (spike:
+  spike_m155/live_m155.py all green at fd5f206 + contract
+  m155_cube_manners.md). M154's deferrals land except compass/roll,
+  drag (M156) and backside (still REFUSED). OPACITY STATE: inactive
+  0.5 (setting 0..1), full inside the BOX, cross-fade 0.15 s
+  InOutCubic [OURS — L5.8 is inferred], landing EXACT; opacity 0
+  paints NOTHING while the pick buffer still rebuilds and answers
+  (L5.3's invisible slot; receipt V1: zero ink, hit(centre) still
+  serves). HYSTERESIS N=3 [OURS — reference default 0 is THEIR
+  default]: a SWITCH needs 3 consecutive events, ENTER is immediate
+  (anti-flicker guards switches, not arrivals), None resets NOW,
+  press bypasses (L5.6), release clears. THE MENU (L12.1 + measured
+  correction): Home / Set Current View as Home / Parallel /
+  Perspective / ViewCube Settings… — NO standard-view list, NO Help,
+  NO ortho-faces (deferred by name); right on the cube is the MENU's,
+  never a click's (the old any-button press law quietly ate
+  right-clicks — fixed, gated). HOME GETS A MEMORY (L12.2/3):
+  Document.home {yaw,pitch,distance} rides the FILE (appearance-
+  pattern key, version stays 2, pre-M155 files load and keep the
+  byte-exact 28-deg iso law); set-as-home dirty-marks (the dot must
+  know), restore steers AND zooms. SETTINGS (L10.1/2/5): AUTO|Fixed
+  — AUTO = clamp(round(0.08 x min side),60,140) [OURS, receipt V5
+  measured: 61 @1240x760, 60 floor @1100x720, 115 @2560x1440 —
+  continuity with the 66 px art]; continuous slider, never
+  Small/Medium/Large; corner picker x4 (the nav stack FOLLOWS —
+  bottom corners stack ABOVE the cube); app-level QSettings (the
+  sketch/grid_snap pattern) — the document keeps HOME only: a view
+  preference is a user fact, not a model fact (L10.8's split, said
+  out loud). Parallel = ortho on the SCENE camera through the one
+  choke (Camera.proj_matrix; framed so the toggle flips the effect,
+  never the zoom), the CUBE never changes (uniform-cube law L9).
+  BANKED TESTABILITY LAW: Shiboken ignores Python monkey-patches of
+  QMenu.exec (C++ overload table wins — the modal loop hung the
+  suite 15 min); menus now pop through the viewport's _show_menu
+  seam, patched honestly. Indent law re-earned: a 4-space `def`
+  spliced mid-__init__ silently ADOPTED the rest of __init__'s body
+  — only a "FeatureTree already deleted" corpse witnessed it.
+  (1727.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

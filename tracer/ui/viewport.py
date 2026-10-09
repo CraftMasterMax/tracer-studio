@@ -12,16 +12,20 @@ import math
 import numpy as np
 import trimesh
 from PySide6.QtCore import (Qt, QPoint, QPointF, QRect, QRectF, QSize,
-                            QTimer, Signal, QDateTime, QEasingCurve)
+                            QTimer, Signal, QDateTime, QEasingCurve,
+                            QSettings)
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QCursor
-from PySide6.QtWidgets import QWidget, QApplication
+from PySide6.QtWidgets import (QWidget, QApplication, QComboBox,
+                               QDialog, QDialogButtonBox, QHBoxLayout,
+                               QLabel, QMenu, QPushButton, QSlider,
+                               QVBoxLayout)
 
 from ..core.document import Document
 from ..core.geometry import Solid
 from .camera import Camera, perspective, view_orient
 from .renderer import SceneRenderer
 from . import theme
-from .viewcube import NavWidget, ViewCube, zone_look
+from .viewcube import NavWidget, ViewCube, auto_size, zone_look
 from .wheel import HOLD_MS, MarkingWheel
 
 
@@ -146,6 +150,29 @@ class Viewport(QWidget):
         #   projects the live camera every frame, free by architecture)
         self._anim_timer.timeout.connect(self._anim_step)
         self._cube_last = None             # (zone, ms): double-click law
+        # ---- M155: the cube's manners (contract m155_cube_manners.md;
+        # receipts spike_m155 V1-V6). Settings are app-level (QSettings,
+        # the sketcheditor precedent); the DOCUMENT keeps only Home.
+        s = QSettings()
+        self.cube_size_mode = str(s.value("viewcube/size_mode", "auto"))
+        self.cube_fixed_px = int(float(s.value("viewcube/size", 66)))
+        self.cube_inactive_op = float(
+            s.value("viewcube/inactive_opacity", 0.5))
+        self._cube.corner = str(s.value("viewcube/corner", "top-right"))
+        if self.cube_size_mode != "fixed":
+            self.cube_size_mode = "auto"
+        if self._cube.corner not in ("top-left", "top-right",
+                                     "bottom-left", "bottom-right"):
+            self._cube.corner = "top-right"
+        self._cube.size_px = (auto_size(self.width(), self.height())
+                              if self.cube_size_mode == "auto"
+                              else self.cube_fixed_px)
+        self._cube_op = self.cube_inactive_op   # CURRENT painted opacity
+        self._cube_fade = None                  # (frm, to, t0) mid-fade
+        self._fade_timer = QTimer(self)
+        self._fade_timer.setInterval(16)
+        self._fade_timer.timeout.connect(self._fade_step)
+        self._hyst_cand, self._hyst_run = None, 0   # L5.5 (N=3, OURS)
         self.setMinimumSize(QSize(320, 240))
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -283,11 +310,25 @@ class Viewport(QWidget):
         if self.show_datums:
             draw_datum_letters(p, self._cam, self._doc, self._r.palette,
                                self.width(), self.height())
+        if self.cube_size_mode == "auto":     # AUTO rides the viewport
+            self._cube.size_px = auto_size(self.width(), self.height())
         self._cube.place(self.width(), self.height())
         if self.show_cube:
+            p.setOpacity(self._cube_op)       # M155 L5.1: the fade IS
             self._cube.draw(p, self._cam, self._cube_hover,
                             self.devicePixelRatioF())
-        self._nav.place(self.width(), self._cube.rect.bottom() + 8)
+            #   the state. At opacity 0 NOTHING inks but draw() still
+            #   rebuilds the pick buffer — the invisible slot still
+            #   hit-tests (L5.3, receipt V1: zero ink, hit answers).
+            p.setOpacity(1.0)
+        nav_h = 3 * self._nav.SIZE + 2 * self._nav.GAP
+        self._nav.place(
+            self.width(),
+            (self._cube.rect.bottom() + 8
+             if self._cube.corner.startswith("top")
+             else self._cube.rect.top() - 8 - nav_h),
+            self._cube.corner)                # the stack follows the
+        #   cube's corner, and for bottom corners it stacks ABOVE it
         if self.show_nav:
             self._nav.draw(p)
         if self._pivot is not None:
@@ -467,8 +508,7 @@ class Viewport(QWidget):
         if x1 - x0 <= 4 or y1 - y0 <= 4:
             return None
         vs = np.asarray(self._tm.vertices, float)
-        vp = perspective(self._cam.fov, w / max(h, 1),
-                         0.01, 1e5) @ self._cam.view_matrix()
+        vp = self._cam.proj_matrix(w / max(h, 1)) @ self._cam.view_matrix()
         ph = np.column_stack([vs, np.ones(len(vs))]) @ vp.T
         w_ = ph[:, 3]
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -490,11 +530,21 @@ class Viewport(QWidget):
             return
         hit = (self._cube.hit(ev.position(), self.devicePixelRatioF())
                if self.show_cube else None)
-        if hit:
-            self._cube_click(hit)          # M154: 26 zones, gliding,
-            self.update()                  #   same-zone double FITS
+        if hit and ev.button() == Qt.MouseButton.LeftButton:
+            self._cube_hover = hit       # L5.6: press highlights NOW —
+            self._hyst_cand = None       #   hysteresis is BYPASSED on
+            self._hyst_run = 0           #   press, never on a gesture
+            self._cube_click(hit)        # M154: 26 zones, gliding,
+            self.update()                #   same-zone double FITS
             ev.accept()
             return
+        if hit and ev.button() == Qt.MouseButton.RightButton:
+            ev.ignore()                  # M155 L12.1: right on the
+            return                       #   cube is the MENU's, not a
+                                         #   click's; no orbit underneath
+        if hit:                          # middle on the cube: consumed,
+            ev.accept()                  #   drag-on-cube is M156 by
+            return                       #   contract — no stray gesture
         nav = self._nav.hit(ev.position()) if self.show_nav else None
         if nav:
             if nav == "home":
@@ -607,8 +657,15 @@ class Viewport(QWidget):
             return
         if not self._buttons:
             self._hover_update(ev.position())
-            hk = (self._cube.hit(ev.position(), self.devicePixelRatioF())
-                  if self.show_cube else None)
+            raw = (self._cube.hit(ev.position(), self.devicePixelRatioF())
+                   if self.show_cube else None)
+            hk = self._cube_hysteresis(raw)   # M155 L5.5: N=3 (OURS)
+            box = (self.show_cube
+                   and self._cube.rect.contains(ev.position()))
+            # L5.1: inside the BOX is active (even on a free pixel);
+            # anywhere else rides the inactive setting.
+            self._cube_fade_to(1.0 if (box or hk)
+                               else self.cube_inactive_op)
             nav_changed = (self._nav.set_hover(ev.position())
                            if self.show_nav else False)
             if hk != self._cube_hover:
@@ -687,6 +744,11 @@ class Viewport(QWidget):
             self.update()
 
     def mouseReleaseEvent(self, ev):
+        if (self._cube_hover is not None
+                and ev.button() == Qt.MouseButton.LeftButton):
+            self._cube_hover = None      # L5.6: release CLEARS the
+            self.update()                #   pressed highlight (the
+                                         #   next move re-enters freely)
         if self._wheel is not None:
             # The ring owns the release the instant it is up: land on a
             # wedge and it runs, land on hub/void and it just dismisses.
@@ -1159,9 +1221,18 @@ class Viewport(QWidget):
     # ---- home view ---------------------------------------------------------
     def home(self):
         self._pivot = None               # M133: home IS reset-orbit-centre
-        if self._bbox is not None:
-            self._cam.set_view("iso")
-            self._cam.fit(self._bbox)
+        stored = self._doc.home if self._doc is not None else None
+        if stored:                       # M155 L12.2/L12.3: "Set Current
+            self._anim = None            #   View as Home" stored the
+            self._anim_timer.stop()      #   triple WITH the document —
+            self._cam.yaw = float(stored["yaw"])      # restore steers AND
+            self._cam.pitch = float(stored["pitch"])  #   zooms; no
+            self._cam.distance = float(stored["distance"])   # re-fit law
+            self.update()
+            return
+        if self._bbox is not None:       # the shipped iso+fit pin stands
+            self._cam.set_view("iso")    #   byte-exact for home-less
+            self._cam.fit(self._bbox)    #   documents (M154 gate G9)
         self.update()
 
     # ---- M154: the one transition law (cube clicks AND keys glide) ------
@@ -1220,6 +1291,139 @@ class Viewport(QWidget):
             self._cam.fit(self._bbox)      # distance only — the
             #   orientation stays the zone's own (AT-09: fit rides)
         self._cube_last = (zone, now)
+
+    # ---- M155: manners — fade, hysteresis, menu, settings -----------------
+    def _cube_hysteresis(self, raw):
+        """L5.5 with N=3 — OUR choice (the reference default 0 is
+        THEIR default; our bands ARE thin and would strobe). Enter is
+        IMMEDIATE (anti-flicker guards SWITCHES), leaving to None
+        resets NOW, a switch needs 3 consecutive events on the
+        candidate (spike V3 trace pinned by the gate)."""
+        st = self._cube_hover
+        if raw is None:
+            self._hyst_cand, self._hyst_run = None, 0
+            return None
+        if st is None:
+            self._hyst_cand, self._hyst_run = None, 0
+            return raw
+        if raw == st:
+            self._hyst_cand, self._hyst_run = None, 0
+            return st
+        if raw == self._hyst_cand:
+            self._hyst_run += 1
+            if self._hyst_run >= 3:
+                self._hyst_cand, self._hyst_run = None, 0
+                return raw
+        else:
+            self._hyst_cand, self._hyst_run = raw, 1
+        return st
+
+    def _cube_fade_to(self, target):
+        """Cross-fade the cube opacity over 0.15 s (OURS — L5.8 is
+        [inferred]; receipt V2: the timer shape lands EXACT)."""
+        if self._cube_fade is None:
+            if target == self._cube_op:
+                return
+            self._cube_fade = (self._cube_op, target,
+                               QDateTime.currentMSecsSinceEpoch() / 1000.0)
+            if not self._fade_timer.isActive():
+                self._fade_timer.start()
+        else:
+            frm, to, t0 = self._cube_fade          # re-target from the
+            now = QDateTime.currentMSecsSinceEpoch() / 1000.0      # LIVE
+            e = min(1.0, (now - t0) / 0.15)                        # value
+            cur = frm + (to - frm) * e
+            if target == cur:
+                return
+            self._cube_fade = (cur, target, now)
+            if not self._fade_timer.isActive():
+                self._fade_timer.start()
+        self.update()                              # repaint the new start
+
+    def _fade_step(self):
+        if self._cube_fade is None:
+            self._fade_timer.stop()
+            return
+        frm, to, t0 = self._cube_fade
+        t = (QDateTime.currentMSecsSinceEpoch() / 1000.0 - t0) / 0.15
+        if t >= 1.0:
+            self._cube_fade = None
+            self._fade_timer.stop()
+            self._cube_op = to                     # land EXACT
+            self.update()
+            return
+        e = QEasingCurve(QEasingCurve.Type.InOutCubic).valueForProgress(
+            max(0.0, t))
+        self._cube_op = frm + (to - frm) * e
+        self.update()
+
+    def contextMenuEvent(self, ev):
+        """L12.1: right-click on the widget box opens the cube's OWN
+        menu. Measured correction: NO standard-view list lives here."""
+        pos = QPointF(ev.pos())
+        if (self.show_cube and self._cube.rect.contains(pos)
+                and not self._buttons):
+            self._cube_menu(ev.globalPos())
+            ev.accept()
+            return
+        super().contextMenuEvent(ev)
+
+    def _cube_menu(self, at):
+        m = QMenu(self)
+        m.addAction("Home", self.home)
+        m.addAction("Set Current View as Home", self._set_home_from_view)
+        m.addSeparator()
+        par = m.addAction("Parallel", lambda: self._set_projection(True))
+        par.setCheckable(True)
+        par.setChecked(self._cam.parallel)
+        per = m.addAction("Perspective",
+                          lambda: self._set_projection(False))
+        per.setCheckable(True)
+        per.setChecked(not self._cam.parallel)
+        m.addSeparator()
+        m.addAction("ViewCube Settings...", self._cube_settings)
+        self._show_menu(m, at)
+
+    def _show_menu(self, menu, at):
+        """The pop seam (tests drive the item set here; Shiboken's
+        C++ overload table makes monkey-patching QMenu.exec a lie —
+        this door is the honest one)."""
+        menu.exec(at)
+
+    def _set_projection(self, parallel: bool):
+        self._cam.parallel = bool(parallel)     # the CUBE never changes
+        self.update()                           # (uniform-cube law L9)
+
+    def _set_home_from_view(self):
+        if self._doc is None:
+            return
+        self._doc.home = {"yaw": float(self._cam.yaw),
+                          "pitch": float(self._cam.pitch),
+                          "distance": float(self._cam.distance)}
+        # L12.2's care, by NAMING: this overwrites the stored home —
+        # the menu says exactly that, and there is no hidden undo to
+        # pretend to (same honesty as rename_body).
+        self.home_changed.emit()
+
+    home_changed = Signal()      # mainwindow marks the window dirty
+
+    def _cube_settings(self):
+        dlg = _CubeSettingsDialog(self)
+        dlg.exec()
+        dlg.deleteLater()
+
+    def apply_cube_settings(self):
+        """The dialog wrote the viewport's knobs; make them real."""
+        s = QSettings()
+        s.setValue("viewcube/size_mode", self.cube_size_mode)
+        s.setValue("viewcube/size", self.cube_fixed_px)
+        s.setValue("viewcube/inactive_opacity", self.cube_inactive_op)
+        s.setValue("viewcube/corner", self._cube.corner)
+        self._cube.size_px = (auto_size(self.width(), self.height())
+                              if self.cube_size_mode == "auto"
+                              else self.cube_fixed_px)
+        self._cube_fade_to(self.cube_inactive_op)   # re-seat the state
+        self.update()
 
     # ---- keys (F fit, G grid, 0/1/2/3 views, Esc deselect) ------------------
     def selection_bbox(self):
@@ -1319,3 +1523,111 @@ def _coplanar_groups(tm) -> np.ndarray:
         for i in range(len(fn)):
             gid[i] = find(i)
     return gid
+
+
+class _CubeSettingsDialog(QDialog):
+    """M155 (L10.1): the cube's own settings, reached from the cube
+    itself. Size mode AUTO|Fixed with a CONTINUOUS slider (L10.2 —
+    never Small/Medium/Large), inactive opacity, corner picker, reset.
+    Persistence is APP-level QSettings (the pattern sketch/grid_snap
+    set); the DOCUMENT keeps only Home — a view preference is a user
+    fact, not a model fact (L10.8's split, landed on the user side,
+    said out loud)."""
+
+    CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
+
+    def __init__(self, vp):
+        super().__init__(vp)
+        self.vp = vp
+        self.setWindowTitle("ViewCube Settings")
+        lay = QVBoxLayout(self)
+
+        r1 = QHBoxLayout()
+        r1.addWidget(QLabel("Size mode"))
+        self._mode = QComboBox()
+        self._mode.addItems(["auto", "fixed"])
+        self._mode.setCurrentText(vp.cube_size_mode)
+        self._mode.currentTextChanged.connect(self._mode_changed)
+        r1.addWidget(self._mode, 1)
+        lay.addLayout(r1)
+
+        r2 = QHBoxLayout()
+        r2.addWidget(QLabel("Size (px)"))
+        self._size = QSlider(Qt.Horizontal)
+        self._size.setRange(40, 200)
+        self._size.setValue(vp._cube.size_px)
+        self._size.valueChanged.connect(self._size_changed)
+        r2.addWidget(self._size, 1)
+        self._size_v = QLabel(str(vp._cube.size_px))
+        r2.addWidget(self._size_v)
+        lay.addLayout(r2)
+
+        r3 = QHBoxLayout()
+        r3.addWidget(QLabel("Inactive opacity"))
+        self._op = QSlider(Qt.Horizontal)
+        self._op.setRange(0, 100)
+        self._op.setValue(round(vp.cube_inactive_op * 100))
+        self._op.valueChanged.connect(self._op_changed)
+        r3.addWidget(self._op, 1)
+        self._op_v = QLabel(f"{round(vp.cube_inactive_op * 100)}%")
+        r3.addWidget(self._op_v)
+        lay.addLayout(r3)
+
+        r4 = QHBoxLayout()
+        r4.addWidget(QLabel("Corner"))
+        self._corner = QComboBox()
+        self._corner.addItems(list(self.CORNERS))
+        self._corner.setCurrentText(vp._cube.corner)
+        self._corner.currentTextChanged.connect(self._corner_changed)
+        r4.addWidget(self._corner, 1)
+        lay.addLayout(r4)
+
+        r5 = QHBoxLayout()
+        reset = QPushButton("Restore defaults")
+        reset.clicked.connect(self._reset)
+        r5.addWidget(reset)
+        r5.addStretch(1)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        bb.rejected.connect(self.reject)
+        bb.accepted.connect(self.accept)
+        r5.addWidget(bb)
+        lay.addLayout(r5)
+        self._sync_enabled()
+
+    # ---- live law: every knob applies where it stands ---------------------
+    def _sync_enabled(self):
+        self._size.setEnabled(self.vp.cube_size_mode == "fixed")
+
+    def _mode_changed(self, text):
+        self.vp.cube_size_mode = "fixed" if text == "fixed" else "auto"
+        if self.vp.cube_size_mode == "fixed":
+            self.vp.cube_fixed_px = self._size.value()
+        self._sync_enabled()
+        self.vp.apply_cube_settings()
+        self._size.setValue(self.vp._cube.size_px)
+
+    def _size_changed(self, v):
+        self._size_v.setText(str(v))
+        if self.vp.cube_size_mode == "fixed":
+            self.vp.cube_fixed_px = v
+            self.vp.apply_cube_settings()
+
+    def _op_changed(self, v):
+        self._op_v.setText(f"{v}%")
+        self.vp.cube_inactive_op = v / 100.0
+        self.vp.apply_cube_settings()
+
+    def _corner_changed(self, text):
+        self.vp._cube.corner = text
+        self.vp.apply_cube_settings()
+
+    def _reset(self):
+        self.vp.cube_size_mode = "auto"
+        self.vp.cube_fixed_px = 66
+        self.vp.cube_inactive_op = 0.5
+        self.vp._cube.corner = "top-right"
+        self._mode.setCurrentText("auto")
+        self._size.setValue(66)
+        self._op.setValue(50)
+        self._corner.setCurrentText("top-right")
+        self.vp.apply_cube_settings()

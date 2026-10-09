@@ -119,17 +119,30 @@ def _qcol(i: int) -> QColor:
     return QColor((i >> 16) & 255, (i >> 8) & 255, i & 255)
 
 
+def auto_size(viewport_w: int, viewport_h: int) -> int:
+    """M155 (L10.3 is a PROPOSAL, this formula is OURS — receipt V5):
+    AUTO grows the cube on big screens and keeps the shipped 66 px
+    continuity on ours: clamp(round(0.08 x min side), 60, 140)."""
+    return max(60, min(140, round(0.08 * min(viewport_w, viewport_h))))
+
+
 class ViewCube:
     def __init__(self):
         self.rect = QRectF(0, 0, SIZE, SIZE)
+        self.size_px = SIZE              # LOGICAL (L10.5; AUTO mode
+        #   is the viewport's decision, this is the outcome)
+        self.corner = "top-right"        # L10.1 corner picker
         self._screen: dict = {}     # label -> (path_pts_2d, view_kind)
         self._zones: dict = {}      # zone name -> list of QPolygonF pts
         self._pick: QImage | None = None
         self._pick_dpr = 1.0
 
     def place(self, widget_w: int, widget_h: int):
-        self.rect = QRectF(widget_w - SIZE - MARGIN, MARGIN,
-                           SIZE, SIZE * 0.86)
+        s, m = self.size_px, MARGIN
+        h = s * 0.86
+        x = m if self.corner.endswith("left") else widget_w - s - m
+        y = m if self.corner.startswith("top") else widget_h - h - m
+        self.rect = QRectF(x, y, s, h)
     # ---- drawing -----------------------------------------------------------
     def project(self, camera: Camera):
         cam = Camera(fov=30.0)
@@ -297,8 +310,9 @@ class NavWidget:
         self.rects: dict[str, QRectF] = {}
         self.hover: str | None = None
 
-    def place(self, widget_w: int, top_y: float):
-        x = widget_w - self.SIZE - MARGIN
+    def place(self, widget_w: int, top_y: float, corner: str = "top-right"):
+        x = (MARGIN if corner.endswith("left")
+             else widget_w - self.SIZE - MARGIN)
         for i, kind in enumerate(self.KINDS):
             self.rects[kind] = QRectF(x, top_y + i * (self.SIZE + self.GAP),
                                       self.SIZE, self.SIZE)

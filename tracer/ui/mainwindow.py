@@ -162,6 +162,7 @@ class MainWindow(QMainWindow):
         self.viewport.set_wheel_commands(self._wheel_commands)
         self.viewport.zoom_window.connect(self._on_zoom_window)
         self.viewport.isolation_esc.connect(self._on_isolation_esc)
+        self.viewport.home_changed.connect(self._mark_dirty)
         self.viewport.section_esc.connect(self._clear_section)
         self._mark_menu = None               # open marking menu (M56)
         self._move_origin = None             # armed Move gesture (M53)
@@ -5426,6 +5427,10 @@ class MainWindow(QMainWindow):
         self._update_status()
         self._apply_appearance()
         self._apply_units()
+
+    def _mark_dirty(self):
+        self._unsaved = True             # M155: "Set Current View as
+        #   Home" is a DOCUMENT edit — the title dot must say so
 
     def new_document(self, doc: Document | None = None):
         self.doc = doc or Document("Untitled")
