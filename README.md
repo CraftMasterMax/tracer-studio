@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M158**
+**Status: M159**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -383,6 +383,16 @@ independent project with no Autodesk assets or affiliation.)
   line prints the split and the word UNCHANGED; refusals are named,
   numeric and fail-first, and every one of them speaks the kernel's
   own voice. Corners stay rung 2 — banked by name.
+- **INK NAVY (M159)**: the chrome now wears the only RECORDED values
+  of the class's dark-blue design language — window `#3b4453`,
+  panel step, control `#454f61`, pressed `#2c3440`, text `#e1e1e1`,
+  one selection blue, one focus blue, 3px corners, 24px controls,
+  13px type on a Segoe UI/Inter/Noto stack (the class's proprietary
+  UI font never ships). Every pair clears WCAG 4.5:1 in a computed
+  gate — the accessibility the class VPAT claims and its users
+  can't read; the recorded selection ink measured 4.44 and was
+  lifted with the number in the token's comment. The viewport did
+  NOT move: the canvas hover/selection duo is the next tranche.
 - **Assembly, rung 1 (M146)**: Tools ▸ **Joint — As-Built Rigid**:
   two bodies, the child's pose captured once, and **LAW R** from then
   on — *a joint follows where a body is PLACED, not how it is BUILT*.

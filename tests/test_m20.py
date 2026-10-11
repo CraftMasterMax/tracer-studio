@@ -78,7 +78,7 @@ def test_fusionish_palette():
     assert "hi_hover" in DARK and "hi_sel" in DARK
     lum = lambda hx: sum(int(hx[i:i + 2], 16) for i in (1, 3, 5))
     assert lum(DARK["sky_top"]) > lum(DARK["sky_bottom"])  # darkBlue: settles darker under the model
-    assert DARK["bg0"] == "#1a1f25"            # darkBlue .350 chrome
+    assert DARK["bg0"] == "#3b4453"            # INK NAVY window (M159)
 
 
 # ---- coplanar face grouping (whole-face highlight) --------------------------

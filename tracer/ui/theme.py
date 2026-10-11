@@ -26,10 +26,40 @@ CHAR = {".300": "#cccccc", ".500": "#999999", ".700": "#666666"}
 LGRAY = {".050": "#ffffff", ".100": "#f5f5f5", ".200": "#eeeeee",
          ".400": "#d9d9d9", ".600": "#cccccc"}
 
+# ---- INK NAVY: the M159 chrome family (FD7 receipts) ------------------------
+# The recorded triplets come from the only published RGB values for the
+# Autodesk dark-blue design language (FD7 fact 5: window FromArgb(59,68,83),
+# control FromArgb(69,79,97), pressed FromArgb(44,52,64), text #E1E1E1);
+# the panel step between window and control is OURS-said (FD7 records no
+# third surface — one lightness step, the modder-documented structure).
+# select/accent are the FD7 fact 7 decision: ONE desaturated blue does the
+# selected job in chrome; the brighter #4c9bff does focus/links. DB stays
+# the canvas/sketch scale — the chrome re-tune must not move the viewport
+# (that pair is M160's conversation).
+NAVY = {"window": "#3b4453",        # recorded (FD7-5)
+        "panel": "#414b5c",         # ours-said step (window < panel)
+        "control": "#454f61",       # recorded (FD7-5, lighter than window)
+        "press": "#2c3440",         # recorded (FD7-5 control highlight)
+        "text": "#e1e1e1",          # recorded (FD7-5)
+        "text_dim": "#c3c7ce",      # FD7-16 icon gray, lifted to clear
+                                    #   4.5:1 on EVERY navy surface
+        "text_faint": "#8f97a3",    # ours-said (dimmer rung, tertiary only)
+        "select": "#3d6cb9",        # chrome selection fill (FD7-7)
+        "select_fg": "#ffffff",     # recorded was #EEEEEE (FD7-6) — it
+                                    #   measures 4.44 on select, UNDER our
+                                    #   own 4.5 gate; lifted to white,
+                                    #   cite-the-move (M159)
+        "accent": "#4c9bff",        # focus/links (FD7-7, brighter on dark)
+        "accent_dim": "#3d6cb9",    # pressed/rolled accent
+        "accent_soft": "#7fb8ff",   # menu-selection ink
+        "accent_faint": "#cde4ff",  # pale ink on deep fills
+        "accent_deep": "#1f3a5f",   # deep well under the accent
+        "line_hi": "#525d71"}       # hover-brightened border (ours-said)
+
 SUCCESS, WARNING, ERROR = "#87b340", "#faa21b", "#ec4a41"
-HOVER = "#e3ad79"           # the peach under the cursor
-SELECT = BLUE[".500"]       # picked geometry = brand blue
-SEL_BG = "#1858a8"          # selection fill in trees/lists
+HOVER = "#e3ad79"           # the peach (canvas hover — M160 re-pairs it)
+SELECT = BLUE[".500"]       # picked geometry = brand blue (canvas)
+SEL_BG = NAVY["select"]     # selection fill in trees/lists — chrome
 PLANE = "#fbb549"           # datum planes (work-plane amber)
 INFER = "#84d7ce"           # inference / live measure
 
@@ -45,20 +75,24 @@ def rgba(hexc: str, alpha: int) -> str:
     return f"#{alpha:02x}{hexc.lstrip('#')}"
 
 
-# ---- the dark theme (the product default; Fusion's 2026 look) --------------
+# ---- the dark theme (the product default; the M159 INK NAVY chrome) --------
 DARK = {
-    # chrome surfaces, dark→light roles
-    "bg0": DB[".350"], "bg1": DB[".300"], "bg2": DB[".250"],
-    "line": DB[".200"], "line_hi": DB[".100"],
-    "fg": LGRAY[".100"], "fg_dim": CHAR[".500"], "fg_faint": CHAR[".700"],
-    "accent": BLUE[".500"], "accent_dim": BLUE[".700"],
-    "accent_soft": BLUE[".300"], "accent_faint": BLUE[".100"],
-    "accent_deep": BLUE[".900"],
+    # chrome surfaces — the recorded navy family, window < panel <
+    # control, pressed DARKER (FD7-5/6; M159 re-target, cite-the-move:
+    # was the DB .350/.300/.250 near-black rungs)
+    "bg0": NAVY["window"], "bg1": NAVY["panel"], "bg2": NAVY["control"],
+    "line": NAVY["press"], "line_hi": NAVY["line_hi"],
+    "fg": NAVY["text"], "fg_dim": NAVY["text_dim"],
+    "fg_faint": NAVY["text_faint"],
+    "accent": NAVY["accent"], "accent_dim": NAVY["accent_dim"],
+    "accent_soft": NAVY["accent_soft"], "accent_faint": NAVY["accent_faint"],
+    "accent_deep": NAVY["accent_deep"],
+    "sel_fg": NAVY["select_fg"],
     "success": SUCCESS, "warn": WARNING, "danger": ERROR,
     "hover": HOVER, "select": SELECT, "sel_bg": SEL_BG,
 
-    # viewport — the canvas follows the chrome, Fusion's "Theme
-    # (default)" behaviour; the renderer reads every key below
+    # viewport — the canvas keeps the DB rungs: M159 governs CHROME
+    # only; the hover/selection canvas PAIR is M160's tranche
     "sky_top": DB[".300"], "sky_bottom": DB[".350"],
     "grid_minor": rgb01(DB[".200"]), "grid_major": rgb01(DB[".100"]),
     "axis_x": (0.87, 0.42, 0.44), "axis_y": (0.55, 0.80, 0.52),
@@ -114,20 +148,41 @@ DRAWING = {
 
 # ---- metrics: logical pixels only, one rhythm -------------------------------
 SP = 4                       # base spacing unit
-TYPE = {"ui": 13, "title": 14, "small": 11}
+RADIUS = 3                   # the ONE corner (FD7-6: border-radius 3px)
+TYPE = {"ui": 13, "title": 14, "small": 11}      # 13px chrome (FD7-6)
 SCROLL = {"bar": 10, "margin": 2, "thumb_r": 4, "thumb_min": 24}
+MIN_H = SP * 6               # 24px control min-height (FD7-6)
+# The typography stack (FD7-12): the class ships a proprietary UI font
+# (Artifakt) which NEVER rides here; this is the metric stand-in family.
+FONT_STACK = '"Segoe UI", "Inter", "Noto Sans", sans-serif'
+
+
+def contrast(a: str, b: str) -> float:
+    """WCAG 2.x contrast ratio between two '#rrggbb' tokens — the
+    accessibility arithmetic the class VPAT answers (FD7-20) and our
+    own 4.5:1 chrome gate (FD7-21 differentiator) reads."""
+    def lum(hexc: str) -> float:
+        h = hexc.lstrip("#")
+        chans = []
+        for i in (0, 2, 4):
+            c = int(h[i:i + 2], 16) / 255
+            chans.append(c / 12.92 if c <= 0.04045
+                         else ((c + 0.055) / 1.055) ** 2.4)
+        return 0.2126 * chans[0] + 0.7152 * chans[1] + 0.0722 * chans[2]
+    la, lb = lum(a), lum(b)
+    return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
 
 
 def stylesheet(t: dict) -> str:
     """One stylesheet, generated from tokens — chrome, inputs, menus
     and tooltips all speak the same voice."""
-    rad = SP * 2
-    half = SP // 2
+    rad = RADIUS
     return f"""
     QMainWindow, QWidget {{
         background: {t['bg0']};
         color: {t['fg']};
         font-size: {TYPE['ui']}px;
+        font-family: {FONT_STACK};
     }}
     QPanel, QTreeWidget, QListWidget {{
         background: {t['bg1']};
@@ -140,7 +195,7 @@ def stylesheet(t: dict) -> str:
     }}
     QTreeWidget::item:selected, QListWidget::item:selected {{
         background: {t['sel_bg']};
-        color: {t['fg']};
+        color: {t['sel_fg']};
     }}
     QTreeWidget::item:hover, QListWidget::item:hover {{
         background: {t['bg2']};
@@ -155,19 +210,23 @@ def stylesheet(t: dict) -> str:
     QPushButton {{
         background: {t['bg2']};
         border: 1px solid {t['line']};
-        border-radius: {rad - half}px;
+        border-radius: {rad}px;
+        min-height: {MIN_H}px;
         padding: {SP}px {SP * 3}px;
         color: {t['fg']};
     }}
     QPushButton:hover {{ border-color: {t['accent']}; }}
     QPushButton:pressed {{ background: {t['line']}; }}
-    QPushButton[tb="true"] {{ padding: {SP}px; border-radius: {SP}px; }}
+    QPushButton[tb="true"] {{ padding: {SP}px; border-radius: {SP}px;
+                              min-height: 0; }}
     QLineEdit, QAbstractSpinBox, QComboBox, QPlainTextEdit, QTextEdit {{
         background: {t['bg2']};
         border: 1px solid {t['line']};
         border-radius: {SP}px;
+        min-height: {MIN_H}px;
         padding: {SP}px {SP * 2}px;
         selection-background-color: {t['sel_bg']};
+        selection-color: {t['sel_fg']};
     }}
     QLineEdit:focus, QAbstractSpinBox:focus, QComboBox:focus {{
         border-color: {t['accent']};

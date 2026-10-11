@@ -2169,6 +2169,34 @@ M125; items 1-11 below are history.*
   offscreen receipt). Rung 2 (corners, wrap-bend, fold reliefs)
   stays BANKED BY NAME (§5); nearest-fold-to-edge refusals keep
   SM4's exact voice. (1762.)
+- **THE CHROME WEARS ITS FAMILY SHIPPED (M159, INK NAVY)** — the
+  design fleet's first UI tranche: the chrome retargets onto the
+  ONLY recorded values of the class's dark-blue language (FD7 fact
+  5's FromArgb triplets — window #3b4453, control #454f61, pressed
+  #2c3440, text #e1e1e1; the panel rung between window and control
+  is OURS-said, one step, FD7 records no third surface). NEW NAVY
+  token family in theme.py; DARK's CHROME roles re-point, the
+  CANVAS does not move (DB rungs, the peach and the sky pick blue
+  wait for M160's duo — the separation is gated, not polite).
+  CITE-THE-MOVES: the old accent==select equality becomes a
+  DOCUMENTED SPLIT (chrome focus #4c9bff vs canvas pick #0696d7,
+  m112 amended with receipts); the recorded selection ink #EEEEEE
+  MEASURES 4.44 on the #3d6cb9 fill — under our OWN 4.5 gate, so it
+  ships lifted to white with the measurement in the token comment
+  (their VPAT says "Supports" while their users can't read the
+  chrome — FD7-20/21: the known weakness is our checklist).
+  STRUCTURE rides the receipts: 3px corner (ONE radius token, now
+  in the rhythm's governed set), 24px control floor, 13px chrome
+  text, the Segoe UI/Inter/Noto stack — Artifakt NEVER ships
+  (FD7-12). Gates (test_m159.py, 7): the family MEETS the recorded
+  triplets derived from the FromArgb numbers themselves; three
+  levels, never pure black, blue cast per surface; WCAG math per
+  fg×bg pair; the sheet carries the structure; EVERY hex in the
+  generated sheet is a governed token (no literal may wear a QSS
+  coat); the canvas byte-stands; app.py's single style call is the
+  only chrome truth. The proof shot samples LIVED PIXELS: menubar
+  = window, tree well = panel, selection = fill under white ink,
+  button face = control — chrome IS the family. (1769.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

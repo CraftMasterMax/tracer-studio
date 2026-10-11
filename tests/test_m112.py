@@ -1,9 +1,10 @@
 """M112: theme-token discipline.
 
-The whole UI speaks in tokens: the HIG darkBlue surfaces, the
-autodeskBlue accent, the peach hover, the status trio, the sketch
+The whole UI speaks in tokens: the INK NAVY chrome (M159 retarget —
+the only recorded values of the class's dark-blue family), the canvas
 semantics, one generated stylesheet whose sizes all ride the SP
-rhythm — and no UI module is allowed to spell a raw colour again.
+rhythm (plus the one RADIUS token) — and no UI module is allowed to
+spell a raw colour again.
 """
 import re
 from pathlib import Path
@@ -19,21 +20,32 @@ UI_DIR = Path(__file__).resolve().parents[1] / "tracer" / "ui"
 
 # ---- the values themselves ---------------------------------------------------
 def test_brand_and_status_tokens():
-    assert theme.DARK["accent"] == "#0696d7"            # autodeskBlue .500
-    assert theme.DARK["hover"] == "#e3ad79"             # the peach
-    assert theme.DARK["select"] == theme.DARK["accent"]  # pick = brand blue
+    # M159 INK NAVY (research/fd7_visual_design.md fact 7): the CHROME
+    # accent retargets to #4c9bff (focus/links, brighter on dark) while
+    # the CANVAS pick color stays the sky blue until M160 pairs the
+    # hover/selection duo — the old accent==select equality becomes a
+    # documented SPLIT.
+    assert theme.DARK["accent"] == "#4c9bff"
+    assert theme.DARK["select"] == "#0696d7"             # canvas pick
+    assert theme.DARK["accent"] != theme.DARK["select"]  # roles split
+    assert theme.DARK["hover"] == "#e3ad79"              # canvas peach
     assert theme.DARK["success"] == "#87b340"
     assert theme.DARK["warn"] == "#faa21b"
     assert theme.DARK["danger"] == "#ec4a41"
-    assert theme.DARK["sel_bg"] == "#1858a8"            # list selection fill
+    assert theme.DARK["sel_bg"] == "#3d6cb9"             # list selection fill
 
 
-def test_surfaces_ride_the_darkblue_scale():
-    assert theme.DARK["bg0"] == theme.DB[".350"]        # darkest chrome base
-    assert theme.DARK["bg1"] == theme.DB[".300"]
-    assert theme.DARK["bg2"] == theme.DB[".250"]
-    assert theme.DARK["line"] == theme.DB[".200"]
-    # the canvas follows the chrome: Fusion's "Theme (default)" behaviour
+def test_surfaces_ride_the_ink_navy_scale():
+    # M159: chrome retargets onto the ONLY recorded values for the
+    # Autodesk dark-blue family (FD7 fact 5 — Inventor add-in
+    # FromArgb(59,68,83)/(69,79,97)/(44,52,64), text #E1E1E1).
+    assert theme.DARK["bg0"] == theme.NAVY["window"] == "#3b4453"
+    assert theme.DARK["bg1"] == theme.NAVY["panel"]       # ours-said step
+    assert theme.DARK["bg2"] == theme.NAVY["control"] == "#454f61"
+    assert theme.DARK["line"] == theme.NAVY["press"] == "#2c3440"
+    assert theme.DARK["fg"] == "#e1e1e1"                  # recorded
+    assert theme.DARK["bg0"] != theme.DARK["bg2"]         # controls lighter
+    # the canvas stays on the DB rungs — chrome re-tune, viewport untouched
     assert theme.DARK["sky_top"] == theme.DB[".300"]
     assert theme.DARK["sky_bottom"] == theme.DB[".350"]
 
@@ -68,6 +80,7 @@ def test_stylesheet_sizes_ride_the_rhythm():
     ok = {0, 1} | set(theme.TYPE.values()) | set(theme.SCROLL.values())
     ok |= {theme.SP * k for k in range(1, 13)}
     ok |= {theme.SP * k + theme.SP // 2 for k in range(0, 6)}   # half steps
+    ok |= {theme.RADIUS}          # the one corner (M159, FD7-6: 3px)
     for t in (theme.DARK, theme.LIGHT):
         for n in _px(theme.stylesheet(t)):
             assert n in ok, f"{n}px is off-rhythm"
