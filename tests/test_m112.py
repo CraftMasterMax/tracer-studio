@@ -26,9 +26,13 @@ def test_brand_and_status_tokens():
     # hover/selection duo — the old accent==select equality becomes a
     # documented SPLIT.
     assert theme.DARK["accent"] == "#4c9bff"
-    assert theme.DARK["select"] == "#0696d7"             # canvas pick
-    assert theme.DARK["accent"] != theme.DARK["select"]  # roles split
-    assert theme.DARK["hover"] == "#e3ad79"              # canvas peach
+    # M160 THE CANVAS SPEAKS lands the duo: the canvas pick takes the
+    # digest's decided accent blue (FD2-L2 publishes NO hex — "blue
+    # selection" and "turns white" are the users' recorded language;
+    # the peach was folklore wearing a hex). The SPLIT that survives
+    # is worlds, not shades: chrome fill #3d6cb9 vs canvas pick #4c9bff.
+    assert theme.DARK["select"] == "#4c9bff"             # canvas pick
+    assert theme.DARK["hover"] == "#9cc4ff"              # "turns white"
     assert theme.DARK["success"] == "#87b340"
     assert theme.DARK["warn"] == "#faa21b"
     assert theme.DARK["danger"] == "#ec4a41"
@@ -51,8 +55,10 @@ def test_surfaces_ride_the_ink_navy_scale():
 
 
 def test_viewport_semantic_colours():
-    assert theme.DARK["hi_hover"] == theme.rgb01("#e3ad79")
-    assert theme.DARK["hi_sel"] == theme.rgb01("#0696d7")
+    # M160 duo: bright bluish-white hover, accent-blue pick (FD2-L2's
+    # recorded language, OURS-Said hexes, cited in theme.py)
+    assert theme.DARK["hi_hover"] == theme.rgb01("#9cc4ff")
+    assert theme.DARK["hi_sel"] == theme.rgb01("#4c9bff")
     assert theme.DARK["preview"] == theme.rgb01("#faa21b")   # amber ghost
     assert theme.DARK["plane_line"] == theme.rgb01("#fbb549")  # work plane
 

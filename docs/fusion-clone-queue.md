@@ -2197,6 +2197,39 @@ M125; items 1-11 below are history.*
   only chrome truth. The proof shot samples LIVED PIXELS: menubar
   = window, tree well = panel, selection = fill under white ink,
   button face = control — chrome IS the family. (1769.)
+- **THE CANVAS SPEAKS SHIPPED (M160, FD tranche 2)** — the duo, the
+  pickbox, the row-glow and the readout, each on its FD receipt. THE
+  DUO (FD2-L2: zero hexes published — "turns white" and "blue
+  selection" are the users' recorded language, so the values are
+  OURS-Said on record): hover retargets peach → #9cc4ff bright
+  bluish-white (mix lifted 0.25→0.40 — FD2-L1's "constant bright
+  light" is the LAW, no toggle in v1), canvas pick takes the digest's
+  #4c9bff. M37's pin that DEMANDED a warm hover died folklore-
+  correct: the duo law is now "both blue, hover strictly brighter".
+  THE PICKBOX (FD8-45): ONE knob, initial 3 DIP, clamped 0..20,
+  app-persisted; 0 kills PREVIEWING only — clicks stay exact. A
+  center-ray hit ALWAYS wins the cross: M20's pinned coords caught
+  the naive nearest-ray draft returning a neighbour's point under a
+  wide box — the tolerance theorem is now pinned as its own gate
+  (coords, sketch anchors and re-pivot all live on that exactness).
+  ROW==GLOW (FD2-L4): browser row under the mouse washes its body
+  with the HOVER value (0.5, never the selection's 1.0 — the picked
+  set never hears about it; M131's click wash keeps its own slot);
+  one resolver `_body_name_for_row` serves both washes; the tree
+  speaks a new `row_leave` because Qt fires nothing when the pointer
+  exits. THE CHIP (FD8-34): bottom-right detail readout COMPUTES
+  (20×20 top face → "400.00 mm² | Body 1" from mesh truth), hover
+  wins live / selection is the floor, ships ON and remembers OFF
+  ("absence treated as BUG" — their QA, our law), and STEPS ASIDE
+  when the cube docks in its corner. The shot caught a real bug: the
+  zero-pickbox clear branch left a stale chip — fixed in product,
+  then pinned ("a chip must never lie about a face that left").
+  Gates (test_m160.py, 13): 3-DIP default, clamps+persist, preview
+  on/off, exactness theorem, silhouette reach (miss at 0, hit at 6),
+  hover-value-not-selection-value wash, resolver truth, readout math,
+  floor+fade, remembered toggle, and the chip's ON/OFF pixel
+  differential with BYTE-EXACT return. Proof: four acts, ink
+  8673/0/8673 px, md5 3x 15d2d460..., chip text pinned. (1782.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

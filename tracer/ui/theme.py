@@ -1,12 +1,11 @@
 """Design tokens — every colour and pixel in the UI traces back here.
 
 The values follow the public Autodesk design-token scales (the unified
-dark theme Fusion shipped Oct 2025, "darkBlue" by lineage): darkBlue
-surfaces, autodeskBlue accent, the peach hover, a fixed status trio,
-and the viewport semantics every Fusion user names from memory — blue
-selection, amber ghost preview, white-when-constrained sketch.
-Clean-room: token VALUES are facts; no Autodesk art or naming ships
-in this product.
+dark theme Fusion shipped Oct 2025, "darkBlue" by lineage) re-tuned in
+M159 to the RECORDED INK NAVY family, with the M160 canvas duo (bright
+bluish-white hover, accent-blue selection — OURS-Said hexes on the
+users' recorded language, "turns white" / "blue selection"). Clean-room:
+token VALUES are facts; no Autodesk art or naming ships in this product.
 
 Discipline, pinned by tests/test_m112.py:
   * UI modules never spell a hex or an rgb triple — they read
@@ -57,8 +56,15 @@ NAVY = {"window": "#3b4453",        # recorded (FD7-5)
         "line_hi": "#525d71"}       # hover-brightened border (ours-said)
 
 SUCCESS, WARNING, ERROR = "#87b340", "#faa21b", "#ec4a41"
-HOVER = "#e3ad79"           # the peach (canvas hover — M160 re-pairs it)
-SELECT = BLUE[".500"]       # picked geometry = brand blue (canvas)
+# M160 THE CANVAS SPEAKS (research/fd2_selection.md): NO hex for the
+# canvas duo is published anywhere (FD2-L2 — "blue selection" is only
+# in-product consensus, "turns white" is the users' own hover language).
+# The duo is therefore OURS-Said, anchored to the fleet's decided blues:
+# hover = a BRIGHT bluish-white wash (the "turns white" reading), the
+# canvas accent #4c9bff does selection (digest palette). The peach
+# retires — it was never a recorded value, only folklore with a hex.
+HOVER = "#9cc4ff"           # face under the cursor (bright, FD2-L1)
+SELECT = NAVY["accent"]     # picked geometry = the canvas accent blue
 SEL_BG = NAVY["select"]     # selection fill in trees/lists — chrome
 PLANE = "#fbb549"           # datum planes (work-plane amber)
 INFER = "#84d7ce"           # inference / live measure

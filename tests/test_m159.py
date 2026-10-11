@@ -87,17 +87,20 @@ def test_no_hex_literal_in_the_sheet_that_is_not_a_token():
             assert m.group(0).lower() in governed, m.group(0)
 
 
-def test_the_canvas_did_not_move_m160_owns_that_door():
-    """M159 governs CHROME. The viewport rung tokens, the sky, the
-    peach and the canvas pick blue are byte-where-they-were — the
-    hover/selection duo lands in M160 with its own receipts."""
+def test_the_canvas_door_m160_opened_and_only_m160():
+    """M159 parked the canvas duo at M160's door; M160 opened it with
+    its OWN receipts (FD2-L2: zero published hexes — the duo is OURS-
+    Said on the recorded user language, cited in theme.py). What must
+    STILL not move: the sky rungs, the ghost amber, the datum amber."""
     t = theme.DARK
+    assert t["hover"] == "#9cc4ff" and t["select"] == "#4c9bff"
+    assert t["hi_hover"] == theme.rgb01("#9cc4ff")
+    assert t["hi_sel"] == theme.rgb01("#4c9bff")
     assert t["sky_top"] == theme.DB[".300"]
     assert t["sky_bottom"] == theme.DB[".350"]
-    assert t["hover"] == "#e3ad79" and t["select"] == "#0696d7"
-    assert t["hi_hover"] == theme.rgb01("#e3ad79")
-    assert t["hi_sel"] == theme.rgb01("#0696d7")
-    assert set(theme.LIGHT) == set(theme.DARK)       # pair discipline held
+    assert t["preview"] == theme.rgb01("#faa21b")        # ghost amber
+    assert t["plane_line"] == theme.rgb01("#fbb549")     # datum amber
+    assert set(theme.LIGHT) == set(theme.DARK)           # pair held
 
 
 def test_the_app_wears_the_tokens():

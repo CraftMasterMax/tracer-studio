@@ -117,6 +117,16 @@ class MainWindow(QMainWindow):
         self.viewport = Viewport(self._renderer)
         self.rail = LeftRail()
         self.rail.tree.currentItemChanged.connect(self._on_tree_select)
+        # M160 (FD2-L4): row hover rides the canvas — entered() is the
+        # Qt mouse-tracking signal over ROWS, viewportEntered() the
+        # empty-well version, row_leave() the pointer leaving the whole
+        # tree (our FeatureTree addition). All three land on hover_body.
+        self.rail.tree.setMouseTracking(True)
+        self.rail.tree.entered.connect(self._on_tree_hover)
+        self.rail.tree.viewportEntered.connect(
+            lambda: self.viewport.hover_body(None))
+        self.rail.tree.row_leave.connect(
+            lambda: self.viewport.hover_body(None))
         self.rail.tree.itemDoubleClicked.connect(self._tree_activated)
         self.rail.tree.feature_menu.connect(self._feature_menu)
         self.rail.tree.cplane_menu.connect(self._cplane_menu)
@@ -663,6 +673,19 @@ class MainWindow(QMainWindow):
                                  triggered=self.action_toggle_edges)
         m_view.addAction(self.act_grid)
         m_view.addAction(self.act_edges)
+        # M160 doors: the pickbox knob (FD8-45, one lever for click
+        # tolerance AND hover preview) and the detail-measure chip
+        # (FD8-34, a preference whose absence their QA calls a bug —
+        # so ours ships ON).
+        m_view.addSeparator()
+        self.act_pick = QAction("Pick radius\u2026", self,
+                                triggered=self.action_pick_radius)
+        self.act_readout = QAction(
+            "Show measure readout", self, checkable=True,
+            checked=self.viewport.show_readout,
+            triggered=self.action_readout_toggle)
+        m_view.addAction(self.act_pick)
+        m_view.addAction(self.act_readout)
         m_vs = m_view.addMenu("Visual Styles")
         _STYLE_KEYS = {"Shaded": "Ctrl+4", "Shaded with edges": "Ctrl+5",
                        "Ghosted": "Ctrl+6", "Wireframe": "Ctrl+7"}
@@ -772,23 +795,37 @@ class MainWindow(QMainWindow):
         return True
 
     # ---- sketching: new, finish (associative extrude), re-edit ---------------
+    def _body_name_for_row(self, item):
+        """Which body a browser row speaks for — the ONE resolver for
+        both the M131 click wash and the M160 hover wash: a body row
+        means itself, a feature/sketch row means its owning body, a
+        datum or folder row means nothing (None)."""
+        role = item.data(0, Qt.UserRole) if item is not None else None
+        if role and self.doc is not None:
+            kind, arg = role
+            if kind == "body":
+                return arg
+            if kind in ("feature", "sketch") and isinstance(arg, int):
+                feats = list(self.doc.features)
+                if 0 <= arg < len(feats):
+                    return getattr(feats[arg], "body", None)
+        return None
+
     def _on_tree_select(self, cur, *_):
         """Row chosen in the browser: refresh properties (the M72 path)
         AND wash the body that row builds (M131) — a body row washes
         itself, a feature/sketch row washes its owning body, a datum or
         folder row washes nothing (clears)."""
         self.rail.props.show_feature(self.rail.tree.current_feature())
-        role = cur.data(0, Qt.UserRole) if cur is not None else None
-        name = None
-        if role and self.doc is not None:
-            kind, arg = role
-            if kind == "body":
-                name = arg
-            elif kind in ("feature", "sketch") and isinstance(arg, int):
-                feats = list(self.doc.features)
-                if 0 <= arg < len(feats):
-                    name = getattr(feats[arg], "body", None)
-        self.viewport.emphasize_body(name)
+        self.viewport.emphasize_body(self._body_name_for_row(cur))
+
+    def _on_tree_hover(self, index):
+        """M160 (FD2-L4): a browser row UNDER THE MOUSE live-highlights
+        its body in the canvas with the SAME glow as canvas hover — the
+        probe's own words: hovering the row is "the same thing as
+        hovering over the body in the design workspace". Visual only."""
+        item = self.rail.tree.itemFromIndex(index)
+        self.viewport.hover_body(self._body_name_for_row(item))
 
     def _tree_activated(self, item, col):
         role = item.data(0, Qt.UserRole) if item else None
@@ -6087,6 +6124,30 @@ class MainWindow(QMainWindow):
     def action_toggle_edges(self):
         self._renderer.show_edges = not self._renderer.show_edges
         self.viewport.update()
+
+    def action_pick_radius(self):
+        """M160 (FD8-45): the pickbox. ONE knob for click tolerance AND
+        hover preview, DIPs 0..20, default 3 — AutoCAD's own numbers;
+        0 disables hover PREVIEWING (their PICKBOX=0 law), exact clicks
+        keep working. App-persisted like every viewport manner."""
+        from . import cmddialog
+        v = cmddialog.ask(self, "Pick radius", [
+            dict(key="r", kind="double",
+                 label="Pick radius (0 = no hover preview)",
+                 default=self.viewport.pick_radius, min=0.0, max=20.0,
+                 decimals=1, suffix=" DIP")])
+        if v is None:
+            return
+        r = self.viewport.set_pick_radius(v["r"])
+        self.status.showMessage(
+            f"Pick radius {r:g} DIP — "
+            + ("hover preview is OFF (PICKBOX = 0)" if r <= 0
+               else "clicks and hover share this one box"), 5000)
+
+    def action_readout_toggle(self):
+        """M160 (FD8-34): 'show detail measure' — the bottom-right spec
+        line is a preference, remembered, effective this instant."""
+        self.viewport.set_readout_visible(self.act_readout.isChecked())
 
     def action_export(self, ext: str = ".stl"):
         if self.doc is None or self.doc.result is None:

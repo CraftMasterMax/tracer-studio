@@ -63,6 +63,9 @@ class FeatureTree(QTreeWidget):
                                               # the isolated row)
     feature_delete = Signal(object)         # Feature (Del key, M72)
     feature_rename = Signal(object)         # Feature (F2 key, M72)
+    row_leave = Signal()                    # M160/FD2-L4: the pointer
+                                            #   left the whole tree
+                                            #   (hover wash dies)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -74,6 +77,13 @@ class FeatureTree(QTreeWidget):
         self.feature_selected = None  # callback(feature|None)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_menu)
+
+    def leaveEvent(self, ev):
+        """M160/FD2-L4: the row-hover wash is a guest — it dies the
+        instant the pointer leaves the tree, and Qt fires no signal for
+        that, so this widget speaks one."""
+        super().leaveEvent(ev)
+        self.row_leave.emit()
 
     def _show_menu(self, pos):
         it = self.itemAt(pos)

@@ -279,13 +279,19 @@ def test_click_select_then_click_empty_clears(win, qapp):
     assert len(cv.selected_groups()) == 0
 
 
-def test_selection_is_fusion_blue():
-    # M112: the unified theme picks geometry in autodeskBlue; the 2019
-    # orange lives on HOVER now, as the famous peach
+def test_selection_is_accent_blue_hover_is_brighter():
+    # M160 THE CANVAS SPEAKS retargets this pin: the old asserts DEMANDED
+    # a warm (peach) hover — folklore wearing a hex, killed by FD2-L2
+    # (no hex published; users' hover language is "turns white", the
+    # selection consensus is blue). Law now: accent-blue pick, strictly
+    # BRIGHTER bluish-white hover, duo distinguishable.
     r, g, b = DARK["hi_sel"]
-    assert b >= 0.8 and r <= 0.2
+    assert b >= 0.9 and r <= 0.35                      # #4c9bff
     hr, hg, hb = DARK["hi_hover"]
-    assert hr >= 0.85 and hb <= 0.55
+    assert hb >= 0.9 and hr >= 0.55                    # #9cc4ff
+    lum = lambda t: 0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2]
+    assert lum(DARK["hi_hover"]) > lum(DARK["hi_sel"])  # brighter glow
+    assert DARK["hi_hover"] != DARK["hi_sel"]           # never one color
 
 
 # ---- proof of life ------------------------------------------------------------

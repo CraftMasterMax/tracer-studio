@@ -99,7 +99,9 @@ void main() {
     col += vec3(0.06, 0.07, 0.09)
          * pow(1.0 - max(dot(N, V), 0.0), 3.0);              // faint edge light
     if (v_hi > 0.75)       col = mix(col, u_hi_sel, 0.45);   // picked face
-    else if (v_hi > 0.25)  col = mix(col, u_hi_hover, 0.25); // face under cursor
+    else if (v_hi > 0.25)  col = mix(col, u_hi_hover, 0.40); // whole face
+                                           // under cursor: BRIGHT (M160,
+                                           // FD2-L1 "lights up")
     float e_fill = clamp(edge_amount(), 0.0, 1.0);
     if (u_wire == 1 && e_fill < 0.08)
         discard;                    // Wireframe: only edges remain (M54)

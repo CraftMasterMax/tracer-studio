@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M159**
+**Status: M160**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -393,6 +393,15 @@ independent project with no Autodesk assets or affiliation.)
   can't read; the recorded selection ink measured 4.44 and was
   lifted with the number in the token's comment. The viewport did
   NOT move: the canvas hover/selection duo is the next tranche.
+- **THE CANVAS SPEAKS (M160)**: hovering a face lights the WHOLE face
+  with a bright bluish-white glow (the users' own "turns white"
+  language — no toggle, by design), selection picks in the accent
+  blue, and one **pickbox** knob (default 3 DIP, 0..20) gives clicks
+  AND hover their tolerance — at zero the preview dies but exact
+  clicks live on. Hovering a browser row glows its body in the
+  canvas exactly like hovering the body itself. A detail readout
+  chip bottom-right MEASURES what it shows ("400.00 mm² | Body 1",
+  computed from mesh truth) — a remembered preference that ships ON.
 - **Assembly, rung 1 (M146)**: Tools ▸ **Joint — As-Built Rigid**:
   two bodies, the child's pose captured once, and **LAW R** from then
   on — *a joint follows where a body is PLACED, not how it is BUILT*.

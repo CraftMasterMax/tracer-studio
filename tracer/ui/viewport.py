@@ -14,7 +14,7 @@ import trimesh
 from PySide6.QtCore import (Qt, QPoint, QPointF, QRect, QRectF, QSize,
                             QTimer, Signal, QDateTime, QEasingCurve,
                             QSettings)
-from PySide6.QtGui import QColor, QImage, QPainter, QPen, QCursor
+from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen, QCursor
 from PySide6.QtWidgets import (QWidget, QApplication, QComboBox,
                                QDialog, QDialogButtonBox, QHBoxLayout,
                                QLabel, QMenu, QPushButton, QSlider,
@@ -120,6 +120,18 @@ class Viewport(QWidget):
         self._sel: list[int] = []
         self._body_rng: list = []          # M131 stitch ranges (body->faces)
         self._body_hi: list[int] = []      # M131 browser-picked body wash
+        # ---- M160: the canvas speaks (fd2/fd8 receipts) --------------------
+        # FD8-45: ONE knob — the pickbox in DEVICE-INDEPENDENT px (Qt
+        # hands mouse coords in DIPs already, so FD8-46's HiDPI trap is
+        # born solved here). 0 kills the hover PREVIEW only; exact
+        # clicks live on — that IS AutoCAD's PICKBOX=0 behaviour.
+        self._pick_r = float(QSettings().value("pick/radius", 3.0))
+        self._body_hov: list[int] = []     # FD2-L4 browser-row hover
+        # FD8-34: the bottom-right detail readout is a preference whose
+        # ABSENCE their QA treats as a bug — so it ships ON.
+        self._readout: str | None = None
+        self.show_readout = bool(QSettings().value(
+            "measure/detail_readout", True, type=bool))
         self._wheel = None                 # M132 open MarkingWheel, if any
         self._wheel_cmds: list = []        # (label, fn) pairs, N/E/S/W
         self._wheel_provider = None        # callable -> those cmds
@@ -219,6 +231,8 @@ class Viewport(QWidget):
         had_sel = bool(self._sel)
         self._hover, self._sel = None, []
         self._body_hi = []                 # M131: the wash dies with its
+        self._body_hov = []                # M160: and so does the hover
+        self._readout = None               # M160: stale face ids lie
         self._body_rng = rng               # mesh generation
         self._pp, self._pp_drag = None, False
         self._box, self._box_drag = None, False
@@ -348,6 +362,11 @@ class Viewport(QWidget):
         #   cube's corner, and for bottom corners it stacks ABOVE it
         if self.show_nav:
             self._nav.draw(p)
+        if self.show_readout and self._readout:
+            self._draw_readout(p)          # M160/FD8-34: the live spec
+            #   chip rides the bottom-right — the corner the cube/nav
+            #   never wear unless the user docks the cube there (then
+            #   the chip steps aside, NEVER occluded)
         if self._pivot is not None:
             # Pivot dot (M133): the eye derives from the target, so the
             # pointed-at point holds screen-centre for the whole gesture
@@ -360,6 +379,29 @@ class Viewport(QWidget):
         if self._wheel is not None:
             self._wheel.paint(p, self.font())   # M132: the ring rides last
         p.end()
+
+    def _draw_readout(self, p: QPainter):
+        """M160/FD8-34: the detail-measure chip, bottom-right, token-
+        skinned, 1px hairline — and it STEPS ASIDE when the cube is
+        docked in its corner (the readout is never the occluded one)."""
+        f = QFont(p.font())
+        f.setPointSize(theme.TYPE["small"])
+        p.setFont(f)
+        fm = p.fontMetrics()
+        tw = fm.horizontalAdvance(self._readout)
+        wch, hch = tw + 18, max(fm.height() + 8, 22)
+        x = self.width() - wch - 8
+        y = self.height() - hch - 8
+        if (self.show_cube and self._cube.corner == "bottom-right"
+                and self._cube.rect.right() > x - 8):
+            x = max(8, self._cube.rect.left() - wch - 16)   # step aside
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(QPen(QColor(theme.DARK["line"]), 1))
+        p.setBrush(QColor(theme.DARK["bg2"]))
+        p.drawRoundedRect(QRect(x, y, wch, hch), theme.RADIUS,
+                          theme.RADIUS)
+        p.setPen(QColor(theme.DARK["fg"]))
+        p.drawText(QRect(x, y, wch, hch), Qt.AlignCenter, self._readout)
 
     @staticmethod
     def rubber_style(window: bool):
@@ -989,13 +1031,46 @@ class Viewport(QWidget):
             # on-face and re-pivot all go quiet together, and the cut
             # face itself is deliberately not a target.
             return None
-        o, d = self._cam.ray(px, py, self.width(), self.height())
-        # NB: trimesh returns (locations, index_RAY, index_TRI)
-        locs, _, itri = tm.ray.intersects_location([o], [d],
-                                                   multiple_hits=False)
-        if len(locs) == 0:
+        # M160 (FD8-45): the pickbox is a TOLERANCE — an exact center
+        # hit always wins (the coords readout, sketch-on-face anchors
+        # and re-pivot must get the point UNDER the cursor, not a
+        # neighbour's). Only when the center ray misses do the four
+        # cross rays at +/- pick-radius DIP vote, nearest to its own
+        # origin first. r=0 collapses to the old exact ray.
+        r = self._pick_r
+        rays = ((0.0, 0.0),) if r <= 0 else (
+            (0.0, 0.0), (r, 0.0), (-r, 0.0), (0.0, r), (0.0, -r))
+        best = None
+        for i, (dx, dy) in enumerate(rays):
+            o, d = self._cam.ray(px + dx, py + dy,
+                                 self.width(), self.height())
+            # NB: trimesh returns (locations, index_RAY, index_TRI)
+            locs, _, itri = tm.ray.intersects_location([o], [d],
+                                                       multiple_hits=False)
+            if len(locs) == 0:
+                continue
+            if i == 0:                       # the cursor's own ray wins
+                return locs[0], tm.face_normals[itri[0]], int(itri[0])
+            t = float(np.linalg.norm(locs[0] - o))
+            if best is None or t < best[0]:
+                best = (t, locs[0], tm.face_normals[itri[0]], int(itri[0]))
+        if best is None:
             return None
-        return locs[0], tm.face_normals[itri[0]], int(itri[0])
+        return best[1], best[2], best[3]
+
+    def set_pick_radius(self, dip) -> float:
+        """M160/FD8-45: one knob for click tolerance AND hover preview,
+        0..20 DIP, app-persisted. Returns the clamped value."""
+        self._pick_r = min(20.0, max(0.0, float(dip)))
+        QSettings().setValue("pick/radius", self._pick_r)
+        if self._pick_r <= 0:
+            if self._hover:
+                self._hover = None               # the preview dies with
+                self._apply_hi()                 #   the zero pickbox
+            self._refresh_readout()              # chip follows, never stale
+        return self._pick_r
+
+    pick_radius = property(lambda self: self._pick_r)
 
     def _ground_point(self, px: float, py: float):
         o, d = self._cam.ray(px, py, self.width(), self.height())
@@ -1023,7 +1098,13 @@ class Viewport(QWidget):
         sel = self._sel
         if self._body_hi:
             sel = sorted(set(sel) | set(self._body_hi))
-        self._r.set_highlight(self._hover, sel)
+        # M160 (FD2-L4): a browser row UNDER THE MOUSE washes through the
+        # HOVER value — the same glow a face gets under the cursor. Also
+        # visual-only: the picked set never hears about it.
+        hov = self._hover
+        if self._body_hov:
+            hov = sorted(set(hov or []) | set(self._body_hov))
+        self._r.set_highlight(hov, sel)
         self.update()
 
     def _hover_update(self, pos):
@@ -1032,10 +1113,22 @@ class Viewport(QWidget):
         hit = self._shoot(self._tm, pos.x(), pos.y())
         self.coords.emit(hit[0] if hit else
                          self._ground_point(pos.x(), pos.y()))
+        if self._pick_r <= 0:
+            # FD8-45's own law: PICKBOX=0 -> "selection PREVIEWING is
+            # not available". The coords readout keeps living; the wash
+            # does not — and the chip falls back to its floor like
+            # under any lifted hover (M160: a stale line must not
+            # outlive the face it measured).
+            if self._hover:
+                self._hover = None
+                self._apply_hi()
+                self._refresh_readout()
+            return
         faces = self._group(hit[2]) if hit else None
         if faces != self._hover:
             self._hover = faces
             self._apply_hi()
+            self._refresh_readout()
 
     def _click_select(self, pos, ctrl: bool = False):
         if self._tm is None:
@@ -1045,6 +1138,7 @@ class Viewport(QWidget):
             if not ctrl and self._sel:
                 self._sel = []
                 self._apply_hi()
+                self._refresh_readout()
                 self.selection_changed.emit(0)
             return
         faces = self._group(hit[2])
@@ -1059,6 +1153,7 @@ class Viewport(QWidget):
             # Fusion: a plain click REPLACES the selection
             self._sel = list(faces)
         self._apply_hi()
+        self._refresh_readout()
         self.selection_changed.emit(len(self.selected_groups()))
 
     def _select_box(self, p0, p1, add: bool = False):
@@ -1178,6 +1273,20 @@ class Viewport(QWidget):
         self._body_hi = self.body_faces(name) if name else []
         self._apply_hi()
 
+    def hover_body(self, name: str | None):
+        """M160 (FD2-L4): a browser row UNDER THE MOUSE live-highlights
+        its body with the SAME glow as canvas hover — the probe's words:
+        "the same thing as hovering over the body in the design
+        workspace". Hover value, never selection value; a cut (M135)
+        mesh has no face identity, so the row stays mute there."""
+        if self._sectioned():
+            faces = []
+        else:
+            faces = self.body_faces(name) if name else []
+        if faces != self._body_hov:
+            self._body_hov = faces
+            self._apply_hi()
+
     def body_faces(self, name: str) -> list[int]:
         """Every viewport mesh face that came from body `name` (from
         the stitch ranges); [] when the body is hidden or unknown."""
@@ -1203,6 +1312,43 @@ class Viewport(QWidget):
     def selected_body(self) -> str | None:
         """The body owning the current picked faces (None if none)."""
         return self.body_of_faces(self._sel)
+
+    # ---- detail readout (M160, FD8-34) ---------------------------------
+    def _measure_line(self, faces) -> str | None:
+        """The live spec line for a face set. v1 speaks AREA + owning
+        body (mesh truth, computed — never a cached label); length /
+        radius lines for edges and circles are banked by name for the
+        edge-tranche. Format is the gate's contract: '<area> mm2 | <body>'."""
+        if not faces or self._tm is None or self._sectioned():
+            return None
+        ids = sorted(set(int(f) for f in faces))
+        V = np.asarray(self._tm.vertices, float)
+        F = np.asarray(self._tm.faces, int)[ids]
+        a, b, c = V[F[:, 0]], V[F[:, 1]], V[F[:, 2]]
+        area = float(0.5 * np.linalg.norm(np.cross(b - a, c - a),
+                                          axis=1).sum())
+        nm = self.body_of_faces(ids)
+        return f"{area:,.2f} mm²" + (f"  |  {nm}" if nm else "")
+
+    def _refresh_readout(self):
+        """Hover wins, selection is the floor (FD8-34: a live line, and
+        a CLEAR hover must not erase the selected thing's line)."""
+        line = self._measure_line(self._hover) or \
+            self._measure_line(list(self._sel) + list(self._body_hi))
+        if line != self._readout:
+            self._readout = line
+            self.update()
+
+    def set_readout_visible(self, on: bool):
+        """FD8-34: 'show detail measure' is a PREFERENCE — remember it,
+        repaint instantly."""
+        self.show_readout = bool(on)
+        QSettings().setValue("measure/detail_readout", self.show_readout)
+        self.update()
+
+    def readout_text(self) -> str | None:
+        """The line the chip shows (None = no chip). The test door."""
+        return self._readout if self.show_readout else None
 
     def focus_datum(self, role: str, name: str) -> bool:
         """Browser -> camera: centre the orbit on a construction plane
