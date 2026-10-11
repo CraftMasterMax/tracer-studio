@@ -2126,6 +2126,49 @@ M125; items 1-11 below are history.*
   raised inside Qt's paint path SEGFAULTS the suite. Nearest-mode
   roll quantisation (L6.3b/L6.4) deferred by name — exact mode
   ships. (1746.)
+- **THE FOLD GOT ITS STATION SHIPPED (M158, SM5 rung 1)** — the
+  contract (sm5_fold_contract.md, frozen on spike-2 S1–S6) promised
+  gates; it got them (test_m158.py, 16 green). THE LAW IN ONE
+  SENTENCE: a flange GROWS the flat, a fold PRESERVES it — and
+  preservation is measured BYTE-EXACT (G1: axis/btl/iml/oml splits
+  and a two-fold stack all land 73.89557489045134, the pre-fold
+  golden, through attach_walk + param_flat end-to-end). The witness
+  table _WITNESS_CL turns the pick into the SPLIT while the
+  preserved BA fixes the TOTAL (L3: axis halves, btl one-sided =
+  the S4b receipt byte, iml/oml ride the shipped outside_setback);
+  GOLDEN LAW honoured — every literal pinned here was spoken by the
+  kernel in spike_sm5/live_sm5_k1.py first, and the sweep found the
+  goldens' edges: run-step accumulation is 1e-12-budget, NOT byte
+  (L2's own words; the digest cites the measure). Sign: the FLAT
+  cannot see it (walk byte-equal under ±phi, BA byte-equal — S3),
+  the BODY walks it (y-extents −1..32.6 vs −32.6..1 byte-pinned,
+  S1), and the folded solid grows by the band sector WHILE the flat
+  rides unchanged (1481.532201335718 -> 1485.1529050128856) — the
+  two currencies of L1 in one receipt. Refusals ALL named-numeric
+  BEFORE the document moves (fail-first: stream untouched behind
+  every voice; 0-deg is a seam (L5 free per S2), fit overflow
+  PRINTS THE DEFICIT and names both fixes (L9/L10 — and S6 stands:
+  NO collision predicate ships, the 170-deg-on-4mm section walks
+  clean), ri/t/K ride the SHIPPED choke byte-identical (fold's
+  ValueError text == _param_check's flange text — measured, G4).
+  L6's theorem held at both doors: held is injected view state the
+  walk never reads (kernel byte-equal under flips; document gate
+  re-derives the same flat). Stream-permutation innocence (L7):
+  mid-insert and fold-reverse walks are BYTE-EQUAL — attach_walk
+  owns ascending station, the stream never does. THE GROWTH IS
+  ADDITIVE (M157's doctrine, kept): flange-only walks never pass t,
+  never enter the branch — the whole 1746 suite rode green
+  untouched; mixed streams re-walk honestly (trial streams now
+  carry prior folds too — add_flange's trial walks the truth).
+  FoldFeature rides the file (uid/host/wkind/held/levers survive
+  to_dict AND save/load byte-equal), the M148 fingerprint (wkind is
+  growth), and the delete guard (flange_references names folds).
+  THE DOOR: Tools ▸ Add Fold — leg combo, pick, witness-role combo,
+  signed angle, live-K/pin-K parity with the flange dialog; the
+  status line SPEWS THE LAW: split + "flat ... UNCHANGED" (G16's
+  offscreen receipt). Rung 2 (corners, wrap-bend, fold reliefs)
+  stays BANKED BY NAME (§5); nearest-fold-to-edge refusals keep
+  SM4's exact voice. (1762.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

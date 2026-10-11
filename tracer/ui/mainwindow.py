@@ -716,6 +716,9 @@ class MainWindow(QMainWindow):
         m_tools.addAction("Add Flange — fold any free edge…",
                           lambda checked=False:
                           self.action_add_flange())
+        m_tools.addAction("Add Fold — bend inside a leg…",
+                          lambda checked=False:
+                          self.action_add_fold())
         m_tools.addAction("Place Datum Identifier…",
                           lambda checked=False:
                           self.action_datum_identifier())
@@ -4157,6 +4160,88 @@ class MainWindow(QMainWindow):
             f"{k_used:g}{src} \u00b7 on {pick['name']} {pick['side']} "
             f"edge @ {station:.2f} mm"
             + (f" \u2014 {warn[-1]}" if warn else ""), 7000)
+
+    def action_add_fold(self):
+        """Tools ▸ Add Fold (M158, sheet metal SM5 rung 1): the fold
+        that lives INSIDE one leg — it adds NO wall, splits the leg,
+        and the flat rides THROUGH IT UNCHANGED (contract L1). One
+        combo row per leg (a fold never chains: it names its host);
+        the witness role picks WHICH line of the band the position
+        is (axis centres it — the walk's own convention; btl is
+        SM4's back-tangent edge currency; iml/oml are the mold
+        lines). Guard-first like the flange: non-sheet bodies get
+        the status line, and every kernel refusal arrives as a
+        warning with the document untouched."""
+        if self.doc is None or self.doc.result is None:
+            return
+        from ..core import sheetmetal
+        from ..core.document import FlangeFeature
+        from . import cmddialog
+        st = self.doc.sheet_states()
+        body = self.doc.active_body
+        if body not in st:
+            self.status.showMessage(
+                f"Add Fold: '{body}' is not a parametric sheet — "
+                "Tools ▸ New Sheet opens one (folds live inside a "
+                "leg)", 6000)
+            return
+        state = st[body]
+        legs = [x for x in self.doc.features
+                if isinstance(x, FlangeFeature) and x.body == body]
+        if not legs:
+            return
+        labels = [f"{x.name} \u00b7 leg {x.leg:g} mm" for x in legs]
+        wkinds = [("axis", "band axis (line centred on the pick)"),
+                  ("btl", "back tangent line (pick is the band's "
+                   "start)"),
+                  ("iml", "inner mold line (tangent offset from the "
+                   "apex)"),
+                  ("oml", "outer mold line (apex to outer tangent)")]
+        v = cmddialog.ask(self, "Add Fold", [
+            dict(key="leg", kind="combo", label="Fold inside leg",
+                 choices=labels),
+            dict(key="pos", kind="double",
+                 label="Fold-line position along the leg (mm)",
+                 default=20.0, min=0.0),
+            dict(key="wkind", kind="combo", label="Fold line is the",
+                 choices=[lab for _, lab in wkinds]),
+            dict(key="angle", kind="double",
+                 label="Fold angle (deg; sign = side)", default=90.0,
+                 min=-179.9, max=179.9),
+            dict(key="ri", kind="double", label="Inside radius (mm)",
+                 default=3.0, min=0.01),
+            dict(key="pin", kind="check",
+                 label="Pin K-factor (off: the ksheet table rides "
+                       "the material live)"),
+            dict(key="k", kind="double", label="K-factor override",
+                 default=sheetmetal.K_DEFAULT, min=0.001, max=1.0)])
+        if v is None:
+            return
+        wk = dict((lab, kind) for kind, lab in wkinds)[v["wkind"]]
+        host = legs[labels.index(v["leg"])]
+        flat_before = state["flat"]["flat_length"]
+        self._capture()
+        try:
+            feat = self.doc.add_fold(
+                body, host=host.uid, position=float(v["pos"]),
+                angle=float(v["angle"]), ri=float(v["ri"]),
+                k_factor=float(v["k"]) if v["pin"] else None,
+                wkind=wk, held=host.uid)
+        except (sheetmetal.SheetMetalError, ValueError) as err:
+            QMessageBox.warning(self, "Add Fold", str(err))
+            return
+        self.recompute()
+        self.rail.tree.reload()
+        stn = self.doc.sheet_states()[body]
+        i = stn["bands"][feat.uid]
+        flat_now = stn["flat"]["flat_length"]
+        self.status.showMessage(
+            f"Fold: {feat.angle:g}\u00b0 {wk} at {feat.position:g} mm "
+            f"of {host.name} \u00b7 leg split "
+            f"{stn['legs'][i]:.3f} + {stn['legs'][i + 1]:.3f} mm "
+            f"\u00b7 flat {flat_now:.4f} mm \u2014 "
+            + ("UNCHANGED" if flat_now == flat_before
+               else "CHANGED (bug!)"), 7000)
 
     def action_joint(self):
         """Tools ▸ Joint (M146, assembly rung 1): As-Built Rigid —

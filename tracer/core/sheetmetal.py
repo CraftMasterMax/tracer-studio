@@ -87,6 +87,23 @@ def bend_deduction(t: float, ri: float, angle_deg: float,
             - bend_allowance(t, ri, angle_deg, K))
 
 
+# SM5 (M158, contract sm5_fold_contract.md L3): the fold-line WITNESS
+# table. A fold pick w names ONE line of the band; the entry gives the
+# distance from the pick back to the band's LEFT tangent — how the
+# preserved BA is SPLIT across the two new legs (the TOTAL is fixed by
+# flat-preservation, spike-2 S4/S4b measured; the witness CHOOSES the
+# split — CATIA's four-way role, our axis default said out loud).
+# iml/oml numbers ride the shipped outside_setback (spike-2 S3:
+# OSSB(90,t2,R1.6) = 3.6 = R+T EXACTLY; inner tangent = tan(A/2)*ri,
+# the FreeCAD-documented family).
+_WITNESS_CL = {
+    "axis": lambda t, ri, a, ba: ba / 2.0,
+    "btl":  lambda t, ri, a, ba: 0.0,
+    "iml":  lambda t, ri, a, ba: math.tan(math.radians(abs(a)) / 2.0) * ri,
+    "oml":  lambda t, ri, a, ba: outside_setback(t, ri, a),
+}
+
+
 # ---- the facet model (merge + soft-hinge graph), once per solid -----
 def _facet_model(solid) -> dict:
     tm = solid.to_trimesh()
@@ -596,19 +613,23 @@ def _param_check(t, W, legs, bends):
         bend_allowance(t, r, a, k)          # K, ri, t law, SM1's voice
 
 
-def attach_walk(nodes) -> dict:
+def attach_walk(nodes, t=None) -> dict:
     """SM4 (M151): the EDGE AS HOST projected onto the strip. A node
     is one flange feature — dict(name, uid, leg, bend, relief, host,
     side, witness) — and the whole list is stream order. A flange
     hangs on the START or END edge of its host leg; with one fold per
     edge every leg has degree <= 2, so the tree is a PATH and the flat
-    is ONE strip (contract sm4 §2.1). Returns dict(legs, bends,
-    reliefs, order, bands, free) in ASCENDING FLAT STATION — the
-    association order param_flat demands (§3.5: the order IS a value).
-    host == "" on a later node IS SM3's chain: bind to the previous
-    stream node's end edge, byte-identical. Every refusal fires here,
-    before any leg reaches param_flat (§5.2); _param_check is NOT
-    grown."""
+    is ONE strip (contract sm4 §2.1). SM5 (M158) grows the INTERIOR
+    node: side == "fold" lives INSIDE one host leg at witness
+    position w (t = the sheet thickness is then REQUIRED — a fold
+    consumes BA and the split needs numbers); it adds NO leg of its
+    own, SPLITS the host leg, and its band rides between the pieces.
+    Returns dict(legs, bends, reliefs, order, bands, free) in
+    ASCENDING FLAT STATION — the association order param_flat demands
+    (§3.5: the order IS a value). host == "" on a later node IS
+    SM3's chain: bind to the previous stream node's end edge,
+    byte-identical. Every refusal fires here, before any leg reaches
+    param_flat (§5.2); _param_check is NOT grown."""
     nodes = list(nodes)
     if not nodes:
         raise SheetMetalError("a sheet needs at least one leg")
@@ -625,8 +646,10 @@ def attach_walk(nodes) -> dict:
             "begins with one leg and no fold")
     by_uid = {nodes[0]["uid"]: nodes[0]}
     claimed, start_kid, end_kid = {}, {}, {}
+    folds_of: dict = {}                        # SM5: host uid -> folds
     for prev, nd in zip(nodes, nodes[1:]):
-        if not nd["host"]:                          # SM3 chain law
+        explicit = bool(nd["host"])            # SM5: folds NEVER chain
+        if not nd["host"]:                     # SM3 chain law
             nd = dict(nd, host=prev["uid"])
         name, host, side = nd["name"], nd["host"], nd["side"]
         h = by_uid.get(host)
@@ -635,6 +658,63 @@ def attach_walk(nodes) -> dict:
                 f"{name!r} hangs on leg {host!r}, which is gone — "
                 "re-pick its edge or delete the flange too "
                 "(Ctrl+Z first)")
+        if side == "fold":
+            # SM5 (M158, contract sm5_fold_contract.md): the INTERIOR
+            # node. It adds NO leg (L1), SPLITS its host leg, and its
+            # band rides between the pieces; every refusal here is
+            # named-numeric (L9/L10), before any geometry emits.
+            if t is None:
+                raise SheetMetalError(
+                    f"{name!r} is a fold and a fold must know the "
+                    "sheet thickness — attach_walk(nodes, t=...)")
+            if nd.get("leg") is not None:
+                raise SheetMetalError(
+                    f"{name!r} is a fold yet carries a leg — a fold "
+                    "adds NO wall; drop the leg or make it a flange")
+            if not explicit:
+                raise SheetMetalError(
+                    f"{name!r} is a fold without a named host leg — "
+                    "a fold lives INSIDE one leg; pick it")
+            if h.get("leg") is None:
+                raise SheetMetalError(
+                    f"{name!r} folds on {h['name']!r}, which is a "
+                    "fold, not a leg")
+            if nd["bend"] is None:
+                raise SheetMetalError(
+                    f"{name!r} folds without a bend — a fold carries "
+                    "its angle")
+            if nd["relief"] is not None:
+                raise SheetMetalError(
+                    f"fold relief on {name!r} waits for the corner "
+                    "rung (SM5 rung 2, named) — v1 folds run clean")
+            phi, ri_f, k_f = (float(nd["bend"][0]), float(nd["bend"][1]),
+                              float(nd["bend"][2]))
+            if phi == 0.0:
+                raise SheetMetalError(
+                    f"a 0-degree fold ({name!r}) is a seam, not a "
+                    "fold — no metal bends there; give it an angle "
+                    "or delete it")
+            if abs(phi) >= 180.0:
+                raise SheetMetalError(
+                    f"{name!r} folds at {phi:g} degrees and lies back "
+                    "on itself — v1 bends stay under 180 degrees")
+            wk = nd.get("wkind") or "axis"
+            if wk not in _WITNESS_CL:
+                raise SheetMetalError(
+                    f"{name!r} names witness role {wk!r}; the fold "
+                    "line is axis, btl, iml or oml — pick one")
+            if nd["witness"] is None:
+                raise SheetMetalError(
+                    f"{name!r} is a fold without a position — a fold "
+                    "is picked along its leg")
+            ba_f = bend_allowance(t, ri_f, phi, k_f)   # SM1's choke
+            folds_of.setdefault(host, []).append(dict(
+                uid=nd["uid"], name=name, bend=(phi, ri_f, k_f),
+                w=float(nd["witness"]),
+                cl=_WITNESS_CL[wk](t, ri_f, phi, ba_f), ba=ba_f))
+            by_uid[nd["uid"]] = nd
+            nd["host"], nd["side"] = host, side
+            continue
         if side not in ("start", "end"):
             raise SheetMetalError(
                 f"edge {side!r} of {h['name']!r} folds ACROSS the "
@@ -647,6 +727,10 @@ def attach_walk(nodes) -> dict:
             raise SheetMetalError(
                 f"{name!r} hangs without a fold — a flange carries "
                 "its bend")
+        if h.get("leg") is None:                     # SM5: folds are
+            raise SheetMetalError(                   # not walls' home
+                f"{name!r} hangs on {h['name']!r}, which is a fold — "
+                "walls stand on LEGS; host the leg's own flange")
         # The edge this child stands on is used up, and so is the
         # CHILD's own facing edge: a second fold there would share a
         # station, which _param_check refuses only via a zero-length
@@ -674,6 +758,43 @@ def attach_walk(nodes) -> dict:
         by_uid[nd["uid"]] = nd
         nd["host"], nd["side"] = host, side         # resolve the ""
 
+    # SM5 (contract L3/L9/L10): each fold's band occupies the leg
+    # interval [w - cl, w - cl + BA]; the leftover ROOM between
+    # cursor and that interval is the next leg piece, and every
+    # non-positive leftover is a named-numeric overflow refusal —
+    # the deficit is printed, the fix is spelled. Real-arithmetic the
+    # pieces + bands telescope to the host leg exactly (spike-2 S4:
+    # the split sum is leg_old - BA, so the flat is preserved).
+    host_pieces: dict = {}
+    for uid_h, f_list in folds_of.items():
+        f_list.sort(key=lambda fd: fd["w"])         # station order
+        hl = float(by_uid[uid_h]["leg"])
+        hname = by_uid[uid_h]["name"]
+        pieces, cursor = [], 0.0
+        for fd in f_list:
+            left = fd["w"] - fd["cl"]               # band left tangent
+            room = left - cursor
+            if room <= 0.0:
+                raise SheetMetalError(
+                    f"{fd['name']!r} does not fit in {hname!r}: its "
+                    f"{fd['bend'][0]:g}-degree band wants to start at "
+                    f"{left:.3f} mm but only {room:.3f} mm of leg is "
+                    "free there — shrink the angle, move the pick, "
+                    "or lengthen the leg")
+            pieces.append(room)
+            cursor = left + fd["ba"]
+        tail = hl - cursor
+        if tail <= 0.0:
+            fd = f_list[-1]
+            raise SheetMetalError(
+                f"{fd['name']!r} does not fit in {hname!r}: its "
+                f"{fd['bend'][0]:g}-degree band runs to "
+                f"{cursor:.3f} mm, past the leg's {hl:.3f} mm end "
+                f"(short by {-tail:.3f} mm) — shrink the angle, move "
+                "the pick, or lengthen the leg")
+        pieces.append(tail)
+        host_pieces[uid_h] = pieces
+
     out: list = []
 
     def walk(uid):                                  # ascending station
@@ -682,7 +803,15 @@ def attach_walk(nodes) -> dict:
         if sc:
             walk(sc)                                # child owns the
             out.append(("band", sc))                # fold at host.start
-        out.append(("leg", uid))
+        pieces = host_pieces.get(uid)               # SM5: folds SPLIT
+        if pieces is None:                          # the leg; edge
+            out.append(("leg", uid))                # children see the
+        else:                                       # same stations
+            fl = folds_of[uid]
+            for i in range(len(fl)):
+                out.append(("legpiece", (uid, i, pieces[i])))
+                out.append(("band", fl[i]["uid"]))
+            out.append(("legpiece", (uid, len(fl), pieces[-1])))
         ec = end_kid.get(uid)
         if ec:
             out.append(("band", ec))                # fold at host.end
@@ -694,6 +823,10 @@ def attach_walk(nodes) -> dict:
         if kind == "leg":
             legs.append(float(by_uid[ref]["leg"]))
             order.append(by_uid[ref]["name"])
+        elif kind == "legpiece":                    # SM5: half a wall
+            uid_h, i, ln = ref                      # is still a wall
+            legs.append(float(ln))
+            order.append(f"{by_uid[uid_h]['name']}[{i}]")
         else:
             bends.append(by_uid[ref]["bend"])
             bands[ref] = len(bends) - 1
@@ -708,7 +841,8 @@ def attach_walk(nodes) -> dict:
                      key=lambda d: d["bend"])
     free = [dict(uid=nd["uid"], name=nd["name"], side=side)
             for nd in nodes for side in ("start", "end")
-            if (nd["uid"], side) not in claimed]
+            if nd["side"] != "fold"                 # SM5: a fold has
+            and (nd["uid"], side) not in claimed]   # no edges to free
     return dict(legs=legs, bends=bends, reliefs=reliefs, order=order,
                 bands=bands, free=free)
 

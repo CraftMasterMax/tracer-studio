@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M157**
+**Status: M158**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -371,7 +371,18 @@ independent project with no Autodesk assets or affiliation.)
   view whose bend centre-lines travel as ANALYTIC ink to screen,
   DXF and PDF — never re-fit from the slab's mesh, which the rail
   probe measured to miss fine tessellations and hallucinate on
-  coarse ones. The parametric FlangeFeature is SM3
+  coarse ones. The parametric FlangeFeature is SM3 (M149), and
+  SM4 (M151) made the EDGE the host — attach is a path of folds,
+  one fold per edge, chosen free ends in a dialog.
+- **Sheet metal, rung 5 (M158)**: Tools ▸ **Add Fold — bend inside
+  a leg**. A fold adds NO wall: it SPLITS its host leg and the flat
+  rides through it **byte-exact** (73.89557489045134 before, after
+  and under every witness role — axis/btl/iml/oml pick HOW the
+  preserved bend-allowance splits, never WHETHER). Signed angles
+  steer the folded body while the flat cannot see sign; the status
+  line prints the split and the word UNCHANGED; refusals are named,
+  numeric and fail-first, and every one of them speaks the kernel's
+  own voice. Corners stay rung 2 — banked by name.
 - **Assembly, rung 1 (M146)**: Tools ▸ **Joint — As-Built Rigid**:
   two bodies, the child's pose captured once, and **LAW R** from then
   on — *a joint follows where a body is PLACED, not how it is BUILT*.

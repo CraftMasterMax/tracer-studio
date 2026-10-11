@@ -879,6 +879,36 @@ class FlangeFeature(Feature):
                                    #   only, never a resolver (§3.3)
 
 
+@dataclass
+class FoldFeature(Feature):
+    """SM5 (M158): the fold that lives INSIDE one leg — the station
+    operator the contract froze (research/sm5_fold_contract.md §1).
+    A fold adds NO leg: it SPLITS its host leg into two pieces and
+    contributes ONE band, and the flat rides BYTE-EXACT through it
+    (L1, gates G1/G3). `position` is the witness pick, millimetres
+    along the host leg's tangent-to-END currency (SM4's own); `wkind`
+    names which line of the band the pick is — axis (default, the
+    centerline walk's own convention), btl, iml or oml — and the
+    kernel's _WITNESS_CL table turns that role into the SPLIT while
+    the preserved BA fixes the TOTAL (L3). angle is the signed
+    dihedral, 0 < |angle| < 180: the flat cannot see sign (S3) but
+    fold_section WALKS it (S1/L4). held is pure VIEW state — the
+    station walk is held-invariant by construction (L6/S5), so
+    recompute never reads it. t/width/material repeat the base's and
+    are checked loudly, exactly the flange's M148 discipline."""
+    t: float = 2.0
+    width: float = 40.0
+    material: str = "mild-steel"
+    host: str = ""                 # uid of the host leg's flange
+    position: float = 0.0          # witness along the host leg (mm)
+    angle: float = 90.0            # signed dihedral, 0 < |a| < 180
+    ri: float = 3.0                # inside radius
+    k_factor: float | None = None  # None rides the ksheet table LIVE
+    wkind: str = "axis"            # axis | btl | iml | oml (§1 L3)
+    held: str = ""                 # view anchor leg uid — never read
+                                   #   by the walk (L6 theorem)
+
+
 # ---- M148 rung 2a: the stream classifier's primitives -----------------
 _ID4 = np.eye(4)
 
@@ -2043,9 +2073,12 @@ class Document:
         """SM4 (M151): names of flanges that HANG on the leg this uid
         owns — the delete-time mirror of datum_references. uid, not
         name: rename is a raw write and a name-bound limb would rot
-        on it (§4.1's landmine, banked not widened)."""
+        on it (§4.1's landmine, banked not widened). SM5 (M158): a
+        FOLD hosted inside the leg is a reference too — deleting the
+        leg would strand the fold mid-air."""
         return [f.name for f in self.features
-                if isinstance(f, FlangeFeature) and f.host == uid]
+                if isinstance(f, (FlangeFeature, FoldFeature))
+                and f.host == uid]
 
     def rename_datum(self, old: str, new: str) -> int:
         """M130: rename is a RELINK, not a string edit. Fusion keeps
@@ -2505,15 +2538,31 @@ class Document:
                 "a fold at a line INSIDE a leg adds no material — "
                 "that is a FOLD, not a flange (SM5's Fold)")
         prior = [x for x in self.features
-                 if isinstance(x, FlangeFeature) and x.body == body]
-        trial = [dict(name=x.name, uid=x.uid, leg=float(x.leg),
-                      bend=(None if i == 0 else
-                            (float(x.angle), float(x.ri),
-                             _sm.K_DEFAULT if x.k_factor is None
-                             else float(x.k_factor))),
-                      relief=None, host=str(x.host), side=str(x.side),
-                      witness=None)
-                 for i, x in enumerate(prior)]
+                 if isinstance(x, (FlangeFeature, FoldFeature))
+                 and x.body == body]
+        n = sum(1 for x in prior if isinstance(x, FlangeFeature))
+        trial = []
+        first = True
+        for x in prior:                      # SM5: folds ride the
+            if isinstance(x, FoldFeature):   # trial too — the walk
+                trial.append(dict(           # the DOCUMENT holds is
+                    name=x.name, uid=x.uid, leg=None,
+                    bend=(float(x.angle), float(x.ri),
+                          _sm.K_DEFAULT if x.k_factor is None
+                          else float(x.k_factor)),
+                    relief=None, host=str(x.host), side="fold",
+                    witness=float(x.position), wkind=str(x.wkind)))
+                continue
+            trial.append(dict(name=x.name, uid=x.uid,
+                              leg=float(x.leg),
+                              bend=(None if first else
+                                    (float(x.angle), float(x.ri),
+                                     _sm.K_DEFAULT if x.k_factor is None
+                                     else float(x.k_factor))),
+                              relief=None, host=str(x.host),
+                              side=str(x.side),
+                              witness=None))
+            first = False
         trial.append(dict(name="trial", uid="trial", leg=float(leg),
                           bend=(float(angle), float(ri),
                                 _sm.K_DEFAULT if k_factor is None
@@ -2521,10 +2570,9 @@ class Document:
                           relief=None, host=str(host), side=str(side),
                           witness=(None if witness is None
                                    else float(witness))))
-        ordered = _sm.attach_walk(trial)           # every structural
+        ordered = _sm.attach_walk(trial, t=float(base.t))
         _sm._param_check(base.t, base.width, ordered["legs"],
                          ordered["bends"])         # refusal, NOW
-        n = len(prior)
         feat = FlangeFeature(name=f"Flange {n} of {body}", body=body,
                              t=base.t, width=base.width,
                              material=base.material,
@@ -2534,6 +2582,89 @@ class Document:
                              relief_depth=relief_depth, seam=seam,
                              host=str(host), side=str(side),
                              witness=witness)
+        self.add(feat)
+        return feat
+
+    def add_fold(self, body: str, host: str, position: float,
+                 angle: float, ri: float = 3.0,
+                 k_factor: float | None = None,
+                 wkind: str = "axis", held: str = ""):
+        """SM5 (M158): the fold inside one leg. Guard-first like the
+        flange: the TRIAL stream (every prior flange AND fold, in
+        stream order) walks with t BEFORE anything is appended, so
+        every refusal — fit, overlap, domain — is spoken while the
+        document is still untouched. host is a LEG uid (folds never
+        chain: an interior node has no "previous"); position is the
+        witness pick along it, wkind its role (axis/btl/iml/oml);
+        angle is the signed dihedral; held names the view-anchor leg
+        but the walk never reads it (L6). k_factor=None rides the
+        ksheet table live at recompute, a float pins the override —
+        the trial walks on K_DEFAULT, the flange's own SM4
+        discipline."""
+        from . import sheetmetal as _sm
+        base = next((x for x in self.features
+                     if isinstance(x, FlangeFeature)
+                     and x.body == body), None)
+        if base is None:
+            raise _sm.SheetMetalError(
+                f"{body!r} is not a parametric sheet — New Sheet "
+                "opens one")
+        if position is None:
+            raise _sm.SheetMetalError(
+                "a fold is picked ALONG its leg — give it a position")
+        if wkind not in ("axis", "btl", "iml", "oml"):
+            raise _sm.SheetMetalError(
+                f"witness role {wkind!r} is not one of axis, btl, "
+                "iml, oml — the fold line is one of these")
+        prior = [x for x in self.features
+                 if isinstance(x, (FlangeFeature, FoldFeature))
+                 and x.body == body]
+        legs = [x for x in prior if isinstance(x, FlangeFeature)]
+        if host not in {x.uid for x in legs}:
+            raise _sm.SheetMetalError(
+                f"{host!r} is not a leg of {body!r} — a fold lives "
+                "INSIDE one leg; pick it")
+        if held and held not in {x.uid for x in legs}:
+            raise _sm.SheetMetalError(
+                f"held face {held!r} is not a leg of {body!r} — it "
+                "anchors the folded VIEW; pick a leg or leave it """)
+        trial = []
+        for i, x in enumerate(prior):
+            if isinstance(x, FoldFeature):
+                trial.append(dict(
+                    name=x.name, uid=x.uid, leg=None,
+                    bend=(float(x.angle), float(x.ri),
+                          _sm.K_DEFAULT if x.k_factor is None
+                          else float(x.k_factor)),
+                    relief=None, host=str(x.host), side="fold",
+                    witness=float(x.position), wkind=str(x.wkind)))
+            else:
+                trial.append(dict(
+                    name=x.name, uid=x.uid, leg=float(x.leg),
+                    bend=(None if i == 0 else
+                          (float(x.angle), float(x.ri),
+                           _sm.K_DEFAULT if x.k_factor is None
+                           else float(x.k_factor))),
+                    relief=None, host=str(x.host), side=str(x.side),
+                    witness=(None if x.witness is None
+                             else float(x.witness))))
+        trial.append(dict(name="trial", uid="trial", leg=None,
+                          bend=(float(angle), float(ri),
+                                _sm.K_DEFAULT if k_factor is None
+                                else float(k_factor)),
+                          relief=None, host=str(host), side="fold",
+                          witness=float(position), wkind=str(wkind)))
+        ordered = _sm.attach_walk(trial, t=float(base.t))
+        _sm._param_check(base.t, base.width, ordered["legs"],
+                         ordered["bends"])         # refusal, NOW
+        n = len(prior)
+        feat = FoldFeature(name=f"Fold {n} of {body}", body=body,
+                           t=base.t, width=base.width,
+                           material=base.material,
+                           host=str(host), position=float(position),
+                           angle=float(angle), ri=float(ri),
+                           k_factor=k_factor, wkind=str(wkind),
+                           held=str(held))
         self.add(feat)
         return feat
 
@@ -2952,7 +3083,66 @@ class Document:
                                   side=str(f.side),
                                   witness=(None if f.witness is None
                                            else float(f.witness))))
-                ordered = _sm.attach_walk(nodes)
+                ordered = _sm.attach_walk(nodes, t=st["t"])
+                st["legs"], st["bends"] = ordered["legs"], ordered["bends"]
+                st["reliefs"] = ordered["reliefs"]
+                st["order"] = ordered["order"]
+                st["bands"] = ordered["bands"]
+                st["free"] = ordered["free"]
+                st["flat"] = _sm.param_flat(
+                    st["legs"], st["bends"], st["t"], st["W"],
+                    reliefs=st["reliefs"], seam=st["seam"])
+                solid = _sm.sheet_solid(st["legs"], st["bends"],
+                                        st["t"], st["W"],
+                                        reliefs=st["reliefs"],
+                                        seam=st["seam"])
+                buckets[key] = solid
+                by_uid[f.uid] = solid
+                continue
+            elif isinstance(f, FoldFeature):
+                # SM5 (M158): the station operator. No leg of its own
+                # — the node SPLITS its host leg inside attach_walk
+                # (which now needs t, the sheet's own); the flat
+                # rides byte-exact (gate G1's document-level twin),
+                # so sheet_solid/param_flat just READ the merged walk.
+                # held is never consumed here (L6: the walk is
+                # held-blind by construction).
+                from . import sheetmetal as _sm
+                st = sheets.get(key)
+                if st is None:
+                    raise _sm.SheetMetalError(
+                        f"{f.name!r} folds on nothing — {key!r} has "
+                        "no base flange yet: a fold needs a sheet")
+                for attr, holder in (("t", "t"), ("width", "W"),
+                                     ("material", "material")):
+                    if getattr(f, attr) != st[holder]:
+                        raise _sm.SheetMetalError(
+                            f"{f.name!r} moves {attr} — one sheet "
+                            f"has ONE {holder}; the base flange "
+                            "owns it")
+                k = None if f.k_factor is None else float(f.k_factor)
+                if k is None:                 # the table rides live
+                    from . import ksolver
+                    k, sourced = ksolver.k_or_default(
+                        st["material"], float(f.ri), st["t"],
+                        _sm.K_DEFAULT)
+                    if not sourced:
+                        st["k_notes"].append(
+                            f"no ksheet row for {st['material']!r} "
+                            f"at r/t = {float(f.ri) / st['t']:.2f} "
+                            f"({f.name!r}) — K_DEFAULT 0.44 stands")
+                if f.wkind not in ("axis", "btl", "iml", "oml"):
+                    raise _sm.SheetMetalError(
+                        f"{f.name!r} names witness role {f.wkind!r}; "
+                        "the fold line is axis, btl, iml or oml — "
+                        "pick one")
+                nodes.append(dict(name=f.name, uid=f.uid, leg=None,
+                                  bend=(float(f.angle), float(f.ri), k),
+                                  relief=None, host=str(f.host),
+                                  side="fold",
+                                  witness=float(f.position),
+                                  wkind=str(f.wkind)))
+                ordered = _sm.attach_walk(nodes, t=st["t"])
                 st["legs"], st["bends"] = ordered["legs"], ordered["bends"]
                 st["reliefs"] = ordered["reliefs"]
                 st["order"] = ordered["order"]
@@ -3144,6 +3334,14 @@ class Document:
                          host=str(f.host), side=str(f.side),
                          witness=(None if f.witness is None
                                   else float(f.witness)))
+            elif isinstance(f, FoldFeature):
+                d.update(t=float(f.t), width=float(f.width),
+                         material=f.material, host=str(f.host),
+                         position=float(f.position),
+                         angle=float(f.angle), ri=float(f.ri),
+                         k_factor=(None if f.k_factor is None
+                                   else float(f.k_factor)),
+                         wkind=str(f.wkind), held=str(f.held))
             elif isinstance(f, LinearPatternFeature):
                 d.update(source_uid=f.source_uid,
                          vector=list(map(float, f.vector)),
@@ -3358,6 +3556,16 @@ class Document:
                     relief_depth=fd.get("relief_depth"),
                     host=fd.get("host", ""), side=fd.get("side", "end"),
                     witness=fd.get("witness"), **base))
+            elif t == "FoldFeature":
+                doc.features.append(FoldFeature(
+                    name=fd["name"], t=fd["t"], width=fd["width"],
+                    material=fd.get("material", "mild-steel"),
+                    host=str(fd.get("host", "")),
+                    position=float(fd["position"]),
+                    angle=float(fd["angle"]), ri=float(fd["ri"]),
+                    k_factor=fd.get("k_factor"),
+                    wkind=str(fd.get("wkind", "axis")),
+                    held=str(fd.get("held", "")), **base))
             elif t == "LinearPatternFeature":
                 doc.features.append(LinearPatternFeature(
                     name=fd["name"], source_uid=fd["source_uid"],
