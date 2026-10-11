@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M160**
+**Status: M161**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -402,6 +402,19 @@ independent project with no Autodesk assets or affiliation.)
   canvas exactly like hovering the body itself. A detail readout
   chip bottom-right MEASURES what it shows ("400.00 mm² | Body 1",
   computed from mesh truth) — a remembered preference that ships ON.
+- **THE TIMELINE HAS ITS TRANSPORT (M161)**: five permanent controls
+  dock the strip's left in Fusion's own order — Move to Beginning,
+  Previous Step, Play, Next Step, End — and a gear its right. The
+  marker DRAGS between icons and rewinds the model live; it is pure
+  evaluation cutoff (the same slot always yields the byte-equal
+  model; nothing is ever deleted by the ride), with a triangular grab
+  handle. Editing a feature behind the marker rolls the marker to it
+  first. Suppressed chips dim gray with the ○ badge; rolled-back chips
+  dim **with their own boolean hue** — the two states never wear the
+  same face. Play steps through the history like film (the only
+  animation), a chip click lights the feature's body in the canvas,
+  the wheel scrolls long strips, and "Delete All After Marker" is a
+  distinct, confirm-guarded command — the marker never deletes.
 - **Assembly, rung 1 (M146)**: Tools ▸ **Joint — As-Built Rigid**:
   two bodies, the child's pose captured once, and **LAW R** from then
   on — *a joint follows where a body is PLACED, not how it is BUILT*.

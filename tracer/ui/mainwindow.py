@@ -161,6 +161,12 @@ class MainWindow(QMainWindow):
         self.timeline.bar.rollback_changed.connect(self._apply_rollback)
         self.timeline.bar.feature_delete.connect(self._delete_feature)
         self.timeline.bar.home_clicked.connect(self.viewport.home)
+        # M161 wiring: LAW-15 — a chip click highlights the feature's
+        # RESULT on the model (the M131 body wash is our one honest
+        # door to "the result"); LAW-3 — the Options gear docks its
+        # MENU here, at the strip's right edge.
+        self.timeline.bar.feature_clicked.connect(self._timeline_wash)
+        self.timeline.bar.gear_clicked.connect(self._timeline_gear)
         self.viewport.face_picked.connect(self._start_sketch_on_face)
         self.viewport.face_rejected.connect(
             lambda why: self.status.showMessage(why, 5000))
@@ -848,6 +854,22 @@ class MainWindow(QMainWindow):
             self.action_activate_body(arg)
 
     def _feature_activated(self, feature):
+        # M161 LAW-10: "Edit Sketch... automatically rolls the timeline
+        # marker back to this position, temporarily suppressing all
+        # later features" — a feature HIDDEN behind the marker cannot
+        # be edited, so entering its edit first rolls the marker to
+        # it. (Rolling when the marker is already AT THE END is the
+        # probe's [observed] extension — banked by name, not assumed.)
+        if self.doc is not None:
+            rb = self.doc.rollback_to
+            i = (self.doc.features.index(feature)
+                 if feature in self.doc.features else -1)
+            if rb is not None and 0 <= i and rb <= i:
+                self._apply_rollback(i + 1)
+                self.status.showMessage(
+                    f"Rolled to '{feature.name}' to edit it — later "
+                    "features are hidden by the marker, not deleted "
+                    "(LAW-8)", 5000)
         if (isinstance(feature, (ExtrudeFeature, RevolveFeature, HoleFeature))
                 and feature.sketch):
             self.edit_sketch(feature)
@@ -955,6 +977,66 @@ class MainWindow(QMainWindow):
             return
         idx = self.doc.features.index(feature)
         self._apply_rollback(idx + 1)
+
+    def _timeline_wash(self, feature):
+        """M161 LAW-15: a single click on a timeline chip highlights
+        that feature's result on the model — through the M131 body wash
+        (the feature's RESULT is the body it builds; picking the exact
+        new faces of a boolean is banked with the feature-tree work).
+        An empty-strip click (None) clears the highlight."""
+        name = getattr(feature, "body", None) if feature is not None \
+            else None
+        self.viewport.emphasize_body(name)
+
+    def _timeline_gear(self, pos):
+        """M161 LAW-3: the Options button at the strip's RIGHT opens
+        the timeline settings. The probe records three entries; two of
+        them (Component Color Swatch, Direct Modeling Mode) need doors
+        this product has not built — they are BANKED BY NAME. What
+        exists here is the law's own 'hide all inactive' plus LAW-12's
+        destructive sibling, confirm-guarded."""
+        menu = QMenu(self)
+        act = menu.addAction("Hide all inactive features")
+        act.setCheckable(True)
+        act.setChecked(self.timeline.bar.hide_inactive)
+        act.toggled.connect(lambda on: (
+            setattr(self.timeline.bar, "hide_inactive", on),
+            self.timeline.bar.update()))
+        rb = self.doc.rollback_to if self.doc is not None else None
+        menu.addSeparator()
+        dng = menu.addAction("Delete All Features After Marker")
+        dng.setEnabled(rb is not None and rb < len(
+            self.doc.features if self.doc is not None else []))
+        dng.triggered.connect(self._delete_after_marker)
+        menu.exec(pos)
+
+    def _delete_after_marker(self):
+        """M161 LAW-12: the destructive sibling of the marker — a
+        DISTINCT command, confirm-guarded (the probe's own boundary:
+        the marker itself never deletes)."""
+        if self.doc is None:
+            return
+        rb = self.doc.rollback_to
+        total = len(self.doc.features)
+        if rb is None or rb >= total:
+            return
+        reply = QMessageBox.warning(
+            self, "Delete All Features After Marker",
+            f"This permanently removes {total - rb} feature(s) after "
+            f"the marker ({rb} remain). This is NOT the rollback — it "
+            "cannot be undone by dragging the marker back.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        for f in list(self.doc.features)[rb:]:
+            self.doc.features.remove(f)       # the house removal path
+        self.doc.dirty = True
+        self.doc.rollback_to = None
+        self.recompute()
+        self.status.showMessage(
+            f"Deleted {total - rb} feature(s) after the marker "
+            "(LAW-12: the destructive sibling, not the rollback)", 5000)
 
     def _apply_rollback(self, n):
         """Move (or end, for None / past-the-end) the rubber band and

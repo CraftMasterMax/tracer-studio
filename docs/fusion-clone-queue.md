@@ -2230,6 +2230,45 @@ M125; items 1-11 below are history.*
   floor+fade, remembered toggle, and the chip's ON/OFF pixel
   differential with BYTE-EXACT return. Proof: four acts, ink
   8673/0/8673 px, md5 3x 15d2d460..., chip text pinned. (1782.)
+- **THE TIMELINE GOT ITS TRANSPORT SHIPPED (M161, FD4)** — the film
+  strip learned to move. LAW-2: FIVE permanent controls docked LEFT in
+  the recorded order (Move to Beginning, Previous Step, Play, Next
+  Step, End of Timeline) — polygon ink, not glyphs (no font roulette
+  in a pixel-gated widget; LAW-14 tooltips carry the probe's own
+  names); the M20 home triangle stays at their right (LAW-6 files it
+  OUR OWN). LAW-3: the gear docks the strip's RIGHT edge — its menu
+  ships the law's "Hide all inactive" (chips vanish, SLOTS stay —
+  positions remain honest) plus LAW-12's "Delete All Features After
+  Marker" confirm-guarded as the DISTINCT destructive sibling (the
+  refusal path deletes nothing, gated); Color Swatch and Direct
+  Modeling need unbuilt doors and are BANKED BY NAME. LAW-7/8: the
+  marker is an integer SLOT and now DRAGS — live rewind while the
+  mouse moves, pure evaluation cutoff: the model at slot 2 is
+  BYTE-EQUAL every landing and the feature stream never felt the ride
+  (the digest's own gates). M88's law survives: a click WITHOUT motion
+  still ends the rollback. LAW-9: the marker grew its triangular grab
+  handle (blue OURS, cited). LAW-10: entering a feature's edit first
+  rolls the marker to it — a feature behind the band cannot be
+  edited; the timeline and browser edit doors ride one
+  `_feature_activated` (LAW-32's single truth). LAW-13 was a
+  half-violation when FD4 read it: rolled-back chips rendered the
+  IDENTICAL gray of suppression — now two faces: suppressed stays
+  faint gray + ○ badge, rolled-back dims WITH ITS OWN OP HUE (alpha
+  150); the proof samples BOTH inks (143,151,163 vs 72,122,188) and
+  the test caught the fg-at-alpha draft landing on the same gray.
+  LAW-15: a chip click washes the feature's body on the model (the
+  M131 door; exact-result-faces banked), an empty-strip click clears.
+  LAW-34: Play is the ONLY animation — a 260ms stepped timer walking
+  the filmstrip to the end (ours-said: Play AT THE END rewinds first);
+  every other control is instant. LAW-4: the wheel scrolls the strip —
+  and the probe caught TWO shipped lies: the old handler checked the
+  bar's parent, which is the viewport WRAPPER, never the QScrollArea
+  (the wheel had never scrolled anything), and the bar never outgrew
+  its viewport anyway (long timelines clipped silently) — the strip
+  now sizes to its features. Proof (3x md5 ae38afc7...): five boxes +
+  one legitimate suppression, three acts — volume 3000 -> 600 -> 0,
+  ink 13362/1571 px, both dim-faces sampled, transport+gear+marker
+  visible every act. 13 new gates. (1795.)
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff
