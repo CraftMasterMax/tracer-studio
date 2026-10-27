@@ -229,8 +229,10 @@ def test_new_body_verb_creates_activates_and_undoes(win, qapp):
 def test_browser_nests_each_body_and_marks_the_active_one(win, qapp):
     _build_two_bodies(win, qapp)
     items = _body_items(win.rail.tree)
-    assert [it.text(0).replace("\u25a3 ", "") for it in items] == \
-        ["Body 1", "Body 2"]
+    # M162 cite-the-move: the "▣ " prefix retired with FD3-1.1's eye —
+    # rows read their pure NAME, the always-rendered gutter eye carries
+    # the visibility truth.
+    assert [it.text(0) for it in items] == ["Body 1", "Body 2"]
     assert [it.data(0, Qt.UserRole) for it in items] == \
         [("body", "Body 1"), ("body", "Body 2")]
     # active is bold, and each body carries ONLY its own features

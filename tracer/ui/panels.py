@@ -4,9 +4,10 @@ panel into a live editor; keeping it a label now is honest, not lazy.
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QAbstractItemView, QTreeWidget, QTreeWidgetItem,
+from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtWidgets import (QAbstractItemView, QStyledItemDelegate,
+                               QTreeWidget, QTreeWidgetItem, QLineEdit,
                                QLabel, QVBoxLayout,
                                QTabWidget, QWidget, QFrame)
 
@@ -51,6 +52,99 @@ def _sketch_label(sk: dict) -> str:
     return f"\u270e {name}{state}"
 
 
+def _paint_eye(p: QPainter, x: float, cy: float, hidden: bool):
+    """M162 (FD3 LAW-1.1): the visibility eye, token-skinned —
+    visible is the mid gray, hidden is the faint gray WITH the slash.
+    Recorded state language: two grays plus the slash is the truth
+    carrier (FD3 read the vendor's own wording, no hexes exist)."""
+    p.setRenderHint(QPainter.Antialiasing)
+    col = QColor(DARK["fg_faint"]) if hidden else QColor(DARK["fg_dim"])
+    pen = QPen(col)
+    pen.setWidthF(1.3)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawEllipse(QRectF(x, cy - 4.0, 14.0, 8.0))
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(col)
+    p.drawEllipse(QPointF(x + 7.0, cy), 2.0, 2.0)
+    if hidden:
+        p.setPen(pen)
+        p.drawLine(QPointF(x + 1.0, cy + 6.0), QPointF(x + 13.0, cy - 6.0))
+
+
+class BrowserDelegate(QStyledItemDelegate):
+    """M162's ONE paint door for the browser (FD3 receipts): the eye
+    gutter (LAW-1.1 — ALWAYS rendered, never hover-revealed: their own
+    support KB exists because users begged for hover-toggle and got
+    refused), the ACTIVE DOT on the active row (LAW-1.6 — the
+    documented deviation: Fusion's missing active marker is its
+    community's #1 browser complaint; we ship the dot always), the
+    ancestry dotted underline on canvas-select (LAW-5.2) and the
+    find-in-browser dashed flash (LAW-5.1). Text shifts 20 px clear of
+    the gutter — no stylesheet surgery, no per-row widgets."""
+
+    GUTTER = 20
+
+    def paint(self, p, opt, idx):
+        tree = self.parent()
+        role = idx.data(Qt.UserRole)
+        it = tree.itemFromIndex(idx)
+        p.save()
+        if role is not None and tree.has_eye(role):
+            _paint_eye(p, opt.rect.left() + 3.0,
+                       float(opt.rect.center().y()),
+                       tree.eye_hidden(role))
+        if role in tree._under:                    # LAW-5.2 underline
+            pen = QPen(QColor(DARK["accent"]))
+            pen.setWidthF(1.2)
+            pen.setStyle(Qt.PenStyle.DotLine)
+            p.setPen(pen)
+            p.drawLine(opt.rect.left() + self.GUTTER,
+                       opt.rect.bottom() - 2,
+                       opt.rect.right() - 6, opt.rect.bottom() - 2)
+        opt.rect = opt.rect.adjusted(self.GUTTER, 0, 0, 0)
+        super().paint(p, opt, idx)                 # name, selection, tree
+        if (role and role[0] == "body" and self._doc_active() == role[1]):
+            p.setPen(Qt.PenStyle.NoPen)            # LAW-1.6 active dot
+            p.setBrush(QColor(DARK["accent"]))
+            p.drawEllipse(QPointF(float(opt.rect.right() - 8),
+                                  float(opt.rect.center().y())), 3.5, 3.5)
+        if it is not None and it is tree._flash:   # LAW-5.1 flash
+            pen = QPen(QColor(DARK["line_hi"]))
+            pen.setStyle(Qt.PenStyle.DashLine)
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(tree.visualRect(idx).adjusted(1, 1, -1, -1))
+        p.restore()
+
+    def setModelData(self, editor, model, idx):
+        """M162: the rename rides the KERNEL door (feature_renamed →
+        _apply_rename → counted relinks) — never a raw model write. A
+        refused name must not stain the row; the reload repaints truth.
+        """
+        pass
+
+    def setEditorData(self, editor, idx):
+        """The inline rename pre-fills the BARE NAME — the row's text
+        is decorated (+ and a box glyph), and the in-place field edits
+        the name, not the makeup."""
+        tree = self.parent()
+        role = idx.data(Qt.UserRole)
+        if (tree._renaming is not None
+                and isinstance(editor, QLineEdit)
+                and role and role[0] == "feature"
+                and tree._doc is not None):
+            feats = list(tree._doc.features)
+            if 0 <= role[1] < len(feats):
+                editor.setText(feats[role[1]].name)
+                return
+        super().setEditorData(editor, idx)
+
+    def _doc_active(self):
+        doc = self.parent()._doc
+        return doc.active_body if doc is not None else None
+
+
 class FeatureTree(QTreeWidget):
     feature_menu = Signal(object, object)   # Feature, global QPoint
     cplane_menu = Signal(str, object)       # plane name, global QPoint
@@ -66,6 +160,12 @@ class FeatureTree(QTreeWidget):
     row_leave = Signal()                    # M160/FD2-L4: the pointer
                                             #   left the whole tree
                                             #   (hover wash dies)
+    eye_toggled = Signal(object)            # M162/FD3-1.1: an eye was
+                                            #   clicked — the ROLE tuple
+                                            #   (body / bodies folder);
+                                            #   the WINDOW owns the kernel
+    feature_renamed = Signal(object, str)   # M162/FD3-2.3: inline
+                                            #   rename committed
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -75,6 +175,25 @@ class FeatureTree(QTreeWidget):
         self.setIndentation(14)
         self._doc: Document | None = None
         self.feature_selected = None  # callback(feature|None)
+        # ---- M162 state ----------------------------------------------------
+        # LAW-1.3: the Bodies folder wears its own eye and OVERRIDES the
+        # chain — children keep their latent state, the layer says no.
+        # It is VIEW state: a new document opens with clean eyes.
+        self.folder_vis = True
+        self._under: list = []               # LAW-5.2 ancestry role tuples
+        self._flash = None                   # LAW-5.1 row being flashed
+        self._renaming = None                # LAW-2.3 inline editor owner
+        self.setItemDelegate(BrowserDelegate(self))
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        #   (the ONLY edit door is editItem() from the name double-click)
+        # M162's latent-law repair: Qt's DEFAULT expandsOnDoubleClick
+        # was swallowing the first double-click on every row with kids —
+        # M104's "double-click a body activates" and the sketch/sheet
+        # edit doors were UNREACHABLE by mouse (m96/m104 emitted the
+        # signal directly to test around it). Fusion's double-click
+        # acts on the row; expansion is the arrow's own job (which
+        # still toggles — that is a different Qt mechanism).
+        self.setExpandsOnDoubleClick(False)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_menu)
 
@@ -84,6 +203,130 @@ class FeatureTree(QTreeWidget):
         that, so this widget speaks one."""
         super().leaveEvent(ev)
         self.row_leave.emit()
+
+    # ---- eyes (M162, FD3 LAW-1.1/1.3/2.2) ----------------------------------
+    def has_eye(self, role) -> bool:
+        """Which rows wear an eye: the ones whose visibility kernel is
+        REAL — bodies (doc truth) and the Bodies folder (the AND-chain
+        layer). An eye that controlled nothing would be a lie, so
+        sketch/datum rows bank theirs until their kernels exist."""
+        return (role is not None
+                and (role[0] == "body"
+                     or (role[0] == "folder" and role[1] == "bodies")))
+
+    def eye_hidden(self, role) -> bool:
+        if self._doc is None:
+            return False
+        if role[0] == "folder":
+            return not self.folder_vis
+        for b in self._doc.body_list():
+            if b["name"] == role[1]:
+                return not bool(b.get("visible", True))
+        return False
+
+    def _eye_band(self, it) -> QRect:
+        r = self.visualRect(self.indexFromItem(it))
+        return QRect(r.left(), r.top(), BrowserDelegate.GUTTER, r.height())
+
+    def mousePressEvent(self, ev):
+        if ev.button() == Qt.LeftButton:
+            it = self.itemAt(ev.position().toPoint())
+            role = it.data(0, Qt.UserRole) if it is not None else None
+            if (role and self.has_eye(role)
+                    and self._eye_band(it).contains(ev.position().toPoint())):
+                # Fusion's bulb law: an eye click TOGGLES — it never
+                # selects, never moves the current row.
+                self.eye_toggled.emit(role)
+                return
+        super().mousePressEvent(ev)
+
+    # ---- inline rename on the NAME (M162, FD3 LAW-2.3) ---------------------
+    def _text_left(self, it) -> int:
+        """Where a row's TEXT begins: the gutter plus the branch zone
+        ((depth+1) indentations of arrows) — a double-click left of it
+        stays Qt's own expand/collapse law, right of it is the name."""
+        lvl, p = 0, it.parent()
+        while p is not None:
+            lvl += 1
+            p = p.parent()
+        return (lvl + 1) * self.indentation() + BrowserDelegate.GUTTER
+
+    def mouseDoubleClickEvent(self, ev):
+        it = self.itemAt(ev.position().toPoint())
+        role = it.data(0, Qt.UserRole) if it is not None else None
+        if (role and role[0] == "feature"
+                and ev.position().x() >= self._text_left(it)):
+            # Double-click ON THE NAME renames in place (Enter commits,
+            # Escape abstains). The icon side keeps the old activation
+            # door — two truths, one row, the vendor's own split.
+            self._renaming = it
+            it.setFlags(it.flags() | Qt.ItemIsEditable)
+            self.editItem(it)
+            return
+        super().mouseDoubleClickEvent(ev)
+
+    def commitData(self, editor):
+        it = self._renaming
+        if it is not None and self._doc is not None:
+            role = it.data(0, Qt.UserRole)
+            text = editor.text().strip()
+            if role and role[0] == "feature" and text:
+                feats = list(self._doc.features)
+                i = role[1]
+                if 0 <= i < len(feats):
+                    self.feature_renamed.emit(feats[i], text)
+        self._renaming = None
+        super().commitData(editor)
+
+    def closeEditor(self, editor, hint):
+        if self._renaming is not None:      # Escape lands here without
+            self._renaming.setFlags(        #   commitData — the row
+                self._renaming.flags()      #   forgets it was editable
+                & ~Qt.ItemIsEditable)
+        self._renaming = None
+        super().closeEditor(editor, hint)
+
+    # ---- find in browser (M162, FD3 LAW-5.1) --------------------------------
+    def reveal_feature(self, feature) -> bool:
+        """Light the feature's row, scroll it in, and flash the dashed
+        outline while it is found — the probe's own words: the row
+        appears with \"dashed lines\". The flash is timed, not eternal."""
+        if self._doc is None or feature not in self._doc.features:
+            return False
+        want = ("feature", self._doc.features.index(feature))
+
+        def walk(it):
+            for i in range(it.childCount()):
+                ch = it.child(i)
+                if ch.data(0, Qt.UserRole) == want:
+                    return ch
+                got = walk(ch)
+                if got is not None:
+                    return got
+            return None
+
+        it = walk(self.topLevelItem(0))
+        if it is None:
+            return False
+        self.setCurrentItem(it)
+        self.scrollToItem(it, QAbstractItemView.PositionAtCenter)
+        self._flash = it
+        QTimer.singleShot(900, self._end_flash)
+        self.viewport().update()
+        return True
+
+    def _end_flash(self):
+        self._flash = None
+        self.viewport().update()
+
+    # ---- ancestry underline (M162, FD3 LAW-5.2) -----------------------------
+    def set_ancestry(self, body_name):
+        """Canvas-select draws the dotted lineage: root ▸ Bodies ▸ the
+        owning body. None clears. Roles are stored, not items — a reload
+        rebuilds rows and the lineage survives."""
+        self._under = ([("root", None), ("folder", "bodies"),
+                        ("body", body_name)] if body_name else [])
+        self.viewport().update()
 
     def _show_menu(self, pos):
         it = self.itemAt(pos)
@@ -110,6 +353,12 @@ class FeatureTree(QTreeWidget):
 
     def set_document(self, doc: Document):
         self._doc = doc
+        # M162: a new document opens with clean eyes and no washes
+        # (folder_vis is VIEW state — LAW-1.3; the doc carries its own
+        # per-body truth, which reload reads fresh).
+        self.folder_vis = True
+        self._under = []
+        self._flash = None
         self.reload()
 
     @staticmethod
@@ -192,9 +441,11 @@ class FeatureTree(QTreeWidget):
             vis = True if entry is None else bool(entry.get("visible", True))
             mat = ((entry or {}).get("appearance") or {}).get("name")
             tag = f"  \u00b7 {mat}" if mat else ""   # painted → name it
-            body_item = QTreeWidgetItem(
-                [("\u25a3 " + nm + tag) if vis
-                 else f"\u25a3 {nm}{tag}  (hidden)"])
+            # M162 (FD3-1.1): the row text is just the NAME — visibility
+            # truth rides the ALWAYS-rendered eye the delegate paints in
+            # its gutter (the ▣ prefix and the "(hidden)" suffix retire;
+            # a word is not an affordance, an icon you can click is).
+            body_item = QTreeWidgetItem([nm + tag])
             body_item.setData(0, Qt.UserRole, ("body", nm))
             if self._doc.active_body == nm:
                 fnt = body_item.font(0)
@@ -367,7 +618,8 @@ class FeatureTree(QTreeWidget):
 
     def keyPressEvent(self, ev):
         """Fusion's browser key grammar (M72): Del removes the selected
-        feature, F2 renames it — same paths as the context menu."""
+        feature, F2 renames it — same paths as the context menu.
+        M162 adds LAW-2.2: V toggles the visibility of the selection."""
         f = self.current_feature()
         if f is not None and ev.key() in (Qt.Key_Delete,
                                           Qt.Key_Backspace):
@@ -376,6 +628,12 @@ class FeatureTree(QTreeWidget):
         if f is not None and ev.key() == Qt.Key_F2:
             self.feature_rename.emit(f)
             return
+        if ev.key() == Qt.Key_V:
+            it = self.currentItem()
+            role = it.data(0, Qt.UserRole) if it is not None else None
+            if role and self.has_eye(role):
+                self.eye_toggled.emit(role)
+                return
         super().keyPressEvent(ev)
 
 

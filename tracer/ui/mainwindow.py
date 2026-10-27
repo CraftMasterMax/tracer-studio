@@ -8,7 +8,7 @@ import time
 
 import numpy as np
 import trimesh
-from PySide6.QtCore import QPoint, QSize, Qt, QSettings
+from PySide6.QtCore import QPoint, QSize, Qt, QSettings, QTimer
 from PySide6.QtGui import (QAction, QActionGroup, QKeySequence, QShortcut)
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, 
                                QLabel, QMainWindow, QMenu, QMessageBox,
@@ -127,6 +127,12 @@ class MainWindow(QMainWindow):
             lambda: self.viewport.hover_body(None))
         self.rail.tree.row_leave.connect(
             lambda: self.viewport.hover_body(None))
+        # M162 (FD3): the eyes speak — bodies toggle through the kernel
+        # door (_toggle_body_visible), the Bodies folder flips the AND-
+        # chain LAYER (viewport.set_solid_visible) leaving every child's
+        # own state latent. Plus the inline rename commit (LAW-2.3).
+        self.rail.tree.eye_toggled.connect(self._on_eye_toggled)
+        self.rail.tree.feature_renamed.connect(self._on_inline_rename)
         self.rail.tree.itemDoubleClicked.connect(self._tree_activated)
         self.rail.tree.feature_menu.connect(self._feature_menu)
         self.rail.tree.cplane_menu.connect(self._cplane_menu)
@@ -837,6 +843,24 @@ class MainWindow(QMainWindow):
         role = item.data(0, Qt.UserRole) if item else None
         if not role:
             return
+        # M162's crash fix (coredump 125155, QTreeView::mouseDoubleClick
+        # Event on the stack): this handler runs INSIDE Qt's double-click
+        # dispatch, and Qt keeps using the model index after the signal
+        # returns. Every door below can rebuild the tree (activate
+        # reloads it; sketch/drawing pages recompute) — freeing the rows
+        # under Qt's feet was a use-after-free SIGSEGV, reachable by any
+        # real double-click ever since M104 (the old tests only EMITTED
+        # the signal, which has no Qt frame to straddle; M162's
+        # expandsOnDoubleClick(False) repair made the live path land).
+        # The role is PLAIN data, so capture it here and ride to the
+        # next event-loop tick — one tick later, zero frames dangling.
+        QTimer.singleShot(0, lambda: self._activate_role(role))
+
+    def _activate_role(self, role):
+        """The deferred half of _tree_activated — dispatched OUTSIDE any
+        Qt event frame, so it is free to rebuild the model."""
+        if self.doc is None:
+            return
         kind, arg = role
         if kind == "plane":
             self.action_new_sketch(arg)
@@ -932,6 +956,9 @@ class MainWindow(QMainWindow):
             self._datum_menu_rows(menu, "hole-axis", feature.uid,
                                   f"hole {feature.name}")
         menu.addAction("Rename…", lambda: self._rename_feature(feature))
+        # M162 LAW-5.1: Find in Browser — the row lights with the dash.
+        menu.addAction("Find in Browser",
+                       lambda: self._find_in_browser(feature))
         menu.addSeparator()
         menu.addAction("Unsuppress" if feature.suppressed else "Suppress",
                        lambda: self._toggle_suppress(feature))
@@ -1051,6 +1078,12 @@ class MainWindow(QMainWindow):
         else:
             self.doc.rollback_to = max(0, int(n))
             msg = f"Rollback: showing {self.doc.rollback_to} of {total}"
+        # M162 LAW-5.3: visibility is INDEPENDENT of history — the eyes
+        # ride every rollback untouched (they are document truth). The
+        # PICK washes are the opposite: faces past the cutoff stop
+        # existing, so the ancestry underline is cleared here (the mesh
+        # refresh already retires _hover/_sel with the new face ids).
+        self.rail.tree.set_ancestry(None)
         self.recompute()
         self.status.showMessage(msg, 4000)
 
@@ -2733,7 +2766,9 @@ class MainWindow(QMainWindow):
         """M152: the thin UI arm of Document.rename_feature — what
         was a raw string write is now M130's counted relink, so a
         rename retargets every name-bound face handle and the status
-        line counts them (the buried-boss rot cannot recur)."""
+        line counts them (the buried-boss rot cannot recur).
+        M162: the kernel moved to _apply_rename — the F2 dialog and
+        LAW-2.3's inline field are two doors, ONE truth."""
         if self.doc is None:
             return
         old = feature.name
@@ -2741,9 +2776,18 @@ class MainWindow(QMainWindow):
                                         text=old)
         if not ok or not name.strip() or name.strip() == old:
             return
+        self._apply_rename(feature, name.strip())
+
+    def _apply_rename(self, feature, new_name):
+        """The rename kernel door: undo point BEFORE, counted relink,
+        refusal rolls the capture back, success recomputes and reloads.
+        M162's inline commit (feature_renamed) lands here too."""
+        if self.doc is None:
+            return
+        old = feature.name
         self._capture()                            # undo point BEFORE
         try:
-            n = self.doc.rename_feature(old, name.strip())
+            n = self.doc.rename_feature(old, new_name)
         except Exception as e:                     # name taken
             self._undo.pop()                       # refusal mutates
             self._redo.clear()                     #   nothing
@@ -2753,7 +2797,7 @@ class MainWindow(QMainWindow):
         self.recompute()
         self.rail.tree.reload()
         self.status.showMessage(
-            f"Renamed {old!r} → {name.strip()!r}"
+            f"Renamed {old!r} → {new_name!r}"
             + (f" — {n} reference{'s' if n != 1 else ''} retargeted"
                if n else " — no handles referenced it"), 6000)
 
@@ -3303,7 +3347,47 @@ class MainWindow(QMainWindow):
     # ---- isolation (M134) ---------------------------------------------------
     def _refresh_visibility(self):
         self.rail.tree.reload()
+        # M162 LAW-1.3's choke: the Bodies-folder layer follows the
+        # tree's view state on EVERY refresh, so folder eye, renderer
+        # and browser never disagree — one truth, one path.
+        self.viewport.set_solid_visible(self.rail.tree.folder_vis)
         self.viewport.refresh()
+
+    # ---- the browser eyes (M162, FD3) ---------------------------------------
+    def _on_eye_toggled(self, role):
+        """One door for both eyes: a body row writes the document
+        kernel (it is DATA — serialized, undo-tracked by its own paths);
+        the Bodies folder flips VIEW state (the layer) and changes
+        nothing about the children — their eyes keep their latent say
+        (LAW-1.3's AND-chain, the probe's decisive phrasing)."""
+        kind, arg = role
+        if kind == "body":
+            self._toggle_body_visible(arg)
+        elif kind == "folder" and arg == "bodies":
+            self.rail.tree.folder_vis = not self.rail.tree.folder_vis
+            self._refresh_visibility()
+            self.status.showMessage(
+                "Bodies layer hidden — the eyes below are unchanged, "
+                "the folder is overruling them (LAW-1.3)"
+                if not self.rail.tree.folder_vis else
+                "Bodies layer on — every latent eye speaks again", 5000)
+
+    def _on_inline_rename(self, feature, new_name):
+        """LAW-2.3's commit: the inline field lands on the SAME kernel
+        door F2 uses — counted relinks, undo point, the lot."""
+        if new_name and new_name != feature.name:
+            self._apply_rename(feature, new_name)
+
+    def _find_in_browser(self, feature) -> bool:
+        """M162 LAW-5.1: from a feature's context menu — reveal its
+        browser row with the dashed flash. If the walk finds no row
+        (a row kind the browser does not list), the status says so."""
+        found = self.rail.tree.reveal_feature(feature)
+        if not found:
+            self.status.showMessage(
+                f"'{feature.name}' has no browser row to find (yet)",
+                4000)
+        return found
 
     def _isolate_body(self, name):
         doc = self.doc
@@ -3836,6 +3920,10 @@ class MainWindow(QMainWindow):
         if self.doc is None or self.doc.result is None:
             return
         groups = self.viewport.selected_groups()
+        # M162 LAW-5.2: whatever owns the picked faces gets its browser
+        # ancestry underlined — canvas to tree, one dotted line. (The
+        # empty answer clears it: no selection, no lineage lit.)
+        self.rail.tree.set_ancestry(self.viewport.selected_body())
         if not groups:
             s = self.doc.result
             self.rail.props.show_stats(s.volume, s.surface_area)
@@ -5619,6 +5707,10 @@ class MainWindow(QMainWindow):
 
     def _adopt_doc(self):
         self.rail.tree.set_document(self.doc)
+        # M162: set_document reset the folder eye — the LAYER follows it
+        # here, or a second document would open behind the first one's
+        # hidden-Bodies folder (the renderer outlives the doc).
+        self.viewport.set_solid_visible(self.rail.tree.folder_vis)
         self.timeline.set_document(self.doc)
         self.viewport.set_document(self.doc)
         self.viewport.refresh(fit=False)
@@ -5645,6 +5737,10 @@ class MainWindow(QMainWindow):
         self._undo.clear()
         self._redo.clear()
         self.rail.tree.set_document(self.doc)
+        # M162: set_document reset the folder eye — the LAYER follows it
+        # here, or a second document would open behind the first one's
+        # hidden-Bodies folder (the renderer outlives the doc).
+        self.viewport.set_solid_visible(self.rail.tree.folder_vis)
         self.timeline.set_document(self.doc)
         self.viewport.set_document(self.doc)
         self._update_status()

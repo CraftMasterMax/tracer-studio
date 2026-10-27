@@ -107,7 +107,12 @@ def test_axis_nodes_are_tinted_like_the_triad(win):
 
 def test_features_nest_under_body_1(win):
     body = _folder(win, "Bodies (1)").child(0)
-    assert body.text(0).startswith("\u25a3")           # ▣ Body 1
+    # M162 cite-the-move: the "▣ " text glyph retired — visibility
+    # truth now rides the ALWAYS-rendered eye the BrowserDelegate paints
+    # in its gutter (FD3-1.1). The row text is just the NAME.
+    assert body.text(0) == "Body 1"
+    assert win.rail.tree.has_eye(("body", "Body 1"))      # the eye wears
+    assert not win.rail.tree.eye_hidden(("body", "Body 1"))  # here now
     # M104: bodies became real — the node now carries its name, not None
     assert body.data(0, Qt.UserRole) == ("body", "Body 1")
     nested = [body.child(i).text(0) for i in range(body.childCount())]

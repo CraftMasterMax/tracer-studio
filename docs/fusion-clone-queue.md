@@ -2269,6 +2269,41 @@ M125; items 1-11 below are history.*
   one legitimate suppression, three acts — volume 3000 -> 600 -> 0,
   ink 13362/1571 px, both dim-faces sampled, transport+gear+marker
   visible every act. 13 new gates. (1795.)
+- **THE BROWSER OPENS ITS EYES SHIPPED (M162, FD3)** — the rows that
+  own REAL visibility kernels grew ALWAYS-ON eyes (LAW-1.1: their
+  support KB exists because users begged for hover-toggle and were
+  REFUSED — we clone the refusal). One `BrowserDelegate` paints
+  everything: 20px eye gutter, the active row's accent DOT
+  (LAW-1.6 — the DOCUMENTED deviation: their missing active-marker is
+  the community's #1 browser complaint; ours never sleeps), the dotted
+  ANCESTRY underline on canvas-pick (LAW-5.2) and the dashed
+  FIND-IN-BROWSER flash (LAW-5.1, the probe's own "dashed lines").
+  Eyes exist ONLY where a kernel exists — body rows (doc truth) and
+  the Bodies folder, whose eye is the dormant `show_solid` LAYER the
+  AND-chain finally drives (LAW-1.3: the folder OVERRIDES while
+  children stay latent — reopen and every closed child is STILL
+  closed; the shot proves it IN PIXELS, body bands byte-identical
+  across the folder's close). LAW-2.2 `V` toggles the selection;
+  LAW-2.3 double-click ON THE NAME renames inline — commit rides
+  M130's counted-relink door (`_apply_rename` extracted, F2 and the
+  field are two doors ONE truth), Escape abstains, and the delegate's
+  setModelData REFUSES raw writes so a refused name cannot stain the
+  row. LAW-5.3: eyes ride rollback untouched (document truth), the
+  ancestry wash dies with it; LAW-2.10's snapshot gate pins M134's
+  isolate round-trip EXACT. The latent-law repair: Qt's DEFAULT
+  expandsOnDoubleClick had swallowed the first double-click of every
+  expandable row since M104 — the activation/sketch-edit doors were
+  MOUSE-UNREACHABLE (m96/m104 emitted the signal directly to test
+  around it). Turning it off made the doors live — and the first live
+  double-click SEGFAULTED (coredump 125155: the handler reloaded the
+  tree inside QTreeView::mouseDoubleClickEvent, Qt kept using the
+  freed index). The door now rides ONE event-loop tick — role data
+  survives, dangling frames don't — gated by a no-loop-no-change pin.
+  ▣ and "(hidden)" retire cite-the-move (m43:110, m104:232). Sketch/
+  construction eyes BANKED BY NAME — no lying affordances. Proof
+  (3x md5 543f2a39...): two bodies, four acts, ten band-local gates —
+  slash-ON, folder-latency byte-zero, three-row ancestry ink, dot
+  confined to the active row in EVERY act.
 - Tail (queued by matrix order, unnumbered): single-HTML
   share viewer, STEP `[step]` OCP extra, per-config BOM-diff, drawings
   quick set, version-diff

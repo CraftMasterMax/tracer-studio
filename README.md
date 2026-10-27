@@ -5,7 +5,7 @@ A keyboard-first parametric CAD for makers — Linux & Windows, free forever
 interface that doesn't fight you." (Workflow inspiration only — this is an
 independent project with no Autodesk assets or affiliation.)
 
-**Status: M161**
+**Status: M162**
 
 - Parametric document: sketch → feature timeline, suppress/isolate,
   full undo/redo, JSON `.tracer` save/open (legacy `.forma` files open
@@ -415,6 +415,21 @@ independent project with no Autodesk assets or affiliation.)
   animation), a chip click lights the feature's body in the canvas,
   the wheel scrolls long strips, and "Delete All After Marker" is a
   distinct, confirm-guarded command — the marker never deletes.
+- **THE BROWSER OPENS ITS EYES (M162)**: rows that own a real
+  visibility kernel wear **always-rendered eyes** — a body's eye
+  writes the document, and the Bodies folder's eye is a LAYER that
+  OVERRIDES the chain while every child's own eye stays latent (hide
+  the folder, reopen it: what you had closed alone is still closed).
+  Eye clicks toggle; they never select. `V` shuts and opens the
+  selected row's eye. Double-click on a feature's **name** renames it
+  in place — Enter commits through the same counted-relink door F2
+  uses, Escape abstains — while double-click everywhere else ACTS on
+  the row: no more collapse roulette. The active body wears a
+  permanent accent dot; a canvas pick draws the dotted lineage
+  root ▸ Bodies ▸ body in the tree; "Find in Browser" lights the
+  feature's row and flashes a dashed outline. Isolate → unisolate
+  returns every prior dark exactly, and eyes ride the rollback
+  marker untouched.
 - **Assembly, rung 1 (M146)**: Tools ▸ **Joint — As-Built Rigid**:
   two bodies, the child's pose captured once, and **LAW R** from then
   on — *a joint follows where a body is PLACED, not how it is BUILT*.
