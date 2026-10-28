@@ -8,7 +8,7 @@ import time
 
 import numpy as np
 import trimesh
-from PySide6.QtCore import QPoint, QSize, Qt, QSettings, QTimer
+from PySide6.QtCore import QPoint, QSize, Qt, QSettings, QTimer, Signal
 from PySide6.QtGui import (QAction, QActionGroup, QKeySequence, QShortcut)
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, 
                                QLabel, QMainWindow, QMenu, QMessageBox,
@@ -5575,10 +5575,11 @@ class MainWindow(QMainWindow):
                                   "intersections")
         bl.addWidget(self._snap_btn)
         # Fusion's constraint voice on the toolbar (M73): fully / dof
-        self._sketch_state = QLabel("")
+        self._sketch_state = ClickableLabel("")    # M164 R2: the chip acts
         self._sketch_state.setStyleSheet(
             f"color:{DARK['accent_soft']}; padding:0 8px;")
         bl.addWidget(self._sketch_state)
+        self._sketch_state.clicked.connect(self._on_sketch_state_click)
         bl.addStretch(1)
         back = QPushButton("← Back")
         back.setProperty("tb", True)
@@ -5663,6 +5664,31 @@ class MainWindow(QMainWindow):
                                           f"redundant"
                                           if getattr(res, "redundant", [])
                                           else ""))
+        # M164 R2: affordance, NOT wording - the sentence is rung 3's.
+        # String-cheap law: booleans off the cached result only, no scan.
+        conflict = res is not None and not empty and \
+            bool(getattr(res, "conflicting", []))
+        free = res is not None and not empty and not conflict \
+            and res.dof > 0
+        self._sketch_state.setEnabled(conflict or free)
+        self._sketch_state.setCursor(Qt.PointingHandCursor
+                                     if conflict or free else Qt.ArrowCursor)
+        self._sketch_state.setToolTip(
+            "Click to select the blamed geometry" if conflict else
+            "Click to select every free point" if free else "")
+
+    def _on_sketch_state_click(self):
+        """M164 R2: the chip is a button without chrome - clicking it
+        selects the geometry the solve is talking about.  Reads the
+        CACHED result: zero re-solve.  Warning first (same precedence as
+        the chip's own if/elif); selection only until rung 3."""
+        res = getattr(self.sketch, "_last_result", None)
+        if res is None:
+            return
+        if getattr(res, "conflicting", []):
+            self.sketch.select_blamed()
+        elif res.dof > 0:
+            self.sketch.select_underconstrained()
 
     def _pick_tool(self, tool: str):
         self.sketch.set_tool(tool)
@@ -7183,3 +7209,16 @@ class _AttachmentsDialog(QDialog):
             self._act(d.break_follow, i["owner"])
         else:
             self._act(d.datum_remove, i["owner"])
+
+
+class ClickableLabel(QLabel):
+    """M164 R2: the DoF chip is a BUTTON without a button's chrome -
+    anti-modal: a click selects, nothing else opens."""
+
+    clicked = Signal()
+
+    def mouseReleaseEvent(self, ev):
+        if ev.button() == Qt.LeftButton and \
+                self.rect().contains(ev.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(ev)

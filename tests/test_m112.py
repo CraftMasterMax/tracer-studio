@@ -70,6 +70,7 @@ def test_sketch_state_tokens():
     assert s["fixed"] == "#9fdc66" and s["sel"] == "#00d5ff"
     assert s["dim"] == theme.SUCCESS and s["infer"] == theme.INFER
     assert s["hud"] == "#38abdf"
+    assert s["hover"] == "#9cc4ff"           # M164 R2: the hover ring
 
 
 def test_helpers():

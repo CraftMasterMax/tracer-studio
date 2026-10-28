@@ -134,6 +134,8 @@ SKETCH = {
     "hud": BLUE[".400"],          # heads-up text
     "error": ERROR,               # conflicting constraint
     "handle": SUCCESS,            # manipulator handles
+    "hover": HOVER,               # M164 R2: constraint-hover ring (the
+                                  #   canvas "turns white" blue, same as DARK)
 }
 
 # ---- the view cube + nav stack ------------------------------------------------

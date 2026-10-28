@@ -56,6 +56,7 @@ AXIS_X = QColor.fromRgbF(*theme.DARK["axis_x"])
 AXIS_Y = QColor.fromRgbF(*theme.DARK["axis_y"])
 OK = QColor(theme.SUCCESS)
 WARN = QColor(theme.WARNING)
+HOVER = QColor(theme.SKETCH["hover"])       # M164 R2: constraint-hover ring
 
 _HIT_PX = 9
 
@@ -135,6 +136,8 @@ class SketchCanvas(QWidget):
                                                  False, type=bool))
         self._last_result = None
         self._dim_hits: list = []
+        self._constraint_hits: list = []     # M164 R2: (rect, constraint)
+        self._hover_c = None                 # constraint under the cursor
         self._show_dof = False            # M119: degrees-of-freedom overlay
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMinimumSize(320, 240)
@@ -215,6 +218,7 @@ class SketchCanvas(QWidget):
         self._band = None
         self._snap_hint = None
         self._snap_obj = None                    # M120: stale magnet glyph
+        self._hover_c = None                     # M164 R2: stale ring dies
         self.setCursor(Qt.ArrowCursor if tool == "select"
                        else Qt.CrossCursor)    # Fusion's drafting cursor
         self.update()
@@ -429,6 +433,9 @@ class SketchCanvas(QWidget):
         if ev.button() != Qt.LeftButton:
             return
         if self._tool == "select":
+            if self._hover_c is not None:        # M164 R2: no ring while
+                self._hover_c = None             # grabbing (viewport's law)
+                self.setCursor(Qt.ArrowCursor)
             hit = self._hit(q)
             if hit is None:
                 if not (ev.modifiers() & Qt.ControlModifier):
@@ -651,6 +658,14 @@ class SketchCanvas(QWidget):
             elif self._band is not None:
                 self._band[1] = q
                 self.update()
+            else:                              # M164 R2: idle select hover
+                hit = self._hover_hit(q)
+                new = hit[1] if hit else None
+                if new is not self._hover_c:   # identity, never __eq__:
+                    self._hover_c = new        # twin constraints compare equal
+                    self.setCursor(Qt.PointingHandCursor if new is not None
+                                   else Qt.ArrowCursor)
+                    self.update()              # ONE repaint per hover change
             return
         if self._tool != "select":
             # Fusion shows the magnet while you HOVER, not only mid-drag
@@ -660,6 +675,15 @@ class SketchCanvas(QWidget):
             kind, start = self._preview[0], self._preview[1]
             self._preview = (kind, start, wp)
             self.update()
+
+    def leaveEvent(self, ev):
+        # M164 R2: cursor gone, ring gone - no ghost (viewport's law).
+        # Offscreen never synthesizes Leave; real pointers do.
+        if self._hover_c is not None:
+            self._hover_c = None
+            self.setCursor(Qt.ArrowCursor if self._tool == "select"
+                           else Qt.CrossCursor)    # same law as set_tool
+        super().leaveEvent(ev)
 
     def mouseReleaseEvent(self, ev: QMouseEvent):
         if ev.button() in (Qt.MiddleButton, Qt.RightButton):
@@ -1337,6 +1361,7 @@ class SketchCanvas(QWidget):
             self._draw_entities(p)
             self._draw_dimensions(p)
             self._draw_glyphs(p)
+            self._draw_hover(p)                # M164 R2: ring + re-stroke
             if self._show_dof:                    # M119: the DOF overlay
                 self._draw_dof(p)
             self._draw_typein(p)              # M90: the live number chip
@@ -1426,6 +1451,33 @@ class SketchCanvas(QWidget):
         free = sum(1 for v in res.point_dof.values() if v)
         return f"{free} free point{'s' if free != 1 else ''}, {res.dof} dof"
 
+    def select_underconstrained(self):
+        """M164 R2 chip click: pick every point the solve says can still
+        move.  Reads the cached M119 point_dof - zero new solve, zero new
+        hit-test (the one-round-trip law)."""
+        res = self._last_result
+        if res is None or not getattr(res, "point_dof", None):
+            return
+        self._sel = [q for q in self._dof_points()
+                     if res.point_dof.get(q.id, 0) > 0]
+        self.update()
+
+    def select_blamed(self):
+        """M164 R2 chip click on the warning: select the geometry of the
+        blamed constraints.  Rung 2 SELECTS; the remove-one finder is
+        rung 3's sentence."""
+        res = self._last_result
+        if res is None:
+            return
+        out = []
+        for c in getattr(res, "conflicting", []) or []:
+            for e in c.entities():
+                if not any(e is oo for oo in out):     # identity dedup
+                    out.append(e)
+        if out:
+            self._sel = out
+            self.update()
+
     def _dof_hud_text(self) -> str:
         """M164 R1: the DOF line the HUD paints - dof_summary()'s contract
         byte-exact, plus the rank truth the solve now remembers
@@ -1502,6 +1554,18 @@ class SketchCanvas(QWidget):
             p.drawText(rect, Qt.AlignCenter, text)
             p.setBrush(Qt.NoBrush)
             self._dim_hits.append((rect, c))
+
+    def _hover_hit(self, q: QPointF):
+        """M164 R2: (rect, constraint) under the cursor - topmost wins.
+        Badges paint over dim labels, so _constraint_hits answers first;
+        within either list later appends were painted later, hence the
+        reversed() walk.  The lists are per-paint; a move between paints
+        rides <=1 frame-old rects - honest for a cosmetic-only consumer."""
+        for hits in (self._constraint_hits, self._dim_hits):
+            for rect, c in reversed(hits):
+                if rect.contains(q):
+                    return rect, c
+        return None
 
     def mouseDoubleClickEvent(self, ev: QMouseEvent):
         q = ev.position()
@@ -1772,7 +1836,8 @@ class SketchCanvas(QWidget):
             p.drawEllipse(pos, 7, 7)
 
     def _draw_glyphs(self, p: QPainter):
-        font = p.font()
+        self._constraint_hits = []                 # M164 R2: rebuilt per
+        font = p.font()                            # paint, like _dim_hits
         p.setFont(self._font)
         sk = self.model.sketch
         for c in sk.constraints:
@@ -1796,6 +1861,8 @@ class SketchCanvas(QWidget):
                 pt = self._tangent_point(c)
                 if pt is not None:
                     self._tangent_mark(p, pt)
+                    self._constraint_hits.append(   # M164 R2: the mark is
+                        (QRectF(pt.x() - 5, pt.y() - 5, 10, 10), c))  # hot
             # Distance & Radius: no badge — the editable dimension label
             # from _draw_dimensions is the single indicator (as in
             # Fusion). Two glyphs for one value used to collide
@@ -1892,6 +1959,8 @@ class SketchCanvas(QWidget):
                c=None):
         w = 20 if wide else 13
         rect = QRectF(at.x() - w / 2, at.y() - 8, w, 15)
+        if c is not None:                          # M164 R2: every badge
+            self._constraint_hits.append((rect, c))  # is a hover target
         fill = QColor(theme.rgba(theme.DB[".350"], 200))
         if c is not None:                 # M87: diagnosed constraints glow
             if id(c) in self._conflicting:
@@ -1904,6 +1973,44 @@ class SketchCanvas(QWidget):
         p.setPen(FG)
         p.drawText(rect, Qt.AlignCenter, text)
         p.setBrush(Qt.NoBrush)
+
+    def _draw_hover(self, p: QPainter):
+        """M164 R2: the culprit under the cursor - a ring around its rect
+        and its geometry re-stroked.  Cosmetic only: never touches _sel,
+        never solves, never removes (that vocabulary is rung 3's)."""
+        c = self._hover_c
+        if c is None or not self.model:
+            return
+        if not any(cc is c for cc in self.model.sketch.constraints):
+            self._hover_c = None                   # deleted mid-flight: the
+            return                                 # ring dies, it never lies
+        rect = next((r for r, cc in reversed(self._constraint_hits)
+                     if cc is c), None)
+        if rect is None:
+            rect = next((r for r, cc in reversed(self._dim_hits)
+                         if cc is c), None)
+        hot = (QColor(theme.SKETCH["error"])       # the fight escalates red
+               if id(c) in self._conflicting else HOVER)   # (badge's own law)
+        p.setPen(QPen(hot, 1.6))
+        if rect is not None:
+            p.drawRoundedRect(QRectF(rect).adjusted(-2.5, -2.5, 2.5, 2.5),
+                              4, 4)
+        for e in c.entities():                     # the referenced geometry
+            if isinstance(e, Point):               # glows with its badge
+                pos = self.w2s(e.x, e.y)
+                p.drawRect(QRectF(pos.x() - 4.6, pos.y() - 4.6, 9.2, 9.2))
+            elif isinstance(e, Line):
+                p.drawLine(self.w2s(e.a.x, e.a.y), self.w2s(e.b.x, e.b.y))
+            elif isinstance(e, Circle):
+                cen = self.w2s(e.c.x, e.c.y)
+                p.drawEllipse(cen, e.r * self._scale, e.r * self._scale)
+            elif isinstance(e, Arc):
+                smp = e.sample(64)
+                q_prev = self.w2s(float(smp[0][0]), float(smp[0][1]))
+                for xy in smp[1:]:
+                    qn = self.w2s(float(xy[0]), float(xy[1]))
+                    p.drawLine(q_prev, qn)
+                    q_prev = qn
 
     def _draw_preview(self, p: QPainter):
         if self._tool == "line" and self._line_start is not None:
