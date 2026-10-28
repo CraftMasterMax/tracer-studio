@@ -472,11 +472,17 @@ def test_badge_rect_wins_over_dim_label(mkcanvas):
     mp = m.point(30, 0)
     m.constrain(Midpoint(mp, ln), Distance(a, b, 60.0))
     cv = mkcanvas(m)
-    br, mc = _badge_for(cv, Midpoint)
+    _br, mc = _badge_for(cv, Midpoint)
     dr = next(r for r, c in cv._dim_hits if type(c) is Distance)
-    ix = br.intersected(dr)                   # they really overlap (live
-    assert not ix.isEmpty()                   # frame, exact floats)
-    q = ix.center()                           # a point BOTH rects own
+    # M164 FIX (cited): whether badge and label rects NATURALLY overlap
+    # is a font-metrics bet - Windows CI run 40787619347 lost it
+    # (intersected() came back QRectF(0,0,0,0)).  The law lives in the
+    # _hover_hit SEARCH ORDER, so plant the badge entry on the label's
+    # rect in this frame's map (every paint rebuilds these lists anyway)
+    # and interrogate the resolver deterministically, on every OS.
+    cv._constraint_hits = [(dr if c is mc else r, c)
+                           for r, c in cv._constraint_hits]
+    q = dr.center()                           # a point BOTH rects own
     hit = cv._hover_hit(q)
     assert hit is not None and hit[1] is mc   # hover answers the badge
     dims = [c for r, c in cv._dim_hits if r.contains(q)]
