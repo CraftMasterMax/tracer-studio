@@ -50,7 +50,8 @@ def corner_fillet(model, l1: Line, l2: Line, r: float):
     M = model.point(*bulge)
     arc = model.sketch.arc(P, M, Q)
     model.constrain(make_tangent(l1, arc), make_tangent(l2, arc),
-                    Radius(arc, r), ArcMiddle(arc))
+                    Radius(arc, r), ArcMiddle(arc),
+                    src="fillet")            # M164 R1: structural witness
     return arc
 
 

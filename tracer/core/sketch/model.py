@@ -161,7 +161,8 @@ class SketchModel:
         e = c.point(x0, y1)
         lines = [c.line(a, b), c.line(b, d), c.line(d, e), c.line(e, a)]
         self.constrain(Horizontal(lines[0]), Horizontal(lines[2]),
-                       Vertical(lines[1]), Vertical(lines[3]))
+                       Vertical(lines[1]), Vertical(lines[3]),
+                       src="rect")            # M164 R1: structural witness
         return lines
 
     def add_circle(self, center: Point, radius: float) -> Circle:
@@ -192,7 +193,8 @@ class SketchModel:
         cap1 = sk.arc(A4, M2, A1)
         self.constrain(Radius(cap1, r), Radius(cap2, r),
                        make_tangent(top, cap1), make_tangent(top, cap2),
-                       make_tangent(bot, cap1), make_tangent(bot, cap2))
+                       make_tangent(bot, cap1), make_tangent(bot, cap2),
+                       src="slot")            # M164 R1: structural witness
         return [top, bot, cap1, cap2]
 
     def add_polygon(self, cx: float, cy: float, r: float,
@@ -215,7 +217,8 @@ class SketchModel:
         edges = [sk.line(pts[i], pts[(i + 1) % n]) for i in range(n)]
         self.constrain(Radius(ring, r),
                        *[PointOnCircle(p, ring) for p in pts],
-                       *[Equal(edges[0], e) for e in edges[1:]])
+                       *[Equal(edges[0], e) for e in edges[1:]],
+                       src="poly")            # M164 R1: structural witness
         return edges
 
     def add_offset(self, dist: float, join: str = "mitre") -> list:
@@ -358,8 +361,43 @@ class SketchModel:
         return [sk.line(ps[i], ps[(i + 1) % m]) for i in range(m)]
 
     # ---- constraints ------------------------------------------------------
-    def constrain(self, *cs: object):
+    def constrain(self, *cs: object, src: str = ""):
         self.sketch.constrain(*cs)
+        if src:
+            # M164 R1 provenance: minted-by-family witness (rect/slot/poly/
+            # fillet/snap/inferred) rides the instance AND the dict
+            # (model_to_dict stamps "s") - a structural constraint is
+            # never a removable-candidate, and that must survive save.
+            for c in cs:
+                setattr(c, "src", src)
+
+    def _remap_dim_exprs(self, removed_idxs):
+        """M164 R1: dim bindings are INDEX-keyed (M89), so every removal
+        must move them with the list - the dead binding dies, survivors
+        slide down.  (Before this, toggle/remove_last/delete_entity
+        re-indexed nothing: a latent mis-binding bug.)"""
+        rem = {int(i) for i in removed_idxs}
+        if not rem or not self.dim_exprs:
+            return
+        ordered = sorted(rem)
+        new = {}
+        for k, rec in self.dim_exprs.items():
+            k = int(k)
+            if k in rem:
+                continue                       # its constraint is gone
+            new[k - sum(1 for i in ordered if i < k)] = rec
+        self.dim_exprs = new
+
+    def remove_constraint(self, c) -> bool:
+        """M164 R1: the finder's door - remove THIS constraint object
+        (identity, never dataclass __eq__) and keep the bindings true."""
+        cons = self.sketch.constraints
+        i = next((j for j, cc in enumerate(cons) if cc is c), None)
+        if i is None:
+            return False
+        del cons[i]
+        self._remap_dim_exprs({i})
+        return True
 
     def has(self, ctype: type, ents: tuple) -> bool:
         def touch(c):
@@ -371,9 +409,12 @@ class SketchModel:
     def toggle(self, ctype: type, ents: tuple):
         """Add or remove a constraint of ctype over ents (Fusion-style toggle)."""
         if self.has(ctype, ents):
+            drop = [i for i, c in enumerate(self.sketch.constraints)
+                    if isinstance(c, ctype) and self._same_entities(c, ents)]
             self.sketch.constraints = [
-                c for c in self.sketch.constraints
-                if not (isinstance(c, ctype) and self._same_entities(c, ents))]
+                c for i, c in enumerate(self.sketch.constraints)
+                if i not in set(drop)]
+            self._remap_dim_exprs(drop)      # M164 R1: bindings follow
             # re-adding mutates through the shared Sketch list
             return False
         if ctype is Horizontal:
@@ -410,9 +451,12 @@ class SketchModel:
         return ids == tuple(sorted(e.id for e in ents))
 
     def remove_last(self, ctype: type, ents: tuple):
+        drop = [i for i, c in enumerate(self.sketch.constraints)
+                if isinstance(c, ctype) and self._same_entities(c, ents)]
         self.sketch.constraints = [
-            c for c in self.sketch.constraints
-            if not (isinstance(c, ctype) and self._same_entities(c, ents))]
+            c for i, c in enumerate(self.sketch.constraints)
+            if i not in set(drop)]
+        self._remap_dim_exprs(drop)          # M164 R1: bindings follow
 
     def mirror_about(self, axis, ents) -> list:
         """Fusion's Mirror entity tool: static mirrored COPIES of the
@@ -467,8 +511,11 @@ class SketchModel:
 
     def delete_entity(self, ent) -> None:
         sk = self.sketch
-        sk.constraints = [c for c in sk.constraints
-                          if all(e is not ent for e in c.entities())]
+        drop = [i for i, c in enumerate(sk.constraints)
+                if any(e is ent for e in c.entities())]
+        sk.constraints = [c for i, c in enumerate(sk.constraints)
+                          if i not in set(drop)]
+        self._remap_dim_exprs(drop)          # M164 R1: bindings follow
         if isinstance(ent, Line):
             sk.lines.remove(ent)
         elif isinstance(ent, Circle):
@@ -656,6 +703,7 @@ def model_to_dict(m: SketchModel) -> dict:
     pts, idx = _point_index(m)
     cons = []
     for c in m.sketch.constraints:
+        before = len(cons)
         if isinstance(c, Horizontal):
             cons.append({"t": "H", "line": m.sketch.lines.index(c.line)})
         elif isinstance(c, Vertical):
@@ -721,6 +769,9 @@ def model_to_dict(m: SketchModel) -> dict:
         elif isinstance(c, Collinear):
             cons.append({"t": "col", "l1": m.sketch.lines.index(c.l1),
                          "l2": m.sketch.lines.index(c.l2)})
+        s = getattr(c, "src", "")
+        if s and len(cons) > before:
+            cons[-1]["s"] = s               # M164 R1: provenance witness
     d = {"name": m.name, "plane": m.plane,
          "points": [[p.x, p.y] for p in pts],
          "lines": [[idx[l.a.id], idx[l.b.id], int(l.construction)]
@@ -850,4 +901,12 @@ def model_from_dict(d: dict) -> SketchModel:
         elif t == "col":
             m.constrain(Collinear(m.sketch.lines[c["l1"]],
                                   m.sketch.lines[c["l2"]]))
+    # M164 R1: re-stamp provenance. Count-match guarded - a misaligned
+    # (future/legacy) file simply keeps the type-set shield, never a
+    # mislabeled constraint.
+    entries = d.get("constraints", [])
+    if len(entries) == len(m.sketch.constraints):
+        for e, obj in zip(entries, m.sketch.constraints):
+            if e.get("s"):
+                obj.src = str(e["s"])
     return m

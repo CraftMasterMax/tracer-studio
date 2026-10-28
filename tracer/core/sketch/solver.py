@@ -26,6 +26,14 @@ class SolveResult:
     conflicting: list = field(default_factory=list)  # M87: won't close
     point_dof: dict = field(default_factory=dict)    # M119: point.id -> 0..2
     free_dirs: dict = field(default_factory=dict)  # M119: point.id -> (dx,dy)
+    # M164 R1 "the solver remembers": the FINAL linear-algebra state,
+    # kept so on-demand questions (which ONE constraint could I delete to
+    # fix this?) answer with rank algebra, never a re-solve.  rank=-1 is
+    # the sentinel for "not computed" - the UI must never render it.
+    rank: int = -1
+    final_J: object = None
+    final_r: object = None
+    rows: list = field(default_factory=list)     # tagged expanded rows
 
     def __bool__(self): return self.converged
 
@@ -131,7 +139,7 @@ class Sketch:
         n = x.size
         m = len(rows)
         if m == 0:
-            res = SolveResult(True, 0.0, n, 0)
+            res = SolveResult(True, 0.0, n, 0, rank=0, rows=[])
             for p in pts:                   # no constraints: every point
                 res.point_dof[p.id] = 2     # floats free, two ways
                 res.free_dirs[p.id] = (1.0, 0.0)
@@ -213,6 +221,10 @@ class Sketch:
         result = SolveResult(converged and rn < tol, rn, dof, it, failed,
                              redundant=_origins(red),
                              conflicting=_origins(bad))
+        result.rank = rank                          # M164 R1: remembered
+        result.final_J = J                          # state, ready for the
+        result.final_r = r                          # drop-one scan (find_
+        result.rows = rows                          # removable), no re-solve
         # ---- M119: WHERE the freedom lives, not just how much. The
         # Jacobian's null space holds every instantaneous motion the
         # constraints still allow; projecting it into each point's
@@ -240,3 +252,84 @@ class Sketch:
 
 
 _TOL_SCALE = 100.0
+
+
+# ---- M164 D1: the removable-constraint finder -------------------------------
+# SolveSpace's shape (RefineMissing/identify at system.cpp): drop ONE user
+# constraint's WHOLE row set, and the remainder is fixable iff it stands at
+# FULL ROW RANK - pure rank algebra on the remembered J, never a re-solve.
+# The flavor (redundant vs conflict) comes free from the M87 discriminator.
+# Honest-scope law: the list NEVER claims minimality, is capped by candidate
+# COUNT (max_scan) with the wall-clock (budget_ms) as backstop only, and a
+# timed-out report says so.
+_STRUCTURAL_SRC = frozenset({"rect", "slot", "poly", "fillet", "snap"})
+
+
+def _eligible(c, live_ids):
+    """Rank order: 0 = user, 1 = auto-inferred (offered LAST, SolveSpace's
+    coincident-last law); None = never a candidate."""
+    from .constraints import ArcMiddle, Coincident
+    if id(c) not in live_ids:
+        return None                     # drag-pin temp Fixed & the like
+    if isinstance(c, (Coincident, ArcMiddle)):
+        return None                     # welds / fillet witnesses are structural
+    if any(getattr(e, "construction", False) for e in c.entities()):
+        return None                     # polygon-ring R/oc ride the guide circle
+    src = getattr(c, "src", "")
+    if src in _STRUCTURAL_SRC:
+        return None
+    return 1 if src == "inferred" else 0
+
+
+@dataclass
+class Removability:
+    kind: str = "clean"                 # redundant | conflict | clean
+    removable: list = field(default_factory=list)   # ordered candidates
+    unsatisfied: list = field(default_factory=list)  # blamed constraints
+    dof: int = 0
+    timed_out: bool = False
+
+
+def find_removable(res, live_constraints, *, budget_ms=1000, max_scan=200):
+    """Which ONE constraint, if deleted, leaves the rest of the system
+    independent?  Answers from the remembered final state (res.rows/J/r);
+    returns a fresh report that NEVER touches res.redundant/conflicting
+    (contamination law) and mutates nothing (read-only gate)."""
+    import time
+    rows = list(getattr(res, "rows", []) or [])
+    J = getattr(res, "final_J", None)
+    live_ids = {id(c) for c in live_constraints}
+    blamed = list(res.conflicting or res.redundant or [])
+    kind = ("conflict" if res.conflicting else
+            "redundant" if res.redundant else "clean")
+    out = Removability(kind=kind, unsatisfied=blamed, dof=int(res.dof))
+    if kind == "clean" or J is None or not rows:
+        return out
+    groups, order = {}, []
+    for i, rw in enumerate(rows):
+        o = getattr(rw, "origin", None)
+        if o is None:
+            continue
+        k = id(o)
+        if k not in groups:
+            groups[k] = []
+            order.append(o)
+        groups[k].append(i)
+    m = len(rows)
+    cands = [(rank, n, o) for n, o in enumerate(order)
+             if (rank := _eligible(o, live_ids)) is not None]
+    cands.sort()                        # user first, inferred last;
+    t0 = time.perf_counter()            # stable within class (min index)
+    scanned = 0
+    for _rank, _n, o in cands:
+        if scanned >= max_scan or (time.perf_counter() - t0) * 1000 > budget_ms:
+            out.timed_out = True
+            break
+        scanned += 1
+        R = set(groups[id(o)])
+        keep = [i for i in range(m) if i not in R]
+        if not keep:
+            continue
+        if int(np.linalg.matrix_rank(J[keep], tol=1e-7)) == len(keep):
+            out.removable.append(o)
+    return out

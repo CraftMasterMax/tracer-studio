@@ -295,6 +295,7 @@ class SketchCanvas(QWidget):
         sn = self._snap_obj
         if t is not None and sn is not None and sn.pt is None:
             for c in snaps.autolink(sn, pt):
+                c.src = "snap"               # M164 R1: magnet witness
                 self.model.sketch.constraints.append(c)
         return pt
 
@@ -612,10 +613,12 @@ class SketchCanvas(QWidget):
             return
         if dy <= 3 and dx > 6:                      # near horizontal
             ln.b.y = ln.a.y
-            self.model.constrain(Horizontal(ln))
+            self.model.constrain(Horizontal(ln),
+                                 src="inferred")    # auto, offered last
         elif dx <= 3 and dy > 6:                    # near vertical
             ln.b.x = ln.a.x
-            self.model.constrain(Vertical(ln))
+            self.model.constrain(Vertical(ln),
+                                 src="inferred")    # auto, offered last
 
     def mouseMoveEvent(self, ev: QMouseEvent):
         q = ev.position()
@@ -1423,6 +1426,16 @@ class SketchCanvas(QWidget):
         free = sum(1 for v in res.point_dof.values() if v)
         return f"{free} free point{'s' if free != 1 else ''}, {res.dof} dof"
 
+    def _dof_hud_text(self) -> str:
+        """M164 R1: the DOF line the HUD paints - dof_summary()'s contract
+        byte-exact, plus the rank truth the solve now remembers
+        '(rank r/m)'.  A helper, not inline paint code, so the gate can
+        read the exact sentence without a QPainter."""
+        r = self._last_result
+        tail = (f" (rank {r.rank}/{len(r.rows)})"
+                if r is not None and r.rank >= 0 and r.rows else "")
+        return "DOF \u00b7 " + self.dof_summary() + tail
+
     # ---- dimension labels (double-click editable, Fusion-style) ------------
     def _dim_text(self, c) -> str:
         """The chip's wording (M98): circles speak DIAMETER like Fusion
@@ -1990,7 +2003,8 @@ class SketchCanvas(QWidget):
                         "3-9 sides"}
         lines.append(("Tool: " + tool.get(self._tool, "?"), HUD))
         if self._show_dof:                       # M119 overlay is on: speak
-            lines.append(("DOF \u00b7 " + self.dof_summary(), WARN))
+            # M164 R1: the solver now remembers its arithmetic - speak it.
+            lines.append((self._dof_hud_text(), WARN))
         if self._last_result is not None:
             r = self._last_result
             if r.converged and r.dof == 0:
