@@ -143,6 +143,23 @@ def _capture_asks(win, monkeypatch, reply):
     return calls
 
 
+def _capture_panels(win, monkeypatch, reply):
+    """M163 twin: record cmdpanel.run calls (command_id, field keys,
+    groups) and answer them by preview+commit."""
+    from tracer.ui import cmdpanel
+    calls = []
+
+    def fake_run(parent, command_id, title, fields, *, preview, commit,
+                 abort, remember_key=None):
+        calls.append((title, [f["key"] for f in fields],
+                      [f.get("group", "") for f in fields]))
+        preview(dict(reply))
+        commit(dict(reply))
+        return None
+    monkeypatch.setattr(cmdpanel, "run", fake_run)
+    return calls
+
+
 def test_circular_pattern_is_one_dialog(win, monkeypatch):
     win.doc.add_plate("plate", 40, 40, 5)
     win.doc.add_cylinder("lug", 3, 8, center=(30, 20), op="union")
@@ -173,11 +190,13 @@ def test_linear_pattern_is_one_dialog(win, monkeypatch):
 
 
 def test_mirror_ribbon_is_one_dialog(win, monkeypatch):
+    """M163: the ribbon Mirror is now ONE live panel (was one modal
+    dialog) — same field anatomy, cmdpanel.run replaces cmddialog.ask."""
     win.doc.add_plate("plate", 40, 40, 5)
     win.doc.add_cylinder("lug", 3, 8, center=(30, 20), op="union")
     win.recompute()
-    calls = _capture_asks(win, monkeypatch,
-                          {"src": "lug", "plane": "YZ", "off": 0.0})
+    calls = _capture_panels(win, monkeypatch,
+                            {"src": "lug", "plane": "YZ", "off": 0.0})
     win.action_mirror()
     assert len(calls) == 1
     assert calls[0][1] == ["src", "plane", "off"]
@@ -191,7 +210,7 @@ def test_mirror_from_menu_skips_the_object_field(win, monkeypatch):
     win.doc.add_plate("plate", 40, 40, 5)
     lug = win.doc.add_cylinder("lug", 3, 8, center=(30, 20), op="union")
     win.recompute()
-    calls = _capture_asks(win, monkeypatch, {"off": 12.0})
+    calls = _capture_panels(win, monkeypatch, {"off": 12.0})   # M163 panel
     win._mirror_feature(lug, "YZ")
     assert len(calls) == 1 and calls[0][1] == ["off"]
     mir = [f for f in win.doc.features if type(f).__name__ == "MirrorFeature"]

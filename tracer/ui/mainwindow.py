@@ -47,6 +47,7 @@ from ..core.sketch.model import (SketchModel, face_axes, face_basis,
                                  model_from_dict, model_to_dict, plane_uv)
 from . import icons
 from . import cmddialog
+from . import cmdpanel
 from .commands import MODEL_KEYS, collect_commands
 from .palette import CommandPalette
 from .hole import HoleDialog
@@ -6519,8 +6520,8 @@ class MainWindow(QMainWindow):
         plane or any M125 construction plane. Mirroring the part's
         mid-plane reproduces Fusion's most common mirror (e.g. a
         one-sided lug on a bracket).  Whatever the caller already knows
-        (plane from a menu, values from the ribbon dialog) skips the
-        prompt — what's missing lands in ONE dialog."""
+        (plane from a menu, values from the ribbon panel) skips the
+        prompt — what's missing lands in ONE live panel (M163)."""
         known = plane is not None
         is_origin = plane in MirrorFeature.NORMALS
         if off is None:
@@ -6537,11 +6538,20 @@ class MainWindow(QMainWindow):
             fields.append(dict(key="off", label="Plane offset",
                                kind="double", default=default_off,
                                min=-1e6, max=1e6, group="Plane"))
-            v = cmddialog.ask(self, "Mirror", fields, remember_key="mirror")
-            if v is None:
-                return
-            plane = plane if known else v["plane"]
-            off = v["off"]
+
+            def preview(v):
+                self._mirror_preview(
+                    src, plane if known else v["plane"], v["off"])
+
+            def commit(v):
+                self._mirror_feature(src, plane if known else v["plane"],
+                                     v["off"])
+
+            cmdpanel.run(self, "mirror", "Mirror", fields,
+                         preview=preview, commit=commit,
+                         abort=self._cmdpanel_abort("Mirror"),
+                         remember_key="mirror")
+            return
         self._capture()
         self.doc.add_mirror(f"Mirror of {src.name}", src, plane, off)
         self.recompute()
@@ -6732,18 +6742,60 @@ class MainWindow(QMainWindow):
             return
         names = [f.name for f in cands]
         planes = ["YZ", "XZ", "XY"] + [p["name"] for p in self.doc.planes]
-        v = cmddialog.ask(self, "Mirror", [
+        fields = [
             dict(key="src", label="Feature to mirror", kind="combo",
                  choices=names, group="Object"),
             dict(key="plane", label="Mirror plane", kind="combo",
                  choices=planes, group="Plane"),
             dict(key="off", label="Plane offset", kind="double",
                  default=0.0, min=-1e6, max=1e6, group="Plane"),
-        ], remember_key="mirror")
-        if v is None:
+        ]
+
+        def src_of(v):
+            return cands[names.index(v["src"]) if v.get("src") in names
+                         else 0]
+
+        # M163: the panel IS the command - live ghost while scrubbing,
+        # the feature exists only at the green button.
+        cmdpanel.run(self, "mirror", "Mirror", fields,
+                     preview=lambda v: self._mirror_preview(
+                         src_of(v), v["plane"], v.get("off", 0.0)),
+                     commit=lambda v: self._mirror_feature(
+                         src_of(v), v["plane"], v["off"]),
+                     abort=self._cmdpanel_abort("Mirror"),
+                     remember_key="mirror")
+
+    def _cmdpanel_abort(self, title: str):
+        def _abort():
+            self.viewport.preview_mesh(None)
+            self.status.showMessage(f"{title} cancelled", 3000)
+        return _abort
+
+    def _mirror_preview(self, src, plane, off):
+        """Ghost the mirrored twin onto the viewport WITHOUT touching
+        the document — press-pull's cosmetic loop, one commit boundary
+        at a time.  The build is feature-local (src.build(), pre-
+        boolean); mirroring is a mesh transform, so the ghost stays in
+        single-digit ms on maker parts.  Preview dies silently; only the
+        Commit path reports."""
+        if self.doc is None or self.doc.result is None:
             return
-        self._mirror_feature(cands[names.index(v["src"])],
-                             v["plane"], v["off"])
+        try:
+            n = MirrorFeature.NORMALS.get(plane)
+            p0 = (0.0, 0.0, 0.0)
+            if n is None:                       # M125 custom datum plane
+                p0, _, _, nf = self.doc.plane_frame(plane)
+                n = tuple(float(x) for x in nf)
+            ghost = src.build()
+            shift = tuple(p0[i] + n[i] * float(off) for i in range(3))
+            ghost = (ghost.translated((-shift[0], -shift[1], -shift[2]))
+                     .mirror(n).translated(shift))
+            base = self.doc.result
+            prev = (base.subtract(ghost) if src.op == "subtract"
+                    else base.union(ghost))
+        except Exception:
+            return
+        self.viewport.preview_mesh(prev)
 
     # ---- solid fillet / chamfer (kernel rims + OpenCascade edges) ------------
     def _body_fillet(self, chamfer: bool):

@@ -24,7 +24,8 @@ from PySide6.QtTest import QTest                             # noqa: E402
 from PySide6.QtWidgets import (QApplication, QDialogButtonBox)  # noqa: E402
 
 from tracer.core import params                                # noqa: E402
-from tracer.ui import theme                                   # noqa: E402
+from tracer.core.document import MirrorFeature, PrimitiveFeature  # noqa: E402
+from tracer.ui import cmddialog, cmdpanel, theme              # noqa: E402
 from tracer.ui.cmdpanel import (CmdPanel, ExprField,          # noqa: E402
                                 ParamTransaction, parse_scalar)
 
@@ -206,3 +207,117 @@ def test_no_hex_literals_in_the_engine(qapp):
     body = "\n".join(l for l in src.splitlines()
                      if not l.lstrip().startswith("#"))
     assert not re.search(r"#[0-9a-fA-F]{6}\b", body)    # M112's law, extended
+
+
+# ---- G5: the first carrier - Mirror rides the panel (rung 2) ----------------
+
+@pytest.fixture
+def win(qapp, monkeypatch):
+    from tracer.ui.mainwindow import MainWindow
+    from tracer.ui.renderer import SceneRenderer
+    try:
+        r = SceneRenderer()
+    except Exception as e:
+        pytest.skip(f"no headless GL: {e}")
+    monkeypatch.setattr(cmddialog, "_REMEMBERED", {})   # process-global
+    monkeypatch.setattr(cmddialog, "_REMEMBER_ON", {})
+    w = MainWindow(renderer=r)
+    w.resize(1100, 720)
+    w.show()
+    qapp.processEvents()
+    yield w
+    w._unsaved = False
+    w.close()
+
+
+def _lug_doc(w):
+    w.new_document()
+    w.doc.add(PrimitiveFeature(name="plate", kind="box",
+                               dims={"dx": 20, "dy": 20, "dz": 5}))
+    w.doc.add(PrimitiveFeature(name="lug", kind="box",
+                               dims={"dx": 2, "dy": 8, "dz": 5},
+                               placement=(1, 2, 5)))
+    w.recompute()
+
+
+def test_mirror_opens_a_live_panel_not_a_dialog(win, monkeypatch):
+    _lug_doc(win)
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            AssertionError("M163: Mirror must not ask")))
+    win.action_mirror()
+    p = win._cmd_panel
+    assert isinstance(p, CmdPanel) and p.command_id == "mirror"
+    assert list(p._edits) == ["src", "plane", "off"]
+    n = len(win.doc.features)
+    p.btn_commit.click()
+    assert len(win.doc.features) == n + 1
+    assert isinstance(win.doc.features[-1], MirrorFeature)
+    assert win._cmd_panel is None             # committing closes the verb
+
+
+def test_abort_leaves_no_feature_and_no_undo_step(win):
+    _lug_doc(win)
+    win.action_mirror()
+    p = win._cmd_panel
+    undo_n = len(win._undo)
+    QTest.keyClick(p, Qt.Key.Key_Escape)
+    assert len(win.doc.features) == 2         # nothing was built
+    assert len(win._undo) == undo_n           # nothing was captured
+    assert win._cmd_panel is None
+
+
+def test_scrubbing_the_offset_ghosts_the_twin(win, monkeypatch):
+    _lug_doc(win)
+    ghosts = []
+    monkeypatch.setattr(win.viewport, "preview_mesh",
+                        lambda s: ghosts.append(s))
+    win.action_mirror()
+    p = win._cmd_panel
+    fld = p._edits["off"]
+    fld.edit.setText("6")
+    fld._finish()                             # a discrete intention
+    assert ghosts and ghosts[-1] is not None  # cosmetic twin, model intact
+    assert len(win.doc.features) == 2
+    p.btn_abort.click()
+    assert ghosts[-1] is None                 # abort restores the mesh
+
+
+def test_committed_values_are_remembered_next_time(win):
+    _lug_doc(win)
+    win.action_mirror()
+    p = win._cmd_panel
+    p._edits["src"].setCurrentText("lug")
+    p._edits["plane"].setCurrentText("XY")
+    fld = p._edits["off"]
+    fld.edit.setText("7")
+    fld._finish()
+    p.btn_commit.click()
+    assert cmddialog.remembered("mirror") == {"src": "lug", "plane": "XY",
+                                              "off": 7.0}
+    win.action_mirror()                       # reopen the verb
+    p2 = win._cmd_panel
+    assert p2._edits["off"].value_mm() == 7.0
+    assert p2._edits["src"].currentText() == "lug"
+
+
+def test_prefill_fires_nothing(win):
+    p = CmdPanel("Mirror", FIELDS, command_id="mirror")
+    seen = []
+    p.values_committed.connect(lambda v, k: seen.append(k))
+    p.set_values({"d": 4.0, "side": "Left", "flip": True})
+    assert seen == []                         # a prefill is not an act
+    assert p.value("d") == 4.0 and p.value("side") == "Left"
+    assert p.value("flip") is True
+
+
+def test_a_new_verb_aborts_the_previous_panel(win, monkeypatch):
+    _lug_doc(win)
+    ghosts = []
+    monkeypatch.setattr(win.viewport, "preview_mesh",
+                        lambda s: ghosts.append(s))
+    win.action_mirror()
+    first = win._cmd_panel
+    win.action_mirror()                       # reopen mid-verb
+    assert win._cmd_panel is not first
+    assert ghosts and ghosts[-1] is None      # the old verb cleaned up

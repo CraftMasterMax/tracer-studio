@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel,
                                QVBoxLayout, QWidget)
 
 from ..core import params, units
+from . import cmddialog
 from .theme import DARK
 
 # units.py has no parser (recon HOOK 4) - this is it, law-blessed: a unit
@@ -208,6 +209,7 @@ class CmdPanel(QWidget):
         self.command_id = command_id
         self._specs = {f["key"]: f for f in fields}
         self._edits: dict[str, QWidget] = {}
+        self._loading = False            # prefill is not an intention
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 10, 12, 10)
@@ -261,8 +263,7 @@ class CmdPanel(QWidget):
                           step=f.get("step", 0.1),
                           suffix=f.get("suffix", " mm"))
             w.committed.connect(
-                lambda v, k=key: self.values_committed.emit(
-                    self.values(), f"{self.command_id}:{k}"))
+                lambda v, k=key: self._boundary(k))
             w.invalid.connect(self._gate)
             self._edits[key] = w
             return self._row(label, w)
@@ -274,16 +275,14 @@ class CmdPanel(QWidget):
                 if i >= 0:
                     w.setCurrentIndex(i)
             w.activated.connect(                 # one click IS the step
-                lambda _i, k=key: self.values_committed.emit(
-                    self.values(), f"{self.command_id}:{k}"))
+                lambda _i, k=key: self._boundary(k))
             self._edits[key] = w
             return self._row(label, w)
         if kind == "check":
             w = QCheckBox(label)
             w.setChecked(bool(f.get("default", False)))
             w.toggled.connect(
-                lambda _c, k=key: self.values_committed.emit(
-                    self.values(), f"{self.command_id}:{k}"))
+                lambda _c, k=key: self._boundary(k))
             self._edits[key] = w
             return w
         raise ValueError(f"cmdpanel: field kind {kind!r} not in rung 1")
@@ -298,6 +297,33 @@ class CmdPanel(QWidget):
         lay.addWidget(lab)
         lay.addWidget(w, 1)
         return row
+
+    def _boundary(self, key: str):
+        """A discrete intention completed on field ``key`` (the
+        KiCad-law split: never a keystroke, always the finished act)."""
+        if self._loading:
+            return                      # remembered values ride in silent
+        self.values_committed.emit(self.values(), f"{self.command_id}:{key}")
+
+    def set_values(self, vals: dict):
+        """Prefill WITHOUT emitting a single commit - the remember-store
+        lands in the widgets, not into the model."""
+        self._loading = True
+        try:
+            for k, v in vals.items():
+                w = self._edits.get(k)
+                if w is None:
+                    continue
+                if isinstance(w, ExprField):
+                    w.set_value_mm(float(v))
+                elif isinstance(w, QComboBox):
+                    i = w.findText(str(v))
+                    if i >= 0:
+                        w.setCurrentIndex(i)
+                elif isinstance(w, QCheckBox):
+                    w.setChecked(bool(v))
+        finally:
+            self._loading = False
 
     def value(self, key: str):
         w = self._edits[key]
@@ -331,3 +357,45 @@ class CmdPanel(QWidget):
             self.finished.emit(None)          # Esc aborts the whole verb
             return
         super().keyPressEvent(ev)
+
+
+def run(parent, command_id: str, title: str, fields: list[dict], *,
+        preview, commit, abort, remember_key: str | None = None):
+    """Open the live command panel for one verb — the migrated carrier's
+    whole UI.  Module-global ON PURPOSE: this is the panel-era twin of
+    cmddialog.ask's headless seam (conftest.script_panel patches it),
+    so carriers migrate while headless tests stay one-liners.
+
+    preview(values) is cosmetic-only (the press-pull law: it must never
+    write the model); commit(values) runs at the green button with the
+    values finalised; abort() cleans up on the red button or Esc.
+    A remembered key opts the command in on its first commit."""
+    old = getattr(parent, "_cmd_panel", None)
+    if old is not None:                     # a new verb aborts the last
+        old.finished.emit(None)
+    panel = CmdPanel(title, fields, command_id=command_id, parent=parent)
+    key = remember_key or command_id
+    stored = cmddialog.remembered(key)
+    if stored:
+        panel.set_values(stored)
+
+    def _done(values):
+        if values is None:
+            abort()
+        else:
+            commit(values)
+            cmddialog.remember(key, values)
+        if getattr(parent, "_cmd_panel", None) is panel:
+            parent._cmd_panel = None
+        panel.deleteLater()
+
+    panel.values_committed.connect(lambda v, _k: preview(v))
+    panel.finished.connect(_done)
+    parent._cmd_panel = panel
+    panel.adjustSize()
+    g = parent.frameGeometry()
+    panel.move(g.center().x() - panel.width() // 2, g.y() + 96)
+    panel.show()
+    panel.raise_()
+    panel.activateWindow()
+    return panel

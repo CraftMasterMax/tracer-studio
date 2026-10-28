@@ -10,7 +10,8 @@ from tracer.core.document import (CircularPatternFeature,                    # n
                                  Document, LinearPatternFeature,
                                  MirrorFeature, PrimitiveFeature)
 from tracer.core.geometry import Solid                                        # noqa: E402
-from conftest import tree_texts, script_cmd, script_cmd_cancel          # noqa: E402
+from conftest import (tree_texts, script_cmd, script_cmd_cancel,   # noqa: E402
+                      script_panel, script_panel_cancel)
 from tracer.ui.cmddialog import Shell                    # noqa: E402
 
 
@@ -131,8 +132,8 @@ def test_action_mirror_flow(win, monkeypatch):
                                  placement=(1, 2, 5)))           # y 2..10
     win.recompute()
     picks = {"src": "lug", "plane": "XZ", "off": 10.0}
-    script_cmd(monkeypatch, picks)
-    win.action_mirror()
+    script_panel(monkeypatch, picks)         # M163: Mirror rides the live
+    win.action_mirror()                      # panel now (was modal ask)
     m = win.doc.features[-1]
     assert isinstance(m, MirrorFeature) and m.plane == "XZ"
     # plate 2000 + lug y2..10 (80) + twin y10..18 (80), both on the plate
@@ -144,8 +145,8 @@ def test_context_mirror_handler_cancels(win, monkeypatch):
     base = win.doc.add(PrimitiveFeature(name="plate", kind="box",
                                         dims={"dx": 9, "dy": 9, "dz": 9}))
     win._capture = lambda: None                   # no-op undo capture
-    script_cmd_cancel(monkeypatch)                # dialog answers Cancel
-    n = len(win.doc.features)
+    script_panel_cancel(monkeypatch)               # M163: panel answers
+    n = len(win.doc.features)                      # Abort
     win._mirror_feature(base, "XY")
     assert len(win.doc.features) == n             # nothing added on cancel
 

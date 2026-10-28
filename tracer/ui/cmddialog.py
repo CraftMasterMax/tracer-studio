@@ -63,6 +63,22 @@ class Shell:
             ((items[current] if items else ""), False)
 
 
+def remembered(key: str) -> dict | None:
+    """The values remembered for ``key``, if Remember was ever opted in
+    (M163: the modeless panel has no checkbox — committing once opts a
+    command in; the modal ask() path keeps its checkbox untouched)."""
+    if _REMEMBER_ON.get(key) and key in _REMEMBERED:
+        return dict(_REMEMBERED[key])
+    return None
+
+
+def remember(key: str, values: dict):
+    """Merge, never replace: the Mirror ribbon remembers src/plane/off,
+    the feature-menu's partial form adds only off — both must survive."""
+    _REMEMBERED.setdefault(key, {}).update(values)
+    _REMEMBER_ON[key] = True
+
+
 class ChecksField(QGroupBox):
     """M139: a named list of checkable choices — a command that must
     pick WHICH of several things it acts on (which bodies a section

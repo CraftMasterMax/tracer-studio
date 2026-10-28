@@ -65,6 +65,30 @@ def script_cmd_cancel(monkeypatch):
     monkeypatch.setattr(cmddialog, "ask", lambda *a, **k: None)
 
 
+def script_panel(monkeypatch, values):
+    """M163: answer the LIVE command panel with `values` - preview then
+    commit, immediately (the cmdpanel.run twin of script_cmd)."""
+    from tracer.ui import cmdpanel
+
+    def fake(parent, command_id, title, fields, *, preview, commit,
+             abort, remember_key=None):
+        preview(dict(values))
+        commit(dict(values))
+        return None
+    monkeypatch.setattr(cmdpanel, "run", fake)
+
+
+def script_panel_cancel(monkeypatch):
+    """The live command panel answers Abort."""
+    from tracer.ui import cmdpanel
+
+    def fake(parent, command_id, title, fields, *, preview, commit,
+             abort, remember_key=None):
+        abort()
+        return None
+    monkeypatch.setattr(cmdpanel, "run", fake)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _isolate_recovery_dir():
     """No headless test may poison the user's real crash-recovery folder
