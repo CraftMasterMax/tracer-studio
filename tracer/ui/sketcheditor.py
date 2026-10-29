@@ -935,10 +935,44 @@ class SketchCanvas(QWidget):
         self._solve()
         self.update()
 
+    def _weld_drop(self, grab, q):
+        """IF IT SNAPPED, IT JOINED (M170 R2): the magnet that CAUGHT a
+        point-drag mid-flight becomes a REAL join at the drop - today it
+        only promised pixel peace, and the next drag drifted the corner
+        apart. Alt still suppresses (_no_snap rode the last sampled move);
+        catches that name no Point (origin, grid, curve bodies - rung 3)
+        keep today's exact-coords law. The weld pays NO history of its
+        own - the drag already pushed its one snapshot - so ONE undo
+        restores the whole gesture. And the scene may refuse: an entity
+        (or a constraint) naming BOTH points says they are ONE thing
+        already or TWO facts apart - either way the drop hushes."""
+        t = self._snap_target(q, skip=grab)
+        if isinstance(t, Point) and t is not grab:
+            sk = self.model.sketch
+            for e in (list(sk.lines) + list(sk.arcs) + list(sk.circles)
+                      + list(sk.ellipses) + list(sk.constraints)):
+                g = sum(v is grab for v in vars(e).values())
+                k = sum(v is t for v in vars(e).values())
+                if g and k:                    # zero-collapse or a fact
+                    self.update()              #  that names them APART
+                    return
+            from ..core.sketch.trim import weld_points
+            try:
+                weld_points(self.model, t, grab)
+            except ValueError:
+                self.update()
+                return
+            self._sel = [t if p is grab else p for p in self._sel]
+            self._snap_hint = None
+            self._solve()
+        self.update()
+
     def mouseReleaseEvent(self, ev: QMouseEvent):
         if ev.button() in (Qt.MiddleButton, Qt.RightButton):
             self._pan_from = None
             return
+        grab = self._drag_pt                    # M170 R2: remember WHOSE
+        moved = grab is not None and self._drag_pushed   #  grab it was,
         self._drag_pt = None                    # M167 R1: a release ends
         self._drag = None                       #  ANY grab, tool or no tool
         if self._tool == "trim":                 # M168 R3: the armed entity
@@ -969,6 +1003,9 @@ class SketchCanvas(QWidget):
             self._solve(); self.update()
             return
         if self._tool == "select":
+            if moved:                            # M170 R2: a point drag
+                self._weld_drop(grab, ev.position())   #  that ENDED on a
+                return                           #  magnet welds on drop
             if self._pend_toggle is not None:   # M167 R3: the Ctrl-press on
                 e, _ = self._pend_toggle        #  a member never MOVED —
                 self._pend_toggle = None        #  the deferred deselect

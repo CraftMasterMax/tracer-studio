@@ -27,6 +27,7 @@ from tracer.core.sketch.constraints import Coincident, Distance      # noqa: E40
 from tracer.core.sketch.entities import Point                        # noqa: E402
 from tracer.core.sketch.model import SketchModel                      # noqa: E402
 from tracer.core.sketch.trim import weld_points                       # noqa: E402
+from tracer.ui.sketcheditor import SketchCanvas                       # noqa: E402
 
 
 def _snap_state(m):
@@ -125,3 +126,153 @@ def test_the_weld_closes_the_loop_and_the_target_coords_win():
     assert m.sketch.lines[1].b is pb and pb.y == 10.0      # keep's coords
     loops, _warns = m.to_loops()
     assert len(loops) == 1
+
+
+# ---- Rung 2: the canvas KEEPS the promise (weld on drop) ------------------
+#
+# mouseReleaseEvent re-probes the magnet at the drop: a catch that names
+# an EXISTING Point welds identity (no constraint, no second snapshot -
+# the weld rides the drag's own push, so one undo restores the whole
+# gesture). Alt still suppresses; a catch on no-Point (origin/grid/curve
+# body) keeps today's exact-coords law (rung 3 takes the curves); and
+# the scene itself may refuse - an entity or constraint naming BOTH
+# points hushes the drop.
+
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt               # noqa
+from PySide6.QtGui import QMouseEvent                                # noqa
+from PySide6.QtTest import QTest                                     # noqa
+from PySide6.QtWidgets import QApplication                           # noqa
+
+
+@pytest.fixture(scope="module")
+def qapp():
+    return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture
+def ed(qapp):
+    c = SketchCanvas()
+    c.set_model(SketchModel())
+    c.resize(600, 400)
+    c._snap_grid = False          # the magnet's minted grid off: gates speak
+    yield c                       #   world mm, settings cannot move them
+    c.deleteLater()
+
+
+def _scr(x, y):                   # world mm -> widget px (scale 4, centre 0)
+    return (int(round(300 + 4.0 * x)), int(round(200 - 4.0 * y)))
+
+
+def _press(ed, x, y, mods=Qt.NoModifier):
+    QTest.mousePress(ed, Qt.LeftButton, mods, QPoint(*_scr(x, y)))
+
+
+def _move(ed, x, y, mods=Qt.NoModifier):
+    p = QPointF(*_scr(x, y))
+    QApplication.sendEvent(
+        ed, QMouseEvent(QEvent.Type.MouseMove, p, p, p,
+                        Qt.LeftButton, Qt.LeftButton, mods))
+
+
+def _release(ed, x, y):
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier, QPoint(*_scr(x, y)))
+
+
+def _open_frame(m):
+    """Triangle with ONE leg 2mm short of the top corner: p4 hovers at
+    (10,12) above p2(10,10) - the unbuilt joint, two squares, no loop."""
+    p1, p2, p3 = m.point(0, 0), m.point(10, 10), m.point(10, 0)
+    p4 = m.point(10, 12)
+    m.add_line(p1, p2)
+    m.add_line(p4, p3)
+    m.add_line(p3, p1)
+    return p1, p2, p3, p4
+
+
+def test_a_caught_drop_welds_and_the_frame_closes(ed):
+    m = ed.model
+    sk = m.sketch
+    p1, p2, p3, p4 = _open_frame(m)
+    ed._solve()
+    n0 = len(ed._hist)
+    _press(ed, 10, 12)
+    assert ed._drag_pt is p4
+    _move(ed, 10, 10.2)                          # the magnet CATCHES p2
+    _release(ed, 10, 10.2)
+    assert sk.lines[1].a is p2                   # identity, not contact
+    assert p4 not in sk.points
+    assert len(m.to_loops()[0]) == 1             # and the loop is REAL
+    assert len(ed._hist) == n0 + 1               # one snapshot rode it
+    ed.undo_op()                                 #  the WHOLE gesture:
+    sk2 = m.sketch                               #  _restore swaps objects
+    ends = [(l.a.x, l.a.y) for l in sk2.lines]
+    assert (10.0, 12.0) in ends                  # p4 rides back
+    assert len(sk2.points) == 4
+    assert m.to_loops()[0] == []
+
+
+def test_alt_releases_raw_and_the_corner_stays_two_points(ed):
+    m = ed.model
+    sk = m.sketch
+    *_, p4 = _open_frame(m)
+    p2 = sk.points[1]
+    ed._solve()
+    _press(ed, 10, 12)
+    _move(ed, 10, 10.2, Qt.AltModifier)          # Alt suppresses the magnet
+    _move(ed, 10, 10.0, Qt.AltModifier)          #  DROPPED dead on target:
+    _release(ed, 10, 10.0)                       #   still NO weld (explicit
+    assert p4 in sk.points                       #    bypass, exact coords)
+    assert sk.lines[1].a is p4 and p4.y == 10.0
+
+
+def test_a_drop_on_no_magnet_keeps_the_absolute_law(ed):
+    m = ed.model
+    sk = m.sketch
+    *_, p4 = _open_frame(m)
+    ed._solve()
+    _press(ed, 10, 12)
+    _move(ed, 25, 25)
+    _release(ed, 25, 25)                         # free air: cursor law,
+    assert (p4.x, p4.y) == (25.0, 25.0)          #   points untouched
+    assert p4 in sk.points and len(sk.points) == 4
+
+
+def test_a_click_that_never_moved_never_welds(ed):
+    m = ed.model
+    sk = m.sketch
+    p1, p2, p3, p4 = _open_frame(m)
+    p4.x = p4.y = 10.0                           # sitting EXACTLY on p2:
+    ed._solve()                                  #   a click must not fuse
+    n0 = len(ed._hist)
+    _press(ed, 10, 10)
+    _release(ed, 10, 10)
+    assert p4 in sk.points and sk.lines[1].a is p4
+    assert len(ed._hist) == n0                   #  and pays nothing at all
+
+
+def test_a_fact_naming_both_points_refuses_the_weld(ed):
+    m = ed.model
+    sk = m.sketch
+    p1, p2, p3, p4 = _open_frame(m)
+    m.constrain(Distance(p4, p2, 2.0))           # the scene says: TWO
+    ed._solve()
+    n0 = len(ed._hist)
+    _press(ed, 10, 12)
+    _move(ed, 10, 10.2)
+    _release(ed, 10, 10.2)
+    assert p4 in sk.points and sk.lines[1].a is p4   # refusal hushes
+    assert len(ed._hist) == n0 + 1               #  (the drag paid as usual)
+
+
+def test_the_end_that_would_collapse_its_own_line_refuses(ed):
+    m = ed.model
+    sk = m.sketch
+    a = m.point(5, 5)
+    b = m.point(10, 10)                          # far from the origin
+    m.add_line(a, b)
+    ed._solve()
+    _press(ed, 10, 10)
+    _move(ed, 5, 5)                              # dragging b ONTO a: the
+    _release(ed, 5, 5)                           #   line would zero out
+    assert b in sk.points and sk.lines[0].b is b     # refused whole
+    assert (b.x, b.y) == (5.0, 5.0)              #  coords ride as dragged
