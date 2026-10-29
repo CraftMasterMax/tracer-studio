@@ -121,20 +121,26 @@ def test_act_dim_on_a_circle_asks_diameter(sketch, qapp, monkeypatch):
 
 def test_double_click_edit_asks_and_stores_diameter(sketch, qapp,
                                                     monkeypatch):
-    from tracer.ui import cmddialog
+    # M164 RETARGET (cited): the dim editor moved from cmddialog.ask to
+    # the LIVE panel (rung 4).  The label/default/Ø-halving law is the
+    # same; now it is read off the panel's own field dict.
+    from tracer.ui import cmdpanel
     m = sketch.model
     c = m.add_circle(m.point(0.0, 0.0), 4.0)
     m.constrain(Radius(c, 4.0))
-    captured = {}
+    seen = {}
 
-    def fake_ask(parent, title, fields):
-        captured["label"] = fields[0]["label"]
-        captured["default"] = fields[0]["default"]
-        return {"val": 18.0, "fx": ""}
-    monkeypatch.setattr(cmddialog, "ask", fake_ask)
+    def fake_run(parent, command_id, title, fields, *, preview, commit,
+                 abort, remember_key=None):
+        seen["label"] = fields[0]["label"]
+        seen["default"] = fields[0]["default"]
+        preview({"val": 18.0, "fx": ""})
+        commit({"val": 18.0, "fx": ""})
+        return None
+    monkeypatch.setattr(cmdpanel, "run", fake_run)
     sketch._edit_dim(m.sketch.constraints[-1])
-    assert "Diameter" in captured["label"]
-    assert captured["default"] == pytest.approx(8.0)   # shows Ø 8
+    assert "Diameter" in seen["label"]
+    assert seen["default"] == pytest.approx(8.0)         # shows Ø 8
     assert m.sketch.constraints[-1].value == pytest.approx(9.0)
 
 
@@ -142,12 +148,18 @@ def test_double_click_edit_asks_and_stores_diameter(sketch, qapp,
 
 def test_fx_binding_on_a_circle_drives_diameter(sketch, qapp,
                                                 monkeypatch):
-    from tracer.ui import cmddialog
+    # M164 RETARGET (cited): live panel seam (see the diameter gate).
+    from tracer.ui import cmdpanel
     m = sketch.model
     c = m.add_circle(m.point(0.0, 0.0), 4.0)
     m.constrain(Radius(c, 4.0))
-    monkeypatch.setattr(cmddialog, "ask",
-                        lambda *a, **k: {"val": 8.0, "fx": "bore"})
+
+    def fake_run(parent, command_id, title, fields, *, preview, commit,
+                 abort, remember_key=None):
+        preview({"val": 8.0, "fx": "bore"})
+        commit({"val": 8.0, "fx": "bore"})
+        return None
+    monkeypatch.setattr(cmdpanel, "run", fake_run)
     monkeypatch.setattr(sketch, "_params_provider",
                         lambda: ({"bore": 50.0}, 1.0))
     sketch._edit_dim(m.sketch.constraints[-1])

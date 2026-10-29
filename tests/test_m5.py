@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (QApplication,        # noqa: E402
                                QInputDialog)
 
 from tracer.core.sketch.constraints import Distance, Fixed, Radius  # noqa: E402
-from tracer.ui import cmddialog                          # noqa: E402
 from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.document import ExtrudeFeature      # noqa: E402
 
@@ -78,11 +77,17 @@ def test_dimension_labels_appear_and_edit_drives_solid(win, qapp, monkeypatch):
 
     rect, dim = next((r, c) for r, c in cv._dim_hits
                      if isinstance(c, Distance))
-    # M89: the label double-click opens the fx dialog now; a plain
-    # number with a blank fx edits the dimension exactly as before
-    monkeypatch.setattr(cmddialog, "ask",
-                        staticmethod(lambda *a, **k: {"val": 60.0,
-                                                      "fx": ""}))
+    # M164 RETARGET (cited): the fx dialog became the LIVE sketch_dim
+    # panel (rung 4); a plain number with blank fx edits the dimension
+    # exactly as before - only the seam moved.
+    from tracer.ui import cmdpanel
+
+    def fake_run(parent, command_id, title, fields, *, preview, commit,
+                 abort, remember_key=None):
+        preview({"val": 60.0, "fx": ""})
+        commit({"val": 60.0, "fx": ""})
+        return None
+    monkeypatch.setattr(cmdpanel, "run", fake_run)
     QTest.mouseDClick(cv, Qt.LeftButton, Qt.NoModifier,
                       rect.center().toPoint(), 10)
     qapp.processEvents()
@@ -107,11 +112,16 @@ def test_radius_label_edit(win, qapp, monkeypatch):
     cv.grab()
     rect, rad = next((r, c) for r, c in cv._dim_hits
                      if isinstance(c, Radius))
-    # M89: radius labels edit through the fx dialog too; blank fx = plain.
-    # M98: a circle's field speaks DIAMETER — Ø 18 is r 9, a bigger hole.
-    monkeypatch.setattr(cmddialog, "ask",
-                        staticmethod(lambda *a, **k: {"val": 18.0,
-                                                      "fx": ""}))
+    # M164 RETARGET (cited): live panel seam; the M98 law is untouched -
+    # a circle's field speaks DIAMETER, so Ø 18 is r 9, a bigger hole.
+    from tracer.ui import cmdpanel
+
+    def fake_run(parent, command_id, title, fields, *, preview, commit,
+                 abort, remember_key=None):
+        preview({"val": 18.0, "fx": ""})
+        commit({"val": 18.0, "fx": ""})
+        return None
+    monkeypatch.setattr(cmdpanel, "run", fake_run)
     QTest.mouseDClick(cv, Qt.LeftButton, Qt.NoModifier,
                       rect.center().toPoint(), 10)
     qapp.processEvents()

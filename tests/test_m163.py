@@ -301,6 +301,23 @@ def test_committed_values_are_remembered_next_time(win):
     assert p2._edits["src"].currentText() == "lug"
 
 
+def test_text_field_commits_verbatim(win):
+    # M164 R4 engine seam: kind="text" is a QLineEdit row that commits
+    # on editingFinished (the KiCad discrete-intention law, same shape
+    # as the combo's one-click step) and its VALUE IS THE RAW STRING -
+    # binding provenance is text an ExprField would eat on eval.
+    seen = []
+    p = CmdPanel("T", [dict(key="fx", kind="text", label="fx",
+                            default="a*b")], command_id="t")
+    p.values_committed.connect(lambda v, k: seen.append((v, k)))
+    assert p._edits["fx"].text() == "a*b"
+    assert p.values() == {"fx": "a*b"}
+    p._edits["fx"].setText("  = wall*2 ")       # the panel NEVER strips
+    p._edits["fx"].editingFinished.emit()       #  or rewrites: the verb
+    assert seen and seen[-1] == ({"fx": "  = wall*2 "}, "t:fx")   # owns
+    assert p.values() == {"fx": "  = wall*2 "}  #  its own grammar
+
+
 def test_forgetful_command_skips_remember(win, monkeypatch):
     # M164 R3 engine law: remember_key=False opts OUT of BOTH directions -
     # no prefill, no store (the fixer must never carry a pick across

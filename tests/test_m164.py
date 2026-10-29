@@ -1235,3 +1235,250 @@ def test_fixer_panel_forgets(win, qapp2):
     assert not any(c is h1b for c in cv.model.sketch.constraints)
     assert cd.remembered("sketch_fix") is None    # forgetful by law: a
     assert cd._REMEMBER_ON.get("sketch_fix") is None   #  pick never rides
+
+# ============================================ rung 4: the dim edit panel
+
+import math                                          # noqa: E402
+from tracer.core.sketch.constraints import Angle     # noqa: E402
+
+
+def _line_dim(m):
+    """One bare line + its Distance dim - the rung-4 canvas fixture."""
+    a, b = m.point(0, 0), m.point(40, 0)
+    m.add_line(a, b)
+    d = Distance(a, b, 40.0)
+    m.constrain(d)
+    return d
+
+
+def test_dim_edit_opens_a_live_panel_not_a_dialog(mkcanvas, qapp2,
+                                                  monkeypatch):
+    from tracer.ui import cmddialog as cd
+    from tracer.ui.cmdpanel import CmdPanel
+
+    def no_dialogs(*a, **k):
+        raise AssertionError("rung 4 edits on the LIVE panel, no modal")
+    monkeypatch.setattr(cd, "ask", no_dialogs)
+    m = SketchModel()
+    d = _line_dim(m)
+    cv = mkcanvas(m)
+    rect = next(r for r, c in cv._dim_hits if c is d)
+    QTest.mouseDClick(cv, Qt.LeftButton, Qt.NoModifier,
+                      rect.center().toPoint())          # the real route
+    qapp2.processEvents()
+    p = cv._cmd_panel
+    assert isinstance(p, CmdPanel) and p.command_id == "sketch_dim"
+    assert p.findChild(QDialogButtonBox) is None          # anti-modal law
+    assert list(p._edits) == ["val", "fx"]                # value+binding
+    assert p._edits["val"].value_mm() == pytest.approx(40.0)
+    p.btn_abort.click()
+    _reap(qapp2)                                 # GC law (rung 3): reap
+    assert getattr(cv, "_cmd_panel", None) is None  #  while references
+    assert cv._hover_c is None                   #  live; abort kills ring
+
+
+def test_angle_dim_rides_the_same_panel(mkcanvas, qapp2, monkeypatch):
+    from tracer.ui.cmddialog import Shell
+
+    def no_modal(*a, **k):
+        raise AssertionError("rung 4: no Shell.getDouble for angle edits")
+    monkeypatch.setattr(Shell, "getDouble", staticmethod(no_modal))
+    m = SketchModel()
+    a, b = m.point(0, 0), m.point(10, 0)
+    ln = m.add_line(a, b)
+    ang = Angle(ln, math.radians(20))
+    m.constrain(Fixed(a, x=0.0, y=0.0), ang)
+    cv = mkcanvas(m)
+    cv._edit_dim(ang)
+    qapp2.processEvents()
+    p = cv._cmd_panel
+    assert p.command_id == "sketch_dim"
+    assert list(p._edits) == ["val"]             # angles carry NO fx row:
+    assert any("Angle (deg)" in w.text()         #  M89 law kept (fx binds
+               for w in p.findChildren(QLabel))  #  lengths, unit in label)
+    p._edits["val"].set_value_mm(30.0)
+    p.btn_commit.click()
+    qapp2.processEvents()
+    assert math.degrees(ang.value) % 180 == pytest.approx(30, abs=1e-6)
+    _reap(qapp2)
+
+
+def test_double_scale_trap_plain_and_fx_speak_different_grammars(
+        mkcanvas, qapp2):
+    # The design's pinned split: the value field is the ExprField and
+    # speaks NATIVE MILLIMETRES (1inch = 25.4 even in a doc whose fx
+    # scale is 10); the fx row keeps M89's doc-unit x sc semantics.
+    # If either path ever multiplies twice, this gate dies.
+    m = SketchModel()
+    d = _line_dim(m)
+    cv = mkcanvas(m)
+    cv._params_provider = lambda: ({"wall": 7.0}, 10.0)   # resolved sheet
+    cv._edit_dim(d)
+    p = cv._cmd_panel
+    w = p._edits["val"]
+    w.edit.setText("1inch")
+    w.edit.editingFinished.emit()
+    qapp2.processEvents()
+    assert w.value_mm() == pytest.approx(25.4)   # NOT 254: sc never
+    assert d.value == pytest.approx(40.0)        #  touches the field...
+    p.btn_commit.click()                         # ...and preview never
+    qapp2.processEvents()                        #  writes the model
+    assert d.value == pytest.approx(25.4)
+    assert m.dim_exprs == {}                     # plain value: no bind
+    _reap(qapp2)
+    cv._edit_dim(d)                              # phase 2: the fx row
+    p = cv._cmd_panel
+    assert p._edits["val"].value_mm() == pytest.approx(25.4)  # re-prefilled
+    p._edits["fx"].setText("wall")               # 7 DOC units...
+    p._edits["fx"].editingFinished.emit()
+    p.btn_commit.click()
+    qapp2.processEvents()
+    assert d.value == pytest.approx(70.0)        # ...x sc = 70, NOT 7
+    i = m.sketch.constraints.index(d)
+    assert m.dim_exprs[i] == {"e": "wall", "t": _dim_tag(d)}
+    _reap(qapp2)
+
+
+def test_the_value_field_resolves_document_params(mkcanvas, qapp2):
+    # feature#6 rides the panel: run() injects the provider sheet into
+    # every ExprField at open, so the VALUE row itself takes wall*2.
+    m = SketchModel()
+    d = _line_dim(m)
+    cv = mkcanvas(m)
+    cv._params_provider = lambda: ({"wall": 7.0}, 1.0)    # resolved sheet
+    cv._edit_dim(d)
+    p = cv._cmd_panel
+    assert p._edits["val"].values == {"wall": 7.0}        # provider INJECTED
+    w = p._edits["val"]
+    w.edit.setText("wall*2")
+    w.edit.editingFinished.emit()
+    qapp2.processEvents()
+    assert w.value_mm() == pytest.approx(14.0)
+    p.btn_commit.click()
+    qapp2.processEvents()
+    assert d.value == pytest.approx(14.0)
+    _reap(qapp2)
+
+
+def test_reopen_prefills_the_live_binding(mkcanvas, qapp2):
+    m = SketchModel()
+    d = _line_dim(m)
+    i = m.sketch.constraints.index(d)
+    m.dim_exprs[i] = {"e": "width", "t": _dim_tag(d)}
+    cv = mkcanvas(m)
+    cv._edit_dim(d)
+    p = cv._cmd_panel
+    assert p._edits["fx"].text() == "width"           # provenance rides in
+    p._edits["fx"].setText("")                        # blank = release
+    p._edits["fx"].editingFinished.emit()
+    p.btn_commit.click()
+    qapp2.processEvents()
+    assert m.dim_exprs == {}                          # M89 unbind law on
+    assert d.value == pytest.approx(40.0)             #  the new seam
+    _reap(qapp2)
+
+
+def test_abort_leaves_value_hist_and_hover_untouched(mkcanvas, qapp2):
+    m = SketchModel()
+    d = _line_dim(m)
+    cv = mkcanvas(m)
+    before = json.dumps(model_to_dict(m), sort_keys=True)
+    n = len(cv._hist)
+    cv._edit_dim(d)
+    p = cv._cmd_panel
+    assert cv._hover_c is d                           # ring on OPEN: the
+    w = p._edits["val"]                               #  edited dim
+    w.edit.setText("999")
+    w.edit.editingFinished.emit()                     # boundary is
+    qapp2.processEvents()                             #  cosmetic only
+    assert d.value == pytest.approx(40.0)
+    assert len(cv._hist) == n
+    p.btn_abort.click()
+    _reap(qapp2)
+    assert cv._hover_c is None                        # the ring dies
+    assert len(cv._hist) == n                         #  with the verb
+    assert json.dumps(model_to_dict(m), sort_keys=True) == before
+
+
+def test_reopen_mid_edit_aborts_the_previous_panel(mkcanvas, qapp2):
+    m = SketchModel()
+    a, b = m.point(0, 0), m.point(40, 0)
+    c = m.point(40, 30)
+    m.add_line(a, b)
+    m.add_line(b, c)
+    d1, d2 = Distance(a, b, 40.0), Distance(b, c, 30.0)
+    m.constrain(d1, d2)
+    cv = mkcanvas(m)
+    cv._edit_dim(d1)
+    p1 = cv._cmd_panel
+    cv._edit_dim(d2)                                  # the run law: ONE
+    p2 = cv._cmd_panel                                #  verb, one panel
+    assert p2 is not p1
+    assert cv._hover_c is d2                          # the abandoned dim's
+    p2._edits["val"].set_value_mm(99.0)               #  ring died FIRST
+    p2.btn_commit.click()
+    qapp2.processEvents()
+    assert d2.value == pytest.approx(99.0)
+    assert d1.value == pytest.approx(40.0)            # first edit inert
+    _reap(qapp2)
+
+
+def test_the_dim_panel_forgets(win, qapp2):
+    from tracer.ui import cmddialog as cd
+    cv = _sketch_on(win, qapp2)
+    m = cv.model
+    d1 = _line_dim(m)
+    a2, b2 = m.point(100, 0), m.point(160, 0)
+    m.add_line(a2, b2)
+    d2 = Distance(a2, b2, 60.0)
+    m.constrain(d2)
+    cv._solve()
+    qapp2.processEvents()
+    cv._edit_dim(d1)
+    p = cv._cmd_panel
+    p._edits["val"].set_value_mm(12.0)
+    p.btn_commit.click()
+    qapp2.processEvents()
+    assert d1.value == pytest.approx(12.0)
+    cv._edit_dim(d2)
+    p = cv._cmd_panel
+    assert p._edits["val"].value_mm() == pytest.approx(60.0)   # NOT 12:
+    p.btn_abort.click()               # a dim never wears another's value
+    _reap(qapp2)
+    assert cd.remembered("sketch_dim") is None                 # nothing
+
+
+def test_a_dead_dim_makes_the_commit_inert(mkcanvas, qapp2):
+    m = SketchModel()
+    d = _line_dim(m)
+    cv = mkcanvas(m)
+    n = len(cv._hist)
+    cv._edit_dim(d)
+    p = cv._cmd_panel
+    p._edits["val"].set_value_mm(999.0)
+    m.remove_constraint(d)                      # the fixer struck first
+    cv._solve()
+    p.btn_commit.click()                        # identity recheck: inert
+    qapp2.processEvents()
+    assert len(cv._hist) == n                   # zero trace
+    assert m.dim_exprs == {}
+    assert all(cc is not d for cc in m.sketch.constraints)
+    _reap(qapp2)
+
+
+def test_binding_from_the_panel_survives_the_round_trip(mkcanvas, qapp2):
+    m = SketchModel()
+    d = _line_dim(m)
+    cv = mkcanvas(m)
+    cv._params_provider = lambda: ({"width": 33.0}, 1.0)  # resolved sheet
+    cv._edit_dim(d)
+    p = cv._cmd_panel
+    p._edits["fx"].setText("width")
+    p._edits["fx"].editingFinished.emit()
+    p.btn_commit.click()
+    qapp2.processEvents()
+    assert d.value == pytest.approx(33.0)
+    m2 = model_from_dict(json.loads(json.dumps(model_to_dict(m))))
+    assert [rec["e"] for rec in m2.dim_exprs.values()] == ["width"]
+    assert m2.dim_exprs[0]["t"] == _dim_tag(d)  # the tag rode along
+    _reap(qapp2)

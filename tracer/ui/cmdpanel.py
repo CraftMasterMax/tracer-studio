@@ -278,6 +278,12 @@ class CmdPanel(QWidget):
                 lambda _i, k=key: self._boundary(k))
             self._edits[key] = w
             return self._row(label, w)
+        if kind == "text":                       # M164 R4: raw-string row.
+            w = QLineEdit(str(f.get("default", "")))   #  Binding fx lives
+            w.editingFinished.connect(                   #  HERE, verbatim:
+                lambda k=key: self._boundary(k))         #  provenance is
+            self._edits[key] = w                         #  the text the
+            return self._row(label, w)                   #  ExprField eats
         if kind == "check":
             w = QCheckBox(label)
             w.setChecked(bool(f.get("default", False)))
@@ -335,6 +341,8 @@ class CmdPanel(QWidget):
         w = self._edits[key]
         if isinstance(w, ExprField):
             return w.value_mm()
+        if isinstance(w, QLineEdit):
+            return w.text()
         if isinstance(w, QComboBox):
             return w.currentText()
         if isinstance(w, QCheckBox):

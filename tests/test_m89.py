@@ -187,7 +187,9 @@ def win(qapp):
 
 def test_dimension_fx_dialog_binds_and_applies_live(win, qapp,
                                                     monkeypatch):
-    from tracer.ui import cmddialog
+    # M164 RETARGET (cited): the fx dialog became the LIVE sketch_dim
+    # panel; the M89 bind-and-apply laws are unchanged, only the seam.
+    from tracer.ui import cmdpanel
     win.new_document()
     win.action_new_sketch()
     qapp.processEvents()
@@ -197,8 +199,13 @@ def test_dimension_fx_dialog_binds_and_applies_live(win, qapp,
     win.doc.params = {"width": "42"}
     win._wire_sketch_params(cv)                # the provider hookup
     i = m.sketch.constraints.index(dim)
-    monkeypatch.setattr(cmddialog, "ask",
-                        lambda *a, **k: {"val": 30.0, "fx": "width"})
+
+    def fake_run(parent, command_id, title, fields, *, preview, commit,
+                 abort, remember_key=None):
+        preview({"val": 30.0, "fx": "width"})
+        commit({"val": 30.0, "fx": "width"})
+        return None
+    monkeypatch.setattr(cmdpanel, "run", fake_run)
     cv._edit_dim(dim)
     qapp.processEvents()
     assert m.dim_exprs[i]["e"] == "width"
@@ -208,7 +215,9 @@ def test_dimension_fx_dialog_binds_and_applies_live(win, qapp,
 
 def test_fx_rejects_unknown_names_without_touching_anything(
         win, qapp, monkeypatch):
-    from tracer.ui import cmddialog
+    # M164 RETARGET (cited): live panel seam; the reject-without-writing
+    # law (and its "the number stays honest" promise) is byte-identical.
+    from tracer.ui import cmdpanel
     win.new_document()
     win.action_new_sketch()
     qapp.processEvents()
@@ -217,8 +226,13 @@ def test_fx_rejects_unknown_names_without_touching_anything(
     (a, b, c, d), dim = _welded_rect(m, 25.0, 15.0)
     win.doc.params = {}
     win._wire_sketch_params(cv)
-    monkeypatch.setattr(cmddialog, "ask",
-                        lambda *a, **k: {"val": 1.0, "fx": "bogus * 2"})
+
+    def fake_run(parent, command_id, title, fields, *, preview, commit,
+                 abort, remember_key=None):
+        preview({"val": 1.0, "fx": "bogus * 2"})
+        commit({"val": 1.0, "fx": "bogus * 2"})
+        return None
+    monkeypatch.setattr(cmdpanel, "run", fake_run)
     cv._edit_dim(dim)
     qapp.processEvents()
     assert m.dim_exprs == {}
@@ -226,7 +240,8 @@ def test_fx_rejects_unknown_names_without_touching_anything(
 
 
 def test_blank_fx_releases_the_binding(win, qapp, monkeypatch):
-    from tracer.ui import cmddialog
+    # M164 RETARGET (cited): live panel seam; blank-fx unbind unchanged.
+    from tracer.ui import cmdpanel
     win.new_document()
     win.action_new_sketch()
     qapp.processEvents()
@@ -237,8 +252,13 @@ def test_blank_fx_releases_the_binding(win, qapp, monkeypatch):
     m.dim_exprs[i] = {"e": "width", "t": "D"}
     win.doc.params = {"width": "77"}
     win._wire_sketch_params(cv)
-    monkeypatch.setattr(cmddialog, "ask",
-                        lambda *a, **k: {"val": 28.0, "fx": ""})
+
+    def fake_run(parent, command_id, title, fields, *, preview, commit,
+                 abort, remember_key=None):
+        preview({"val": 28.0, "fx": ""})
+        commit({"val": 28.0, "fx": ""})
+        return None
+    monkeypatch.setattr(cmdpanel, "run", fake_run)
     cv._edit_dim(dim)
     qapp.processEvents()
     assert i not in m.dim_exprs

@@ -1698,60 +1698,92 @@ class SketchCanvas(QWidget):
         super().mouseDoubleClickEvent(ev)
 
     def _edit_dim(self, c):
-        if isinstance(c, (Angle, AngleBetween)):
-            deg = math.degrees(c.value) % 180
-            val, ok = Shell.getDouble(self, "Edit angle",
-                                             "Angle (deg):", round(deg, 2),
-                                             0.0, 179.99, 2)
-            if not ok:
-                return
-            self._push_hist()
-            # re-snap to the branch the geometry currently occupies, so
-            # editing never flips the line through 180°
-            c.value = snapped(c.measured(), math.radians(val))
+        """M164 R4: dimension editing rides the LIVE panel - no modal.
+        TWO grammars, pinned apart (the double-scale trap): the value
+        field is the ExprField - native millimetres, units and params
+        (1inch = 25.4, wall*2 resolves); the fx row keeps M89's verbatim
+        text (doc-unit x scale through the provider) because the binding
+        provenance IS the string the ExprField would eat.  Angles ride
+        the same panel with a bare-degree value row (ExprField speaks
+        mm, never deg - the suffix stays empty and the label carries it).
+        remember_key=False: a dim never wears another dim's value."""
+        from . import cmdpanel
+        from ..core.params import ParamError, eval_expr
+        angle = isinstance(c, (Angle, AngleBetween))
+        dia = (isinstance(c, Radius)
+               and isinstance(getattr(c, "curve", None), Circle))
+
+        def _live_index():
+            return next((j for j, cc in
+                         enumerate(self.model.sketch.constraints)
+                         if cc is c), None)
+
+        if angle:
+            fields = [dict(key="val", kind="double", label="Angle (deg)",
+                           default=round(math.degrees(c.value) % 180, 2),
+                           suffix="")]
         else:
-            # M89: the number field plus an fx line — a formula here
-            # binds the dimension to the parameter sheet, live
-            from . import cmddialog
-            from ..core.params import ParamError, eval_expr
-            i = next((j for j, cc in
-                      enumerate(self.model.sketch.constraints)
-                      if cc is c), None)
+            i = _live_index()
             rec = self.model.dim_exprs.get(i) if i is not None else None
-            dia = isinstance(c, Radius) and isinstance(c.curve, Circle)
-            v = cmddialog.ask(self, "Edit dimension", [
+            fields = [
                 dict(key="val", kind="double",
                      label="Diameter (mm)" if dia else "Value (mm)",
                      default=round(2 * float(c.value) if dia
-                                   else float(c.value), 3),
-                     min=0.001,
-                     max=1e6, decimals=3),
+                                   else float(c.value), 3)),
                 dict(key="fx", kind="text",
                      label="fx  (blank = plain number)",
-                     default=(rec or {}).get("e", ""))])
-            if v is None:
-                return
-            expr = str(v["fx"]).strip().lstrip("=").strip()
-            if expr:
-                vals, sc = self._params_provider()
-                try:
-                    newv = float(eval_expr(expr, vals)) * sc
-                except ParamError as e:
-                    self._warn(f"Binding refused: {e}")
-                    self.update()
-                    return                       # the number stays honest
+                     default=(rec or {}).get("e", ""))]
+
+        def _preview(_vals):                 # cosmetic law: the ring, no
+            self._hover_c = c                #  speculative model write
+            self.update()
+
+        def _commit(vals):
+            if _live_index() is None:        # rung-3 identity law: the
+                return                       #  dim died mid-edit - inert
+            if angle:
                 self._push_hist()
-                if i is not None:
-                    self.model.dim_exprs[i] = {"e": expr, "t": _dim_tag(c)}
-                c.value = newv * 0.5 if dia else newv   # M98: fx speaks Ø
+                # re-snap to the branch the geometry currently occupies,
+                # so editing never flips the line through 180 deg
+                c.value = snapped(c.measured(), math.radians(vals["val"]))
             else:
-                self._push_hist()
-                if i is not None:
-                    self.model.dim_exprs.pop(i, None)
-                c.value = (float(v["val"]) * 0.5 if dia
-                           else float(v["val"]))
-        self._solve()
-        self.update()
+                expr = str(vals["fx"]).strip().lstrip("=").strip()
+                if expr:
+                    pv, sc = self._params_provider()
+                    try:
+                        newv = float(eval_expr(expr, pv)) * sc
+                    except ParamError as e:
+                        self._warn(f"Binding refused: {e}")
+                        self.update()
+                        return               # the number stays honest
+                    self._push_hist()
+                    j = _live_index()        # the index can shift BEFORE
+                    if j is not None:        #  the click (fixer, undo)
+                        self.model.dim_exprs[j] = {"e": expr,
+                                                   "t": _dim_tag(c)}
+                    c.value = newv * 0.5 if dia else newv   # M98: fx is Ø
+                else:
+                    self._push_hist()
+                    j = _live_index()
+                    if j is not None:
+                        self.model.dim_exprs.pop(j, None)
+                    c.value = (float(vals["val"]) * 0.5 if dia
+                               else float(vals["val"]))
+            self._solve()
+            self.update()
+
+        def _abort():
+            if self._hover_c is c:           # the ring dies with the verb
+                self._hover_c = None
+            self.update()
+
+        p = cmdpanel.run(self, "sketch_dim", "Edit dimension", fields,
+                         preview=_preview, commit=_commit, abort=_abort,
+                         remember_key=False)
+        if p is not None:                    # the scripted seam answers
+            p.set_param_values(self._params_provider()[0])   #  with None
+            _preview(None)                   # ring the dim AT OPEN (the
+        self.update()                        #  real run never previews)
 
     def _commit_typed(self):
         """M90: Enter mid-type-in mints exactly the constraint act_dim
