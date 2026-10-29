@@ -169,6 +169,7 @@ def test_click_emits_selection_changed_and_recomputing_clears_it(win, qapp):
 def test_screenshot_proof(win, qapp):
     import os
     _plate(win, qapp)
+    win.viewport.view_anim_s = 0.0   # staging = instant door (M166 R1)
     win.action_view("iso")
     win.viewport.refresh(fit=True)                # (this clears any sel)
     win.viewport._sel = _pick(win, 2, 1) + _pick(win, 0, 1)

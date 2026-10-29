@@ -154,8 +154,10 @@ class Viewport(QWidget):
         self._cube_hover = None            # ViewCube face under cursor (M63)
         # M154: one transition law for the viewport — cube clicks AND
         # the orientation keys glide (L7: animated default, InOutCubic,
-        # 0.3 s inside the documented 0..3 s envelope; 0 = instant).
-        self.view_anim_s = 0.3
+        # 0 = instant). M166 R1: 0.3 -> 0.5 s cite-the-move — the digest
+        # measures Fusion's snap transition at ~500 ms (FD8-19); 0.3 was
+        # ours-said (M154), InOutCubic stays ours-said (FD8-4).
+        self.view_anim_s = 0.5
         self._anim = None                  # (y0,p0,y1,p1,t0) mid-flight
         self._anim_timer = QTimer(self)
         self._anim_timer.setInterval(16)   # ~60 fps; the cube
@@ -1470,6 +1472,15 @@ class Viewport(QWidget):
         self.update()
 
     # ---- M154: the one transition law (cube clicks AND keys glide) ------
+    def snap_view(self, kind: str):
+        """M166 R1: THE public orientation door — menu, marking menu and
+        palette land here, so every door to a canonical view rides the
+        SAME glide law as the focused keys (:keyPressEvent); before this
+        rung the menu teleported while key 1 glided — one action, one
+        feel. roll defaults to 0.0: canonical means canonical, and this
+        byte-matches the keys path."""
+        self._orbit_to(*view_orient(kind))
+
     def _orbit_to(self, yaw: float, pitch: float, roll: float = 0.0):
         """Glide the camera to an ABSOLUTE orientation. Re-targeting
         mid-flight restarts from the LIVE camera (L7.6/AT-07: never a

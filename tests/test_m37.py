@@ -118,6 +118,7 @@ def _two_boxes(win, qapp):
                                  placement=(30.0, -10.0, 0.0)))
     win.recompute()
     win._show_page(win.viewport)
+    win.viewport.view_anim_s = 0.0   # staging = instant door (M166 R1)
     win.action_view("iso")
     win.viewport.refresh(fit=True)
     qapp.processEvents()

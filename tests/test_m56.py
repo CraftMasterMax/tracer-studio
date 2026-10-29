@@ -88,6 +88,7 @@ def test_right_drag_orbits_without_menu(win, qapp):
 
 def test_marking_menu_entries_act(win, qapp):
     _plate(win, qapp)
+    win.viewport.view_anim_s = 0.0   # staging = instant door (M166 R1)
     win.action_view("iso")
     cam = win.viewport.camera()
     menu = win._marking_menu()

@@ -262,6 +262,7 @@ def test_screenshot_proof(win, qapp, monkeypatch):
                         staticmethod(lambda *a, **k: (2.0, True)))
     win.action_shell()
     qapp.processEvents()
+    win.viewport.view_anim_s = 0.0   # staging = instant door (M166 R1)
     win.action_view("iso")
     win.viewport.refresh(fit=True)
     qapp.processEvents()

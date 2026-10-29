@@ -6547,7 +6547,9 @@ class MainWindow(QMainWindow):
             if self.viewport._bbox is not None:
                 self.viewport._cam.fit(self.viewport._bbox)
         else:
-            self.viewport._cam.set_view(kind)
+            # M166 R1: the menu no longer teleports into cam privates -
+            # it rides the viewport's glide door (one transition law).
+            self.viewport.snap_view(kind)
         self.viewport.update()
 
     def action_toggle_grid(self):

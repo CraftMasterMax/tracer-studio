@@ -213,6 +213,7 @@ def test_esc_ladder_cut_yields_before_selection_and_isolation(win,
 
 def test_picks_are_suspended_while_the_model_is_cut(win, qapp):
     vp = win.viewport
+    win.viewport.view_anim_s = 0.0   # staging = instant door (M166 R1)
     win.action_view("iso")
     win.action_view("fit")
     qapp.processEvents()

@@ -279,6 +279,7 @@ def test_screenshot_proof(win, qapp):
     _sweep_sketch(win, qapp, coords=((-25, 0), (0, 0), (25, 18)))
     win.action_sweep()
     win._show_page(win.viewport)                      # show the TUBE itself
+    win.viewport.view_anim_s = 0.0   # staging = instant door (M166 R1)
     win.action_view("iso")
     win.viewport.refresh(fit=True)
     qapp.processEvents()

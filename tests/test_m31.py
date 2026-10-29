@@ -306,6 +306,7 @@ def test_screenshot_proof(win, qapp, monkeypatch, tmp_path):
                             type="countersink", cs_dia=8.0, through=True)))
     win.action_hole()
     qapp.processEvents()
+    win.viewport.view_anim_s = 0.0   # staging = instant door (M166 R1)
     win.action_view("iso")
     win.viewport.refresh(fit=True)
     qapp.processEvents()

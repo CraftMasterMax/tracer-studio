@@ -47,6 +47,7 @@ def win(qapp):
     w.doc.add(PrimitiveFeature(name="plate", kind="box",
                                dims={"dx": 40, "dy": 30, "dz": 6}))
     w.recompute()
+    w.viewport.view_anim_s = 0.0   # staging = instant door (M166 R1)
     w.action_view("iso")
     w.action_view("fit")
     qapp.processEvents()
