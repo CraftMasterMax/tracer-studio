@@ -35,8 +35,9 @@ import dataclasses
 import math
 
 from ..snaps import _arc_span, _circumference, _intersections
-from .constraints import (Angle, Collinear, Horizontal, Parallel,
-                          Perpendicular, Radius, Symmetry, Vertical)
+from .constraints import (Angle, Coincident, Collinear, Horizontal,
+                          Parallel, Perpendicular, Radius, Symmetry,
+                          Vertical)
 from .entities import Arc, Line, Point
 
 PAR_TOL = 1e-9
@@ -72,6 +73,40 @@ def close_corner(model, l1: Line, l2: Line) -> Point:
         _drop(model, c2)                    # the loser leaves sk.points
     P.x, P.y = X
     return P
+
+
+# ---- the WELD (M170 R1) ------------------------------------------------------
+
+def weld_points(model, keep: Point, gone: Point) -> Point:
+    """Fuse TWO Points into ONE identity - close_corner's private merge
+    read as a verb.  The drag magnet promises a catch KEEPS: after a
+    weld every entity and EVERY constraint that named `gone` names
+    `keep` (a metric fact bound to that corner FOLLOWS the corner - the
+    two points are now ONE thing, so re-homing is never ambiguous the way
+    a cut is), a Coincident that welded itself shut is vacuous and DIES,
+    and `gone` leaves sk.points exactly as close_corner's loser does.
+    keep's coordinates WIN (the magnet target the user aimed at). Refuses
+    BEFORE mutation. No hist push - the caller's gesture owns the one
+    snapshot the drag already paid."""
+    if keep is gone:
+        raise ValueError("That point is already this point")
+    sk = model.sketch
+    if not any(p is gone for p in sk.points):
+        raise ValueError("That point is no longer in the sketch")
+
+    def rehome(carrier):                       # every attribute that IS
+        for f, v in list(vars(carrier).items()):   # the loser becomes the
+            if v is gone:                      #  survivor - identity by
+                setattr(carrier, f, keep)      #  scan, no per-class law
+    for e in (list(sk.lines) + list(sk.arcs) + list(sk.circles)
+              + list(sk.ellipses)):
+        rehome(e)
+    for c in sk.constraints:
+        rehome(c)
+    sk.constraints[:] = [c for c in sk.constraints
+                         if not (isinstance(c, Coincident) and c.p is c.q)]
+    _drop(model, gone)
+    return keep
 
 
 # ---- the CUT (M168 R1) -------------------------------------------------------
