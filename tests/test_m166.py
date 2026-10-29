@@ -242,3 +242,91 @@ def test_the_zero_door_home_is_the_old_instant(win):
     assert vp._anim is None                  # byte-exact instant home,
     assert (vp._cam.yaw, vp._cam.pitch, vp._cam.roll,   #  the pre-rung-2
             vp._cam.distance) == (0.0, 0.0, 0.0, 300.0)  #  law
+
+
+# ---- Rung 3: Fit flies (glide_fit; the framing no longer teleports) --------
+
+def test_menu_fit_flies_and_lands_the_exact_fit_numbers(win, qapp):
+    from tracer.ui.camera import fit_frame
+    vp = win.viewport
+    _box(win)
+    cam = vp.camera()
+    vp._cam.distance = 600.0                     # deep, and OFF-centre
+    vp._cam.target = np.array([120.0, 90.0, 60.0])
+    d_before, t_before = cam.distance, cam.target.copy()
+    center, dist = fit_frame(vp._bbox, cam.fov)  # the SAME formula the
+    #                                              door uses, computed
+    win._run_command("view:fit")                 #  here by hand
+    assert vp._anim is not None                  # the MENU fit FLIES now
+    assert cam.distance == d_before              #  (not teleported at t0)
+    assert np.allclose(cam.target, t_before)
+    _settle(vp, qapp)
+    assert cam.distance == dist                  # lands Camera.fit's EXACT
+    assert np.allclose(cam.target, center)       #  numbers - tween invariance
+
+
+def test_the_zero_door_fit_is_the_old_instant(win):
+    from tracer.ui.camera import fit_frame
+    vp = win.viewport
+    _box(win)
+    cam = vp.camera()
+    vp.view_anim_s = 0.0                         # the escape hatch
+    vp._cam.distance = 600.0
+    vp._cam.target = np.array([120.0, 90.0, 60.0])
+    center, dist = fit_frame(vp._bbox, cam.fov)
+    win._run_command("view:fit")
+    assert vp._anim is None                      # no flight...
+    assert cam.distance == dist                  #  ...byte-exact instant fit,
+    assert np.allclose(cam.target, center)       #   the pre-rung-3 law
+
+
+def test_zoom_to_selection_flies_through_the_fit_door(win, qapp):
+    from tracer.ui.camera import fit_frame
+    vp = win.viewport
+    _box(win)
+    cam = vp.camera()
+    vp._cam.distance = 600.0
+    vp._cam.target = np.array([100.0, 100.0, 50.0])
+    win._zoom_to_selection()                     # nothing selected -> whole
+    assert vp._anim is not None                  #  body: it rides the door
+    _settle(vp, qapp)
+    center, dist = fit_frame(vp._bbox, cam.fov)
+    assert cam.distance == dist
+    assert np.allclose(cam.target, center)
+
+
+def test_the_cube_double_click_is_one_flight_not_two(win, qapp):
+    from tracer.ui.camera import fit_frame
+    from tracer.ui.viewcube import zone_look
+    vp = win.viewport
+    _box(win)
+    cam = vp.camera()
+    vp._cam.yaw, vp._cam.pitch = 0.4, 0.2        # off-canonical, un-fit
+    vp._cam.distance = 500.0
+    vp._cube_last = None
+    vp._cube_click("front")                      # first click: no fit
+    vp._cube_click("front")                      # same zone twice: ONE
+    #                                              combined flight, not
+    assert cam.distance == 500.0                 #  orbit-then-instant-fit
+    assert vp._anim is not None                  #  (framing not teleported)
+    _settle(vp, qapp)
+    center, dist = fit_frame(vp._bbox, cam.fov)
+    assert (cam.yaw, cam.pitch) == zone_look("front")   # orientation landed
+    assert cam.distance == dist                  # AND framing, one flight
+    assert np.allclose(cam.target, center)
+
+
+def test_a_single_cube_click_never_vaporises_the_zoom(win, qapp):
+    from tracer.ui.viewcube import zone_look
+    vp = win.viewport
+    _box(win)
+    cam = vp.camera()
+    vp._cam.yaw, vp._cam.pitch = 0.4, 0.2
+    vp._cam.distance = 500.0                     # the user's own zoom
+    vp._cube_last = None
+    d0 = cam.distance
+    vp._cube_click("top")                        # single click: ORIENT only
+    assert vp._anim is not None                  #  (the view still flies)
+    _settle(vp, qapp)
+    assert cam.distance == d0                    # AT-09: zoom SURVIVES
+    assert (cam.yaw, cam.pitch) == zone_look("top")

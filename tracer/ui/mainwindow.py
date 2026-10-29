@@ -4900,7 +4900,7 @@ class MainWindow(QMainWindow):
                 else "Zoom window cancelled", 3000)
             return
         lo, hi = payload["bbox"]
-        self.viewport.camera().fit(np.asarray([lo, hi], float))
+        self.viewport.glide_fit(np.asarray([lo, hi], float))  # M166 R3
         self.viewport.update()
         self.status.showMessage("Zoom window", 2500)
 
@@ -4909,7 +4909,7 @@ class MainWindow(QMainWindow):
         if bbox is None and self.doc is not None and self.doc.result:
             bbox = self.doc.result.bounding_box
         if bbox is not None:
-            self.viewport.camera().fit(np.asarray(
+            self.viewport.glide_fit(np.asarray(       # M166 R3: flies
                 [list(bbox[0]), list(bbox[1])], float))
             self.viewport.update()
             self.status.showMessage("Zoomed to selection", 2500)
@@ -6545,7 +6545,10 @@ class MainWindow(QMainWindow):
     def action_view(self, kind: str):
         if kind == "fit":
             if self.viewport._bbox is not None:
-                self.viewport._cam.fit(self.viewport._bbox)
+                # M166 R3: Fit FLIES — the menu/palette fit rides the
+                # viewport's own fit door (orientation held, framing
+                # tweened), the SAME one transition law as the views.
+                self.viewport.glide_fit(self.viewport._bbox)
         else:
             # M166 R1: the menu no longer teleports into cam privates -
             # it rides the viewport's glide door (one transition law).

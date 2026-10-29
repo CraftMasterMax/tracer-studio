@@ -82,6 +82,11 @@ def test_zoom_window_drag_refits_camera(win, qapp):
                        10)
     qapp.processEvents()
     assert vp._zoom_win is None                    # gesture spent
+    import time                                    # M166 R3 cite-the-move:
+    t_end = time.monotonic() + 2.5                 #  Fit now FLIES, so
+    while vp._anim is not None and time.monotonic() < t_end:  #  this pin
+        qapp.processEvents()                       #  rides the real
+        time.sleep(0.01)                           #  flight to its land
     assert cam.distance < d0 * 0.95                # zoomed IN
     assert np.linalg.norm(cam.target - t0) > 1.0   # and re-centred
     assert "Zoom window" in win.status.currentMessage()

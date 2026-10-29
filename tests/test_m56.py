@@ -118,6 +118,14 @@ def test_marking_menu_zoom_to_selection(win, qapp):
         - np.asarray(vp.camera().target)))
     win._zoom_to_selection()
     qapp.processEvents()
+    # M166 R3 cite-the-move: Fit now FLIES. Ride the real flight so this
+    # band asserts the LANDED framing, not one mid-arc sample (which the
+    # loose 0.2-5x window could otherwise pass vacuously).
+    import time
+    t_end = time.monotonic() + 2.5
+    while vp._anim is not None and time.monotonic() < t_end:
+        qapp.processEvents()
+        time.sleep(0.01)
     # nothing selected -> same as Fit (camera re-fits the body), which
     # for the already-fitted view keeps the distance in a sane band
     dist1 = float(np.linalg.norm(

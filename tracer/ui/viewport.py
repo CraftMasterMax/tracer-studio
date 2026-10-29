@@ -1494,6 +1494,18 @@ class Viewport(QWidget):
         byte-matches the keys path."""
         self._orbit_to(*view_orient(kind))
 
+    def glide_fit(self, bbox):
+        """M166 R3: THE public fit door. Camera.fit's EXACT numbers
+        (via the pure fit_frame helper) ride a SIX-dial flight — the
+        ORIENTATION is held (passed as its own target, so it neither
+        moves nor fights), while distance and target glide. Menu Fit,
+        Zoom to selection and Zoom window all land here instead of
+        teleporting the framing; under the view_anim_s = 0.0 door it
+        writes byte-identically to the old instant camera().fit()."""
+        center, dist = fit_frame(bbox, self._cam.fov)
+        self._glide_to(self._cam.yaw, self._cam.pitch, self._cam.roll,
+                       distance=dist, target=center)
+
     def _orbit_to(self, yaw: float, pitch: float, roll: float = 0.0):
         """Glide the camera to an ABSOLUTE orientation — the thin
         orientation-only seam (cube zones, keys, roll arrows and snap
@@ -1588,16 +1600,23 @@ class Viewport(QWidget):
     def _cube_click(self, zone: str):
         """Click law (contract §3/§5): face/edge/corner -> the table's
         own orientation, gliding; the SAME zone twice inside the
-        double-click interval ALSO fits (never a different zone)."""
+        double-click interval ALSO fits (never a different zone).
+        M166 R3 (AT-09): that second click is now ONE flight — the
+        zone's orientation AND Camera.fit's framing ride the same
+        _glide_to, so the framing no longer teleports while the view
+        glides. A single click still orbits only (never vaporises the
+        user's zoom). Under the 0.0 door it writes the same dials the
+        old orbit-then-instant-fit pair wrote."""
         yaw, pitch = zone_look(zone)
-        self._orbit_to(yaw, pitch)
         now = QDateTime.currentMSecsSinceEpoch()
         last = self._cube_last
         if (last is not None and last[0] == zone and
                 now - last[1] < QApplication.doubleClickInterval() and
                 self._bbox is not None):
-            self._cam.fit(self._bbox)      # distance only — the
-            #   orientation stays the zone's own (AT-09: fit rides)
+            center, dist = fit_frame(self._bbox, self._cam.fov)
+            self._glide_to(yaw, pitch, 0.0, distance=dist, target=center)
+        else:
+            self._orbit_to(yaw, pitch)
         self._cube_last = (zone, now)
 
     # ---- M155: manners — fade, hysteresis, menu, settings -----------------
