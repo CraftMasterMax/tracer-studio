@@ -33,7 +33,11 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         # -v names every test as it COMPLETES: when a step dies on the
         # timeout, the last printed line pins the stall to ONE test.
-        # --timeout makes a stalled TEST name itself; the step timeout
-        # kills whatever no per-test timer can reach (native loops:
-        # a modal exec() on an offscreen runner never returns).
-        run: python -u -m pytest -v --timeout=300
+        # --timeout-method=thread KILLS a wedged test (signal cannot
+        # interrupt a C call that never returns - attempts 4-5 saw 20
+        # min of silence through a 300s SIGALRM budget); faulthandler
+        # dumps ALL thread stacks from a watchdog every 60 s, so even
+        # a permanent wedge shows its C-level frame.
+        run: >-
+          python -u -m pytest -v --timeout=300 --timeout-method=thread
+          -p faulthandler -o faulthandler_timeout=60

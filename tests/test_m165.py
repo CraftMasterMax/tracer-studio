@@ -740,6 +740,16 @@ def _plate_and_fillet(win, monkeypatch, radius=2.0):
     from tracer.ui.cmddialog import Shell
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (radius, True)))
+    # Diagnostic law (CI attempt 40824705735: the ubuntu runner WEDGED
+    # in the first mesh gate, 20 min, while SIGALRM timeouts stayed
+    # silent - the signature of a native modal loop). A door that would
+    # ask the user asks the log instead - by name, or not at all.
+    from PySide6.QtWidgets import QMessageBox
+
+    def _no_modal(*a, **k):
+        raise AssertionError(f"headless modal attempted: {a[1:3]}")
+    for _m in ("warning", "information", "question", "critical"):
+        monkeypatch.setattr(QMessageBox, _m, staticmethod(_no_modal))
     win.new_document()
     win.doc.add(PrimitiveFeature(name="plate", kind="box",
                                  dims={"dx": 20, "dy": 20, "dz": 5}))
