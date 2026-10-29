@@ -19,7 +19,8 @@ from pathlib import Path                                                # noqa: 
 from PySide6.QtCore import QSettings                                    # noqa: E402
 from PySide6.QtWidgets import (QApplication, QMessageBox)               # noqa: E402
 
-from conftest import script_panel, script_panel_cancel                 # noqa: E402
+from conftest import (script_panel, script_panel_cancel,   # noqa: E402
+                      settle_panels)
 from tracer.core.document import Document, PrimitiveFeature            # noqa: E402
 from tracer.core.measure import mass_properties
 
@@ -105,9 +106,23 @@ def _cube(win, qapp, dims=(20, 20, 20), place=(0, 0, 0)):
     qapp.processEvents()
 
 
+def _density_exit(qapp, prior):
+    """M163 W1 leak law: a gate that commits a material drains its panels
+    FIRST (a zombie's QSettings resurrects its snapshot over later
+    writers - CI bit m86), then leaves the setting exactly as found."""
+    settle_panels(qapp)
+    s = QSettings()
+    if prior is None:
+        s.remove("materials/density")
+    else:
+        s.setValue("materials/density", prior)
+    s.sync()
+
+
 def test_mass_dialog_reports_weight_in_grammes(win, qapp, monkeypatch):
     # M163 W1: Mass Properties rides the live panel - the report row IS
     # the results box (which is BANNED here: the patch raises by name).
+    prior = QSettings().value("materials/density", None)
     _cube(win, qapp)
     script_panel(monkeypatch, {"material": "Steel (7.85)"})
     monkeypatch.setattr(QMessageBox, "exec",
@@ -121,12 +136,14 @@ def test_mass_dialog_reports_weight_in_grammes(win, qapp, monkeypatch):
     assert "8,000.0 mm\u00b3" in t             # volume in mm
     assert "Steel" in t
     assert "62.80 g" in win.status.currentMessage()
+    _density_exit(qapp, prior)
 
 
 def test_material_choice_is_remembered(win, qapp, monkeypatch):
     from tracer.ui import cmdpanel
     real_run = cmdpanel.run                      # keep the door - the 2nd
     _cube(win, qapp)                             #  half opens the REAL one
+    prior = QSettings().value("materials/density", None)
     script_panel(monkeypatch, {"material": "Brass (8.50)"})
     monkeypatch.setattr(QMessageBox, "exec",
                         lambda self: (_ for _ in ()).throw(
@@ -140,9 +157,11 @@ def test_material_choice_is_remembered(win, qapp, monkeypatch):
     p = win._cmd_panel
     assert p._edits["material"].currentText() == "Brass (8.50)"
     p.btn_abort.click()
+    _density_exit(qapp, prior)
 
 
 def test_inch_document_reads_cubic_inches(win, qapp, monkeypatch):
+    prior = QSettings().value("materials/density", None)
     _cube(win, qapp)
     win.doc.units = "inch"
     win._apply_units()
@@ -153,6 +172,7 @@ def test_inch_document_reads_cubic_inches(win, qapp, monkeypatch):
     win.action_mass_properties()
     qapp.processEvents()
     assert "in\u00b3" in win._panel_readout
+    _density_exit(qapp, prior)
 
 
 def test_cancel_and_empty_are_quiet(win, qapp, monkeypatch):

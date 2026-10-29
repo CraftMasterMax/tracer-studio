@@ -65,6 +65,19 @@ def script_cmd_cancel(monkeypatch):
     monkeypatch.setattr(cmddialog, "ask", lambda *a, **k: None)
 
 
+def settle_panels(app):
+    """M163 harness law: processEvents() alone does NOT reap a panel's
+    deleteLater(); a half-dead panel can keep a handler's QSettings alive
+    past its test, and that instance's destructor sync() re-stamps stale
+    state OVER later writers (the CI one-process bite: Steel from m163
+    resurrected over m71's PLA and killed m86). Drain deferred deletes
+    NOW, inside the test that owns the value."""
+    from PySide6.QtCore import QEvent
+    for _ in range(3):
+        app.processEvents()
+        app.sendPostedEvents(None, QEvent.DeferredDelete)
+
+
 def script_panel(monkeypatch, values):
     """M163: answer the LIVE command panel with `values` - preview then
     commit, immediately (the cmdpanel.run twin of script_cmd).

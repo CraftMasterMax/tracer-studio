@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (QApplication, QDialogButtonBox,      # noqa:
                                QLabel, QMessageBox)                # E402
 
 from tracer.core import params                                # noqa: E402
+from conftest import settle_panels                            # noqa: E402
 from tracer.core.document import MirrorFeature, PrimitiveFeature  # noqa: E402
 from tracer.ui import cmddialog, cmdpanel, theme              # noqa: E402
 from tracer.ui.cmdpanel import (CmdPanel, ExprField,          # noqa: E402
@@ -438,22 +439,24 @@ def test_make_passes_min_max_decimals_from_the_spec(qapp):
 
 # ---- G7 (W1/E2): the remember opt-out, pinned on the real run() ------------
 
-def test_remember_key_false_leaves_the_store_untouched(win):
+def test_remember_key_false_leaves_the_store_untouched(win, qapp):
     cmdpanel.run(win, "forget_me", "Forget",
                  [dict(key="a", label="A", kind="double", default=1.0)],
                  commit=lambda v: None, abort=lambda: None,
                  remember_key=False)
     win._cmd_panel.btn_commit.click()
+    settle_panels(qapp)                      # reap now - the law (W1/m86)
     assert cmddialog._REMEMBERED == {}       # the store never heard of it
     assert cmddialog._REMEMBER_ON == {}
     assert cmddialog.remembered("forget_me") is None
 
 
-def test_no_remember_key_still_falls_back_to_the_command_id(win):
+def test_no_remember_key_still_falls_back_to_the_command_id(win, qapp):
     cmdpanel.run(win, "plain_fall", "Plain",
                  [dict(key="a", label="A", kind="double", default=1.0)],
                  commit=lambda v: None, abort=lambda: None)
     win._cmd_panel.btn_commit.click()
+    settle_panels(qapp)                      # reap now - the law (W1/m86)
     assert cmddialog.remembered("plain_fall") == {"a": 1.0}
 
 
@@ -469,7 +472,7 @@ def test_readout_row_lies_hidden_until_written(qapp):
     assert lbl.isHidden()
 
 
-def test_readout_seeds_at_open_and_moves_only_on_boundaries(win):
+def test_readout_seeds_at_open_and_moves_only_on_boundaries(win, qapp):
     calls = []
 
     def readout(v):
@@ -487,10 +490,11 @@ def test_readout_seeds_at_open_and_moves_only_on_boundaries(win):
     p._edits["a"]._finish()                  # the boundary speaks ONCE
     assert calls == [1.0, 9.0]
     p.btn_commit.click()                     # closing is not a boundary:
+    settle_panels(qapp)                      #  ...and is reaped at once
     assert calls == [1.0, 9.0]               #  run() never re-invokes it
 
 
-def test_run_without_preview_is_fine(win):     # class-0: the report IS it
+def test_run_without_preview_is_fine(win, qapp):  # class-0: report IS it
     done = []
     cmdpanel.run(win, "noprev", "NoPreview",
                  [dict(key="a", label="A", kind="double", default=2.0)],
@@ -532,8 +536,11 @@ def _pick_combo(p, key, text):
 
 
 def test_mass_properties_rides_the_panel_and_reads_its_report(
-        win, monkeypatch):
-    QSettings().setValue("materials/density", "PETG (1.27)")   # own baseline
+        win, qapp, monkeypatch):
+    s = QSettings()
+    prior = s.value("materials/density", None)    # restore-as-found law:
+    s.setValue("materials/density", "PETG (1.27)")  #  this gate owns its
+    s.sync()                                      #  baseline AND its exit
     _cube_doc(win)
     _banned_modals(monkeypatch)
     win.action_mass_properties()
@@ -550,9 +557,18 @@ def test_mass_properties_rides_the_panel_and_reads_its_report(
     assert QSettings().value("materials/density") == "Steel (7.85)"
     assert "62.80 g" in win.status.currentMessage()
     assert win._cmd_panel is None
+    settle_panels(qapp)                           # reap the panel INSIDE
+    s = QSettings()                               #  this test - its dead
+    if prior is None:                             #  QSettings would else
+        s.remove("materials/density")             #  resurrect Steel via
+    else:                                         #  destructor sync and
+        s.setValue("materials/density", prior)    #  stomp the next
+    s.sync()                                      #  writer (CI bit m86)
 
 
-def test_mass_properties_remembers_nothing(win, monkeypatch):
+def test_mass_properties_remembers_nothing(win, qapp, monkeypatch):
+    s = QSettings()
+    prior = s.value("materials/density", None)     # restore-as-found law
     _cube_doc(win)
     _banned_modals(monkeypatch)
     win.action_mass_properties()
@@ -560,9 +576,17 @@ def test_mass_properties_remembers_nothing(win, monkeypatch):
     p.btn_commit.click()                     # default material commits
     assert cmddialog.remembered("mass_properties") is None
     assert "mass_properties" not in cmddialog._REMEMBERED
+    settle_panels(qapp)
+    s = QSettings()
+    if prior is None:
+        s.remove("materials/density")
+    else:
+        s.setValue("materials/density", prior)
+    s.sync()
 
 
-def test_document_measures_readout_speaks_the_pending_unit(win, monkeypatch):
+def test_document_measures_readout_speaks_the_pending_unit(win, qapp,
+                                                           monkeypatch):
     _cube_doc(win)
     _banned_modals(monkeypatch)
     win.action_document_measures()
@@ -573,13 +597,14 @@ def test_document_measures_readout_speaks_the_pending_unit(win, monkeypatch):
     assert "in \u2014 0.787402 in \u00d7" in lbl.text()   # the PENDING
     assert "mm" not in lbl.text()            #  unit's numbers, mm-free...
     assert win.doc.units == "mm"             # ...on a zero-write preview
-    p.btn_commit.click()
-    assert win.doc.units == "inch"           # the write is the boundary
+    p.btn_commit.click()                     # the write is the boundary
+    settle_panels(qapp)
+    assert win.doc.units == "inch"
     assert "Document measures: in" in win.status.currentMessage()
     assert cmddialog.remembered("document_measures") is None
 
 
-def test_pick_radius_is_commit_only_and_clamped(win):
+def test_pick_radius_is_commit_only_and_clamped(win, qapp):
     s = QSettings()
     orig = s.value("pick/radius", None)              # leave it as found
     win.viewport.set_pick_radius(3.0)                # deterministic default
@@ -603,14 +628,16 @@ def test_pick_radius_is_commit_only_and_clamped(win):
     assert win.viewport.pick_radius == 20.0  # defensive restore, value
     assert "Pick radius cancelled" in win.status.currentMessage()
     assert cmddialog.remembered("pick_radius") is None
-    if orig is None:                       # the manner is restored to the
-        s.remove("pick/radius")            #  state the suite found, no
-    else:                                  #  matter who runs after
-        s.setValue("pick/radius", orig)
+    settle_panels(qapp)                    # reap both panels BEFORE the
+    if orig is None:                       #  restore - a zombie's dead
+        s.remove("pick/radius")            #  QSettings would else
+    else:                                  #  resurrect its value onto
+        s.setValue("pick/radius", orig)    #  the suite (m86 law)
+    s.sync()
 
 
 def test_appearance_preview_tints_the_renderer_never_the_doc(
-        win, monkeypatch):
+        win, qapp, monkeypatch):
     from tracer.core.appearance import MATERIALS
     _cube_doc(win)
     _banned_modals(monkeypatch)
@@ -627,12 +654,13 @@ def test_appearance_preview_tints_the_renderer_never_the_doc(
     assert win.doc.appearance is None        # the DOC never heard
     assert len(win._undo) == n0              # no capture until Commit
     p.btn_abort.click()
+    settle_panels(qapp)
     assert win._renderer._base_override is None      # paint re-synced from
     assert "Appearance cancelled" in win.status.currentMessage()   # truth
 
 
 def test_appearance_remember_merges_then_prefills_the_panel(
-        win, monkeypatch):
+        win, qapp, monkeypatch):
     _cube_doc(win)
     _banned_modals(monkeypatch)
     win.action_appearance()
@@ -650,3 +678,4 @@ def test_appearance_remember_merges_then_prefills_the_panel(
     assert p2._edits["opacity"].value_mm() == 0.5        # fresh key wins
     assert p2._edits["preset"].currentText() == "Brass"  # kept from merge
     p2.btn_abort.click()
+    settle_panels(qapp)                                  # reap before exit

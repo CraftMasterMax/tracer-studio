@@ -94,7 +94,15 @@ def _plate(win):
 def test_the_dialog_reports_and_exports_a_bed_ready_stl(win, qapp,
                                                         tmp_path,
                                                         monkeypatch):
+    from PySide6.QtCore import QSettings
     from tracer.ui import cmddialog, mainwindow as MW
+    s = QSettings()
+    prior = s.value("materials/density", None)
+    # M163 W1 leak law: "7.9 g" is a claim about PLA - the gate OWNS its
+    # baseline, it never rides whatever the previous writer left (CI
+    # proved m86 was silently suite-order-dependent since the panel era).
+    s.setValue("materials/density", "PLA (1.24)")
+    s.sync()
     _plate(win)
     seen = []
 
@@ -118,6 +126,12 @@ def test_the_dialog_reports_and_exports_a_bed_ready_stl(win, qapp,
     assert float(tm.bounds[0][2]) == pytest.approx(0.0, abs=1e-6)
     assert tm.volume == pytest.approx(6400.0, rel=1e-3)
     assert win.doc.result.bounding_box[0][2] == pytest.approx(12.0)
+    s = QSettings()                          # leave the setting as found
+    if prior is None:
+        s.remove("materials/density")
+    else:
+        s.setValue("materials/density", prior)
+    s.sync()
 
 
 def test_cancel_changes_nothing(win, qapp, monkeypatch):

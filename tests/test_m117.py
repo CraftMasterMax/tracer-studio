@@ -147,8 +147,10 @@ def _box_doc(win):
 
 
 def test_mass_dialog_speaks_inertia_and_extents(win, qapp, monkeypatch):
+    from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QMessageBox
-    from conftest import script_panel                # M163 W1: the panel
+    from conftest import script_panel, settle_panels   # M163 W1: the panel
+    prior = QSettings().value("materials/density", None)   # leak law:
     _box_doc(win)                                    #  era, not the ask
     script_panel(monkeypatch, {"material": "PLA (1.24)"})
     monkeypatch.setattr(QMessageBox, "exec",
@@ -161,6 +163,13 @@ def test_mass_dialog_speaks_inertia_and_extents(win, qapp, monkeypatch):
     # 10 mm cube at PLA 1.24: I = 1.24 g × 16.667 g·mm²/g ÷ 1e5 ≈ 0.000207
     assert "0.000207" in t or "2.07e-04" in t.replace("e-4", "e-04") \
         or "0.00021" in t
+    settle_panels(qapp)
+    s = QSettings()                                  # leave it AS FOUND
+    if prior is None:
+        s.remove("materials/density")
+    else:
+        s.setValue("materials/density", prior)
+    s.sync()
 
 
 def test_show_extents_reports_the_box(win, qapp, monkeypatch):
