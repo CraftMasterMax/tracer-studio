@@ -162,6 +162,16 @@ def test_editor_tracks_diagnosis_sets(win, qapp):
     qapp.processEvents()
     assert len(cv._redundant) == 1
     assert cv._conflicting == set()
+    # M164 RETARGET (cited): rung 3 gives the chip a scan at click
+    # time - it runs BETWEEN these asserts and must still not touch the
+    # badges (recon:100 / plan rung-3 G9).
+    win._sketch_state.clicked.emit()
+    qapp.processEvents()
+    assert win._cmd_panel is not None          # the fixer opened
+    assert len(cv._redundant) == 1             # untouched by the scan
+    assert cv._conflicting == set()
+    win._cmd_panel.btn_abort.click()           # close: no leak for later
+    qapp.processEvents()
 
 
 def test_status_bar_counts_redundant(win, qapp):

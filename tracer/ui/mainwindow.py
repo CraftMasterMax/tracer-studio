@@ -5664,27 +5664,37 @@ class MainWindow(QMainWindow):
                                           f"redundant"
                                           if getattr(res, "redundant", [])
                                           else ""))
-        # M164 R2: affordance, NOT wording - the sentence is rung 3's.
-        # String-cheap law: booleans off the cached result only, no scan.
-        conflict = res is not None and not empty and \
-            bool(getattr(res, "conflicting", []))
-        free = res is not None and not empty and not conflict \
+        # M164 R3: the finder sentence rides ONLY where the solve blames
+        # something - clean states keep M73/M87's words byte-exact (the
+        # chain above was NOT touched). String-cheap law holds: booleans
+        # off the cached result only, no scan - the scan runs at CLICK.
+        fixable = res is not None and not empty and bool(
+            getattr(res, "conflicting", [])
+            or getattr(res, "redundant", []))
+        if fixable:
+            self._sketch_state.setText(self._sketch_state.text()
+                                       + " \u2304 remove one to fix")
+        free = res is not None and not empty and not fixable \
             and res.dof > 0
-        self._sketch_state.setEnabled(conflict or free)
+        self._sketch_state.setEnabled(fixable or free)
         self._sketch_state.setCursor(Qt.PointingHandCursor
-                                     if conflict or free else Qt.ArrowCursor)
+                                     if fixable or free else Qt.ArrowCursor)
         self._sketch_state.setToolTip(
-            "Click to select the blamed geometry" if conflict else
+            "Click to choose one to remove" if fixable else
             "Click to select every free point" if free else "")
 
     def _on_sketch_state_click(self):
-        """M164 R2: the chip is a button without chrome - clicking it
-        selects the geometry the solve is talking about.  Reads the
-        CACHED result: zero re-solve.  Warning first (same precedence as
-        the chip's own if/elif); selection only until rung 3."""
+        """M164 R3: the chip FIXES before it selects.  A blamed solve
+        opens the live sketch_fix panel (anti-modal; the drop-one scan
+        runs THERE, at click time - never in this handler).  When the
+        finder declines (nothing singly removable) the click falls back
+        to rung 2's selection voice: never a dead click."""
         res = getattr(self.sketch, "_last_result", None)
         if res is None:
             return
+        if getattr(res, "conflicting", []) or getattr(res, "redundant", []):
+            if self.sketch.open_finder_panel(self) is not None:
+                return
         if getattr(res, "conflicting", []):
             self.sketch.select_blamed()
         elif res.dof > 0:

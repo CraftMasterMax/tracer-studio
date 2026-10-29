@@ -285,6 +285,12 @@ class CmdPanel(QWidget):
                 lambda _c, k=key: self._boundary(k))
             self._edits[key] = w
             return w
+        if kind == "note":                       # M164 R3: read-only prose
+            lab = QLabel(f["text"])              # (the finder's timed_out
+            lab.setWordWrap(True)                # omission row).  NOT
+            lab.setStyleSheet(                   # registered in _edits:
+                f"color: {DARK['fg_faint']};")   # no key, no value, no
+            return lab                           # boundary - ever
         raise ValueError(f"cmdpanel: field kind {kind!r} not in rung 1")
 
     @staticmethod
@@ -369,22 +375,27 @@ def run(parent, command_id: str, title: str, fields: list[dict], *,
     preview(values) is cosmetic-only (the press-pull law: it must never
     write the model); commit(values) runs at the green button with the
     values finalised; abort() cleans up on the red button or Esc.
-    A remembered key opts the command in on its first commit."""
+    A remembered key opts the command in on its first commit;
+    ``remember_key=False`` opts OUT (M164 R3: the fixer must never carry
+    a stale pick across sketches)."""
     old = getattr(parent, "_cmd_panel", None)
     if old is not None:                     # a new verb aborts the last
         old.finished.emit(None)
     panel = CmdPanel(title, fields, command_id=command_id, parent=parent)
-    key = remember_key or command_id
-    stored = cmddialog.remembered(key)
-    if stored:
-        panel.set_values(stored)
+    forgetful = remember_key is False       # M164 R3: sentinel BEFORE the
+    key = None if forgetful else (remember_key or command_id)   # or-fall:
+    if not forgetful:                       # "" and False would collapse
+        stored = cmddialog.remembered(key)  # into command_id
+        if stored:
+            panel.set_values(stored)
 
     def _done(values):
         if values is None:
             abort()
         else:
             commit(values)
-            cmddialog.remember(key, values)
+            if key is not None:             # R3: a forgetful verb leaves
+                cmddialog.remember(key, values)   # NO store behind
         if getattr(parent, "_cmd_panel", None) is panel:
             parent._cmd_panel = None
         panel.deleteLater()

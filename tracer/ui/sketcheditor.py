@@ -28,8 +28,9 @@ from ..core.sketch.entities import (Arc, Circle, Ellipse, Line, Point,
 from ..core.sketch.model import (_dim_tag, SketchModel, math_dist,
                                  model_from_dict, model_to_dict)
 from ..core.sketch.profile import regions
+from ..core.sketch.solver import _eligible, find_removable
 from ..core import snaps
-from . import theme
+from . import cmdpanel, theme
 from .cmddialog import Shell
 from .commands import SKETCH_KEYS
 
@@ -1127,6 +1128,11 @@ class SketchCanvas(QWidget):
         from PySide6.QtWidgets import QMenu
         menu = QMenu(self)
         sel = self._sel
+        hv = self._hover_c                         # M164 R3: right-click
+        if hv is not None and self._is_fixable(hv):    # rides WITH the
+            menu.addAction("Remove Constraint",    # hover (mousePress
+                           lambda c=hv: self.act_remove_constraint(c))
+            menu.addSeparator()                    # :427-429 clears not)
         if len(sel) == 1 and isinstance(sel[0], Line):
             menu.addAction("Horizontal", self.act_H)
             menu.addAction("Vertical", self.act_V)
@@ -1477,6 +1483,122 @@ class SketchCanvas(QWidget):
         if out:
             self._sel = out
             self.update()
+
+    # ---- M164 R3: the fixer ----------------------------------------------
+
+    def describe_constraint(self, c) -> str:
+        """Combo row text, 'Distance 26.00 mm · line 2'.  DISPLAY ONLY -
+        twins print identical rows, so the finder's payload is the INDEX
+        in the frozen candidate list, never this string (the D3 handle
+        law made concrete)."""
+        t = type(c).__name__
+        if isinstance(c, (Angle, AngleBetween)):
+            v = f" {math.degrees(c.value) % 180:.2f}\u00b0"
+        elif isinstance(c, (Distance, Radius)):
+            v = f" {c.value:.2f} mm"
+        else:
+            v = ""
+        ent = " + ".join(self._ent_name(e) for e in c.entities())
+        return f"{t}{v} \u00b7 {ent}"
+
+    def _ent_name(self, e) -> str:
+        """'line 2' = 1-based place in the owning list (identity walk,
+        never __eq__); a point that owns no list falls back to the line
+        end it welds, then to its class."""
+        sk = self.model.sketch
+        for name, seq in (("line", sk.lines), ("circle", sk.circles),
+                          ("arc", sk.arcs), ("point", sk.points)):
+            i = next((j for j, x in enumerate(seq) if x is e), -1)
+            if i >= 0:
+                return f"{name} {i + 1}"
+        for i, ln in enumerate(sk.lines):
+            if e in (ln.a, ln.b):
+                return f"line {i + 1} end"
+        return type(e).__name__.lower()
+
+    def open_finder_panel(self, parent_win):
+        """M164 R3: the chip's fixer.  ONE on-demand drop-one scan at
+        open (never from _solve/paint/mouse - the structural grep gate
+        pins that); the combo previews through rung 2's _hover_c
+        (cosmetic, zero solve - the press-pull law); Commit removes by
+        identity in ONE undo step.  Returns the panel, or None when
+        nothing is nameable (the chip then keeps its rung-2 selection
+        voice - never a dead click)."""
+        res = self._last_result
+        if res is None or not (getattr(res, "conflicting", [])
+                               or getattr(res, "redundant", [])):
+            return None
+        rep = find_removable(res, self.model.sketch.constraints)
+        if not rep.removable:
+            return None
+        box = {"cands": list(rep.removable), "panel": None,
+               "reopened": False}
+        fields = [dict(key="pick", kind="combo", label="Remove",
+                       choices=[self.describe_constraint(c)
+                                for c in box["cands"]], default=None)]
+        if rep.timed_out:                       # D1: a partial says so
+            fields.append(dict(
+                key="note", kind="note", label="",
+                text=f"{len(box['cands'])} listed \u2014 the scan stopped "
+                     f"at its budget; more candidates may exist"))
+
+        def _pick():
+            p = box["panel"]
+            w = p._edits["pick"] if p is not None else None
+            i = w.currentIndex() if w is not None else -1
+            return box["cands"][i] if 0 <= i < len(box["cands"]) else None
+
+        def _preview(_vals):                    # cosmetic-only law
+            c = _pick()
+            self._hover_c = (c if c is not None and any(
+                cc is c for cc in self.model.sketch.constraints) else None)
+            self.update()
+
+        def _abort_fix():
+            self._hover_c = None                # ring dies, nothing else
+            self.update()
+
+        def _commit(_vals):
+            c = _pick()
+            if c is None:
+                return
+            if not any(cc is c for cc in self.model.sketch.constraints):
+                self._abort_fix()               # stale pick: re-scan at
+                if box["reopened"]:             # a fresh panel, never
+                    return                      # delete a ghost twice
+                box["reopened"] = True
+                box["panel"] = None             # the nested run() has
+                return self.open_finder_panel(parent_win)   # aborted this
+            self._push_hist()                   # panel already
+            self.model.remove_constraint(c)
+            self._hover_c = None
+            self._solve()                       # ONE undo step
+
+        box["panel"] = cmdpanel.run(
+            parent_win, "sketch_fix", "Remove to fix", fields,
+            preview=_preview, commit=_commit, abort=_abort_fix,
+            remember_key=False)                 # forgetful by law (R3)
+        return box["panel"]
+
+    def _is_fixable(self, c) -> bool:
+        """Finder eligibility for the badge menu - the SAME solver law
+        (rank order, welds/witnesses/structural srcs never nameable),
+        so a structural badge never grows a Remove entry.  Cheap: no
+        rank algebra, no scan."""
+        return _eligible(c, {id(cc) for cc in
+                             self.model.sketch.constraints}) is not None
+
+    def act_remove_constraint(self, c):
+        """Badge right-click: straight through the finder's door -
+        identity-guarded, ONE undo step, re-solve.  Same anatomy as the
+        panel commit, which is why the menu needs no scan at all."""
+        if not any(cc is c for cc in self.model.sketch.constraints):
+            return                              # stale: zero trace
+        self._push_hist()
+        self.model.remove_constraint(c)
+        self._hover_c = None                    # the ring's subject left
+        self._solve()
+        self.update()
 
     def _dof_hud_text(self) -> str:
         """M164 R1: the DOF line the HUD paints - dof_summary()'s contract

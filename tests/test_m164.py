@@ -322,12 +322,30 @@ def test_dim_exprs_roundtrip_keys_stay_int_strings():
 
 # ---------------------------------------------------- hot-path & HUD
 
+def _func_src(name):
+    """The body of one top-level SketchCanvas method, from the real file
+    (rung 3's structural hot-path grep needs function spans)."""
+    import re
+    root = Path(__file__).resolve().parent.parent / "tracer" / "ui"
+    src = (root / "sketcheditor.py").read_text(encoding="utf-8")
+    m = re.search(rf"\n    def {name}\(.*?(?=\n    def )", src, re.S)
+    assert m, f"{name} vanished from sketcheditor.py"
+    return m.group(0)
+
+
 def test_scan_is_not_wired_into_the_drag_hot_path():
-    # rung-1 law: the finder has NO call site in the editor yet - the
-    # scan is demand-only (rung 3 will open it through the chip).
-    src = (Path(__file__).resolve().parent.parent
-           / "tracer" / "ui" / "sketcheditor.py").read_text(encoding="utf-8")
-    assert "find_removable" not in src
+    # M164 RETARGET (cited): rung 1 forbade ANY editor call site; rung 3
+    # gives the drop-one scan exactly ONE (open_finder_panel). The law
+    # is now structural: one call, and never inside a hot function.
+    root = Path(__file__).resolve().parent.parent / "tracer" / "ui"
+    src = (root / "sketcheditor.py").read_text(encoding="utf-8")
+    for fn in ("_solve", "paintEvent", "mouseMoveEvent", "leaveEvent",
+               "mousePressEvent", "_draw_hover", "_draw_glyphs", "_badge"):
+        assert "find_removable" not in _func_src(fn)
+    assert src.count("find_removable(") == 1     # the import carries no "("
+    assert "open_finder_panel" in src
+    mw = (root / "mainwindow.py").read_text(encoding="utf-8")
+    assert "find_removable" not in mw            # the chip delegates blind
 
 
 def test_hud_speaks_rank(qapp):
@@ -693,7 +711,9 @@ def test_chip_click_selects_every_free_point(win, qapp2):
     assert cv._last_result is res
 
 
-def test_chip_click_on_conflict_selects_blamed(win, qapp2):
+def test_chip_click_on_conflict_opens_the_fixer(win, qapp2):
+    # M164 RETARGET (cited): conflict click FIXES, not selects (rung 3);
+    # the select_blamed law itself stays gated canvas-side (rung 2).
     cv = _sketch_on(win, qapp2)
     m = cv.model
     a, b = m.point(0, 0), m.point(10, 0)
@@ -705,12 +725,12 @@ def test_chip_click_on_conflict_selects_blamed(win, qapp2):
     assert win._sketch_state.text().startswith("\u26a0")
     QTest.mouseClick(win._sketch_state, Qt.LeftButton, Qt.NoModifier,
                      win._sketch_state.rect().center())
-    exp = []
-    for c in cv._last_result.conflicting:     # blame-driven, not guessed
-        for e in c.entities():
-            if not any(e is o for o in exp):
-                exp.append(e)
-    assert {id(e) for e in cv._sel} == {id(e) for e in exp}
+    from tracer.ui.cmdpanel import CmdPanel
+    p = win._cmd_panel
+    assert isinstance(p, CmdPanel) and p.command_id == "sketch_fix"
+    p.btn_abort.click()
+    qapp2.processEvents()
+    assert win._cmd_panel is None
 
 
 def test_chip_silent_when_fully_constrained(win, qapp2):
@@ -749,8 +769,8 @@ def test_tooltip_and_cursor_follow_state(win, qapp2):
     m.constrain(Fixed(a, x=0.0, y=0.0), Fixed(b, x=10.0, y=0.0), h, v)
     cv._solve()
     qapp2.processEvents()
-    assert win._sketch_state.toolTip() == "Click to select the blamed " \
-        "geometry"
+    # M164 RETARGET (cited): conflict folds into fixable (rung 3)
+    assert win._sketch_state.toolTip() == "Click to choose one to remove"
     assert win._sketch_state.cursor().shape() == Qt.PointingHandCursor
     c, d = m.point(50, 0), m.point(90, 0)
     m.add_line(c, d)
@@ -765,11 +785,13 @@ def test_tooltip_and_cursor_follow_state(win, qapp2):
 
 
 def test_no_new_sketch_keys_and_no_finder_leak():
+    # M164 RETARGET (cited): rung 3 gives the finder its sanctioned ONE
+    # call site in sketcheditor (test_scan_is_not_wired_into_the_drag_
+    # hot_path now owns that law); this gate keeps the *other* leaks out.
     root = Path(__file__).resolve().parent.parent / "tracer" / "ui"
-    assert "find_removable" not in (root / "sketcheditor.py").read_text(
-        encoding="utf-8")            # rung 3 opens the finder, not us
     cmds = (root / "commands.py").read_text(encoding="utf-8")
     assert "ClickableLabel" not in cmds      # the chip is not a command
+    assert "sketch_fix" not in cmds          # mouse-only, no key verbs
     # the ring is a THEME token, never a raw colour in the canvas module
     sk = (root / "sketcheditor.py").read_text(encoding="utf-8")
     assert 'theme.SKETCH["hover"]' in sk
@@ -802,3 +824,400 @@ def test_hover_paints_for_inferred_constraint_identically(mkcanvas):
                   for dy in range(-1, 2)
                   if _error_family(img.pixelColor(cx + dx, ty + dy)))
         assert ink >= 2 and red == 0
+
+# ====================================================== rung 3: the fixer panel
+
+import json                                        # noqa: E402
+from PySide6.QtWidgets import QDialogButtonBox, QLabel    # noqa: E402
+
+
+def _dup_on(win, qapp2):
+    """Kernel _dup_h in UI clothes: one bare line + TWO identical user
+    Horizontals - redundant, two honest fixes, twins that print the SAME
+    combo row (which makes the index law testable)."""
+    cv = _sketch_on(win, qapp2)
+    m = cv.model
+    a, b = m.point(0, 0), m.point(40, 0)
+    ln = m.add_line(a, b)
+    h1, h1b = Horizontal(ln), Horizontal(ln)
+    m.constrain(h1, h1b)
+    cv._solve()
+    qapp2.processEvents()
+    return cv, ln, h1, h1b
+
+
+def _chip(win, qapp2):
+    QTest.mouseClick(win._sketch_state, Qt.LeftButton, Qt.NoModifier,
+                     win._sketch_state.rect().center())
+
+
+def test_chip_opens_the_fixer_panel_not_a_dialog(win, qapp2, monkeypatch):
+    from tracer.ui import cmddialog as cd
+    from tracer.ui.cmdpanel import CmdPanel
+
+    def no_dialogs(*a, **k):
+        raise AssertionError("rung 3 is an ANTI-MODAL panel, not a dialog")
+    monkeypatch.setattr(cd, "ask", no_dialogs)
+    cv, _ln, _h1, _h1b = _dup_on(win, qapp2)
+    _chip(win, qapp2)
+    p = win._cmd_panel
+    assert isinstance(p, CmdPanel)
+    assert p.command_id == "sketch_fix"
+    assert p.findChild(QDialogButtonBox) is None     # anti-modal law
+    assert list(p._edits) == ["pick"]                # note never registers
+    p.btn_abort.click()
+    qapp2.processEvents()
+    assert win._cmd_panel is None
+
+
+def test_the_list_offers_only_user_removables(win, qapp2):
+    cv = _sketch_on(win, qapp2)
+    m = cv.model
+    lines = m.add_rect(m.point(0, 0), m.point(40, 30))   # src="rect" H/V
+    m.constrain(Horizontal(lines[0]))                    # the user twin
+    cv._solve()
+    qapp2.processEvents()
+    _chip(win, qapp2)
+    p = win._cmd_panel
+    combo = p._edits["pick"]
+    assert combo.count() == 1                            # ONLY the twin:
+    assert combo.itemText(0).startswith("Horizontal")    #  never the stamp
+    structural = [c for c in m.sketch.constraints
+                  if getattr(c, "src", "") == "rect"]
+    assert len(structural) == 4
+    p.btn_commit.click()
+    qapp2.processEvents()
+    cons = m.sketch.constraints
+    assert all(any(c is s for c in cons) for s in structural)
+    assert "redundant" not in win._sketch_state.text()   # the fix WORKED
+
+
+def test_twin_labels_are_picked_by_index(win, qapp2):
+    cv, _ln, h1, h1b = _dup_on(win, qapp2)
+    _chip(win, qapp2)
+    p = win._cmd_panel
+    combo = p._edits["pick"]
+    assert combo.itemText(0) == combo.itemText(1)        # twins lie to TEXT
+    combo.setCurrentIndex(1)
+    combo.activated.emit(1)          # direct-drive: setCurrentIndex never
+    p.btn_commit.click()             #  fires activated (engine law)
+    qapp2.processEvents()
+    cons = cv.model.sketch.constraints
+    assert not any(c is h1b for c in cons)               # index 1 = the
+    assert any(c is h1 for c in cons)                    #  SECOND twin
+    assert win._cmd_panel is None
+
+
+def test_combobox_choice_ghosts_the_candidate(mkcanvas, qapp2, monkeypatch):
+    m = SketchModel()
+    a, b = m.point(0, 0), m.point(40, 0)
+    ln = m.add_line(a, b)
+    h1, h1b = Horizontal(ln), Horizontal(ln)
+    m.constrain(h1, h1b)
+    cv = mkcanvas(m)
+    p = cv.open_finder_panel(cv)
+    assert p is not None and cv._hover_c is None
+    before = json.dumps(model_to_dict(m), sort_keys=True)
+    res_before = cv._last_result
+
+    def boom(*a_, **k_):
+        raise AssertionError("preview must NEVER solve (press-pull law)")
+    monkeypatch.setattr(m, "solve", boom)
+    combo = p._edits["pick"]
+    assert combo.count() == 2
+    combo.setCurrentIndex(1)
+    combo.activated.emit(1)
+    qapp2.processEvents()
+    assert cv._hover_c is h1b                    # INDEX 1 = second twin
+    assert cv._sel == []                         # cosmetic: never selects
+    assert cv._last_result is res_before         # zero solve
+    monkeypatch.undo()
+    p.btn_abort.click()
+    qapp2.processEvents()
+    assert cv._hover_c is None                   # abort buries the ghost
+    assert json.dumps(model_to_dict(m), sort_keys=True) == before
+
+
+def test_ghost_ring_paints_on_the_candidate(mkcanvas, qapp2):
+    m = SketchModel()
+    a, b = m.point(0, 0), m.point(40, 0)
+    ln = m.add_line(a, b)
+    h1 = Horizontal(ln)
+    m.constrain(h1, Horizontal(ln))
+    cv = mkcanvas(m)
+    p = cv.open_finder_panel(cv)
+    p._edits["pick"].activated.emit(0)
+    assert cv._hover_c is h1                     # idx 0 = first twin
+    pm = _paint_trio(cv)                         # trio rebuilds the hits
+    rect = next(r for r, c in cv._constraint_hits if c is h1)
+    img = pm.toImage()
+    cx, ty = int(rect.center().x()), int(rect.top()) - 3
+    ink = sum(1 for dx in range(-5, 6)
+              for dy in range(-1, 2)
+              if _hover_family(img.pixelColor(cx + dx, ty + dy)))
+    assert ink >= 2                              # the rung-2 token, combo-
+    p.btn_abort.click()                          #  driven
+    qapp2.processEvents()
+
+
+def test_ghost_escalates_red_on_conflict(mkcanvas, qapp2):
+    #  m87's own H+V fight: the candidate that OWNS blame ghosts RED -
+    #  the badge's own escalation law, reused by the panel verbatim.
+    m = SketchModel()
+    a, b = m.point(0, 0), m.point(10, 0)
+    ln = m.add_line(a, b)
+    m.constrain(Fixed(a, x=0.0, y=0.0), Fixed(b, x=10.0, y=0.0),
+                Horizontal(ln), Vertical(ln))
+    cv = mkcanvas(m)
+    p = cv.open_finder_panel(cv)
+    combo = p._edits["pick"]
+    vi = None
+    for i in range(combo.count()):               # walk rows: emit IS click
+        combo.setCurrentIndex(i)
+        combo.activated.emit(i)
+        qapp2.processEvents()
+        if cv._hover_c is not None and id(cv._hover_c) in cv._conflicting:
+            vi = i
+            break
+    assert vi is not None, "no candidate owns blame"
+    pm = _paint_trio(cv)
+    rect = next(r for r, c in cv._constraint_hits if c is cv._hover_c)
+    img = pm.toImage()
+    cx, ty = int(rect.center().x()), int(rect.top()) - 3
+    red = sum(1 for dx in range(-5, 6)
+              for dy in range(-1, 2)
+              if _error_family(img.pixelColor(cx + dx, ty + dy)))
+    assert red >= 2
+    p.btn_abort.click()
+    qapp2.processEvents()
+    assert cv._hover_c is None
+
+
+def test_commit_removes_solves_in_one_undo_step(win, qapp2):
+    cv, _ln, h1, _h1b = _dup_on(win, qapp2)
+    before = json.dumps(model_to_dict(cv.model), sort_keys=True)
+    n = len(cv._hist)
+    _chip(win, qapp2)
+    p = win._cmd_panel
+    p.btn_commit.click()                          # idx 0 default
+    qapp2.processEvents()
+    assert len(cv._hist) == n + 1                 # ONE undo step
+    assert not any(c is h1 for c in cv.model.sketch.constraints)
+    assert cv._redundant == set()                 # the warning is GONE
+    assert win._cmd_panel is None
+    assert "redundant" not in win._sketch_state.text()
+    assert win._sketch_state.toolTip() == "Click to select every free " \
+        "point"                                   # voice back to rung 2
+    cv.undo_op()                                  # one step back, exact
+    qapp2.processEvents()
+    assert json.dumps(model_to_dict(cv.model), sort_keys=True) == before
+    assert "1 redundant" in win._sketch_state.text()   # chip re-states
+
+
+def test_abort_cleans_hover_and_leaves_no_trace(win, qapp2):
+    cv, _ln, _h1, _h1b = _dup_on(win, qapp2)
+    before = json.dumps(model_to_dict(cv.model), sort_keys=True)
+    n = len(cv._hist)
+    res_before = cv._last_result
+    _chip(win, qapp2)
+    p = win._cmd_panel
+    p._edits["pick"].activated.emit(0)
+    qapp2.processEvents()
+    assert cv._hover_c is not None
+    p.btn_abort.click()
+    qapp2.processEvents()
+    assert cv._hover_c is None
+    assert len(cv._hist) == n                     # zero trace
+    assert cv._last_result is res_before          # zero solve
+    assert json.dumps(model_to_dict(cv.model), sort_keys=True) == before
+    assert win._cmd_panel is None
+
+
+def test_a_new_verb_aborts_the_fixer(win, qapp2):
+    from tracer.ui import cmdpanel as cp
+    cv, _ln, _h1, _h1b = _dup_on(win, qapp2)
+    _chip(win, qapp2)
+    p = win._cmd_panel
+    p._edits["pick"].activated.emit(0)
+    qapp2.processEvents()
+    assert cv._hover_c is not None
+    p2 = cp.run(win, "other_verb", "Other",
+                [dict(key="v", kind="double", label="v", default=1.0)],
+                preview=lambda vals: None, commit=lambda vals: None,
+                abort=lambda: None)
+    qapp2.processEvents()
+    assert win._cmd_panel is p2                   # one verb, one panel
+    assert cv._hover_c is None                    # the valve cleaned up
+    _chip(win, qapp2)                             # chip re-entry: the fixer
+    assert win._cmd_panel is not p2               #  REPLACES, never stacks
+    assert win._cmd_panel.command_id == "sketch_fix"
+    win._cmd_panel.btn_abort.click()
+    qapp2.processEvents()
+    assert win._cmd_panel is None
+
+
+def test_chip_grows_the_finder_sentence(win, qapp2, monkeypatch):
+    cv, _ln, _h1, _h1b = _dup_on(win, qapp2)
+    t = win._sketch_state.text()
+    assert t.endswith(" \u2304 remove one to fix")          # append-only
+    assert "1 redundant" in t                               #  tail, blamed
+    assert win._sketch_state.toolTip() == "Click to choose one to remove"
+    # OFFSCREEN LAW (measured): a second action_new_sketch over a dirty
+    # editor hits _discard_guard's QMessageBox.question - modal, it HANGS
+    # (alone) or SEGVs (after sibling teardowns).  The guard is not this
+    # gate's subject; the chip grammar is.
+    monkeypatch.setattr(win, "_discard_guard", lambda: True)
+    win.new_document()
+    win.action_new_sketch()                                 # conflict voice
+    qapp2.processEvents()
+    cv = win.sketch
+    m = cv.model
+    a, b = m.point(0, 0), m.point(10, 0)
+    ln = m.add_line(a, b)
+    m.constrain(Fixed(a, x=0.0, y=0.0), Fixed(b, x=10.0, y=0.0),
+                Horizontal(ln), Vertical(ln))
+    cv._solve()
+    qapp2.processEvents()
+    t = win._sketch_state.text()
+    assert t.startswith("\u26a0") and t.endswith(" \u2304 remove one to fix")
+
+
+def test_chip_falls_back_when_no_single_fix(win, qapp2):
+    cv = _sketch_on(win, qapp2)
+    m = cv.model
+    a, b, c, d = (m.point(0, 0), m.point(40, 0),
+                  m.point(0, 30), m.point(40, 30))
+    l1, l3 = m.add_line(a, b), m.add_line(c, d)
+    m.constrain(Horizontal(l1), Horizontal(l1), Horizontal(l3),
+                Horizontal(l3))                             # kernel's twin
+    cv._solve()
+    qapp2.processEvents()
+    res = cv._last_result
+    assert res.redundant                                    # looks fixable
+    assert win._sketch_state.text().endswith(" \u2304 remove one to fix")
+    _chip(win, qapp2)
+    assert getattr(win, "_cmd_panel", None) is None     # finder DECLINED
+    free = [p for p in cv._dof_points()                     # never a dead
+            if res.point_dof.get(p.id, 0) > 0]              #  click
+    assert free and {id(p) for p in cv._sel} == {id(p) for p in free}
+
+
+def test_timeout_note_appears_on_partial(win, qapp2, monkeypatch):
+    cv, _ln, _h1, _h1b = _dup_on(win, qapp2)
+    from tracer.ui import sketcheditor as se
+    real = se.find_removable
+    monkeypatch.setattr(se, "find_removable",             # max_scan=1, NOT
+                        lambda r, cons, **k: real(r, cons, max_scan=1))
+    _chip(win, qapp2)                                     # budget-0: empty
+    p = win._cmd_panel                                    #  list, decline
+    assert p is not None
+    assert p._edits["pick"].count() == 1                  # PARTIAL: one
+    notes = [lab.text() for lab in p.findChildren(QLabel)
+             if "budget" in lab.text()]                   # the honest note
+    assert notes and "may exist" in notes[0]
+    assert list(p._edits) == ["pick"]                     # note owns no row
+    assert set(p.values()) == {"pick"}
+    p.btn_commit.click()                                  # path intact
+    qapp2.processEvents()
+    assert win._cmd_panel is None
+
+
+def test_panel_commit_shifts_a_live_binding(win, qapp2):
+    cv = _sketch_on(win, qapp2)
+    m = cv.model
+    a, b = m.point(0, 0), m.point(40, 0)
+    ln = m.add_line(a, b)
+    ha, hb = Horizontal(ln), Horizontal(ln)
+    d = Distance(a, b, 40.0)
+    m.constrain(ha, hb, d)
+    m.dim_exprs = {2: {"e": "width", "t": _dim_tag(d)}}   # bound to index 2
+    cv._solve()
+    qapp2.processEvents()
+    _chip(win, qapp2)
+    p = win._cmd_panel
+    assert p._edits["pick"].count() == 2                  # only the twins
+    p.btn_commit.click()                                  # idx 0 = ha
+    qapp2.processEvents()
+    assert {int(k) for k in m.dim_exprs} == {1}           # shifted, alive
+    errs = m.apply_dim_params({"width": 12.0})
+    assert errs == [] and d.value == pytest.approx(12.0)  # fx rides on
+
+
+def test_menu_remove_of_bound_dim_drops_binding(mkcanvas, qapp2):
+    m = SketchModel()
+    a, b = m.point(0, 0), m.point(40, 0)
+    d0 = Distance(a, b, 40.0)
+    m.constrain(d0, Distance(a, b, 40.0))
+    m.dim_exprs = {0: {"e": "w", "t": _dim_tag(d0)}}
+    cv = mkcanvas(m)
+    n = len(cv._hist)
+    cv._hover_c = d0                            # what hovering the label
+    acts = {x.text(): x for x in cv._build_menu().actions()}   #  would set
+    assert "Remove Constraint" in acts
+    acts["Remove Constraint"].trigger()
+    qapp2.processEvents()
+    assert not any(c is d0 for c in m.sketch.constraints)
+    assert m.dim_exprs == {}                    # the binding died WITH it
+    assert len(cv._hist) == n + 1               # ONE undo step
+    assert cv._hover_c is None                  # the ring's subject left
+
+
+def test_menu_entry_only_for_fixable_badges(mkcanvas, qapp2):
+    m = SketchModel()
+    lines = m.add_rect(m.point(0, 0), m.point(40, 30))    # src-stamped H/V
+    sk = m.sketch
+    dup = Horizontal(lines[0])
+    m.constrain(dup)                                      # the user twin
+    cv = mkcanvas(m)
+    struct = next(c for c in sk.constraints
+                  if isinstance(c, Vertical)
+                  and getattr(c, "src", "") == "rect")
+    cv._hover_c = struct                                  # structural badge
+    texts = [x.text() for x in cv._build_menu().actions()]
+    assert "Remove Constraint" not in texts               # never nameable
+    cv._hover_c = dup                                     # user twin badge
+    acts = {x.text(): x for x in cv._build_menu().actions()}
+    assert "Remove Constraint" in acts
+    cv._hover_c = None                        # freeze law: the entry
+    acts["Remove Constraint"].trigger()       #  carries ITS OWN target
+    qapp2.processEvents()
+    assert not any(c is dup for c in sk.constraints)
+    assert [c for c in sk.constraints if getattr(c, "src", "") == "rect"]
+
+
+def test_right_press_keeps_the_hovered_badge(mkcanvas, qapp2, monkeypatch):
+    # The menu rides WITH the hover: mousePress's right branch (:428-431)
+    # reaches _context_menu BEFORE any hover clearing.  _context_menu is
+    # patched because .exec() would block; the route itself is real.
+    m = SketchModel()
+    a, b = m.point(0, 0), m.point(40, 0)
+    ln = m.add_line(a, b)
+    m.constrain(Horizontal(ln))
+    cv = mkcanvas(m)
+    seen = []
+    monkeypatch.setattr(cv, "_context_menu",
+                        lambda ev: seen.append(cv._hover_c))
+    r, c = _badge_for(cv, Horizontal)
+    QTest.mouseMove(cv, r.center().toPoint())
+    qapp2.processEvents()
+    assert cv._hover_c is c
+    QTest.mousePress(cv, Qt.RightButton, Qt.NoModifier, r.center().toPoint())
+    qapp2.processEvents()
+    assert seen == [c]                            # menu ran off the hover
+    assert cv._hover_c is c                       # and NOTHING cleared it
+    QTest.mouseRelease(cv, Qt.RightButton, Qt.NoModifier,
+                       r.center().toPoint())
+
+
+def test_fixer_panel_forgets(win, qapp2):
+    from tracer.ui import cmddialog as cd
+    cv, _ln, _h1, h1b = _dup_on(win, qapp2)
+    _chip(win, qapp2)
+    p = win._cmd_panel
+    p._edits["pick"].setCurrentIndex(1)
+    p._edits["pick"].activated.emit(1)
+    p.btn_commit.click()
+    qapp2.processEvents()
+    assert not any(c is h1b for c in cv.model.sketch.constraints)
+    assert cd.remembered("sketch_fix") is None    # forgetful by law: a
+    assert cd._REMEMBER_ON.get("sketch_fix") is None   #  pick never rides

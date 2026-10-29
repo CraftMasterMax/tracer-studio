@@ -301,6 +301,37 @@ def test_committed_values_are_remembered_next_time(win):
     assert p2._edits["src"].currentText() == "lug"
 
 
+def test_forgetful_command_skips_remember(win, monkeypatch):
+    # M164 R3 engine law: remember_key=False opts OUT of BOTH directions -
+    # no prefill, no store (the fixer must never carry a pick across
+    # sketches).  None-key runs keep the Mirror remember law byte-live.
+    from tracer.ui import cmdpanel as cp
+    cmddialog._REMEMBERED["forgetverb"] = {"v": 5.0}    # fresh dicts (win)
+    cmddialog._REMEMBER_ON["forgetverb"] = True
+    real = cmddialog.remember
+    calls = []
+
+    def spy(k, v):
+        calls.append(k)
+        return real(k, v)
+    monkeypatch.setattr(cmddialog, "remember", spy)
+    p = cp.run(win, "forgetverb", "T",
+               [dict(key="v", kind="double", label="v", default=1.0)],
+               preview=lambda vals: None, commit=lambda vals: None,
+               abort=lambda: None, remember_key=False)
+    assert p._edits["v"].value_mm() == 1.0              # store NOT read
+    p.btn_commit.click()
+    assert calls == []                                  # store NOT written
+    assert cmddialog._REMEMBERED == {"forgetverb": {"v": 5.0}}   # untouched
+    p2 = cp.run(win, "remembverb", "T",                 # default verb:
+                [dict(key="v", kind="double", label="v", default=1.0)],
+                preview=lambda vals: None, commit=lambda vals: None,
+                abort=lambda: None)                     #  law untouched
+    p2.btn_commit.click()
+    assert calls == ["remembverb"]                      # default path alive
+    assert cmddialog.remembered("remembverb") == {"v": 1.0}
+
+
 def test_prefill_fires_nothing(win):
     p = CmdPanel("Mirror", FIELDS, command_id="mirror")
     seen = []
