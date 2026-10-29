@@ -26,8 +26,13 @@ jobs:
       - name: Install Forma
         run: pip install -e .[dev]
       - name: Test
+        timeout-minutes: 25        # ubuntu baseline ~14 min: a stall gets
+                                   #  KILLED (logs flush, culprit visible)
+                                   #  instead of eating the 360-min budget
         env:
           QT_QPA_PLATFORM: offscreen
-        # --timeout (pytest-timeout is in the dev extra): a stall must
-        # NAME ITSELF in the log, not eat the runner budget silently.
-        run: pytest -q --timeout=300
+        # -u + -q + per-test dots stream progress; --timeout (pytest-timeout
+        # is in the dev extra) makes a STALLED TEST name itself. The step
+        # timeout makes everything else (collection / exit-time teardown)
+        # die loudly on the runner.
+        run: python -u -m pytest -q --timeout=300
