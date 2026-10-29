@@ -936,17 +936,26 @@ class SketchCanvas(QWidget):
         self.update()
 
     def _weld_drop(self, grab, q):
-        """IF IT SNAPPED, IT JOINED (M170 R2): the magnet that CAUGHT a
+        """IF IT SNAPPED, IT JOINED (M170 R2/R3): the magnet that CAUGHT a
         point-drag mid-flight becomes a REAL join at the drop - today it
         only promised pixel peace, and the next drag drifted the corner
-        apart. Alt still suppresses (_no_snap rode the last sampled move);
-        catches that name no Point (origin, grid, curve bodies - rung 3)
-        keep today's exact-coords law. The weld pays NO history of its
-        own - the drag already pushed its one snapshot - so ONE undo
-        restores the whole gesture. And the scene may refuse: an entity
-        (or a constraint) naming BOTH points says they are ONE thing
-        already or TWO facts apart - either way the drop hushes."""
-        t = self._snap_target(q, skip=grab)
+        apart. Alt still suppresses (_no_snap rode the last sampled move).
+        A catch on an EXISTING Point welds identity (rung 2); a drop onto
+        a LINE/ARC BODY splits it reusing the dropped end as seam (rung
+        3) - ONE Point serves stub, joint and both halves, the T-junction
+        law of extend_end read backwards - but only when the point is a
+        real END on some other entity: a free point (or a refused own-
+        body drop) never mint topology. Every other kind lands EXACTLY
+        what the draw tool's autolink table already promises for it
+        (X->PointOnLine pair, circle/quadrant->PointOnCircle, midpoint->
+        Midpoint), src="snap". Refusals HUSH. The join pays NO history of
+        its own - it rides the drag's single snapshot - and it dismisses
+        the magnet glyph: a kept promise stops advertising itself."""
+        sk = self.model.sketch
+        skip = [grab] + [e for e in sk.lines + sk.arcs       # M170 R3: the
+                         if grab in                          #  release probe
+                         (e.a, getattr(e, "m", None), e.b)]  #  rides over
+        t = self._snap_target(q, skip=skip)                  #  its OWN stub
         if isinstance(t, Point) and t is not grab:
             sk = self.model.sketch
             for e in (list(sk.lines) + list(sk.arcs) + list(sk.circles)
@@ -963,10 +972,58 @@ class SketchCanvas(QWidget):
                 self.update()
                 return
             self._sel = [t if p is grab else p for p in self._sel]
-            self._snap_hint = None
-            self._snap_obj = None              # the CHIP is the glyph too:
-            self._solve()                      #  a kept promise dismisses it
+            self._join_done()
+            self._solve()
+            self.update()
+            return
+        sn = self._snap_obj
+        if sn is None or t is None:
+            self.update()
+            return
+        carrier = sn.entity if sn.kind == "onentity" else None
+        if isinstance(carrier, (Line, Arc)):
+            def _ends(e):                      # real Points an entity rides
+                return [x for x in (e.a, getattr(e, "m", None), e.b)
+                        if x is not None]
+            if grab in _ends(carrier):         # own-body drop: the line
+                self.update()                  #  would eat itself - hush
+                return
+            if not any(grab in _ends(e) for e in
+                       list(self.model.sketch.lines)
+                       + list(self.model.sketch.arcs) if e is not carrier):
+                carrier = None                 # a FREE point glues to the
+        if carrier is not None:                #  body (table below), never
+            from ..core.sketch.trim import split_entity   #  cuts it
+            try:                               # T-JUNCTION: the dropped
+                split_entity(self.model, carrier, grab.x, grab.y,
+                             seam=grab)        #  end IS the seam - ONE
+            except ValueError:                 #  Point serves stub, joint
+                self.update()                  #  and both halves (M168
+                return                         #  reuse law, backwards)
+            self._join_done()
+            self._solve()
+            self.update()
+            return
+        joined = False
+
+        def _rides(e):                        # a segment grab already ends
+            return isinstance(e, (Line, Arc)) and grab in (
+                e.a, getattr(e, "m", None), e.b)
+        for c in snaps.autolink(sn, grab):     # the draw tool's OWN table:
+            if any(_rides(e) for e in c.entities()):
+                continue                      #  self-facts hush: a line
+            c.src = "snap"                     #  cannot eat itself twice
+            self.model.sketch.constraints.append(c)   #  scribe, drag and
+            joined = True                     #  drop speak ONE language
+        if joined:
+            self._join_done()
+            self._solve()
         self.update()
+
+    def _join_done(self):
+        self._snap_hint = None
+        self._snap_obj = None                  # the CHIP is the glyph too:
+                                               #  a kept promise dismisses it
 
     def mouseReleaseEvent(self, ev: QMouseEvent):
         if ev.button() in (Qt.MiddleButton, Qt.RightButton):

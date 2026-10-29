@@ -277,3 +277,102 @@ def test_the_end_that_would_collapse_its_own_line_refuses(ed):
     _release(ed, 5, 5)                           #   line would zero out
     assert b in sk.points and sk.lines[0].b is b     # refused whole
     assert (b.x, b.y) == (5.0, 5.0)              #  coords ride as dragged
+
+
+# ---- Rung 3: the CURVES join too ------------------------------------------
+#
+# A drop onto a line/arc BODY splits it reusing the dropped end as seam
+# (ONE Point serves stub, joint and both halves - extend_end's law read
+# backwards). The release probe SKIPS the dragged point AND every segment
+# riding on it: the stub's clamp creates a real X with the boundary, and
+# that artifact must not out-rank the onentity drop the user aimed at.
+# A free point GLUES (PointOnLine), never cuts. Circle/quadrant catches
+# mint PointOnCircle, X catches the PointOnLine PAIR - the draw tool's
+# own autolink table, src="snap", riding the drag's single snapshot.
+# Self-facts hush: a line cannot eat itself.
+
+
+def _drag(ed, x0, y0, x1, y1):
+    n0 = len(ed._hist)
+    _press(ed, x0, y0)
+    assert ed._drag_pt is not None
+    _move(ed, x1, y1)
+    _release(ed, x1, y1)
+    return n0
+
+
+def test_an_end_dropped_on_a_body_T_joins_it(ed):
+    m = ed.model
+    sk = m.sketch
+    h = m.add_line(m.point(-10, 0), m.point(10, 0))
+    vt, vb = m.point(5, 5), m.point(5, 0.5)
+    m.add_line(vt, vb)
+    ed._solve()
+    n0 = _drag(ed, 5, 0.5, 5, 0.05)              # slide the stub onto h
+    assert len(sk.lines) == 3                     #  h split in the joint's
+    assert vb in [l.a for l in sk.lines] + [l.b for l in sk.lines]
+    halves = [l for l in sk.lines if vb in (l.a, l.b) and l.a is not vt
+              and l.b is not vt]
+    assert len(halves) == 2 and all(vb in (l.a, l.b) for l in halves)
+    assert len(sk.constraints) == 0               #   identity, no glue
+    assert len(ed._hist) == n0 + 1                #  ONE snapshot for all
+    ed.undo_op()                                  #  undo: whole gesture
+    assert len(m.sketch.lines) == 2 and len(m.sketch.points) == 4
+
+
+def test_a_stub_dropped_on_ITS_OWN_body_hushes(ed):
+    m = ed.model
+    sk = m.sketch
+    a = m.point(-6, 6)
+    b = m.point(6, 6)
+    m.add_line(a, b)
+    ed._solve()
+    _drag(ed, 6, 6, 0, 6)                         # b onto its own midpoint
+    assert len(sk.lines) == 1                     # no split, no self-fact
+    assert len(sk.constraints) == 0
+    assert (b.x, b.y) == (0.0, 6.0)               #  the clamp rides raw
+
+
+def test_an_end_dropped_on_a_circle_glues_it(ed):
+    from tracer.core.sketch.constraints import PointOnCircle           # noqa
+    m = ed.model
+    sk = m.sketch
+    m.add_circle(m.point(0, 0), 10.0)
+    vt, vb = m.point(0, 12), m.point(0, 11.5)
+    m.add_line(vt, vb)
+    ed._solve()
+    _drag(ed, 0, 11.5, 0, 10.4)                   # the quadrant magnet
+    cs = sk.constraints
+    assert len(cs) == 1 and isinstance(cs[0], PointOnCircle)
+    assert cs[0].src == "snap" and cs[0].p is vb
+    assert len(sk.lines) == 1                     #  glue, not topology
+
+
+def test_the_X_catch_mints_the_tables_pair_and_skips_self(ed):
+    from tracer.core.sketch.constraints import PointOnLine             # noqa
+    m = ed.model
+    sk = m.sketch
+    m.add_line(m.point(-10, 0), m.point(10, 0))    # h
+    m.add_line(m.point(5, -5), m.point(5, 5))      # g: true X at (5,0)
+    s1, s2 = m.point(8, 3), m.point(8, 0.5)        # a bystander stub
+    m.add_line(s1, s2)
+    ed._solve()
+    _drag(ed, 8, 0.5, 5, 0)                       #  drop its end ON the X
+    cs = [c for c in sk.constraints if isinstance(c, PointOnLine)]
+    assert len(cs) == 2 and all(c.p is s2 and c.src == "snap" for c in cs)
+    assert len(sk.lines) == 3                     #  v2 still ONE line
+    #   the X's own lines are the carriers; v2 (s2's rider) self-hushed
+    assert not any(s2 in (c.line.a, c.line.b) for c in cs)
+
+
+def test_a_free_point_dropped_on_a_body_glues_never_cuts(ed):
+    from tracer.core.sketch.constraints import PointOnLine             # noqa
+    m = ed.model
+    sk = m.sketch
+    m.add_line(m.point(-10, 0), m.point(10, 0))
+    fp = m.point(3, 4)
+    ed._solve()
+    _drag(ed, 3, 4, 3, 0.3)                       # free point, off-midpoint
+    assert len(sk.lines) == 1                     #  NO split for a free pt
+    cs = [c for c in sk.constraints if isinstance(c, PointOnLine)]
+    assert len(cs) == 1 and cs[0].p is fp and cs[0].src == "snap"
