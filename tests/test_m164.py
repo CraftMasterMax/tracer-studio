@@ -385,7 +385,8 @@ def test_m119_summary_contract_untouched(qapp):
 # the DoF chip that selects what the solve is talking about.  Design:
 # fleet specs/m164_rung2_hover_design.md.
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, Qt              # noqa: E402
+from PySide6.QtCore import (QCoreApplication, QEvent,               # noqa: E402
+                            QPoint, QPointF, Qt)
 from PySide6.QtGui import QColor, QPainter, QPixmap                  # noqa: E402
 from PySide6.QtTest import QTest                                     # noqa: E402
 
@@ -831,6 +832,19 @@ import json                                        # noqa: E402
 from PySide6.QtWidgets import QDialogButtonBox, QLabel    # noqa: E402
 
 
+def _reap(qapp):
+    """OFFSCREEN GC LAW (CI Linux run 40792077905 SIGBUS + local bisect):
+    closing a CmdPanel deleteLater's it; if the panel's wrapper/parent GCs
+    at test end BEFORE that DeferredDelete lands, the NEXT test's
+    QTest.qWaitForWindowExposed dies (probes v1-v7: leaving the panel open
+    survives, closing WITHOUT reaping poisons - the corpse is the crime).
+    So: process the queue NOW, while every reference is still alive."""
+    for _ in range(4):
+        qapp.processEvents()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    qapp.processEvents()
+
+
 def _dup_on(win, qapp2):
     """Kernel _dup_h in UI clothes: one bare line + TWO identical user
     Horizontals - redundant, two honest fixes, twins that print the SAME
@@ -933,7 +947,7 @@ def test_combobox_choice_ghosts_the_candidate(mkcanvas, qapp2, monkeypatch):
     assert cv._last_result is res_before         # zero solve
     monkeypatch.undo()
     p.btn_abort.click()
-    qapp2.processEvents()
+    _reap(qapp2)                                 # GC law: see _reap's doc
     assert cv._hover_c is None                   # abort buries the ghost
     assert json.dumps(model_to_dict(m), sort_keys=True) == before
 
@@ -957,7 +971,7 @@ def test_ghost_ring_paints_on_the_candidate(mkcanvas, qapp2):
               if _hover_family(img.pixelColor(cx + dx, ty + dy)))
     assert ink >= 2                              # the rung-2 token, combo-
     p.btn_abort.click()                          #  driven
-    qapp2.processEvents()
+    _reap(qapp2)                                 # GC law: reap while alive
 
 
 def test_ghost_escalates_red_on_conflict(mkcanvas, qapp2):
@@ -989,7 +1003,7 @@ def test_ghost_escalates_red_on_conflict(mkcanvas, qapp2):
               if _error_family(img.pixelColor(cx + dx, ty + dy)))
     assert red >= 2
     p.btn_abort.click()
-    qapp2.processEvents()
+    _reap(qapp2)                                 # GC law: reap while alive
     assert cv._hover_c is None
 
 
