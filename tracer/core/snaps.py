@@ -276,7 +276,17 @@ def candidates(sk, x: float, y: float, tol: float, extra=(), skip=None):
     for px, py, kind in extra:
         out.append(Snap(px, py, kind))
     if skip is not None:
-        out = [s for s in out if s.pt is not skip]
+        # M167 R1: skip may be ONE Point (today's drag law, byte-identical
+        # through this) or a crowd of points AND entities — a dragged body
+        # must never magnetize onto ITSELF (its own onentity/derived snaps
+        # carry pt=None but name the entity in .entity/.entity2).
+        ids = ({id(o) for o in skip}
+               if isinstance(skip, (list, tuple, set, frozenset))
+               else {id(skip)})
+        out = [s for s in out
+               if id(s.pt) not in ids
+               and id(getattr(s, "entity", None)) not in ids
+               and id(getattr(s, "entity2", None)) not in ids]
     for s in out:
         s.dist = math.hypot(s.x - x, s.y - y)
     hits = [s for s in out if s.dist <= tol]

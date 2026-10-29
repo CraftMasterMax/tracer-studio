@@ -125,6 +125,8 @@ class SketchCanvas(QWidget):
         self._num_buf = ""                   # M90: type-in digits so far
         self._pending_stage = 0              # M90: rect width then height
         self._drag_pt: Point | None = None
+        self._drag: tuple | None = None        # M167 R1: body drag
+        #   (pts, starts, anchor_world) — the delta law's record
         self._pan_from: QPointF | None = None
         self._line_start: Point | None = None
         self._rect_corner: np.ndarray | None = None
@@ -203,7 +205,8 @@ class SketchCanvas(QWidget):
         self._num_buf = ""                      # a history jump
         self._sel = []
         self._drag_pt = None
-        self._line_start = None
+        self._drag = None                      # M167 R1: grabs don't
+        self._line_start = None                #   survive a history jump
         self._rect_corner = None
         self._arc_pts = []
         self._slot: list = []                  # slot tool: c1, c2, width
@@ -421,6 +424,34 @@ class SketchCanvas(QWidget):
         return math.hypot(q.x() - proj[0], q.y() - proj[1])
 
     # ---- mouse -----------------------------------------------------------
+
+    def _dof_of(self, p: Point) -> int:
+        """M167 R1: local mobility from the LAST solve's witness
+        (M119 point_dof). No witness = fail OPEN to the old law."""
+        res = getattr(self, "_last_result", None)
+        dof = getattr(res, "point_dof", {}).get(p.id)
+        return 2 if dof is None else int(dof)
+
+    def _grab_points(self, ent) -> list:
+        """M167 R1: the points a body drag translates. A line carries
+        both ends; an arc all three defining points (SAME delta each →
+        a rigid slide, chord & sagitta invariant); circles and ellipses
+        their centre — radius/axes are scalars, so the SHAPE rides the
+        move. Deduped by id: chain corners are one shared Point."""
+        if isinstance(ent, Point):
+            return [ent]
+        if isinstance(ent, Line):
+            pool = (ent.a, ent.b)
+        elif isinstance(ent, Arc):
+            pool = (ent.a, ent.b, ent.m)
+        else:                                   # circle / ellipse
+            pool = (ent.c,)
+        seen, out = set(), []
+        for p in pool:
+            if id(p) not in seen:
+                seen.add(id(p))
+                out.append(p)
+        return out
     def mousePressEvent(self, ev: QMouseEvent):
         self._no_snap = bool(ev.modifiers() & Qt.AltModifier)
         if (ev.button() == Qt.LeftButton
@@ -454,8 +485,20 @@ class SketchCanvas(QWidget):
                     self._sel.append(hit[1])
             else:
                 self._sel = [hit[1]]
-                if hit[0] == "point":
-                    self._drag_pt = hit[1]
+                movable = [p for p in self._grab_points(hit[1])
+                           if self._dof_of(p) > 0]      # M167 R1: locked
+                if hit[0] == "point":                   #  geometry holds
+                    if movable:                         #  STILL — the grab
+                        self._drag_pt = hit[1]          #  refuses it
+                        self._drag_pushed = False
+                elif movable:
+                    # M167 R1: a BODY is grabbable too. Selection law
+                    # unchanged today (stranger re-selects alone); the
+                    # drag record is (pts, starts, anchor, ent) — moves
+                    # are DELTAS, so the grab offset survives (no jump).
+                    self._drag = (movable,
+                                  np.array([[p.x, p.y] for p in movable]),
+                                  self._world(q), hit[1])
                     self._drag_pushed = False
             self.update()
             return
@@ -661,6 +704,29 @@ class SketchCanvas(QWidget):
                 self._solve(pins=[self._drag_pt])
                 self._snap_hint = t
                 self.update()
+            elif self._drag is not None:
+                if not self._drag_pushed:
+                    self._push_hist()
+                    self._drag_pushed = True
+                pts, starts, anchor, ent = self._drag
+                delta = self._world(q) - anchor
+                hint = None
+                for s0 in starts:               # ONE magnet: the first
+                    w = s0 + delta              #  dragged member to
+                    t = self._snap_target(self.w2s(w[0], w[1]),  #  arrive
+                                          skip=pts + [ent])      #  shifts
+                    if t is not None:                            #  the
+                        tv = (np.array([t.x, t.y])              #  WHOLE
+                              if isinstance(t, Point)
+                              else np.asarray(t, float))         #  crowd
+                        delta = delta + (tv - w)                 #  (Fusion)
+                        hint = t
+                        break
+                for p, s0 in zip(pts, starts):
+                    p.x, p.y = float(s0[0] + delta[0]), float(s0[1] + delta[1])
+                self._solve(pins=pts)
+                self._snap_hint = hint
+                self.update()
             elif self._band is not None:
                 self._band[1] = q
                 self.update()
@@ -695,8 +761,9 @@ class SketchCanvas(QWidget):
         if ev.button() in (Qt.MiddleButton, Qt.RightButton):
             self._pan_from = None
             return
+        self._drag_pt = None                    # M167 R1: a release ends
+        self._drag = None                       #  ANY grab, tool or no tool
         if self._tool == "select":
-            self._drag_pt = None
             if self._band is not None:
                 a, b = self._band
                 self._band = None
