@@ -31,8 +31,9 @@ jobs:
                                    #  instead of eating the 360-min budget
         env:
           QT_QPA_PLATFORM: offscreen
-        # -u + -q + per-test dots stream progress; --timeout (pytest-timeout
-        # is in the dev extra) makes a STALLED TEST name itself. The step
-        # timeout makes everything else (collection / exit-time teardown)
-        # die loudly on the runner.
-        run: python -u -m pytest -q --timeout=300
+        # -v names every test as it COMPLETES: when a step dies on the
+        # timeout, the last printed line pins the stall to ONE test.
+        # --timeout makes a stalled TEST name itself; the step timeout
+        # kills whatever no per-test timer can reach (native loops:
+        # a modal exec() on an offscreen runner never returns).
+        run: python -u -m pytest -v --timeout=300
