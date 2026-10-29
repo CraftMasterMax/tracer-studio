@@ -317,3 +317,145 @@ def test_one_undo_restores_the_whole_crowd_byte_exact(ed):
     #  model, not on the pre-jump references — both members byte-exact.
     pos = sorted((p.x, p.y) for p, _ in ed._all_points())
     assert pos == [(10.0, 10.0), (30.0, -20.0)]
+
+
+# ---- Rung 3: the hand becomes a PHOTOCOPY (Ctrl+drag duplicate) ------------
+
+def test_ctrl_drag_photocopies_the_point_selection(ed):
+    sk = ed.model.sketch
+    p1 = sk.point(10, 10); p2 = sk.point(30, 10); s = sk.point(60, -40)
+    ed._solve()
+    _click(ed, 10, 10)
+    _click(ed, 30, 10, Qt.ControlModifier)          # selection {p1, p2}
+    _press(ed, 10, 10, Qt.ControlModifier)          # Ctrl on a MEMBER…
+    _move(ed, 22.5, 22.5)                           # …motion = photocopy
+    _release(ed, 22.5, 22.5)
+    assert (p1.x, p1.y) == (10.0, 10.0)             # the ORIGINALS never
+    assert (p2.x, p2.y) == (30.0, 10.0)             #  move: byte-exact
+    assert (s.x, s.y) == (60.0, -40.0)
+    ghosts = [p for p in sk.points if p not in (p1, p2, s)]
+    assert len(ghosts) == 2                         # the crowd was copied
+    got = sorted((round(g.x, 9), round(g.y, 9)) for g in ghosts)
+    assert got == [(22.5, 22.5), (42.5, 22.5)]      # ghost delta (12.5,12.5)
+    assert set(ed._sel) == set(ghosts)              # release picks the copies
+
+
+def test_a_ctrl_click_without_motion_still_deselects(ed):
+    sk = ed.model.sketch
+    p = sk.point(20, 40); q = sk.point(40, 40)
+    ed._solve()
+    _click(ed, 20, 40)                              # select p
+    _press(ed, 20, 40, Qt.ControlModifier)          # Ctrl on it: the toggle
+    assert ed._sel == [p]                           #  DEFERS to release…
+    _release(ed, 20, 40)
+    assert ed._sel == []                            #  …where it lands
+    _click(ed, 20, 40)
+    _click(ed, 40, 40, Qt.ControlModifier)          # selection {p, q}
+    _click(ed, 20, 40, Qt.ControlModifier)          # ctrl-click a member
+    assert ed._sel == [q]                           #  drops just it (today)
+
+
+def test_a_photocopied_line_lands_rigid_and_free(ed):
+    sk = ed.model.sketch
+    a = sk.point(20, 10); b = sk.point(50, 10)
+    l = ed.model.add_line(a, b)
+    ed.model.toggle(Fixed, (a,))                    # a constraint EXISTS…
+    ed._solve()
+    _click(ed, 35, 10)
+    _press(ed, 35, 10, Qt.ControlModifier)
+    _move(ed, 45, 20)                               # delta (10, 10)
+    _release(ed, 45, 20)
+    assert len(sk.lines) == 2
+    g = sk.lines[1]
+    assert (g.a.x, g.a.y) == pytest.approx((30.0, 20.0), abs=1e-9)
+    assert (g.b.x, g.b.y) == pytest.approx((60.0, 20.0), abs=1e-9)
+    assert math.dist((g.a.x, g.a.y), (g.b.x, g.b.y)) == 30.0   # EXACT rigid
+    assert (a.x, a.y, b.x, b.y) == (20.0, 10.0, 50.0, 10.0)    # source still
+    assert len(sk.constraints) == 1   # …but copies arrive FREE (rung-3 law)
+
+
+def test_the_photocopy_keeps_corner_identity(ed):
+    sk = ed.model.sketch
+    a = sk.point(10, 10); b = sk.point(40, 10); c = sk.point(40, 35)
+    l1 = ed.model.add_line(a, b); l2 = ed.model.add_line(b, c)
+    ed._solve()
+    _click(ed, 25, 10)
+    _click(ed, 40, 22.5, Qt.ControlModifier)        # the CHAIN {l1, l2}
+    _press(ed, 25, 10, Qt.ControlModifier)
+    _move(ed, 35, 20)                               # delta (10, 10)
+    _release(ed, 35, 20)
+    g1, g2 = sk.lines[2], sk.lines[3]
+    assert g1.b is g2.a                             # one shared NEW corner:
+    assert (g1.b.x, g1.b.y) == pytest.approx((50.0, 20.0), abs=1e-9)
+    assert (a.x, a.y, b.x, b.y, c.x, c.y) == \
+        (10.0, 10.0, 40.0, 10.0, 40.0, 35.0)        # negatives untouched
+
+
+def test_the_ghost_never_magnetizes_onto_its_own_negative(ed):
+    sk = ed.model.sketch
+    a = sk.point(20, 10); b = sk.point(50, 10)
+    ed.model.add_line(a, b)
+    ed._solve()
+    _click(ed, 35, 10)
+    _press(ed, 35, 10, Qt.ControlModifier)
+    _move(ed, 35.25, 10.25)                         # ONE pixel (0.25 mm):
+    g = sk.lines[1]                                 #  without the source-
+    assert (g.a.x, g.a.y) == pytest.approx((20.25, 10.25), abs=1e-9)  # skip
+    assert ed._snap_hint is None                    #  law the ghost would
+    _release(ed, 35.25, 10.25)                      #  never leave home
+    assert (a.x, a.y) == (20.0, 10.0)
+
+
+def test_the_ghost_rides_a_third_bodys_magnet(ed):
+    sk = ed.model.sketch
+    a = sk.point(20, 10); b = sk.point(50, 10)
+    ed.model.add_line(a, b)
+    e = sk.point(70, 31)                            # a THIRD body's endpoint
+    ed._solve()
+    _click(ed, 35, 10)
+    _press(ed, 35, 10, Qt.ControlModifier)
+    _move(ed, 54.5, 30.75)                          # ghost b raw: 0.56 short
+    assert ed._snap_obj is not None
+    assert ed._snap_obj.kind == "endpoint"          #  — INSIDE tolerance
+    _release(ed, 54.5, 30.75)
+    g = sk.lines[1]
+    assert math.dist((g.b.x, g.b.y), (70.0, 31.0)) < 1e-12   # EXACT catch
+    assert (g.a.x, g.a.y) == pytest.approx((40.0, 31.0), abs=1e-9)
+    assert (b.x, b.y) == (50.0, 10.0)               # the source holds still
+
+
+def test_one_undo_eats_the_photocopy_whole(ed):
+    sk = ed.model.sketch
+    a = sk.point(20, 10); b = sk.point(50, 10)
+    l = ed.model.add_line(a, b)
+    ed._solve()
+    n_pts, n_lines = len(sk.points), len(sk.lines)
+    n_hist = len(ed._hist)
+    _click(ed, 35, 10)
+    _press(ed, 35, 10, Qt.ControlModifier)
+    _move(ed, 45, 20)
+    assert len(ed._hist) == n_hist + 1              # ONE push, at copy-arm
+    _release(ed, 45, 20)
+    assert ed.undo_op()
+    sk2 = ed.model.sketch                           # _restore SWAPS it:
+    assert len(sk2.lines) == n_lines                #  assert on the model
+    assert len(sk2.points) == n_pts                 #   as it stands after
+    pos = sorted((p.x, p.y) for p, _ in ed._all_points())
+    assert pos == [(20.0, 10.0), (50.0, 10.0)]      # byte-exact, ghosts gone
+
+
+def test_ctrl_press_on_a_stranger_adds_immediately_and_copies_nothing(ed):
+    sk = ed.model.sketch
+    a = sk.point(10, 10); b = sk.point(40, 10)
+    l1 = ed.model.add_line(a, b)
+    cc = sk.point(10, 25); d = sk.point(40, 25)
+    l2 = ed.model.add_line(cc, d)
+    ed._solve()
+    _click(ed, 25, 10)                              # select l1
+    _press(ed, 25, 25, Qt.ControlModifier)          # Ctrl on the STRANGER:
+    assert ed._sel == [l1, l2]                      #  append AT PRESS (the
+    assert ed._pend_toggle is None                  #   rung-2 law stands)
+    _move(ed, 30, 30)                               # motion WITHOUT a copy
+    _release(ed, 30, 30)
+    assert len(sk.lines) == 2                       # nothing was photocopied
+    assert (a.x, a.y, cc.x, cc.y) == (10.0, 10.0, 10.0, 25.0)  # all byte-still

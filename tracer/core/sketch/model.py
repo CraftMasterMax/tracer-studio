@@ -168,6 +168,39 @@ class SketchModel:
     def add_circle(self, center: Point, radius: float) -> Circle:
         return self.sketch.circle(center, radius)
 
+    def copy_geometry(self, ents: list) -> list:
+        """M167 R3: the PHOTOCOPY for the Ctrl+drag copy law. Every
+        DISTINCT point among the given entities is minted ONCE (a shared
+        chain corner copies into a shared corner: identity survives), the
+        entities are rebuilt with the same scalars and construction flags.
+        Constraints are NEVER copied — Fusion's copies arrive free: the
+        hand lands them, the next verb is the user's constraint."""
+        sk = self.sketch
+        pmap: dict = {}
+
+        def cp(p: Point) -> Point:
+            q = pmap.get(id(p))
+            if q is None:
+                q = sk.point(p.x, p.y)
+                pmap[id(p)] = q
+            return q
+
+        made: list = []
+        for e in ents:
+            if isinstance(e, Point):
+                made.append(cp(e))
+            elif isinstance(e, Line):
+                ln = Line(cp(e.a), cp(e.b), e.construction)
+                sk.lines.append(ln)
+                made.append(ln)
+            elif isinstance(e, Circle):
+                made.append(sk.circle(cp(e.c), e.r, e.construction))
+            elif isinstance(e, Arc):
+                made.append(sk.arc(cp(e.a), cp(e.m), cp(e.b), e.construction))
+            elif isinstance(e, Ellipse):
+                made.append(sk.ellipse(cp(e.c), e.rx, e.ry, e.construction))
+        return made
+
     def add_slot(self, p1: Point, p2: Point, r: float) -> list:
         """Centerline slot: two tangent lines closing two 180° caps,
         stitched through shared points and locked by Radius×2 + Tangent×4

@@ -127,6 +127,9 @@ class SketchCanvas(QWidget):
         self._drag_pt: Point | None = None
         self._drag: tuple | None = None        # M167 R1: body drag
         #   (pts, starts, anchor_world) — the delta law's record
+        self._pend_toggle = None               # M167 R3: Ctrl-press on a
+        #   SELECTED member defers the toggle: release = deselect (today),
+        #   motion = photocopy the selection instead (the copy-drag law).
         self._pan_from: QPointF | None = None
         self._line_start: Point | None = None
         self._rect_corner: np.ndarray | None = None
@@ -206,6 +209,7 @@ class SketchCanvas(QWidget):
         self._sel = []
         self._drag_pt = None
         self._drag = None                      # M167 R1: grabs don't
+        self._pend_toggle = None               # M167 R3: Ctrl-presses die
         self._line_start = None                #   survive a history jump
         self._rect_corner = None
         self._arc_pts = []
@@ -452,6 +456,38 @@ class SketchCanvas(QWidget):
                 seen.add(id(p))
                 out.append(p)
         return out
+
+    def _commit_copy_drag(self):
+        """M167 R3: a Ctrl-press on a selected member MOVED — the deferred
+        deselect dies and the selection is PHOTO COPIED under the hand.
+        Ghosts are minted at the originals' spots, then ride rung 1's delta
+        law as an ordinary crowd grab; the ORIGINALS never enter the drag
+        set. A ghost never magnetizes onto ITS OWN NEGATIVE: the skip crowd
+        covers ghost + source points AND entities — without the source
+        points a 1-px first move snaps the ghost back onto its source
+        endpoint (delta' = -delta: the copy could never leave); without the
+        source entities it clamps to the stale curve (rung 1's onentity
+        hazard, one level deeper). Copies arrive FREE (no constraints,
+        Fusion law) and BORN FREE: the dof-0 refusal does not filter a
+        ghost — nothing resists a photocopy."""
+        src = list(self._sel)
+        _, anchor = self._pend_toggle            # the world at PRESS: the
+        self._pend_toggle = None                 #  grab offset dates from there
+        self._push_hist()
+        copies = self.model.copy_geometry(src)
+        pts, seen = [], set()
+        for c in copies:
+            for p in self._grab_points(c):
+                if id(p) not in seen:
+                    seen.add(id(p))
+                    pts.append(p)
+        skip = copies + src
+        for e in src:
+            skip += self._grab_points(e)        # the negative's POINTS too
+        self._drag = (pts, np.array([[p.x, p.y] for p in pts]),
+                      anchor, skip)
+        self._drag_pushed = True                # history was made at arm
+        self._sel = copies                      # the copy is the pick now
     def mousePressEvent(self, ev: QMouseEvent):
         self._no_snap = bool(ev.modifiers() & Qt.AltModifier)
         if (ev.button() == Qt.LeftButton
@@ -480,9 +516,12 @@ class SketchCanvas(QWidget):
                 self._band = [QPointF(q), QPointF(q)]   # drag = marquee
             elif ev.modifiers() & Qt.ControlModifier:
                 if hit[1] in self._sel:
-                    self._sel.remove(hit[1])
+                    # M167 R3: Ctrl on a SELECTED member is a CLICK waiting
+                    # to happen — the deselect defers to release; motion
+                    # kills it and turns the hand into a photocopy instead.
+                    self._pend_toggle = (hit[1], self._world(q))
                 else:
-                    self._sel.append(hit[1])
+                    self._sel.append(hit[1])   # a stranger joins at once
             else:
                 e = hit[1]
                 # M167 R2: THE SELECTION IS ONE HANDLE. Grabbing a member
@@ -699,8 +738,10 @@ class SketchCanvas(QWidget):
             self.update()
             return
         if self._tool == "select":
-            if self._drag_pt is not None:
-                if not self._drag_pushed:
+            if self._pend_toggle is not None:      # M167 R3: motion commits
+                self._commit_copy_drag()           #  the Ctrl-press as a
+            if self._drag_pt is not None:          #  COPY; this same move
+                if not self._drag_pushed:          #  then rides the crowd
                     self._push_hist()
                     self._drag_pushed = True
                 # dragged points CLICK onto origins, grid and other
@@ -775,7 +816,13 @@ class SketchCanvas(QWidget):
         self._drag_pt = None                    # M167 R1: a release ends
         self._drag = None                       #  ANY grab, tool or no tool
         if self._tool == "select":
-            if self._band is not None:
+            if self._pend_toggle is not None:   # M167 R3: the Ctrl-press on
+                e, _ = self._pend_toggle        #  a member never MOVED —
+                self._pend_toggle = None        #  the deferred deselect
+                if e in self._sel:              #  lands: today's law at
+                    self._sel.remove(e)         #  the byte level
+                self.update()
+            elif self._band is not None:
                 a, b = self._band
                 self._band = None
                 if (abs(a.x() - b.x()) > 3
