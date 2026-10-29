@@ -34,7 +34,7 @@ from tracer.core.sketch.constraints import (Distance, Equal, Horizontal,   # noq
                                             Parallel)
 from tracer.core.sketch.entities import Circle, Ellipse, Line             # noqa: E402
 from tracer.core.sketch.model import SketchModel                           # noqa: E402
-from tracer.core.sketch.trim import split_entity                           # noqa: E402
+from tracer.core.sketch.trim import split_entity, trim_piece   # noqa: E402
 from tracer.core.snaps import _circumference                               # noqa: E402
 
 
@@ -166,3 +166,115 @@ def test_circles_and_ellipses_refuse_the_cut_v1():
             split_entity(m, ent, *xy)                # closed curves refuse…
     assert len(m.sketch.circles) == n_l              #  …and leave everything
     assert len(m.sketch.ellipses) == n_c             #   exactly as it was
+
+
+# ---- Rung 2: piece deletion (the trim verb) --------------------------------
+
+def test_trimming_an_X_deletes_just_the_clicked_piece():
+    m = SketchModel()
+    a = m.point(0, 0); b = m.point(40, 40)
+    c = m.point(0, 40); d = m.point(40, 0)
+    l1 = m.add_line(a, b)                             # X crossing at (20, 20)
+    l2 = m.add_line(c, d)
+    victim = trim_piece(m, l1, 30, 30)                # the (20..40) spoke…
+    assert (victim.a.x, victim.a.y) == pytest.approx((20.0, 20.0), abs=1e-9)
+    assert (victim.b.x, victim.b.y) == pytest.approx((40.0, 40.0), abs=1e-9)
+    kept = m.sketch.lines
+    assert len(kept) == 2                             # spoke half + l2
+    survivor = next(l for l in kept if l is not l2)
+    assert (survivor.a.x, survivor.a.y) == (0.0, 0.0)
+    assert (survivor.b.x, survivor.b.y) == pytest.approx((20.0, 20.0),
+                                                         abs=1e-9)
+    assert (c.x, c.y, d.x, d.y) == (0.0, 40.0, 40.0, 0.0)   # neighbour byte
+
+
+def test_a_lonely_line_is_one_piece_and_goes_whole():
+    m = SketchModel()
+    u = m.point(0, 0); v = m.point(40, 0)
+    l = m.add_line(u, v)
+    assert trim_piece(m, l, 20, 0) is l               # Fusion: trim on a
+    assert m.sketch.lines == []                       #  lonely line erases it
+
+
+def test_the_middle_piece_falls_and_the_facts_ride_the_survivors():
+    m = SketchModel()
+    h = m.add_line(m.point(0, 0), m.point(60, 0))
+    m.add_line(m.point(20, -10), m.point(20, 10))
+    m.add_line(m.point(40, -10), m.point(40, 10))
+    m.constrain(Horizontal(h), src="test")
+    assert trim_piece(m, h, 30, 0) is not None        # cut twice, middle out
+    hor = sorted((round(l.a.x, 9), round(l.b.x, 9)) for l in m.sketch.lines
+                 if abs(l.a.y) < 1e-9 and abs(l.b.y) < 1e-9)
+    assert hor == [(0.0, 20.0), (40.0, 60.0)]         # the two outer pieces
+    hs = [c for c in m.sketch.constraints if isinstance(c, Horizontal)]
+    assert len(hs) == 2                               # SHA facts survived…
+    assert all(getattr(c, "src", "") == "test" for c in hs)   # …structurally
+
+
+def test_a_click_on_a_cut_refuses_before_any_split():
+    m = SketchModel()
+    h = m.add_line(m.point(0, 0), m.point(60, 0))
+    m.add_line(m.point(20, -10), m.point(20, 10))
+    m.add_line(m.point(40, -10), m.point(40, 10))
+    before = sorted((l.a.x, l.a.y, l.b.x, l.b.y) for l in m.sketch.lines)
+    assert trim_piece(m, h, 20, 0) is None            # ambiguous boundary:
+    after = sorted((l.a.x, l.a.y, l.b.x, l.b.y) for l in m.sketch.lines)
+    assert before == after                            #  nothing deleted…
+    assert len(m.sketch.lines) == 3                   #  and NOTHING SPLIT
+
+
+def test_a_T_junction_cut_reuses_the_stems_own_point():
+    m = SketchModel()
+    hh = m.add_line(m.point(0, 0), m.point(60, 0))
+    stem_pt = m.point(20, 0)                          # the stem ENDS ON hh:
+    stem = m.add_line(stem_pt, m.point(20, 20))       #  a classic T
+    trim_piece(m, hh, 40, 0)                          # trim (20..60) away
+    left = next(l for l in m.sketch.lines if l not in (stem,))
+    assert (left.a.x, left.a.y) == (0.0, 0.0)
+    assert left.b is stem_pt                          # the seam IS the stem's
+    #                                               end: identity, not contact
+
+
+def test_an_arc_piece_between_crossing_and_end_disappears():
+    m = SketchModel()
+    A = m.point(-10, 0); M = m.point(0, 10); B = m.point(10, 0)
+    ar = m.sketch.arc(A, M, B)                        # upper semicircle r 10
+    m.add_line(m.point(5, -5), m.point(5, 9))         # crosses it at (5, 8.66)
+    trim_piece(m, ar, 8, 6)                           # the (cross..B) piece
+    assert len(m.sketch.arcs) == 1
+    kept = m.sketch.arcs[0]
+    assert (kept.a.x, kept.a.y) == (-10.0, 0.0)       # the far piece survives…
+    assert math.dist((kept.b.x, kept.b.y), (5.0, math.sqrt(75))) < 1e-9
+    #                                            …still EXACTLY on the circle
+    assert math.hypot(kept.b.x, kept.b.y) == pytest.approx(10.0, abs=1e-9)
+
+
+def test_a_circle_cuts_a_line_into_three_and_the_cap_goes():
+    m = SketchModel()
+    ln = m.add_line(m.point(-20, 0), m.point(20, 0))
+    m.sketch.circle(m.point(0, 0), 10.0)              # crossings at ±10
+    trim_piece(m, ln, 15, 0)                          # the right cap is under
+    segs = sorted((round(l.a.x, 9), round(l.b.x, 9)) for l in m.sketch.lines)
+    assert segs == [(-20.0, -10.0), (-10.0, 10.0)]    #  the click: two left
+    assert len(m.sketch.circles) == 1                 # the cutter survives
+
+
+def test_trimming_opens_a_closed_profile_honestly():
+    m = SketchModel()
+    m.add_rect(m.point(0, 0), m.point(30, 20))
+    m.add_line(m.point(15, 20), m.point(15, 30))      # a T-stem on the top
+    top = next(e for e in m.sketch.lines
+               if abs(e.a.y - 20) < 1e-9 and abs(e.b.y - 20) < 1e-9)
+    loops0, _ = m.to_loops()
+    assert len(loops0) == 1
+    trim_piece(m, top, 25, 20)                        # (stem..corner) piece
+    loops1, warns1 = m.to_loops()
+    assert loops1 == [] and warns1                    # the profile OPENED:
+    #                                               to_loops says so, out loud
+
+
+def test_a_lonely_circle_is_one_piece_too():
+    m = SketchModel()
+    c = m.sketch.circle(m.point(0, 0), 5.0)
+    assert trim_piece(m, c, 5, 0) is c                # un-splittable means
+    assert m.sketch.circles == []                     #  one whole piece

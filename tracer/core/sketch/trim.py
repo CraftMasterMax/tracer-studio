@@ -34,7 +34,7 @@ from __future__ import annotations
 import dataclasses
 import math
 
-from ..snaps import _arc_span, _circumference
+from ..snaps import _arc_span, _circumference, _intersections
 from .constraints import (Angle, Collinear, Horizontal, Parallel,
                           Perpendicular, Radius, Symmetry, Vertical)
 from .entities import Arc, Line, Point
@@ -76,19 +76,22 @@ def close_corner(model, l1: Line, l2: Line) -> Point:
 
 # ---- the CUT (M168 R1) -------------------------------------------------------
 
-def split_entity(model, ent, x, y):
-    """Cut `ent` at (x, y) into (left, right) sharing ONE new seam Point —
-    identity keeps every profile closed across the seam.  Lines and arcs
-    split; circles, ellipses and points refuse (v1).  SHA-class constraint
-    facts are re-copied to BOTH halves; metric/positional facts naming the
-    eaten entity drop with it (delete_entity's consumption, fx included).
-    Raises ValueError BEFORE touching the model when the cut is illegal."""
+def split_entity(model, ent, x, y, seam=None):
+    """Cut `ent` at (x, y) into (left, right) sharing ONE seam Point —
+    identity keeps every profile closed across the seam.  `seam` (an
+    EXISTING Point at the cut, e.g. a T-junction's stem end) is REUSED —
+    two Point objects at one coordinate would silently un-join the seam.
+    Lines and arcs split; circles, ellipses and points refuse (v1).  SHA-class
+    constraint facts are re-copied to BOTH halves; metric/positional facts
+    naming the eaten entity drop with it (delete_entity's consumption, fx
+    included).  Raises ValueError BEFORE touching the model when the cut
+    is illegal."""
     sk = model.sketch
     if isinstance(ent, Line):
-        left, right = _cut_line(sk, ent, x, y)
+        left, right = _cut_line(sk, ent, x, y, seam)
         lines = True
     elif isinstance(ent, Arc):
-        left, right = _cut_arc(sk, ent, x, y)
+        left, right = _cut_arc(sk, ent, x, y, seam)
         lines = False
     else:
         raise ValueError("Only lines and arcs can be split (yet)")
@@ -105,7 +108,7 @@ def split_entity(model, ent, x, y):
     return left, right
 
 
-def _cut_line(sk, l, x, y):
+def _cut_line(sk, l, x, y, seam=None):
     ax, ay, bx, by = l.a.x, l.a.y, l.b.x, l.b.y
     L = math.hypot(bx - ax, by - ay)
     if L < 1e-9:
@@ -117,11 +120,11 @@ def _cut_line(sk, l, x, y):
         raise ValueError("The cut must lie ON the curve")
     if min(along, L - along) < SPLIT_END_TOL * max(1.0, L):
         raise ValueError("Split the middle of a segment, not an end")
-    S = sk.point(x, y)
+    S = seam if seam is not None else sk.point(x, y)
     return (Line(l.a, S, l.construction), Line(S, l.b, l.construction))
 
 
-def _cut_arc(sk, ar, x, y):
+def _cut_arc(sk, ar, x, y, seam=None):
     geo = _circumference(ar.a, ar.m, ar.b)
     if geo is None:
         raise ValueError("This arc has no circle to split on")
@@ -138,7 +141,7 @@ def _cut_arc(sk, ar, x, y):
     fS = frac(x, y)
     if min(fS, 1 - fS) * abs(sw) * r < SPLIT_END_TOL * max(1.0, r):
         raise ValueError("Split the middle of an arc, not an end")
-    S = sk.point(x, y)
+    S = seam if seam is not None else sk.point(x, y)
 
     def at(f):                             # arc point at span-fraction f
         a = a0 + sw * f
@@ -146,6 +149,102 @@ def _cut_arc(sk, ar, x, y):
 
     return (Arc(ar.a, at(fS / 2), S, ar.construction),
             Arc(S, at((1 + fS) / 2), ar.b, ar.construction))
+
+
+def trim_piece(model, ent, x, y):
+    """THE TRIM VERB: cut `ent` at every interior crossing and delete the
+    PIECE under (x, y).  An UNCROSSED entity is one piece and goes whole
+    (Fusion: Trim on a lonely line erases it); circles and ellipses are
+    un-splittable, so they are one piece too.  A click exactly ON a cut is
+    ambiguous - nothing is deleted and None comes back; the refusal lands
+    BEFORE any mutation (split only after the piece question is settled).
+    Only the clicked entity is cut - its neighbours keep their shape (v1).
+    Cuts REUSE an existing Point sitting at the crossing (a T-junction's
+    stem end): two Points at one coordinate would silently un-join it.
+    Returns the deleted entity, or None."""
+    if isinstance(ent, Point):
+        return None
+    sk = model.sketch
+    if not isinstance(ent, (Line, Arc)):            # circle / ellipse: one
+        model.delete_entity(ent)                    #  piece - gone whole
+        return ent
+    span = _length_of(ent)
+    t0 = min(max(_frac(ent, x, y), 0.0), 1.0)       # the click's parameter
+    sn: list = []
+    _intersections(sk, sn)
+    cuts: list = []
+    for s in sn:
+        if s.entity is ent or s.entity2 is ent:
+            t = _frac(ent, s.x, s.y)
+            if _cut_lo(span) < t < 1 - _cut_lo(span):      # interior only:
+                cuts.append((t, s))                        #  ends are EDGES
+    cuts.sort(key=lambda ts: ts[0])
+    merged: list = []
+    for t, s in cuts:                               # tangent double-roots
+        if merged and abs(t - merged[-1][0]) * span < 1e-7:
+            continue
+        merged.append((t, s))
+    bounds = [0.0] + [t for t, _ in merged] + [1.0]
+    for b in bounds:                                # ON a cut? refuse first -
+        if abs(t0 - b) * span < 1e-7:               #  the model never learns
+            return None                             #  the cut was considered
+    pieces = []
+    cur = ent
+    for t, s in merged:                             # sorted ASC: every later
+        left, cur = split_entity(model, cur, s.x, s.y,   #  cut lives in the
+                                 seam=_point_on(sk, s.x, s.y))  # right piece
+        pieces.append(left)
+    pieces.append(cur)
+    for i in range(len(pieces)):
+        if bounds[i] <= t0 <= bounds[i + 1]:
+            victim = pieces[i]
+            break
+    model.delete_entity(victim)                     # metric facts die with
+    return victim                                   #  it; the survivors keep
+    #                                                the SHA copies R1 mints
+
+
+def _length_of(ent) -> float:
+    if isinstance(ent, Line):
+        return max(math.dist((ent.a.x, ent.a.y), (ent.b.x, ent.b.y)), 1e-9)
+    geo = _circumference(ent.a, ent.m, ent.b)
+    if not geo:
+        return 1e-9
+    cx, cy, r = geo
+    return max(abs(_arc_span(ent.a, ent.m, ent.b, cx, cy)[1]) * r, 1e-9)
+
+
+def _cut_lo(span: float) -> float:
+    """Endpoint guard as a parameter fraction: a crossing nearer to an END
+    than the split's own refusal keeps the end as a piece BOUNDARY."""
+    return SPLIT_END_TOL * max(1.0, span) / span
+
+
+def _frac(ent, x, y) -> float:
+    """The entity-parameter of (x, y): fraction along a line, angular
+    fraction along an arc's span (may fall outside [0, 1])."""
+    if isinstance(ent, Line):
+        ax, ay, bx, by = ent.a.x, ent.a.y, ent.b.x, ent.b.y
+        L2 = (bx - ax) ** 2 + (by - ay) ** 2
+        return ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / L2 if \
+            L2 > 1e-18 else 0.0
+    geo = _circumference(ent.a, ent.m, ent.b)
+    if not geo:
+        return 0.0
+    cx, cy, _r = geo
+    a0, sw = _arc_span(ent.a, ent.m, ent.b, cx, cy)
+    da = math.atan2(y - cy, x - cx) - a0
+    da = da % (2 * math.pi) if sw > 0 else -((-da) % (2 * math.pi))
+    return da / sw
+
+
+def _point_on(sk, x, y):
+    """An existing Point sitting at (x, y) within 1e-7, else None - the
+    identity a crossing-cut must REUSE (T-junction stems end ON a curve)."""
+    for p in sk.points:
+        if math.hypot(p.x - x, p.y - y) < 1e-7:
+            return p
+    return None
 
 
 def _rehome(c, ent, side):
