@@ -28,4 +28,6 @@ jobs:
       - name: Test
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest -q
+        # --timeout (pytest-timeout is in the dev extra): a stall must
+        # NAME ITSELF in the log, not eat the runner budget silently.
+        run: pytest -q --timeout=300
