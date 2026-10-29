@@ -13,7 +13,7 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtWidgets import QApplication                              # noqa: E402
 
-from conftest import script_cmd                                         # noqa: E402
+from conftest import script_panel                                         # noqa: E402
 from tracer.core.appearance import MATERIALS, appearance                # noqa: E402
 from tracer.core.document import Document, PrimitiveFeature             # noqa: E402
 from tracer.core.geometry import Solid                                  # noqa: E402
@@ -146,7 +146,7 @@ def _block(win, qapp):
 
 def test_action_appearance_paints_and_persists(win, qapp, monkeypatch):
     _block(win, qapp)
-    script_cmd(monkeypatch, {"preset": "Brass", "opacity": 1.0})
+    script_panel(monkeypatch, {"preset": "Brass", "opacity": 1.0})
     win.action_appearance()
     qapp.processEvents()
     assert win.doc.appearance["name"] == "Brass"
@@ -158,9 +158,9 @@ def test_action_appearance_paints_and_persists(win, qapp, monkeypatch):
 
 def test_action_appearance_restore_clears_paint(win, qapp, monkeypatch):
     _block(win, qapp)
-    script_cmd(monkeypatch, {"preset": "Steel", "opacity": 1.0})
+    script_panel(monkeypatch, {"preset": "Steel", "opacity": 1.0})
     win.action_appearance()
-    script_cmd(monkeypatch, {"preset": "(none)", "opacity": 1.0})
+    script_panel(monkeypatch, {"preset": "(none)", "opacity": 1.0})
     win.action_appearance()
     assert win.doc.appearance is None
     assert win._renderer._base_override is None
@@ -168,9 +168,9 @@ def test_action_appearance_restore_clears_paint(win, qapp, monkeypatch):
 
 
 def test_action_appearance_cancel_changes_nothing(win, qapp, monkeypatch):
-    from conftest import script_cmd_cancel
+    from conftest import script_panel_cancel
     _block(win, qapp)
-    script_cmd_cancel(monkeypatch)
+    script_panel_cancel(monkeypatch)
     win.action_appearance()
     qapp.processEvents()
     assert win.doc.appearance is None

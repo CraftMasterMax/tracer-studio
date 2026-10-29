@@ -67,12 +67,18 @@ def script_cmd_cancel(monkeypatch):
 
 def script_panel(monkeypatch, values):
     """M163: answer the LIVE command panel with `values` - preview then
-    commit, immediately (the cmdpanel.run twin of script_cmd)."""
+    commit, immediately (the cmdpanel.run twin of script_cmd).
+    M163 W1: `preview` may be None (class-0 commands); a `readout` is
+    captured onto parent._panel_readout - the headless twin of the
+    panel's report row."""
     from tracer.ui import cmdpanel
 
-    def fake(parent, command_id, title, fields, *, preview, commit,
-             abort, remember_key=None):
-        preview(dict(values))
+    def fake(parent, command_id, title, fields, *, preview=None, commit,
+             abort, remember_key=None, readout=None):
+        if preview is not None:
+            preview(dict(values))
+        if readout is not None:
+            parent._panel_readout = readout(dict(values))
         commit(dict(values))
         return None
     monkeypatch.setattr(cmdpanel, "run", fake)
@@ -82,8 +88,8 @@ def script_panel_cancel(monkeypatch):
     """The live command panel answers Abort."""
     from tracer.ui import cmdpanel
 
-    def fake(parent, command_id, title, fields, *, preview, commit,
-             abort, remember_key=None):
+    def fake(parent, command_id, title, fields, *, preview=None, commit,
+             abort, remember_key=None, readout=None):
         abort()
         return None
     monkeypatch.setattr(cmdpanel, "run", fake)

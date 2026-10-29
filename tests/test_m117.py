@@ -148,16 +148,14 @@ def _box_doc(win):
 
 def test_mass_dialog_speaks_inertia_and_extents(win, qapp, monkeypatch):
     from PySide6.QtWidgets import QMessageBox
-    from tracer.ui import cmddialog
-    _box_doc(win)
-    monkeypatch.setattr(cmddialog, "ask",
-                        lambda *a, **k: {"material": "PLA (1.24)"})
-    shown = {}
+    from conftest import script_panel                # M163 W1: the panel
+    _box_doc(win)                                    #  era, not the ask
+    script_panel(monkeypatch, {"material": "PLA (1.24)"})
     monkeypatch.setattr(QMessageBox, "exec",
-                        lambda self: shown.setdefault(
-                            "text", self.text()) or 0)
+                        lambda self: (_ for _ in ()).throw(
+                            AssertionError("M163: Mass must not box")))
     win.action_mass_properties()
-    t = shown["text"]
+    t = win._panel_readout
     assert "Extents:" in t and "Inertia (COG):" in t
     assert "kg·cm²" in t
     # 10 mm cube at PLA 1.24: I = 1.24 g × 16.667 g·mm²/g ÷ 1e5 ≈ 0.000207

@@ -149,11 +149,12 @@ def _capture_panels(win, monkeypatch, reply):
     from tracer.ui import cmdpanel
     calls = []
 
-    def fake_run(parent, command_id, title, fields, *, preview, commit,
-                 abort, remember_key=None):
+    def fake_run(parent, command_id, title, fields, *, preview=None,
+                 commit, abort, remember_key=None, readout=None):
         calls.append((title, [f["key"] for f in fields],
                       [f.get("group", "") for f in fields]))
-        preview(dict(reply))
+        if preview is not None:        # M163 W1: signature fidelity with
+            preview(dict(reply))       #  run() - class-0 verbs pass none
         commit(dict(reply))
         return None
     monkeypatch.setattr(cmdpanel, "run", fake_run)

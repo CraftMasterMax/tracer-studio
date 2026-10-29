@@ -18,10 +18,11 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QPoint, QPointF, Qt               # noqa: E402
+from PySide6.QtCore import QPoint, QPointF, Qt, QSettings     # noqa: E402
 from PySide6.QtGui import QWheelEvent                        # noqa: E402
 from PySide6.QtTest import QTest                             # noqa: E402
-from PySide6.QtWidgets import (QApplication, QDialogButtonBox)  # noqa: E402
+from PySide6.QtWidgets import (QApplication, QDialogButtonBox,      # noqa:
+                               QLabel, QMessageBox)                # E402
 
 from tracer.core import params                                # noqa: E402
 from tracer.core.document import MirrorFeature, PrimitiveFeature  # noqa: E402
@@ -369,3 +370,283 @@ def test_a_new_verb_aborts_the_previous_panel(win, monkeypatch):
     win.action_mirror()                       # reopen mid-verb
     assert win._cmd_panel is not first
     assert ghosts and ghosts[-1] is None      # the old verb cleaned up
+
+
+# ---- G6 (W1/E1): ExprField wears the modal's setRange voice ----------------
+
+def test_field_clamps_at_declared_bounds_like_the_modal(qapp):
+    got = []
+    f = ExprField(0.5, minimum=0.05, maximum=1.0, decimals=2)
+    f.committed.connect(got.append)
+    f.edit.setText("5")
+    f._finish()                              # Enter
+    assert f.value_mm() == 1.0               # clamped SILENTLY - setRange
+    assert f.edit.text() == "1.00 mm"        #  never complains...
+    assert got == [1.0]                      # ...and reads back clamped
+
+
+def test_under_range_clamps_up_and_valid_values_pass_through(qapp):
+    got = []
+    f = ExprField(0.5, minimum=0.05, maximum=1.0, decimals=2)
+    f.committed.connect(got.append)
+    f.edit.setText("-2")
+    f._finish()
+    assert f.value_mm() == 0.05 and got == [0.05]   # envelope, not filter:
+    f.edit.setText("0.5")                           #  a legal value rides
+    f._finish()
+    assert f.value_mm() == 0.5 and got == [0.05, 0.5]
+    assert not f.is_invalid()                # red stays for PARSE failures
+
+
+def test_wheel_scrub_stops_at_the_bound_and_goes_silent(qapp):
+    got = []
+    f = ExprField(19.0, minimum=0.0, maximum=20.0, step=1.0, decimals=1)
+    f.committed.connect(got.append)
+    f.edit.hasFocus = lambda: True           # the gate is hasFocus (G2)
+    QApplication.sendEvent(f.edit, _wheel(f.edit, 120))
+    assert got == [20.0]                     # last notch lands ON the max
+    got.clear()
+    QApplication.sendEvent(f.edit, _wheel(f.edit, 120))     # at the bound:
+    assert got == []                         #  notch consumed, emits ZERO
+    assert f.value_mm() == 20.0              #  (no-change law)
+
+
+def test_decimals_and_suffix_shape_the_display(qapp):
+    f = ExprField(3.0, decimals=1, suffix=" DIP")
+    assert f.edit.text() == "3.0 DIP"        # the " mm" hardcode is dead
+    f.set_value_mm(4.5)
+    assert f.edit.text() == "4.5 DIP"        #  scrub speaks the suffix too
+    g = ExprField(3.0)                       # bare: legacy trimmed voice
+    assert g.edit.text() == "3 mm"           #  (decimals=None trims, but
+    #  the default suffix still rides - E1b state, not a literal)
+
+
+def test_make_passes_min_max_decimals_from_the_spec(qapp):
+    p = CmdPanel("Clamp check", [dict(key="x", label="X", kind="double",
+                                      min=0.05, max=1.0, decimals=2,
+                                      default=2.0)])
+    w = p._edits["x"]
+    assert w.value_mm() == 1.0               # default clamps IN at open
+    w.edit.setText("5")
+    w._finish()
+    assert p.values()["x"] == 1.0            # the wiring gate (_make E1)
+    q = CmdPanel("voice", [dict(key="off", label="Off", kind="double",
+                                default=0.0)])
+    assert q._edits["off"].edit.text() == "0.00 mm"   # Mirror's row now
+    #  speaks the modal's 2-decimal voice (ask()'s own default, cmddialog)
+
+
+# ---- G7 (W1/E2): the remember opt-out, pinned on the real run() ------------
+
+def test_remember_key_false_leaves_the_store_untouched(win):
+    cmdpanel.run(win, "forget_me", "Forget",
+                 [dict(key="a", label="A", kind="double", default=1.0)],
+                 commit=lambda v: None, abort=lambda: None,
+                 remember_key=False)
+    win._cmd_panel.btn_commit.click()
+    assert cmddialog._REMEMBERED == {}       # the store never heard of it
+    assert cmddialog._REMEMBER_ON == {}
+    assert cmddialog.remembered("forget_me") is None
+
+
+def test_no_remember_key_still_falls_back_to_the_command_id(win):
+    cmdpanel.run(win, "plain_fall", "Plain",
+                 [dict(key="a", label="A", kind="double", default=1.0)],
+                 commit=lambda v: None, abort=lambda: None)
+    win._cmd_panel.btn_commit.click()
+    assert cmddialog.remembered("plain_fall") == {"a": 1.0}
+
+
+# ---- G8 (W1/E3): the readout row - the box without the modal ----------------
+
+def test_readout_row_lies_hidden_until_written(qapp):
+    p = CmdPanel("Silent", FIELDS)
+    lbl = p.findChild(QLabel, "cmd_readout")
+    assert lbl is not None and lbl.isHidden()
+    p.set_readout("Volume: 1 mm\u00b3")
+    assert not lbl.isHidden() and "Volume" in lbl.text()
+    p.set_readout("")                        # empty hides it again
+    assert lbl.isHidden()
+
+
+def test_readout_seeds_at_open_and_moves_only_on_boundaries(win):
+    calls = []
+
+    def readout(v):
+        calls.append(v["a"])
+        return f"v={v['a']}"
+    cmdpanel.run(win, "ro_test", "Readout",
+                 [dict(key="a", label="A", kind="double", default=1.0)],
+                 commit=lambda v: None, abort=lambda: None,
+                 readout=readout, remember_key=False)
+    p = win._cmd_panel
+    assert calls == [1.0]                    # seeded at open - exactly ONCE
+    assert p.findChild(QLabel, "cmd_readout").text() == "v=1.0"
+    p._edits["a"].edit.setText("9")          # keystrokes are DEAF (KiCad)
+    assert calls == [1.0]
+    p._edits["a"]._finish()                  # the boundary speaks ONCE
+    assert calls == [1.0, 9.0]
+    p.btn_commit.click()                     # closing is not a boundary:
+    assert calls == [1.0, 9.0]               #  run() never re-invokes it
+
+
+def test_run_without_preview_is_fine(win):     # class-0: the report IS it
+    done = []
+    cmdpanel.run(win, "noprev", "NoPreview",
+                 [dict(key="a", label="A", kind="double", default=2.0)],
+                 commit=lambda v: done.append(v["a"]),
+                 abort=lambda: None,
+                 readout=lambda v: f"r{v['a']}", remember_key=False)
+    p = win._cmd_panel
+    assert p.findChild(QLabel, "cmd_readout").text() == "r2.0"
+    w = p._edits["a"]
+    w.edit.setText("5")
+    w._finish()
+    assert p.findChild(QLabel, "cmd_readout").text() == "r5.0"
+    p.btn_commit.click()
+    assert done == [5.0] and win._cmd_panel is None
+
+
+# ---- G9 (W1 carriers): the four migrated doors ------------------------------
+
+def _banned_modals(monkeypatch):
+    """Panel-era law: neither ask() nor a results box survives on these
+    paths - touching one FAILS by name (m163's own :245 idiom)."""
+    monkeypatch.setattr(cmddialog, "ask", lambda *a, **k: (_ for _ in ()).
+                        throw(AssertionError("M163: ask is BANNED here")))
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: (_ for _ in ()).
+                        throw(AssertionError("M163: box is BANNED here")))
+
+
+def _cube_doc(win):
+    win.new_document()
+    win.doc.add(PrimitiveFeature(name="cube", kind="box",
+                                 dims={"dx": 20, "dy": 20, "dz": 20}))
+    win.recompute()
+
+
+def _pick_combo(p, key, text):
+    w = p._edits[key]                        # the combo's boundary IS the
+    w.setCurrentText(text)                   #  activated click - program-
+    w.activated.emit(w.currentIndex())       #  matic set is silent (:304)
+
+
+def test_mass_properties_rides_the_panel_and_reads_its_report(
+        win, monkeypatch):
+    QSettings().setValue("materials/density", "PETG (1.27)")   # own baseline
+    _cube_doc(win)
+    _banned_modals(monkeypatch)
+    win.action_mass_properties()
+    p = win._cmd_panel
+    assert p.command_id == "mass_properties"
+    lbl = p.findChild(QLabel, "cmd_readout")
+    assert "Volume:" in lbl.text() and "Mass" in lbl.text()
+    _pick_combo(p, "material", "Steel (7.85)")
+    # 8000 mm3 of steel at 7.85 g/cm3 = 62.80 g - while the combo is
+    # still in your hand, ZERO writes happened
+    assert "62.80 g" in lbl.text()
+    assert QSettings().value("materials/density") == "PETG (1.27)"
+    p.btn_commit.click()
+    assert QSettings().value("materials/density") == "Steel (7.85)"
+    assert "62.80 g" in win.status.currentMessage()
+    assert win._cmd_panel is None
+
+
+def test_mass_properties_remembers_nothing(win, monkeypatch):
+    _cube_doc(win)
+    _banned_modals(monkeypatch)
+    win.action_mass_properties()
+    p = win._cmd_panel
+    p.btn_commit.click()                     # default material commits
+    assert cmddialog.remembered("mass_properties") is None
+    assert "mass_properties" not in cmddialog._REMEMBERED
+
+
+def test_document_measures_readout_speaks_the_pending_unit(win, monkeypatch):
+    _cube_doc(win)
+    _banned_modals(monkeypatch)
+    win.action_document_measures()
+    p = win._cmd_panel
+    assert p.command_id == "document_measures"
+    lbl = p.findChild(QLabel, "cmd_readout")
+    _pick_combo(p, "unit", "Inch (in)")
+    assert "in \u2014 0.787402 in \u00d7" in lbl.text()   # the PENDING
+    assert "mm" not in lbl.text()            #  unit's numbers, mm-free...
+    assert win.doc.units == "mm"             # ...on a zero-write preview
+    p.btn_commit.click()
+    assert win.doc.units == "inch"           # the write is the boundary
+    assert "Document measures: in" in win.status.currentMessage()
+    assert cmddialog.remembered("document_measures") is None
+
+
+def test_pick_radius_is_commit_only_and_clamped(win):
+    s = QSettings()
+    orig = s.value("pick/radius", None)              # leave it as found
+    win.viewport.set_pick_radius(3.0)                # deterministic default
+    win.action_pick_radius()
+    p = win._cmd_panel
+    assert p._edits["r"].edit.text() == "3.0 DIP"     # E1b: no " mm" leak
+    w = p._edits["r"]
+    w.edit.setText("99")
+    w._finish()
+    assert w.value_mm() == 20.0              # E1 clamp == viewport's own
+    assert win.viewport.pick_radius == 3.0   # commit-ONLY: the boundary
+    #                                          touched the FIELD, not the
+    p.btn_commit.click()                     #  viewport (preview renders)
+    assert win.viewport.pick_radius == 20.0
+    assert float(QSettings().value("pick/radius")) == 20.0
+    win.action_pick_radius()                 # separate case: cancel path
+    p2 = win._cmd_panel
+    p2._edits["r"].edit.setText("11")
+    p2._edits["r"]._finish()
+    p2.btn_abort.click()
+    assert win.viewport.pick_radius == 20.0  # defensive restore, value
+    assert "Pick radius cancelled" in win.status.currentMessage()
+    assert cmddialog.remembered("pick_radius") is None
+    if orig is None:                       # the manner is restored to the
+        s.remove("pick/radius")            #  state the suite found, no
+    else:                                  #  matter who runs after
+        s.setValue("pick/radius", orig)
+
+
+def test_appearance_preview_tints_the_renderer_never_the_doc(
+        win, monkeypatch):
+    from tracer.core.appearance import MATERIALS
+    _cube_doc(win)
+    _banned_modals(monkeypatch)
+    win.action_appearance()
+    p = win._cmd_panel
+    n0 = len(win._undo)
+    _pick_combo(p, "preset", "Brass")
+    assert tuple(win._renderer._base_override) == \
+        tuple(MATERIALS["Brass"])            # paint moved...
+    w = p._edits["opacity"]
+    w.edit.setText("0.5")
+    w._finish()
+    assert win._renderer._base_alpha == 0.5  #  live on every boundary
+    assert win.doc.appearance is None        # the DOC never heard
+    assert len(win._undo) == n0              # no capture until Commit
+    p.btn_abort.click()
+    assert win._renderer._base_override is None      # paint re-synced from
+    assert "Appearance cancelled" in win.status.currentMessage()   # truth
+
+
+def test_appearance_remember_merges_then_prefills_the_panel(
+        win, monkeypatch):
+    _cube_doc(win)
+    _banned_modals(monkeypatch)
+    win.action_appearance()
+    p = win._cmd_panel
+    _pick_combo(p, "preset", "Brass")
+    w = p._edits["opacity"]
+    w.edit.setText("0.8")
+    w._finish()
+    p.btn_commit.click()
+    assert cmddialog.remembered("appearance") == {"preset": "Brass",
+                                                  "opacity": 0.8}
+    cmddialog.remember("appearance", {"opacity": 0.5})   # the merge store
+    win.action_appearance()                  # folds, never replaces
+    p2 = win._cmd_panel
+    assert p2._edits["opacity"].value_mm() == 0.5        # fresh key wins
+    assert p2._edits["preset"].currentText() == "Brass"  # kept from merge
+    p2.btn_abort.click()

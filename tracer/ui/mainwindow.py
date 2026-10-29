@@ -4703,7 +4703,10 @@ class MainWindow(QMainWindow):
     def action_mass_properties(self):
         """Fusion's Inspect ▸ Mass Properties (M71): volume, surface
         area, mass at a material density, and the centre of mass —
-        every maker's first question ("how heavy will this print?")."""
+        every maker's first question ("how heavy will this print?").
+        M163 W1: the report moved out of the results QMessageBox into
+        the panel's readout row — the numbers arrive while the combo is
+        still in your hand, and no modal ever opens."""
         if self.doc is None or self.doc.result is None:
             QMessageBox.information(self, "Mass Properties",
                                     "Nothing to measure yet — add a "
@@ -4711,28 +4714,47 @@ class MainWindow(QMainWindow):
             return
         s = QSettings()
         last = str(s.value("materials/density", "PLA (1.24)"))
-        v = cmddialog.ask(self, "Mass Properties — material", [
-            dict(key="material", label="Material density (g/cm³)",
-                 kind="combo", choices=self._MATERIAL_DENSITIES,
-                 default=last if last in self._MATERIAL_DENSITIES
-                 else "PLA (1.24)"),
-        ])
-        if v is None:
-            return
-        mat = str(v["material"])
-        s.setValue("materials/density", mat)
-        dens = float(mat.split("(")[1].rstrip(")"))
-        p = mass_properties(self.doc.result, dens)
-        ext = solid_extents(self.doc.result)
-        pr = principal_inertia(self.doc.result, dens)
+        fields = [dict(key="material", label="Material density (g/cm³)",
+                       kind="combo", choices=self._MATERIAL_DENSITIES,
+                       default=last if last in self._MATERIAL_DENSITIES
+                       else "PLA (1.24)")]
+
+        def commit(v):
+            mat = str(v["material"])
+            s.setValue("materials/density", mat)
+            text, p = self._mass_report(mat)          # final boundary calc
+            panel = getattr(self, "_cmd_panel", None)
+            if panel is not None:                     # finalise the row,
+                panel.set_readout(text)               #  then run() closes
+            if "mass_g" in p:
+                self.status.showMessage(f"Mass {p['mass_g']:,.2f} g — "
+                                        f"{mat}", 5000)
+
+        cmdpanel.run(self, "mass_properties", "Mass Properties — material",
+                     fields, readout=lambda v: self._mass_report(
+                         str(v["material"]))[0],
+                     commit=commit,
+                     abort=self._cmdpanel_abort("Mass Properties"),
+                     remember_key=False)   # E2: the material memory is
+                                           #  QSettings, never the store
+
+    def _mass_report(self, mat: str) -> tuple[str, dict]:
+        """The seven-line report, verbatim from the retired box — minus
+        the box.  Silent death is the readout law: a model that vanished
+        mid-session yields ("", {}) rather than a traceback."""
+        try:
+            dens = float(mat.split("(")[1].rstrip(")"))
+            p = mass_properties(self.doc.result, dens)
+            ext = solid_extents(self.doc.result)
+            pr = principal_inertia(self.doc.result, dens)
+        except Exception:
+            return "", {}
         u = self.doc.units if self.doc.units in units.LABEL else "mm"
         ex = ext["size_mm"]
-        box = QMessageBox(self)
-        box.setWindowTitle("Mass Properties")
         # kg·cm²: g·mm² ÷ 1e5 (what SolidWorks shows; Fusion has no
         # dialog page at all — this is the beat, not the clone)
         kgcm = [i / 100000.0 for i in pr["moments_g_mm2"]]
-        box.setText(
+        text = (
             f"Volume:          {units.V(p['volume_mm3'], u)}\n"
             f"Surface area:    {units.A(p['area_mm2'], u)}\n"
             f"Material:        {mat}\n"
@@ -4743,9 +4765,7 @@ class MainWindow(QMainWindow):
             f"{units.L(ex[1], u)} \u00d7 {units.L(ex[2], u)}\n"
             f"Inertia (COG):   {kgcm[0]:.3g} / {kgcm[1]:.3g} / "
             f"{kgcm[2]:.3g} kg\u00b7cm\u00b2")
-        box.exec()
-        self.status.showMessage(f"Mass {p['mass_g']:,.2f} g — {mat}",
-                                5000)
+        return text, p
 
     def action_show_extents(self):
         """M117 Show Extents: the overall size of the part, in the
@@ -4774,27 +4794,40 @@ class MainWindow(QMainWindow):
     def action_document_measures(self):
         """Fusion Tools ▸ Document Measures (M60): choose the
         vocabulary every readout speaks — the model itself stays pure
-        millimetres, the unit rides the file as metadata."""
+        millimetres, the unit rides the file as metadata.  M163 W1: the
+        readout row speaks the PENDING unit's numbers before you commit
+        — a preview that writes nothing."""
         if self.doc is None:
             return
         names = {"Millimetre (mm)": "mm", "Centimetre (cm)": "cm",
                  "Inch (in)": "inch"}
         inv = {v: k for k, v in names.items()}
-        v = cmddialog.ask(self, "Document Measures", [
-            dict(key="unit", label="Length units", kind="combo",
-                 choices=list(names),
-                 default=inv.get(self.doc.units, "Millimetre (mm)"),
-                 group="Primary units"),
-        ])
-        if v is None:
-            return
-        if names[v["unit"]] != self.doc.units:
-            self.doc.units = names[v["unit"]]
-            self._unsaved = True
-        self._apply_units()
-        self._update_status()
-        self.status.showMessage(
-            f"Document measures: {units.LABEL[self.doc.units]}", 4000)
+        fields = [dict(key="unit", label="Length units", kind="combo",
+                       choices=list(names),
+                       default=inv.get(self.doc.units, "Millimetre (mm)"),
+                       group="Primary units")]     # group: W2 (E5)
+
+        def readout(v):
+            u = names[str(v["unit"])]
+            if self.doc.result is None:
+                return f"Readouts will speak {units.LABEL[u]}"
+            x, y, z = solid_extents(self.doc.result)["size_mm"]
+            return (f"{units.LABEL[u]} — {units.L(x, u)} \u00d7 "
+                    f"{units.L(y, u)} \u00d7 {units.L(z, u)}")
+
+        def commit(v):
+            if names[v["unit"]] != self.doc.units:
+                self.doc.units = names[v["unit"]]
+                self._unsaved = True
+            self._apply_units()
+            self._update_status()
+            self.status.showMessage(
+                f"Document measures: {units.LABEL[self.doc.units]}", 4000)
+
+        cmdpanel.run(self, "document_measures", "Document Measures",
+                     fields, readout=readout, commit=commit,
+                     abort=self._cmdpanel_abort("Document Measures"),
+                     remember_key=False)   # the DOCUMENT is the memory
 
     # ---- marking menu (M56) -----------------------------------------------------
     def _wheel_commands(self):
@@ -4883,7 +4916,10 @@ class MainWindow(QMainWindow):
 
     def action_appearance(self):
         """Fusion's Appearance dialog (M52): paint the body with a shop
-        material — steel to brass — and dial its opacity."""
+        material — steel to brass — and dial its opacity.  M163 W1:
+        rides the live panel; every committed boundary re-tints the
+        RENDERER (never the document), Abort re-syncs paint from the
+        doc's truth."""
         if self.doc is None or self.doc.result is None:
             QMessageBox.warning(self, "Appearance",
                                 "Nothing to paint yet — extrude or "
@@ -4892,46 +4928,78 @@ class MainWindow(QMainWindow):
         from ..core.appearance import MATERIALS, appearance
         cur = (self.doc.appearance or {}).get("name", "(none)")
         choices = ["(none)", "Custom…", *MATERIALS]
-        v = cmddialog.ask(self, "Appearance", [
+        fields = [
             dict(key="preset", label="Material", kind="combo",
                  choices=choices,
                  default=cur if cur in choices else "(none)",
                  group="Body"),
             dict(key="opacity", label="Opacity", kind="double",
                  default=(self.doc.appearance or {}).get("opacity", 1.0),
-                 min=0.05, max=1.0, decimals=2, group="Body"),
-        ], remember_key="appearance")
-        if v is None:
-            return
-        preset, op = v["preset"], float(v["opacity"])
-        self._capture()
-        if preset == "(none)":
-            self.doc.appearance = None
-            msg = "Body unpainted"
-        else:
-            if preset == "Custom…":
-                from PySide6.QtGui import QColor
-                from PySide6.QtWidgets import QColorDialog
-                old = (self.doc.appearance or {}).get("color")
-                init = QColor(*(int(round(c * 255)) for c in old)) \
-                    if old else QColor.fromRgbF(*DARK["solid_base"])
-                col = QColorDialog.getColor(init, self, "Body colour")
-                if not col.isValid():
-                    self._undo.pop()           # colour cancelled: no edit
-                    return
-                app = {"name": "Custom",
-                       "color": [col.red() / 255, col.green() / 255,
-                                 col.blue() / 255],
-                       "opacity": max(0.05, min(1.0, op))}
+                 min=0.05, max=1.0, decimals=2, suffix="",
+                 step=0.05, group="Body"),
+        ]
+
+        def commit(v):
+            preset, op = v["preset"], float(v["opacity"])
+            self._capture()
+            if preset == "(none)":
+                self.doc.appearance = None
+                msg = "Body unpainted"
             else:
-                app = appearance(preset, op)
-            self.doc.appearance = app
-            msg = f"Body painted: {app['name']}"
-        self._unsaved = True
+                if preset == "Custom…":
+                    from PySide6.QtGui import QColor
+                    from PySide6.QtWidgets import QColorDialog
+                    old = (self.doc.appearance or {}).get("color")
+                    init = QColor(*(int(round(c * 255)) for c in old)) \
+                        if old else QColor.fromRgbF(*DARK["solid_base"])
+                    col = QColorDialog.getColor(init, self, "Body colour")
+                    if not col.isValid():
+                        self._undo.pop()       # colour cancelled: no edit
+                        return
+                    app = {"name": "Custom",
+                           "color": [col.red() / 255, col.green() / 255,
+                                     col.blue() / 255],
+                           "opacity": max(0.05, min(1.0, op))}
+                else:
+                    app = appearance(preset, op)
+                self.doc.appearance = app
+                msg = f"Body painted: {app['name']}"
+            self._unsaved = True
+            self._apply_appearance()
+            self._apply_units()
+            self.viewport.refresh()
+            self.status.showMessage(msg, 5000)
+
+        cmdpanel.run(self, "appearance", "Appearance", fields,
+                     preview=self._appearance_preview, commit=commit,
+                     abort=self._appearance_abort,
+                     remember_key="appearance")
+
+    def _appearance_preview(self, v):
+        """Cosmetic-only (the press-pull law): the renderer takes the
+        tint, the document NEVER hears about it until Commit."""
+        if self.doc is None:
+            return
+        from ..core.appearance import MATERIALS
+        try:
+            preset, op = str(v["preset"]), float(v["opacity"])
+            if preset == "(none)":
+                self._renderer.set_base_color(None)
+            elif preset == "Custom…":
+                self._renderer.set_base_color(        # the doc's truth
+                    (self.doc.appearance or {}).get("color"), op)   # until
+            else:                                     # a colour is picked
+                self._renderer.set_base_color(MATERIALS[preset], op)
+        except Exception:
+            return                          # previews die silent
+        self.viewport.update()              # paint layer only
+
+    def _appearance_abort(self):
+        # NOT _cmdpanel_abort: the thing to restore is PAINT, not a
+        # geometry ghost.  The doc is the truth; let the renderer re-sync.
         self._apply_appearance()
-        self._apply_units()
         self.viewport.refresh()
-        self.status.showMessage(msg, 5000)
+        self.status.showMessage("Appearance cancelled", 3000)
 
     def action_move_body(self):
         """Fusion Move/Copy (M53): the RGB triad appears at the body's
@@ -6494,20 +6562,32 @@ class MainWindow(QMainWindow):
         """M160 (FD8-45): the pickbox. ONE knob for click tolerance AND
         hover preview, DIPs 0..20, default 3 — AutoCAD's own numbers;
         0 disables hover PREVIEWING (their PICKBOX=0 law), exact clicks
-        keep working. App-persisted like every viewport manner."""
-        from . import cmddialog
-        v = cmddialog.ask(self, "Pick radius", [
-            dict(key="r", kind="double",
-                 label="Pick radius (0 = no hover preview)",
-                 default=self.viewport.pick_radius, min=0.0, max=20.0,
-                 decimals=1, suffix=" DIP")])
-        if v is None:
-            return
-        r = self.viewport.set_pick_radius(v["r"])
-        self.status.showMessage(
-            f"Pick radius {r:g} DIP — "
-            + ("hover preview is OFF (PICKBOX = 0)" if r <= 0
-               else "clicks and hover share this one box"), 5000)
+        keep working. App-persisted like every viewport manner.
+        M163 W1: commit-only — a per-boundary preview would WRITE
+        QSettings (preview renders, never persists); the honest feedback
+        is the status voice at the green button."""
+        prior = self.viewport.pick_radius
+        fields = [dict(key="r", kind="double",
+                       label="Pick radius (0 = no hover preview)",
+                       default=prior, min=0.0, max=20.0, decimals=1,
+                       suffix=" DIP", step=1.0)]   # PICKBOX is integers
+
+        def commit(v):
+            r = self.viewport.set_pick_radius(v["r"])
+            self.status.showMessage(
+                f"Pick radius {r:g} DIP — "
+                + ("hover preview is OFF (PICKBOX = 0)" if r <= 0
+                   else "clicks and hover share this one box"), 5000)
+
+        def abort():
+            self.viewport.set_pick_radius(prior)   # defensive restore:
+            self.status.showMessage(               #  proves the contract
+                "Pick radius cancelled", 3000)     #  for commit-only
+
+        cmdpanel.run(self, "pick_radius", "Pick radius", fields,
+                     commit=commit, abort=abort,
+                     remember_key=False)   # the memory is pick/radius
+                                           #  QSettings inside the setter
 
     def action_readout_toggle(self):
         """M160 (FD8-34): 'show detail measure' — the bottom-right spec

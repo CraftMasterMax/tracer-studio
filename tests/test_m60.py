@@ -12,7 +12,7 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtWidgets import QApplication                              # noqa: E402
 
-from conftest import script_cmd                                         # noqa: E402
+from conftest import script_panel                                         # noqa: E402
 from tracer.core import units                                           # noqa: E402
 from tracer.core.document import Document, PrimitiveFeature             # noqa: E402
 from tracer.core.measure import describe                                # noqa: E402
@@ -94,7 +94,7 @@ def test_tools_menu_holds_document_measures(win):
 def test_measure_dialog_switches_the_vocabulary(win, qapp, monkeypatch):
     _block(win, qapp)
     assert win.rail.props.unit == "mm"
-    script_cmd(monkeypatch, {"unit": "Inch (in)"})
+    script_panel(monkeypatch, {"unit": "Inch (in)"})
     win.action_document_measures()
     qapp.processEvents()
     assert win.doc.units == "inch"
@@ -109,7 +109,7 @@ def test_measure_dialog_switches_the_vocabulary(win, qapp, monkeypatch):
 
 def test_feature_card_voices_the_unit(win, qapp, monkeypatch):
     _block(win, qapp)
-    script_cmd(monkeypatch, {"unit": "Centimetre (cm)"})
+    script_panel(monkeypatch, {"unit": "Centimetre (cm)"})
     win.action_document_measures()
     feat = [f for f in win.doc.features
             if isinstance(f, PrimitiveFeature)][0]
@@ -120,7 +120,7 @@ def test_feature_card_voices_the_unit(win, qapp, monkeypatch):
 
 def test_new_document_resets_to_mm(win, qapp, monkeypatch):
     _block(win, qapp)
-    script_cmd(monkeypatch, {"unit": "Inch (in)"})
+    script_panel(monkeypatch, {"unit": "Inch (in)"})
     win.action_document_measures()
     assert win.rail.props.unit == "inch"
     win.new_document()

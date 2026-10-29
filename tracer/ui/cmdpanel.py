@@ -69,12 +69,18 @@ class ExprField(QWidget):
     invalid = Signal(bool)             # red-on / red-off (Commit gates)
 
     def __init__(self, value: float = 0.0, step: float = 0.1,
-                 suffix: str = " mm", parent=None):
+                 suffix: str = " mm", minimum: float = -1e6,
+                 maximum: float = 1e6, decimals: int | None = None,
+                 parent=None):
         super().__init__(parent)
-        self._mm = float(value)
-        self._step = float(step)
+        # E1 (W1): the modal's setRange/setDecimals voice, on the panel.
+        self._mn, self._mx = float(minimum), float(maximum)  # BEFORE clamp
+        self._decimals = decimals   # None = legacy trimmed voice; int =
+        self._suffix = suffix       #  modal setDecimals voice
+        self._mm = self._clamp(float(value))   # default clamps in, like
+        self._step = float(step)               #  spinbox setValue
         self.values: dict | None = None      # carrier injects param sheet
-        self.edit = QLineEdit(self._fmt(self._mm) + suffix)
+        self.edit = QLineEdit(self._fmt(self._mm) + self._suffix)
         self.edit.setAlignment(Qt.AlignRight)
         self._base = self.edit.text()        # what Esc rewinds to
         self._bad = False
@@ -89,13 +95,17 @@ class ExprField(QWidget):
         return self._mm
 
     def set_value_mm(self, mm: float):
-        self._mm = float(mm)
-        self._base = self._fmt(self._mm) + " mm"
+        self._mm = self._clamp(float(mm))       # prefill/scrub cannot
+        self._base = self._fmt(self._mm) + self._suffix   #  escape range
         self.edit.setText(self._base)
 
-    @staticmethod
-    def _fmt(v: float) -> str:
-        return f"{v:.2f}".rstrip("0").rstrip(".") or "0"
+    def _clamp(self, v: float) -> float:
+        return min(max(v, self._mn), self._mx)
+
+    def _fmt(self, v: float) -> str:
+        if self._decimals is None:              # legacy trimmed voice:
+            return f"{v:.2f}".rstrip("0").rstrip(".") or "0"
+        return f"{v:.{self._decimals}f}"        # modal setDecimals voice
 
     def _eval(self, text: str) -> float:
         return parse_scalar(text, self.values)
@@ -109,6 +119,12 @@ class ExprField(QWidget):
             self.edit.setText(self._base)   # red, then honest rewind
             return
         self._set_bad(False)
+        # E1: silent setRange parity - the MODAL never complains, it reads
+        # the clamped spinbox back (cmddialog.value); red stays reserved
+        # for PARSE failures. Emitting the clamped value is the parity.
+        mm = self._clamp(mm)
+        if self._fmt(mm) + self._suffix != self.edit.text():
+            self.edit.setText(self._fmt(mm) + self._suffix)
         changed = mm != self._mm
         self._mm, self._base = mm, self.edit.text()
         if changed:                         # no-change emits NOTHING
@@ -150,10 +166,12 @@ class ExprField(QWidget):
             elif mods & Qt.ShiftModifier:
                 step *= 10.0
             dy = 1 if ev.angleDelta().y() > 0 else -1
-            mm = round(self._mm + dy * step, 6)
-            self.set_value_mm(mm)
-            self.committed.emit(mm)         # a wheel notch IS an intention
+            mm = self._clamp(round(self._mm + dy * step, 6))
             ev.accept()
+            if mm == self._mm:
+                return True                 # at the bound: notch consumed,
+            self.set_value_mm(mm)           #  emits NOTHING (law :114)
+            self.committed.emit(mm)         # a wheel notch IS an intention
             return True
         return super().eventFilter(obj, ev)
 
@@ -251,6 +269,16 @@ class CmdPanel(QWidget):
         for f in fields:
             body.addWidget(self._make(f))
 
+        # E3 (W1): the report row - the modeless twin of a results
+        # QMessageBox. Hidden until written; selectable text; token voice.
+        self._lbl_readout = QLabel("")
+        self._lbl_readout.setObjectName("cmd_readout")
+        self._lbl_readout.setWordWrap(True)
+        self._lbl_readout.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self._lbl_readout.setStyleSheet(f"color: {DARK['fg']};")
+        self._lbl_readout.setVisible(False)
+        root.addWidget(self._lbl_readout)
+
         self.btn_commit.clicked.connect(self._commit)
         self.btn_abort.clicked.connect(lambda: self.finished.emit(None))
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
@@ -261,7 +289,10 @@ class CmdPanel(QWidget):
         if kind == "double":
             w = ExprField(f.get("default", 0.0),
                           step=f.get("step", 0.1),
-                          suffix=f.get("suffix", " mm"))
+                          suffix=f.get("suffix", " mm"),
+                          minimum=f.get("min", -1e6),   # E1: modal parity
+                          maximum=f.get("max", 1e6),    #  at _make - the
+                          decimals=f.get("decimals", 2))  #  ask() twin :302
             w.committed.connect(
                 lambda v, k=key: self._boundary(k))
             w.invalid.connect(self._gate)
@@ -337,6 +368,13 @@ class CmdPanel(QWidget):
         finally:
             self._loading = False
 
+    def set_readout(self, text: str):
+        """E3: the report row - the modeless twin of a results
+        QMessageBox. Empty text hides the row again."""
+        self._lbl_readout.setText(str(text))
+        self._lbl_readout.setVisible(bool(text))
+        self.adjustSize()
+
     def value(self, key: str):
         w = self._edits[key]
         if isinstance(w, ExprField):
@@ -374,18 +412,22 @@ class CmdPanel(QWidget):
 
 
 def run(parent, command_id: str, title: str, fields: list[dict], *,
-        preview, commit, abort, remember_key: str | None = None):
+        preview=None, commit, abort, remember_key: str | None = None,
+        readout=None):
     """Open the live command panel for one verb — the migrated carrier's
     whole UI.  Module-global ON PURPOSE: this is the panel-era twin of
     cmddialog.ask's headless seam (conftest.script_panel patches it),
     so carriers migrate while headless tests stay one-liners.
 
     preview(values) is cosmetic-only (the press-pull law: it must never
-    write the model); commit(values) runs at the green button with the
-    values finalised; abort() cleans up on the red button or Esc.
-    A remembered key opts the command in on its first commit;
-    ``remember_key=False`` opts OUT (M164 R3: the fixer must never carry
-    a stale pick across sketches)."""
+    write the model); Omit it for commands whose whole preview IS the
+    report (class-0: Mass Properties).  readout(values) -> str writes the
+    panel's report row at every boundary AND seeded at open - the
+    modeless twin of a results QMessageBox.  commit(values) runs at the
+    green button with the values finalised; abort() cleans up on the red
+    button or Esc.  A remembered key opts the command in on its first
+    commit; ``remember_key=False`` opts OUT (M164 R3: the fixer must
+    never carry a stale pick across sketches)."""
     old = getattr(parent, "_cmd_panel", None)
     if old is not None:                     # a new verb aborts the last
         old.finished.emit(None)
@@ -408,9 +450,15 @@ def run(parent, command_id: str, title: str, fields: list[dict], *,
             parent._cmd_panel = None
         panel.deleteLater()
 
-    panel.values_committed.connect(lambda v, _k: preview(v))
-    panel.finished.connect(_done)
-    parent._cmd_panel = panel
+    if preview is not None:               # E3: a class-0 command has no
+        panel.values_committed.connect(   #  ghost to draw - the readout
+            lambda v, _k: preview(v))     #  IS the preview
+    if readout is not None:
+        panel.values_committed.connect(
+            lambda v, _k: panel.set_readout(readout(v)))
+        panel.set_readout(readout(panel.values()))   # seed at open: the
+    panel.finished.connect(_done)                    #  report is on the
+    parent._cmd_panel = panel                        #  panel from frame 1
     panel.adjustSize()
     g = parent.frameGeometry()
     panel.move(g.center().x() - panel.width() // 2, g.y() + 96)

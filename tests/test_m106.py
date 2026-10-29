@@ -22,7 +22,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtWidgets import QApplication, QMenu          # noqa: E402
 from PySide6.QtCore import Qt                              # noqa: E402
 
-from conftest import script_cmd                            # noqa: E402
+from conftest import (script_cmd, script_panel)            # noqa: E402
 from tracer.core.appearance import MATERIALS, appearance   # noqa: E402
 from tracer.core.document import (Document,                # noqa: E402
                                   PrimitiveFeature)
@@ -220,7 +220,7 @@ def test_whole_part_appearance_still_works(win, qapp, monkeypatch):
     # M52's path is untouched: painting via the dialog paints doc-level,
     # not per-body, and no body carries its own appearance.
     _build_two(win, qapp)
-    script_cmd(monkeypatch, {"preset": "Steel", "opacity": 1.0})
+    script_panel(monkeypatch, {"preset": "Steel", "opacity": 1.0})
     win.action_appearance()
     qapp.processEvents()
     assert win.doc.appearance["name"] == "Steel"
