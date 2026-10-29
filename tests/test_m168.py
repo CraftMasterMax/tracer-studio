@@ -278,3 +278,187 @@ def test_a_lonely_circle_is_one_piece_too():
     c = m.sketch.circle(m.point(0, 0), 5.0)
     assert trim_piece(m, c, 5, 0) is c                # un-splittable means
     assert m.sketch.circles == []                     #  one whole piece
+
+
+# ---- Rung 3: the trim TOOL (T mode + hover piece + junction extend) ---------
+
+import pytest as _pt                                              # noqa: E402
+
+_qt = _pt.importorskip("PySide6")
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt            # noqa: E402
+from PySide6.QtGui import QMouseEvent                             # noqa: E402
+from PySide6.QtTest import QTest                                  # noqa: E402
+from PySide6.QtWidgets import QApplication                        # noqa: E402
+from tracer.ui.sketcheditor import SketchCanvas                   # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def qapp():
+    return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture
+def ed(qapp):
+    c = SketchCanvas()
+    c.set_model(SketchModel())
+    c.resize(600, 400)
+    c._snap_grid = False
+    yield c
+    c.deleteLater()
+
+
+def scr(x, y):                    # world mm -> widget px (scale 4, centre 0)
+    return (int(round(300 + 4.0 * x)), int(round(200 - 4.0 * y)))
+
+
+def _press(c, x, y):
+    QTest.mousePress(c, Qt.LeftButton, Qt.NoModifier, QPoint(*scr(x, y)))
+
+
+def _move(c, x, y):
+    # the m167 law: this PySide6's QTest.mouseMove never reaches an
+    # unshown canvas — the move branch must ride a REAL event.
+    p = QPointF(*scr(x, y))
+    QApplication.sendEvent(
+        c, QMouseEvent(QEvent.Type.MouseMove, p, p, p,
+                       Qt.NoButton, Qt.NoButton, Qt.NoModifier))
+
+
+def _release(c, x, y):
+    QTest.mouseRelease(c, Qt.LeftButton, Qt.NoModifier, QPoint(*scr(x, y)))
+
+
+def _key(c, key, mods=Qt.NoModifier):
+    QTest.keyClick(c, key, mods)
+    qapp = QApplication.instance()
+    qapp.processEvents()
+
+
+def _crossed(m):
+    """X crossing at (20, 20): spoke l1, bar l2 — built on the CANVAS'S OWN
+    model, NEVER a fresh one: ed.set_model(geom) AUTO-FITS the view
+    (scale 4 -> 6.67, centre 0 -> (20,20)) and shatters the scr() map — the
+    m167 law: gates speak world mm against the fixture's scale-4 view."""
+    a = m.point(0, 0); b = m.point(40, 40)
+    c = m.point(0, 40); d = m.point(40, 0)
+    l1 = m.add_line(a, b); l2 = m.add_line(c, d)
+    return l1, l2, (a, b, c, d)
+
+
+def test_T_arms_the_trim_tool_and_T_again_lays_it_down(ed):
+    _key(ed, Qt.Key_T)
+    assert ed._tool == "trim"                     # the key is the TOOL now
+    _key(ed, Qt.Key_T)
+    assert ed._tool == "select"
+    _key(ed, Qt.Key_T)
+    assert ed._tool == "trim"
+    _key(ed, Qt.Key_Escape)                       # the generic tool exit
+    assert ed._tool == "select"
+
+
+def test_shift_T_still_bites_as_tangent(ed):
+    from tracer.core.sketch.constraints import Tangent
+    m = ed.model
+    ln = m.add_line(m.point(0, 0), m.point(10, 0))
+    cir = m.add_circle(m.point(5, 6), 2.0)
+    m.solve()
+    ed._sel = [ln, cir]
+    _key(ed, Qt.Key_T, Qt.ShiftModifier)          # the m23 law, untouched
+    assert any(isinstance(c, Tangent) for c in m.sketch.constraints)
+    assert ed._tool == "select"                   # tangent never arms trim
+
+
+def test_hover_previews_the_piece_and_the_click_takes_it(ed):
+    m = ed.model
+    l1, l2, pts = _crossed(m)
+    a, b, c, d = pts
+    _key(ed, Qt.Key_T)
+    _move(ed, 30, 30)                             # over the (20..40) spoke
+    assert ed._trim_hover is not None
+    e, lo, hi = ed._trim_hover
+    assert e is l1 and (lo, hi) == pytest.approx((0.5, 1.0))   # THE piece
+    n_hist = len(ed._hist)
+    _press(ed, 30, 30)
+    _release(ed, 30, 30)                          # the release commits
+    assert len(m.sketch.lines) == 2               # spoke half gone…
+    assert l2 in m.sketch.lines                   #  bar byte-still
+    assert (c.x, c.y, d.x, d.y) == (0.0, 40.0, 40.0, 0.0)
+    assert len(ed._hist) == n_hist + 1            #  one push per click
+    assert ed._trim_hover is None                 # preview dies after cut
+
+
+def test_hovering_never_cuts_the_model(ed):
+    """R3's central safety law: the hover preview is a PAINT-ONLY ghost -
+    piece_bounds is read-only, so sweeping the cursor splits NOTHING and
+    pushes NO history; the model leaves a hover byte-identical."""
+    m = ed.model
+    _crossed(m)
+
+    def snap():
+        return [(l.a.x, l.a.y, l.b.x, l.b.y) for l in m.sketch.lines], \
+               [(p.x, p.y) for p in m.sketch.points]
+
+    before, pbefore = snap()
+    n_hist = len(ed._hist)
+    _key(ed, Qt.Key_T)
+    for x in (10, 30, 25):                        # sweep across the pieces…
+        _move(ed, x, x)
+    assert ed._trim_hover is not None             #  a piece is previewed
+    after, pafter = snap()
+    assert after == before                        #   every line byte-still…
+    assert pafter == pbefore                      #   every point unmoved
+    assert len(m.sketch.lines) == 2               #   nothing split
+    assert len(ed._hist) == n_hist                #  no undo debt from a hover
+
+
+def test_a_click_on_the_crossing_warns_and_splits_nothing(ed):
+    m = ed.model
+    _crossed(m)
+    _key(ed, Qt.Key_T)
+    n_hist = len(ed._hist)
+    _press(ed, 20, 20)                            # EXACTLY on the X…
+    _release(ed, 20, 20)
+    assert "crossing" in (getattr(ed, "_warn_text", "") or "")
+    assert len(m.sketch.lines) == 2               # nothing split, nothing
+    assert len(ed._hist) == n_hist                #  deleted, no undo debt
+
+
+def test_the_tool_extends_a_stub_into_a_true_T(ed):
+    m = ed.model
+    tip = m.point(10, 0)
+    stub = m.add_line(m.point(0, 0), tip)
+    m.add_line(m.point(14, -8), m.point(14, 8))
+    _key(ed, Qt.Key_T)
+    n_hist = len(ed._hist)
+    _press(ed, 6, 0)          # mid-stub: clear of the 9px point-snap, yet
+    _release(ed, 6, 0)        #  nearer the open tip than the far corner
+    assert (tip.x, tip.y) == (14.0, 0.0)          # EXACT onto the wall
+    assert len(m.sketch.lines) == 3               # the wall split in two…
+    halves = [l for l in m.sketch.lines if l is not stub]
+    assert all(tip in (h.a, h.b) for h in halves)  #  ONE Point serves all
+    assert len(ed._hist) == n_hist + 1
+    ed.undo_op()
+    sk2 = ed.model.sketch                          # stale-ref law: re-read
+    assert len(sk2.lines) == 2 and len(sk2.points) == 4
+
+
+def test_a_lonely_line_under_the_tool_still_goes_whole(ed):
+    m = ed.model
+    l = m.add_line(m.point(0, 0), m.point(10, 0))
+    m.add_line(m.point(0, 30), m.point(10, 30))    # far parallel: no future
+    _key(ed, Qt.Key_T)
+    _press(ed, 5, 0)
+    _release(ed, 5, 0)                            # nothing ahead to extend…
+    assert len(m.sketch.lines) == 1               #  …so the piece (all of
+    assert m.sketch.lines[0] is not l             #   it) is trimmed away
+
+
+def test_pressing_empty_space_arms_nothing(ed):
+    m = ed.model
+    _crossed(m)
+    _key(ed, Qt.Key_T)
+    n_hist = len(ed._hist)
+    _press(ed, -25, -25)                          # far from every curve
+    _release(ed, -25, -25)
+    assert len(m.sketch.lines) == 2
+    assert len(ed._hist) == n_hist                # no phantom history

@@ -130,6 +130,8 @@ class SketchCanvas(QWidget):
         self._pend_toggle = None               # M167 R3: Ctrl-press on a
         #   SELECTED member defers the toggle: release = deselect (today),
         #   motion = photocopy the selection instead (the copy-drag law).
+        self._trim_arm = None                  # M168 R3: the trim TOOL:
+        self._trim_hover = None                #   press arm / hover piece
         self._pan_from: QPointF | None = None
         self._line_start: Point | None = None
         self._rect_corner: np.ndarray | None = None
@@ -227,6 +229,8 @@ class SketchCanvas(QWidget):
         self._arc_pts = []
         self._slot: list = []                  # slot tool: c1, c2, width
         self._poly: list = []                  # polygon tool: centre, vertex
+        self._trim_arm = None                  # M168 R3: the trim tool's
+        self._trim_hover = None                #   click-arm / piece preview
         self._preview = None
         self._band = None
         self._snap_hint = None
@@ -552,6 +556,11 @@ class SketchCanvas(QWidget):
                     self._drag_pushed = False
             self.update()
             return
+        if self._tool == "trim":                  # M168 R3: the trim TOOL
+            hit = self._hit(q)                    #  (Fusion's T): a press
+            self._trim_arm = hit[1] if hit else None   #  ARMS the entity
+            return                                #   under the cursor;
+            #                                     #   the RELEASE does the cut
         wp = self._world(q)
         if self._tool == "line":
             p = self._place_point(q)              # point/origin/grid magnet
@@ -737,6 +746,21 @@ class SketchCanvas(QWidget):
             self._pan_from = q
             self.update()
             return
+        if self._tool == "trim":                  # M168 R3: hover previews
+            hit = self._hit(q)                    #  the WHOLE piece the
+            self._trim_hover = None               #   click would take. The
+            if hit is not None:                   #   question is READ-ONLY:
+                from ..core.sketch.trim import piece_bounds   # nothing cuts
+                e = hit[1]
+                pb = piece_bounds(self.model, e, *self._world(q))
+                if pb is not None:
+                    bounds, t0, _c = pb
+                    for i in range(len(bounds) - 1):
+                        if bounds[i] <= t0 <= bounds[i + 1]:
+                            self._trim_hover = (e, bounds[i], bounds[i + 1])
+                            break
+            self.update()
+            return
         if self._tool == "select":
             if self._pend_toggle is not None:      # M167 R3: motion commits
                 self._commit_copy_drag()           #  the Ctrl-press as a
@@ -807,6 +831,8 @@ class SketchCanvas(QWidget):
             self._hover_c = None
             self.setCursor(Qt.ArrowCursor if self._tool == "select"
                            else Qt.CrossCursor)    # same law as set_tool
+        if self._trim_hover is not None:             # M168 R3: the piece
+            self._trim_hover = None                  #  preview dies too
         super().leaveEvent(ev)
 
     def mouseReleaseEvent(self, ev: QMouseEvent):
@@ -815,6 +841,25 @@ class SketchCanvas(QWidget):
             return
         self._drag_pt = None                    # M167 R1: a release ends
         self._drag = None                       #  ANY grab, tool or no tool
+        if self._tool == "trim":                 # M168 R3: the armed entity
+            e, self._trim_arm = self._trim_arm, None    #  is CUT, never
+            if e is None:                        #   dragged: release is the
+                return                           #   commit, press is the aim
+            wx, wy = self._world(ev.position())
+            from ..core.sketch.trim import extend_end, trim_piece
+            self._push_hist()
+            try:
+                extend_end(self.model, e, wx, wy)
+            except ValueError:
+                gone = trim_piece(self.model, e, wx, wy)
+                if gone is None:                 # ON a cut: refuse whole
+                    self._hist.pop()             #  (no mutation happened)
+                    self._warn("That click is ON a crossing - pick a side")
+                    self.update()
+                    return
+            self._trim_hover = None
+            self._solve(); self.update()
+            return
         if self._tool == "select":
             if self._pend_toggle is not None:   # M167 R3: the Ctrl-press on
                 e, _ = self._pend_toggle        #  a member never MOVED —
@@ -1415,9 +1460,13 @@ class SketchCanvas(QWidget):
             self.act_offset()                     # Fusion: O offsets
         elif k == Qt.Key_T and ev.modifiers() & Qt.ShiftModifier:
             self.act_tangent()                    # tangent took the Shift
-        elif k == Qt.Key_T and len(sel) == 2 and \
-                all(isinstance(e, Line) for e in sel):
-            self.act_trim()                       # Fusion: T trims corners
+        elif k == Qt.Key_T:
+            # M168 R3: T is the trim TOOL (Fusion). The two-line corner
+            # act this key used to run MIGRATED to the menu, the palette
+            # and direct act_trim() calls - the key now only arms the
+            # mode; pressing T again lays it down. Shift+T (tangent) is
+            # handled above and untouched.
+            self.set_tool("select" if self._tool == "trim" else "trim")
         elif k == Qt.Key_Return and self._tool == "line":
             self._line_start = None
             self.set_tool("select")
@@ -1510,6 +1559,8 @@ class SketchCanvas(QWidget):
             self._draw_dimensions(p)
             self._draw_glyphs(p)
             self._draw_hover(p)                # M164 R2: ring + re-stroke
+            if self._tool == "trim":             # M168 R3: the piece the
+                self._draw_trim_piece(p)         #   click WOULD take
             if self._show_dof:                    # M119: the DOF overlay
                 self._draw_dof(p)
             self._draw_typein(p)              # M90: the live number chip
@@ -2333,6 +2384,34 @@ class SketchCanvas(QWidget):
         p.setPen(FG)
         p.drawText(rect, Qt.AlignCenter, text)
         p.setBrush(Qt.NoBrush)
+
+    def _draw_trim_piece(self, p: QPainter):
+        """M168 R3: the trim tool paints the ENTIRE piece the next click
+        would delete - the cut preview lives in pixels only; piece_bounds
+        is read-only, nothing splits until the release commits."""
+        if self._trim_hover is None:
+            return
+        e, lo, hi = self._trim_hover
+        p.setPen(QPen(SEL, 2.4))
+        if isinstance(e, Line):
+            ax, ay, bx, by = e.a.x, e.a.y, e.b.x, e.b.y
+            p.drawLine(self.w2s(ax + (bx - ax) * lo, ay + (by - ay) * lo),
+                       self.w2s(ax + (bx - ax) * hi, ay + (by - ay) * hi))
+        elif isinstance(e, Arc):
+            pts = e.sample(64)
+            i0 = int(round(lo * 64))
+            i1 = max(int(round(hi * 64)), i0 + 1)
+            q_prev = self.w2s(float(pts[i0][0]), float(pts[i0][1]))
+            for xy in pts[i0 + 1:i1 + 1]:
+                qn = self.w2s(float(xy[0]), float(xy[1]))
+                p.drawLine(q_prev, qn)
+                q_prev = qn
+        elif isinstance(e, Circle):
+            cen = self.w2s(e.c.x, e.c.y)
+            p.drawEllipse(cen, e.r * self._scale, e.r * self._scale)
+        elif isinstance(e, Ellipse):
+            cen = self.w2s(e.c.x, e.c.y)
+            p.drawEllipse(cen, e.rx * self._scale, e.ry * self._scale)
 
     def _draw_hover(self, p: QPainter):
         """M164 R2: the culprit under the cursor - a ring around its rect

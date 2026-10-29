@@ -191,25 +191,29 @@ def _canvas(win, qapp):
     return win.sketch
 
 
-def test_slash_key_closes_a_corner_and_merges_points(win, qapp):
+# M168 R3 CITE-THE-MOVE: these four gates drove the trim ACT through a key
+# (originally '/', then 'T'). T has MIGRATED to the trim TOOL (Fusion's
+# law), so the gates now call act_trim() - the same behavior the menu and
+# the palette reach. The key's new life is pinned in tests/test_m168.py.
+def test_trim_act_closes_a_corner_and_merges_points(win, qapp):
     cv = _canvas(win, qapp)
     m = cv.model
     LA = m.add_line(m.point(0, 0), m.point(10, 0.3))
     LB = m.add_line(m.point(9.6, 6), m.point(10.1, 0.1))
     cv._sel = [LA, LB]
-    QTest.keyClick(cv, Qt.Key_T)
+    cv.act_trim()                                   # the ACT, direct
     qapp.processEvents()
     assert any(pa is pb for pa in (LA.a, LA.b) for pb in (LB.a, LB.b))
     assert len(m.sketch.points) == 3                # orphan dropped
 
 
-def test_slash_undo_restores_both_loose_ends(win, qapp):
+def test_trim_act_undo_restores_both_loose_ends(win, qapp):
     cv = _canvas(win, qapp)
     m = cv.model
     LA = m.add_line(m.point(0, 0), m.point(10, 0.3))
     LB = m.add_line(m.point(9.6, 6), m.point(10.1, 0.1))
     cv._sel = [LA, LB]
-    QTest.keyClick(cv, Qt.Key_T)
+    cv.act_trim()
     qapp.processEvents()
     assert len(m.sketch.points) == 3
     cv.undo_op()
@@ -222,28 +226,28 @@ def test_slash_undo_restores_both_loose_ends(win, qapp):
     assert near                                   # original tip back
 
 
-def test_slash_refusal_warns_and_changes_nothing(win, qapp):
+def test_trim_act_refusal_warns_and_changes_nothing(win, qapp):
     cv = _canvas(win, qapp)
     m = cv.model
     p1 = m.add_line(m.point(0, 0), m.point(10, 0))
     p2 = m.add_line(m.point(0, 5), m.point(10, 5))
     cv._sel = [p1, p2]
-    QTest.keyClick(cv, Qt.Key_T)
+    cv.act_trim()
     qapp.processEvents()
     assert "parallel" in (getattr(cv, "_warn_text", "") or "")
     assert len(m.sketch.points) == 4                # untouched
 
 
-def test_slash_without_a_line_pair_is_left_alone(win, qapp):
-    """'/' must not be swallowed unless exactly two lines are picked."""
+def test_trim_act_without_a_line_pair_is_left_alone(win, qapp):
+    """The act's own guard: it never bites unless exactly two lines ride."""
     cv = _canvas(win, qapp)
     m = cv.model
     L = m.add_line(m.point(0, 0), m.point(10, 0))
     c = m.add_circle(m.point(5, 5), 2.0)
     cv._sel = [L]
-    QTest.keyClick(cv, Qt.Key_T)
+    cv.act_trim()
     cv._sel = [L, c]
-    QTest.keyClick(cv, Qt.Key_T)
+    cv.act_trim()
     qapp.processEvents()
     assert len(m.sketch.points) == 3                # nothing merged
 

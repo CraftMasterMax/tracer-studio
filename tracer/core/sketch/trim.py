@@ -151,23 +151,18 @@ def _cut_arc(sk, ar, x, y, seam=None):
             Arc(S, at((1 + fS) / 2), ar.b, ar.construction))
 
 
-def trim_piece(model, ent, x, y):
-    """THE TRIM VERB: cut `ent` at every interior crossing and delete the
-    PIECE under (x, y).  An UNCROSSED entity is one piece and goes whole
-    (Fusion: Trim on a lonely line erases it); circles and ellipses are
-    un-splittable, so they are one piece too.  A click exactly ON a cut is
-    ambiguous - nothing is deleted and None comes back; the refusal lands
-    BEFORE any mutation (split only after the piece question is settled).
-    Only the clicked entity is cut - its neighbours keep their shape (v1).
-    Cuts REUSE an existing Point sitting at the crossing (a T-junction's
-    stem end): two Points at one coordinate would silently un-join it.
-    Returns the deleted entity, or None."""
+def piece_bounds(model, ent, x, y):
+    """(bounds, t0, cuts): THE PIECE QUESTION for a click - the sorted
+    boundary parameters of every piece `ent` is cut into by interior
+    crossings, the click's clamped parameter, and the merged cut Snaps
+    (tangent double-roots collapsed to one).  READ-ONLY: the hover
+    preview and the trim verb share this one question.  None for a
+    Point; circles and ellipses answer whole: [0, 1]."""
     if isinstance(ent, Point):
         return None
     sk = model.sketch
-    if not isinstance(ent, (Line, Arc)):            # circle / ellipse: one
-        model.delete_entity(ent)                    #  piece - gone whole
-        return ent
+    if not isinstance(ent, (Line, Arc)):
+        return [0.0, 1.0], 0.5, []                  # one piece, any click
     span = _length_of(ent)
     t0 = min(max(_frac(ent, x, y), 0.0), 1.0)       # the click's parameter
     sn: list = []
@@ -184,7 +179,29 @@ def trim_piece(model, ent, x, y):
         if merged and abs(t - merged[-1][0]) * span < 1e-7:
             continue
         merged.append((t, s))
-    bounds = [0.0] + [t for t, _ in merged] + [1.0]
+    return [0.0] + [t for t, _ in merged] + [1.0], t0, merged
+
+
+def trim_piece(model, ent, x, y):
+    """THE TRIM VERB: cut `ent` at every interior crossing and delete the
+    PIECE under (x, y).  An UNCROSSED entity is one piece and goes whole
+    (Fusion: Trim on a lonely line erases it); circles and ellipses are
+    un-splittable, so they are one piece too.  A click exactly ON a cut is
+    ambiguous - nothing is deleted and None comes back; the refusal lands
+    BEFORE any mutation (split only after the piece question is settled).
+    Only the clicked entity is cut - its neighbours keep their shape (v1).
+    Cuts REUSE an existing Point sitting at the crossing (a T-junction's
+    stem end): two Points at one coordinate would silently un-join it.
+    Returns the deleted entity, or None."""
+    pb = piece_bounds(model, ent, x, y)
+    if pb is None:                                  # a Point is not trimmable
+        return None
+    bounds, t0, merged = pb
+    if not isinstance(ent, (Line, Arc)):            # circle / ellipse: one
+        model.delete_entity(ent)                    #  piece - gone whole
+        return ent
+    sk = model.sketch
+    span = _length_of(ent)
     for b in bounds:                                # ON a cut? refuse first -
         if abs(t0 - b) * span < 1e-7:               #  the model never learns
             return None                             #  the cut was considered
@@ -202,6 +219,61 @@ def trim_piece(model, ent, x, y):
     model.delete_entity(victim)                     # metric facts die with
     return victim                                   #  it; the survivors keep
     #                                                the SHA copies R1 mints
+
+
+def extend_end(model, ent, x, y):
+    """TRIM's OTHER half: when the clicked piece runs OFF an open end that
+    another line crosses AHEAD of that end, the end is EXTENDED onto the
+    crossing instead of anything being deleted (Fusion trims a stub TO a
+    boundary).  The end must be FREE (one user, no constraint - close_
+    corner's own safety law) and the partner is cut at the crossing
+    REUSING the travelling end Point: after the move ONE Point serves the
+    stub, the joint and both partner halves - a true joined T that the
+    profile sees.  Raises ValueError with a reason ("Nothing to trim to
+    beyond that end") - the caller falls back to deleting the piece.
+    v1: straight lines only."""
+    pb = piece_bounds(model, ent, x, y)
+    if pb is None or not isinstance(ent, Line):
+        raise ValueError("Only straight lines can be extended (yet)")
+    bounds, t0, _cuts = pb
+    for i in range(len(bounds) - 1):
+        if bounds[i] <= t0 <= bounds[i + 1]:
+            lo, hi = bounds[i], bounds[i + 1]
+            break
+    cands = []                                      # only the piece's sides
+    if lo <= 1e-12:                                 #  at the entity's OWN
+        cands.append((t0, ent.a))                   #   ends can be open -
+    if hi >= 1 - 1e-12:                             #  a side bounded by a
+        cands.append((1.0 - t0, ent.b))             #   CUT is already joined
+    cands.sort(key=lambda c: c[0])                  # nearest to the click
+    span = _length_of(ent)
+    ax, ay, bx, by = ent.a.x, ent.a.y, ent.b.x, ent.b.y
+    refs = _constrained(model)
+    for _d, p in cands:
+        if _usage(model, p) != 1 or id(p) in refs:
+            continue                                # not a FREE end
+        for other in model.sketch.lines:
+            if other is ent:
+                continue
+            X = _intersect(ent, other)
+            if X is None:
+                continue                            # parallel: no junction
+            s = ((X[0] - ax) * (bx - ax) + (X[1] - ay) * (by - ay)) / span
+            ahead = (s > span + 1e-7) if p is ent.b else (s < -1e-7)
+            if not ahead:
+                continue                            # not beyond THIS end
+            oa, ob = other.a, other.b
+            L2 = (ob.x - oa.x) ** 2 + (ob.y - oa.y) ** 2
+            if L2 < 1e-18:
+                continue
+            so = ((X[0] - oa.x) * (ob.x - oa.x)
+                  + (X[1] - oa.y) * (ob.y - oa.y)) / L2
+            if not _cut_lo(math.sqrt(L2)) < so < 1 - _cut_lo(math.sqrt(L2)):
+                continue                            # joint must sit INSIDE
+            split_entity(model, other, X[0], X[1], seam=p)   # the partner
+            p.x, p.y = X                            #  adopts the travelling
+            return ent                              #   end: ONE joint Point
+    raise ValueError("Nothing to trim to beyond that end")
 
 
 def _length_of(ent) -> float:
