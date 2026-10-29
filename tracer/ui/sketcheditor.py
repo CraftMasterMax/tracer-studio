@@ -964,7 +964,8 @@ class SketchCanvas(QWidget):
                 return
             self._sel = [t if p is grab else p for p in self._sel]
             self._snap_hint = None
-            self._solve()
+            self._snap_obj = None              # the CHIP is the glyph too:
+            self._solve()                      #  a kept promise dismisses it
         self.update()
 
     def mouseReleaseEvent(self, ev: QMouseEvent):

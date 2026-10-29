@@ -201,6 +201,7 @@ def test_a_caught_drop_welds_and_the_frame_closes(ed):
     _release(ed, 10, 10.2)
     assert sk.lines[1].a is p2                   # identity, not contact
     assert p4 not in sk.points
+    assert ed._snap_obj is None and ed._snap_hint is None   # glyph dismissed
     assert len(m.to_loops()[0]) == 1             # and the loop is REAL
     assert len(ed._hist) == n0 + 1               # one snapshot rode it
     ed.undo_op()                                 #  the WHOLE gesture:
