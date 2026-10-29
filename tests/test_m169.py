@@ -264,3 +264,161 @@ def test_the_scribe_is_pure_kernel():
     assert "trim_stroke" in dir(tk)
     src = inspect.getsource(tk)
     assert "PySide6" not in src and "QtCore" not in src
+
+
+# ---- M169 rung 3: THE SCRIBE IN THE CANVAS ---------------------------------
+
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt                  # noqa: E402
+from PySide6.QtGui import QMouseEvent                                   # noqa: E402
+from PySide6.QtTest import QTest                                        # noqa: E402
+from PySide6.QtWidgets import QApplication                              # noqa: E402
+
+
+@pytest.fixture
+def ed(qapp):
+    c = SketchCanvas()
+    c.set_model(SketchModel())
+    c.resize(600, 400)
+    c._snap_grid = False
+    yield c
+    c.deleteLater()
+
+
+def scr(x, y):                    # world mm -> px (the m168 fixture law:
+    return (int(round(300 + 4.0 * x)), int(round(200 - 4.0 * y)))
+
+
+def _key(c, key):
+    QTest.keyClick(c, key)
+    QApplication.instance().processEvents()
+
+
+def _press(c, x, y):
+    QTest.mousePress(c, Qt.LeftButton, Qt.NoModifier, QPoint(*scr(x, y)))
+
+
+def _release(c, x, y):
+    QTest.mouseRelease(c, Qt.LeftButton, Qt.NoModifier, QPoint(*scr(x, y)))
+
+
+def _held(c, x, y):
+    # the m167 law (a real event reaches an unshown canvas) + M169: the
+    # STROKE rides it HELD - buttons carries the LMB.
+    p = QPointF(*scr(x, y))
+    QApplication.sendEvent(
+        c, QMouseEvent(QEvent.Type.MouseMove, p, p, p,
+                       Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+
+
+def _big_scribble(m):
+    """The R2 film scene at a readable scale: corners (-20,-15)..(20,15)
+    and EVERY end overshooting 12mm - the pockets are then wide enough for
+    a scribe to cross a stub while its samples stay >_HIT_PX from mains."""
+    L0 = m.add_line(m.point(-32.0, -15.0), m.point(32.0, -15.0))
+    L1 = m.add_line(m.point(20.0, -27.0), m.point(20.0, 27.0))
+    L2 = m.add_line(m.point(32.0, 15.0), m.point(-32.0, 15.0))
+    L3 = m.add_line(m.point(-20.0, 27.0), m.point(-20.0, -27.0))
+    return L0, L1, L2, L3
+
+
+def _ends(m):
+    return sorted((round(e.a.x, 4), round(e.a.y, 4),
+                   round(e.b.x, 4), round(e.b.y, 4))
+                  for e in m.sketch.lines)
+
+
+def test_the_scribe_eats_the_corner_it_crosses(ed):
+    """Press in the empty pocket, drag across TWO stubs, release: both
+    fall, the mains never moved, and the whole gesture paid ONE snapshot.
+    (The M168 R3 click gates in test_m168 stay the click-without-drag
+    witnesses - this gate is the stroke's own.)"""
+    m = ed.model
+    L0, L1, L2, L3 = _big_scribble(m)
+    ends0 = _ends(m)
+    _key(ed, Qt.Key_T)
+    n0 = len(ed._hist)
+    _press(ed, -26.0, -23.0)              # the empty pocket: arms nothing
+    assert ed._trim_arm is None
+    _held(ed, -18.0, -24.0)               # crosses x=-20 BELOW the corner
+    _held(ed, -25.5, -12.4)               # crosses y=-15 LEFT of the corner
+    assert len(m.sketch.lines) == 6       # two stubs fell, 4+2 pieces stay
+    _release(ed, -25.5, -12.4)            # a stroke release commits NOTHING
+    assert len(m.sketch.lines) == 6
+    assert len(ed._hist) == n0 + 1        # ONE snapshot for two pieces
+    assert ed._trim_arm is None and not ed._trim_stroke
+    assert L1 in m.sketch.lines and L2 in m.sketch.lines      # untouched
+    far = {(-20.0, -27.0), (-32.0, -15.0)}                    # stub tips
+    assert not any({(e.a.x, e.a.y), (e.b.x, e.b.y)} & far
+                   for e in m.sketch.lines)
+    assert ed.undo_op()                                   # one Ctrl-Z back
+    assert _ends(m) == ends0 and len(ed._hist) == n0
+
+
+def test_a_stroke_over_empty_air_is_zero_ambient(ed):
+    """A drag that takes nothing pushes NOTHING: hist length and model
+    bytes leave the gesture exactly as they came."""
+    m = ed.model
+    _big_scribble(m)
+    ends0 = _ends(m)
+    p0 = sorted((round(p.x, 4), round(p.y, 4)) for p in m.sketch.points)
+    _key(ed, Qt.Key_T)
+    n0 = len(ed._hist)
+    _press(ed, -26.0, -23.0)
+    _held(ed, -24.0, -21.0)               # stays >9px from every line
+    _held(ed, -22.5, -18.0)               #  (the pocket, deep: 2..3mm out)
+    _release(ed, -22.5, -18.0)
+    assert len(ed._hist) == n0            # the push was popped, never kept
+    assert _ends(m) == ends0
+    assert sorted((round(p.x, 4), round(p.y, 4))
+                  for p in m.sketch.points) == p0
+
+
+def test_survivors_are_inert_for_the_rest_of_the_stroke(ed):
+    """The scribe re-crosses the SAME corner inside the one gesture: the
+    eaten stub and the survivor of its split take no second fall - a
+    second, fresh gesture may eat again (one push each)."""
+    m = ed.model
+    _big_scribble(m)
+    _key(ed, Qt.Key_T)
+    n0 = len(ed._hist)
+    _press(ed, -26.0, -23.0)
+    _held(ed, -18.0, -24.0)               # the L3 bottom stub falls: 4->5
+    assert len(m.sketch.lines) == 5       #  (L3 splits twice, one piece eats)
+    _held(ed, -25.5, -20.0)               # back across x=-20 - the stub is
+    _held(ed, -17.0, -21.5)               #  gone and its seam survivor is
+    assert len(m.sketch.lines) == 5       #   INERT: no second fall
+    _release(ed, -17.0, -21.5)
+    assert len(ed._hist) == n0 + 1
+    _press(ed, 24.0, 15.0)                # fresh gesture: the L2 right stub
+    _release(ed, 24.0, 15.0)              #  is a NEW target - the click cuts
+    assert len(m.sketch.lines) == 6       # L2 splits in three, stub gone
+    assert len(ed._hist) == n0 + 2        #  one push PER gesture
+
+
+def test_hover_never_scratches_while_strokes_bite(ed):
+    """One gesture per button: the SAME world path ridden unheld previews
+    only (byte-still, no push); ridden held, the corner falls. The stroke
+    flag is the fork."""
+    m = ed.model
+    _big_scribble(m)
+    ends0 = _ends(m)
+    _key(ed, Qt.Key_T)
+    n0 = len(ed._hist)
+    p = QPointF(*scr(-18.0, -24.0))
+    q = QPointF(*scr(-25.5, -12.4))
+    for pos in (p, q):                   # unheld sweep across both stubs...
+        QApplication.sendEvent(
+            ed, QMouseEvent(QEvent.Type.MouseMove, pos, pos, pos,
+                            Qt.NoButton, Qt.NoButton, Qt.NoModifier))
+    assert _ends(m) == ends0             #  paint-only: not one byte moved
+    assert len(ed._hist) == n0           #  and no snapshot was paid
+    _press(ed, -26.0, -23.0)             # the identical path, now HELD...
+    QApplication.sendEvent(
+        ed, QMouseEvent(QEvent.Type.MouseMove, p, p, p,
+                        Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+    QApplication.sendEvent(
+        ed, QMouseEvent(QEvent.Type.MouseMove, q, q, q,
+                        Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+    _release(ed, -25.5, -12.4)
+    assert len(m.sketch.lines) == 6      # the same bytes, eaten by the drag
+    assert len(ed._hist) == n0 + 1

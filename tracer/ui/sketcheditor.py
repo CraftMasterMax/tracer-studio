@@ -45,7 +45,7 @@ _CLAIM_TEXT = {c.lower() for c in SKETCH_KEYS
 TOOL_HINTS = {
     "select": ("Select · L/R/C/A/Y/K draw · H/V/F/D/Q constraints · "
                "Enter finish · . on-curve"),
-    "trim": "Trim — click a piece to cut it away (T)",
+    "trim": "Trim — click a piece or scribe across pieces to cut (T)",
     "line": "Line — click points, Enter/Esc stops",
     "rect": "Rectangle — drag corners or click · move · click",
     "circle": "Circle — drag from center or click · move · click",
@@ -148,6 +148,10 @@ class SketchCanvas(QWidget):
         #   motion = photocopy the selection instead (the copy-drag law).
         self._trim_arm = None                  # M168 R3: the trim TOOL:
         self._trim_hover = None                #   press arm / hover piece
+        self._trim_last = None                 # M169 R3: the STROKE: last
+        self._trim_done: set = set()           #   probe point, inert ids
+        self._trim_stroke = False              #   held-drag flag + the one
+        self._trim_pushed = False              #   snapshot the gesture pays
         self._pan_from: QPointF | None = None
         self._line_start: Point | None = None
         self._rect_corner: np.ndarray | None = None
@@ -247,6 +251,10 @@ class SketchCanvas(QWidget):
         self._poly: list = []                  # polygon tool: centre, vertex
         self._trim_arm = None                  # M168 R3: the trim tool's
         self._trim_hover = None                #   click-arm / piece preview
+        self._trim_last = None                 # M169 R3: stroke state dies
+        self._trim_done = set()                #   with the tool switch
+        self._trim_stroke = False
+        self._trim_pushed = False
         self._preview = None
         self._band = None
         self._snap_hint = None
@@ -575,8 +583,11 @@ class SketchCanvas(QWidget):
         if self._tool == "trim":                  # M168 R3: the trim TOOL
             hit = self._hit(q)                    #  (Fusion's T): a press
             self._trim_arm = hit[1] if hit else None   #  ARMS the entity
-            return                                #   under the cursor;
-            #                                     #   the RELEASE does the cut
+            self._trim_last = self._world(q)      #   under the cursor; the
+            self._trim_done = set()               #   RELEASE does the cut,
+            self._trim_stroke = False             #   a HELD MOVE starts the
+            self._trim_pushed = False             #   scribe (M169 R3)
+            return
         wp = self._world(q)
         if self._tool == "line":
             p = self._place_point(q)              # point/origin/grid magnet
@@ -763,6 +774,19 @@ class SketchCanvas(QWidget):
             self.update()
             return
         if self._tool == "trim":                  # M168 R3: hover previews
+            if ev.buttons() & Qt.LeftButton and self._trim_last is not None:
+                # M169 R3: HELD LMB = the scribe. Past the click radius the
+                # gesture is a STROKE, not an aim: hover dies, the segment
+                # since the last probe eats whatever it crosses.
+                w = self._world(q)
+                if (np.hypot(*(w - self._trim_last)) * self._scale
+                        > _HIT_PX):
+                    self._trim_hover = None
+                    self._trim_stroke = True
+                    self._trim_scribe(self._trim_last, w)
+                    self._trim_last = w
+                self.update()
+                return
             hit = self._hit(q)                    #  the WHOLE piece the
             self._trim_hover = None               #   click would take. The
             if hit is not None:                   #   question is READ-ONLY:
@@ -849,7 +873,67 @@ class SketchCanvas(QWidget):
                            else Qt.CrossCursor)    # same law as set_tool
         if self._trim_hover is not None:             # M168 R3: the piece
             self._trim_hover = None                  #  preview dies too
+        self._trim_last = None                       # M169 R3: a Leave ends
+        self._trim_stroke = False                    #  the stroke where the
+        self._trim_done = set()                      #   pointer left the room
         super().leaveEvent(ev)
+
+    def _trim_scribe(self, a, b):
+        """M169 R3: one SEGMENT of a held stroke eats everything it
+        crosses. Samples ride the click's OWN _hit grammar (world
+        tolerance _HIT_PX/scale), so scribe and click speak one language;
+        per new target trim_piece decides - ON-cut refusals hush (R2).
+        An entity is touched ONCE per gesture: the touched object AND its
+        split survivor (a half sharing one of its Points) join the inert
+        set. The gesture keeps EXACTLY ONE history snapshot - popped when
+        nothing fell, the zero-ambient law."""
+        from ..core.sketch.trim import piece_bounds, trim_piece
+        seg = b - a
+        steps = max(2, int(np.hypot(float(seg[0]), float(seg[1]))
+                           * self._scale / 3.0) + 1)
+        touches = []
+        seen = set()
+        for k in range(steps + 1):
+            w = a + seg * (k / steps)
+            hit = self._hit(self.w2s(float(w[0]), float(w[1])))
+            if hit is None:
+                continue
+            e = hit[1]
+            if id(e) in self._trim_done or id(e) in seen:
+                continue
+            if piece_bounds(self.model, e, float(w[0]), float(w[1])) \
+                    is None:
+                self._trim_done.add(id(e))         # a Point: never trimmable
+                continue
+            seen.add(id(e))
+            touches.append((e, float(w[0]), float(w[1])))
+        if not touches:
+            return
+
+        def inert(e0):
+            self._trim_done.add(id(e0))
+            if isinstance(e0, (Line, Arc)):        # the survivor half is
+                for cand in list(self.model.sketch.lines) + \
+                        list(self.model.sketch.arcs):   #  BORN of this cut:
+                    if e0.a in (cand.a, cand.b) or e0.b in (cand.a, cand.b):
+                        self._trim_done.add(id(cand))   #  inert for the rest
+        if self._trim_pushed:                      # gesture already paid
+            for e, x, y in touches:
+                trim_piece(self.model, e, x, y)   #  cuts without a second
+                inert(e)                          #   snapshot
+        else:
+            self._push_hist()
+            took = False
+            for e, x, y in touches:
+                if trim_piece(self.model, e, x, y) is not None:
+                    took = True
+                inert(e)
+            if took:
+                self._trim_pushed = True
+            else:
+                self._hist.pop()                   # took nothing: push nothing
+        self._solve()
+        self.update()
 
     def mouseReleaseEvent(self, ev: QMouseEvent):
         if ev.button() in (Qt.MiddleButton, Qt.RightButton):
@@ -858,9 +942,17 @@ class SketchCanvas(QWidget):
         self._drag_pt = None                    # M167 R1: a release ends
         self._drag = None                       #  ANY grab, tool or no tool
         if self._tool == "trim":                 # M168 R3: the armed entity
+            if self._trim_stroke:                # M169 R3: a stroke ends at
+                self._trim_arm = None            #  the release - the aim is
+                self._trim_last = None           #   spent and a drag that
+                self._trim_stroke = False        #   took NOTHING pushes
+                self._trim_done = set()          #   nothing
+                return
             e, self._trim_arm = self._trim_arm, None    #  is CUT, never
             if e is None:                        #   dragged: release is the
                 return                           #   commit, press is the aim
+            self._trim_last = None
+            self._trim_done = set()
             wx, wy = self._world(ev.position())
             from ..core.sketch.trim import extend_end, trim_piece
             self._push_hist()
