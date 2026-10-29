@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (QWidget, QApplication, QComboBox,
 
 from ..core.document import Document
 from ..core.geometry import Solid
-from .camera import Camera, perspective, view_orient
+from .camera import Camera, fit_frame, perspective, view_orient
 from .renderer import SceneRenderer
 from . import theme
 from .viewcube import (DRAG_TH, NavWidget, ViewCube, auto_size,
@@ -583,6 +583,10 @@ class Viewport(QWidget):
         return (pts.min(axis=0), pts.max(axis=0))
 
     def mousePressEvent(self, ev):
+        self._yield_gesture()            # M166 R2: the hand beats the
+        #                                   ghost — a press takes the
+        #                                   camera from any in-flight
+        #                                   glide before it mutates.
         if self._wheel is not None:
             # Ring is up (lingering or mid-hold): the press just parks
             # until the release picks a wedge or dismisses. Start no
@@ -1010,6 +1014,10 @@ class Viewport(QWidget):
     def wheelEvent(self, ev):
         """Fusion zooms toward the point under the cursor: raycast the
         model first, fall back to the ground plane, else plain dolly."""
+        self._yield_gesture()            # M166 R2: the wheel is the
+        #                                   hand; it wins over any
+        #                                   in-flight glide (the zoom
+        #                                   below owns distance now)
         k = pow(1.0015, -ev.angleDelta().y())
         px, py = ev.position().x(), ev.position().y()
         anchor = None
@@ -1456,19 +1464,24 @@ class Viewport(QWidget):
         self._pivot = None               # M133: home IS reset-orbit-centre
         stored = self._doc.home if self._doc is not None else None
         if stored:                       # M155 L12.2/L12.3: "Set Current
-            self._anim = None            #   View as Home" stored the
-            self._anim_timer.stop()      #   triple WITH the document —
-            self._cam.yaw = float(stored["yaw"])      # restore steers AND
-            self._cam.pitch = float(stored["pitch"])  #   zooms; no
-            self._cam.distance = float(stored["distance"])   # re-fit law
-            self._cam.roll = float(stored.get("roll", 0.0))
-            #   M157 (receipt V7): pre-M157 files carry no roll key —
-            #   they restore at the wrist's ZERO, old triple faithful.
-            self.update()
+            # M166 R2: home FLIES — 4 owned dials (yaw, pitch, roll,
+            # distance). The old _anim-kill is gone: mid-flight home is
+            # then DEFINED by construction (retarget from the LIVE
+            # camera, absolute targets, never a snap-back — the same
+            # L7.6 law m154 already ships). Re-home = equal-target
+            # early-exit, idempotent.
+            self._glide_to(float(stored["yaw"]), float(stored["pitch"]),
+                           float(stored.get("roll", 0.0)),
+                           distance=float(stored["distance"]))
             return
         if self._bbox is not None:       # the shipped iso+fit pin stands
-            self._cam.set_view("iso")    #   byte-exact for home-less
-            self._cam.fit(self._bbox)    #   documents (M154 gate G9)
+            # M166 R2: the home-less branch is ONE 6-dial flight — the
+            # iso home art (28 deg) plus Camera.fit's exact numbers via
+            # the pure fit_frame helper. Under the 0.0 door it writes
+            # byte-identically to the old set_view+fit (M154 gate G9).
+            cy, cp = view_orient("iso")
+            center, dist = fit_frame(self._bbox, self._cam.fov)
+            self._glide_to(cy, cp, 0.0, distance=dist, target=center)
         self.update()
 
     # ---- M154: the one transition law (cube clicks AND keys glide) ------
@@ -1482,43 +1495,77 @@ class Viewport(QWidget):
         self._orbit_to(*view_orient(kind))
 
     def _orbit_to(self, yaw: float, pitch: float, roll: float = 0.0):
-        """Glide the camera to an ABSOLUTE orientation. Re-targeting
-        mid-flight restarts from the LIVE camera (L7.6/AT-07: never a
-        snap-back; targets are absolute, so the vendor's
-        composition-accumulation bug is structurally impossible —
-        pinned anyway by the movement-forward gate).
-        M157: the law grows to the FOURTH dial — zone clicks and the
-        snap default roll to 0 (canonical means canonical, L6.3a),
-        the roll arrows pass an explicit wrapped target (contract
-        §1.4)."""
+        """Glide the camera to an ABSOLUTE orientation — the thin
+        orientation-only seam (cube zones, keys, roll arrows and snap
+        views all call this; m154's law, name load-bearing). The
+        general door is _glide_to below; owning NO distance or target
+        means the tween never touches those dials — byte-for-byte the
+        world where wheel-zoom mid-orientation-glide just works."""
+        self._glide_to(yaw, pitch, roll)
+
+    def _glide_to(self, yaw, pitch, roll, distance=None, target=None):
+        """M166 R2: the ONE transition law grows owned dials. Yaw/pitch/
+        roll always glide (wrapped arcs, _anim_step); distance and
+        target glide only when NOT None — None means "not owned" and
+        the flight leaves them alone. Re-targeting mid-flight restarts
+        from the LIVE camera (L7.6/AT-07: never a snap-back; targets
+        are absolute, so the vendor's composition-accumulation bug is
+        structurally impossible). dur 0 or all-equal = the instant door
+        writes exactly what today's teleports wrote."""
         dur = max(0.0, float(self.view_anim_s))
+        d0 = float(self._cam.distance)
+        t0v = np.asarray(self._cam.target, float)
+        d1 = None if distance is None else float(distance)
+        t1v = None if target is None else np.asarray(target, float)
         if dur == 0.0 or (yaw == self._cam.yaw and
                           pitch == self._cam.pitch and
-                          roll == self._cam.roll):
+                          roll == self._cam.roll and
+                          (d1 is None or d1 == d0) and
+                          (t1v is None or np.array_equal(t1v, t0v))):
             self._anim = None
             self._anim_timer.stop()
             self._cam.yaw, self._cam.pitch = yaw, pitch
             self._cam.roll = roll
+            if d1 is not None:
+                self._cam.distance = d1
+            if t1v is not None:
+                self._cam.target = t1v
             self.update()
             return
         self._anim = (self._cam.yaw, self._cam.pitch, self._cam.roll,
                       yaw, pitch, roll,
+                      d0, d1, t0v, t1v,
                       QDateTime.currentMSecsSinceEpoch() / 1000.0, dur)
         if not self._anim_timer.isActive():
             self._anim_timer.start()
         self.update()
 
+    def _yield_gesture(self):
+        """M166 R2 — THE HAND BEATS THE GHOST: any user gesture kills an
+        in-flight glide WHERE THE CAMERA STANDS. Once flights own
+        distance/target, a wheel tick and _anim_step would fight over
+        the same floats; cancel moves nothing (m133's freeze law
+        survives), and the orbit-drag-overwriting-glide rough edge dies
+        with it."""
+        if self._anim is not None:
+            self._anim = None
+            self._anim_timer.stop()
+
     def _anim_step(self):
         if self._anim is None:
             self._anim_timer.stop()
             return
-        y0, p0, r0, y1, p1, r1, t0, dur = self._anim
+        y0, p0, r0, y1, p1, r1, d0, d1, t0v, t1v, t0, dur = self._anim
         t = (QDateTime.currentMSecsSinceEpoch() / 1000.0 - t0) / dur
         if t >= 1.0:
             self._anim = None
             self._anim_timer.stop()
             self._cam.yaw, self._cam.pitch = y1, p1   # land ON the law
             self._cam.roll = r1
+            if d1 is not None:
+                self._cam.distance = d1
+            if t1v is not None:
+                self._cam.target = t1v
             self.update()
             return
         e = QEasingCurve(QEasingCurve.Type.InOutCubic).valueForProgress(
@@ -1532,6 +1579,10 @@ class Viewport(QWidget):
         self._cam.pitch = p0 + (p1 - p0) * e
         self._cam.roll = r0 + ((r1 - r0 + math.pi) % (2 * math.pi)
                                - math.pi) * e
+        if d1 is not None:                   # M166 R2: owned dials
+            self._cam.distance = d0 + (d1 - d0) * e
+        if t1v is not None:
+            self._cam.target = t0v + (t1v - t0v) * e
         self.update()
 
     def _cube_click(self, zone: str):

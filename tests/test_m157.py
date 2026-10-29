@@ -204,6 +204,10 @@ def test_every_canonical_door_clears_the_wrist(vp, qapp):
 # ---- G7: home remembers the wrist (and old files don't) --------------------
 
 def test_home_grows_a_fourth_key_old_files_stay_faithful(vp, qapp):
+    vp.view_anim_s = 0.0     # M166 R2 cite-the-move: home now FLIES; the
+    #                        faithfulness of the RESTORED dials is the
+    #                        landing value - the instant door lands it
+    #                        now, byte-identical to pre-rung-2 home()
     vp._cam.yaw, vp._cam.pitch, vp._cam.distance = 0.3, 0.5, 77.0
     vp._cam.roll = 0.35
     vp._set_home_from_view()

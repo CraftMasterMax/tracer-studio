@@ -206,14 +206,17 @@ def test_set_home_and_restore(vp, qapp):
     assert vp._doc.home == {"yaw": 0.3, "pitch": 0.5,
                             "distance": 77.0, "roll": 0.0}
     vp._cam.yaw, vp._cam.pitch, vp._cam.distance = 0.0, 0.0, 10.0
-    vp.home()
+    vp.view_anim_s = 0.0     # M166 R2 cite-the-move: home now FLIES;
+    vp.home()                #  this pin checks the EXACT restored
+    #                        quadruple - it rides the instant door
     assert (vp._cam.yaw, vp._cam.pitch, vp._cam.distance) == (
         0.3, 0.5, 77.0)                          # steers AND zooms
 
 
 def test_home_less_doc_keeps_the_28_deg_pin(vp, qapp):
     assert vp._doc.home is None
-    vp.home()
+    vp.view_anim_s = 0.0     # M166 R2: home flies; the pin reads the
+    vp.home()                #  LANDING - instant door, byte-exact law
     assert math.degrees(vp._cam.pitch) == 28.0   # M154 G9 law stands
 
 

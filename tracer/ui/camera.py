@@ -172,14 +172,21 @@ class Camera:
 
     # ---- framing ------------------------------------------------------------
     def fit(self, bbox: np.ndarray, margin: float = 1.35):
-        bbox = np.asarray(bbox, float).reshape(2, 3)
-        center = bbox.mean(axis=0)
-        radius = max(float(np.linalg.norm(bbox[1] - bbox[0])) / 2.0, 1e-3)
-        self.target = center
-        self.distance = radius / math.sin(math.radians(self.fov) / 2.0) * margin
+        self.target, self.distance = fit_frame(bbox, self.fov, margin)
 
     def set_view(self, kind: str):
         self.yaw, self.pitch = view_orient(kind)
+
+
+def fit_frame(bbox, fov_deg: float, margin: float = 1.35):
+    """M166 R2: Camera.fit's arithmetic, PURE — (center, distance) from
+    a bbox. Home's 6-dial flight needs fit's NUMBERS before applying
+    them; the formula moved byte-for-byte (m62's <95% law rides
+    through)."""
+    bbox = np.asarray(bbox, float).reshape(2, 3)
+    center = bbox.mean(axis=0)
+    radius = max(float(np.linalg.norm(bbox[1] - bbox[0])) / 2.0, 1e-3)
+    return center, radius / math.sin(math.radians(fov_deg) / 2.0) * margin
 
 
 # the axis views as DATA (M154: the animation law needs the same

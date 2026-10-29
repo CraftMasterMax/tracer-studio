@@ -297,7 +297,12 @@ def test_mmb_orbits_shift_pans_and_click_homes(win, qapp):
     cam.yaw, cam.pitch = 1.234, -0.432
     QTest.mousePress(d, Qt.MiddleButton, Qt.NoModifier, QPoint(400, 300), 10)
     QTest.mouseRelease(d, Qt.MiddleButton, Qt.NoModifier, QPoint(400, 300), 10)
-    assert abs(cam.yaw - math.radians(45)) < 1e-9    # home (iso fit)
+    import time                                   # M166 R2 cite-the-move:
+    t_end = time.monotonic() + 2.5                #  home now FLIES and
+    while vp._anim is not None and time.monotonic() < t_end:  #  this is
+        qapp.processEvents()                      #  the gesture's OWN
+        time.sleep(0.01)                          #  gate - it rides the
+    assert abs(cam.yaw - math.radians(45)) < 1e-9  # real flight to land
 
 
 # ---- ViewCube ---------------------------------------------------------------

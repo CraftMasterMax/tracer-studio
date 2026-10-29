@@ -88,6 +88,9 @@ def test_zoom_buttons_dive_and_pull(win):
 
 def test_home_button_refits(win):
     vp = win.viewport
+    vp.view_anim_s = 0.0     # M166 R2 cite-the-move: home now FLIES; the
+    #                        "refit" pin checks the LANDED framed distance
+    #                        - the instant door lands it now
     vp._cam.zoom(3.0)
     away = vp._cam.distance
     _click_at(vp, vp._nav.rects["home"].center())
