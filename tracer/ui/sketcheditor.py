@@ -40,6 +40,22 @@ from .commands import SKETCH_KEYS
 _CLAIM_TEXT = {c.lower() for c in SKETCH_KEYS
                if "+" not in c and c not in ("Enter", "Esc")}
 
+# the HUD's voice per tool (M169 R1: split out of _draw_hud so "the surfaces
+# speak" is a TESTED claim - trim joining the family exposed a "Tool: ?")
+TOOL_HINTS = {
+    "select": ("Select · L/R/C/A/Y/K draw · H/V/F/D/Q constraints · "
+               "Enter finish · . on-curve"),
+    "trim": "Trim — click a piece to cut it away (T)",
+    "line": "Line — click points, Enter/Esc stops",
+    "rect": "Rectangle — drag corners or click · move · click",
+    "circle": "Circle — drag from center or click · move · click",
+    "ellipse": "Ellipse — drag from centre or click · move · "
+               "click (radii follow the cursor)",
+    "arc": "Arc — 3 clicks: start · end · bulge (chains)",
+    "slot": "Slot — 3 clicks: centre · centre · width",
+    "poly": "Polygon — click centre · click vertex · 3-9 sides",
+}
+
 ACCENT = QColor(theme.SKETCH["under"])       # unconstrained / active blue
 SEL = QColor(theme.SKETCH["sel"])            # picked geometry
 PROJ = QColor(theme.SKETCH["projected"])     # projected reference edges
@@ -2536,18 +2552,7 @@ class SketchCanvas(QWidget):
         if self._cursor is not None:
             cx, cy = self._cursor
             lines.append((f"X {cx:.2f}   Y {cy:.2f} mm", HUD))
-        tool = {"select": ("Select · L/R/C/A/Y/K draw · H/V/F/D/Q/T "
-                           "constraints · Enter finish · . on-curve"),
-                "line": "Line — click points, Enter/Esc stops",
-                "rect": "Rectangle — drag corners or click · move · click",
-                "circle": "Circle — drag from center or click · move · click",
-                "ellipse": "Ellipse — drag from centre or click · move · "
-                           "click (radii follow the cursor)",
-                "arc": "Arc — 3 clicks: start · end · bulge (chains)",
-                "slot": "Slot — 3 clicks: centre · centre · width",
-                "poly": "Polygon — click centre · click vertex · "
-                        "3-9 sides"}
-        lines.append(("Tool: " + tool.get(self._tool, "?"), HUD))
+        lines.append(("Tool: " + TOOL_HINTS.get(self._tool, "?"), HUD))
         if self._show_dof:                       # M119 overlay is on: speak
             # M164 R1: the solver now remembers its arithmetic - speak it.
             lines.append((self._dof_hud_text(), WARN))

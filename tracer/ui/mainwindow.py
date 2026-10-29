@@ -470,8 +470,8 @@ class MainWindow(QMainWindow):
             s(glyph, tip,
               lambda checked=False, t=tool: self.sketch.set_tool(t))
         r.sketch_sep()
-        s("trim", "Trim — close a corner between two selected lines (/)",
-          lambda checked=False: self.sketch.act_trim())
+        s("trim", "Trim — click pieces away with the trim tool (T)",
+          lambda checked=False: self.sketch.set_tool("trim"))
         s("offset", "Offset — parallel copies of selected lines (U)",
           lambda checked=False: self.sketch.act_offset())
         s("construction", "Construction — toggle selected geometry (K)",

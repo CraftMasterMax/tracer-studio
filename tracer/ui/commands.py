@@ -86,7 +86,7 @@ SKETCH_KEYS: dict[str, tuple[str, str]] = {
     "Shift+C":  ("Sketch: Ellipse", "tool:ellipse"),
     "O":        ("Sketch: Offset (Fusion key)", "tool:offset"),
     "U":        ("Sketch: Offset (classic alias)", "tool:offset"),
-    "T":        ("Sketch: Trim corner (two lines)", "tool:trim"),
+    "T":        ("Sketch: Trim tool", "tool:trim_mode"),
     "Shift+T":  ("Sketch: Tangent constraint", "tool:tangent"),
     "D":        ("Sketch: Dimension", "tool:dim"),
     "H":        ("Sketch: Horizontal constraint", "tool:H"),
@@ -254,8 +254,8 @@ def _sketch_runner(win, target: str):
                 cv.finish(revolve=True)
             case "tool:offset":
                 cv.act_offset()
-            case "tool:trim":
-                cv.act_trim()
+            case "tool:trim_mode":
+                cv.set_tool("trim")
             case "tool:tangent":
                 cv.act_tangent()
             case "tool:dim":
