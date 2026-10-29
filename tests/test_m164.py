@@ -1298,12 +1298,19 @@ def test_dim_edit_goes_inline_not_to_the_panel(mkcanvas, qapp2,
     assert cv._hover_c is None                         # ring dies closed
 
 
-def test_angle_dim_rides_the_same_panel(mkcanvas, qapp2, monkeypatch):
+def test_angle_dim_edits_inline_too(mkcanvas, qapp2, monkeypatch):
+    # M165 R2 RETARGET (cited, m165_build_plan Rung 2): the panel's last
+    # dim leg retired - angles ride the CHIP now.  Everything this gate
+    # ever carried survives in the chip grammar: no modal, no fx row
+    # (bare degrees, unit in the placeholder), and the strongest
+    # forgetfulness of all - NO PANEL opens, so nothing can be
+    # remembered.
     from tracer.ui import cmddialog as cd
     from tracer.ui.cmddialog import Shell
 
     def no_modal(*a, **k):
-        raise AssertionError("rung 4: no Shell.getDouble for angle edits")
+        raise AssertionError("no modal for angle edits - chip only")
+    monkeypatch.setattr(cd, "ask", no_modal)
     monkeypatch.setattr(Shell, "getDouble", staticmethod(no_modal))
     m = SketchModel()
     a, b = m.point(0, 0), m.point(10, 0)
@@ -1311,21 +1318,20 @@ def test_angle_dim_rides_the_same_panel(mkcanvas, qapp2, monkeypatch):
     ang = Angle(ln, math.radians(20))
     m.constrain(Fixed(a, x=0.0, y=0.0), ang)
     cv = mkcanvas(m)
-    cv._edit_dim(ang)                        # angle = the panel, still
+    rect = next(r for r, c in cv._dim_hits if c is ang)
+    QTest.mouseDClick(cv, Qt.LeftButton, Qt.NoModifier,
+                      rect.center().toPoint())          # the real route
     qapp2.processEvents()
-    p = cv._cmd_panel
-    assert p.command_id == "sketch_dim"
-    assert list(p._edits) == ["val"]             # angles carry NO fx row:
-    assert any("Angle (deg)" in w.text()         #  M89 law kept (fx binds
-               for w in p.findChildren(QLabel))  #  lengths, unit in label)
-    p._edits["val"].set_value_mm(30.0)
-    p.btn_commit.click()
-    qapp2.processEvents()
+    ed = cv._dim_edit
+    assert type(ed) is ChipField and ed.constraint is ang
+    assert getattr(cv, "_cmd_panel", None) is None      # panel NEVER
+    assert ed.edit.text() == "20.00"                    # bare degrees...
+    assert ed.edit.placeholderText() == "\u00b0"        #  unit in the PH
+    _type(cv, "30", qapp2)
     assert math.degrees(ang.value) % 180 == pytest.approx(30, abs=1e-6)
-    assert cd.remembered("sketch_dim") is None   # M165: the forgetful law
-    _reap(qapp2)                                 #  lives here now (chip
-                                                 #   prefill is per-dim by
-    assert cv._dim_edit is None                  #  construction, m165)
+    assert cd.remembered("sketch_dim") is None          # command gone
+    _reap(qapp2)                                        #  entire
+    assert cv._dim_edit is None
 
 
 def test_double_scale_trap_plain_and_fx_speak_different_grammars(

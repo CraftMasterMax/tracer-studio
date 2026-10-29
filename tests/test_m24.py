@@ -202,16 +202,11 @@ def test_angle_badge_is_editable_via_doubleclick_path(win, qapp, monkeypatch):
     assert len(badge) == 1                     # label rendered & hittable
     assert b.x == pytest.approx(0, abs=1e-4)   # solved up to vertical
     assert b.y == pytest.approx(8, abs=1e-4)
-    # M164 RETARGET (cited): the angle editor rides the LIVE panel now
-    # (rung 4); the double-click path and its value law are unchanged.
-    from tracer.ui import cmdpanel
-
-    def fake_run(parent, command_id, title, fields, *, preview, commit,
-                 abort, remember_key=None):
-        preview({"val": 30.0})
-        commit({"val": 30.0})
-        return None
-    monkeypatch.setattr(cmdpanel, "run", fake_run)
+    # M165 R2 RETARGET (cited): angles went INLINE with rung 2 - the
+    # panel seam collapses into the chip's seam; the double-click target
+    # and its value law are unchanged (bare degrees now, chip grammar).
+    from conftest import script_dim_edit
+    script_dim_edit(monkeypatch, "30")
     cv._edit_dim(angs[0])                      # the double-click target
     qapp.processEvents()
     assert _deg(angs[0].value) == pytest.approx(30, abs=1e-9)
@@ -230,16 +225,11 @@ def test_angle_edit_resnaps_and_does_not_flip(win, qapp, monkeypatch):
     ln = m.add_line(a, b)
     m.constrain(Fixed(a, x=0, y=0), Distance(a, b, 10.0), make_angle(ln, 20))
     m.solve()
-    # M164 RETARGET (cited): live panel seam; the resnap law (20 -> 25
-    # rotates the SHORT way, never flips through 180) is unchanged.
-    from tracer.ui import cmdpanel
-
-    def fake_run(parent, command_id, title, fields, *, preview, commit,
-                 abort, remember_key=None):
-        preview({"val": 25.0})
-        commit({"val": 25.0})
-        return None
-    monkeypatch.setattr(cmdpanel, "run", fake_run)
+    # M165 R2 RETARGET (cited): inline chip seam now (see above); the
+    # resnap law (20 -> 25 rotates the SHORT way, never flips through
+    # 180) is unchanged - it rode into _apply_dim_edit's angle clause.
+    from conftest import script_dim_edit
+    script_dim_edit(monkeypatch, "25")
     angs = [c for c in m.sketch.constraints if isinstance(c, Angle)]
     cv._edit_dim(angs[0])
     qapp.processEvents()

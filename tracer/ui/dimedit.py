@@ -7,14 +7,18 @@ named-param | trailing-unit (cmdpanel.parse_scalar, native millimetres),
 or "=expr" to bind the dimension to the parameter sheet - M89's law, the
 "=" prefix IS the old fx row, and a plain number on a bound chip
 releases it.  Enter/focus-out commits one boundary, Esc rewinds and
-closes, invalid input paints the danger token and refuses.  Angle chips
-stay on the live panel (M164 R4) until rung 2 takes them too."""
+closes, invalid input paints the danger token and refuses.  Rung 2
+brought the ANGLE chips in too: their field speaks BARE DEGREES - no
+units, no expressions, no binding (M89's lengths-only law) - and the
+live panel's last dim leg retired with it."""
 from __future__ import annotations
+
+import math
 
 from PySide6.QtCore import QRectF, Qt, Signal
 
 from ..core import params
-from ..core.sketch.constraints import Radius
+from ..core.sketch.constraints import Angle, AngleBetween, Radius
 from ..core.sketch.entities import Circle
 from .cmdpanel import ExprField, parse_scalar          # the ONE eval helper
 from .theme import DARK
@@ -30,9 +34,34 @@ def is_dia(c) -> bool:
     return isinstance(c, Radius) and isinstance(c.curve, Circle)
 
 
+def is_angle(c) -> bool:
+    return isinstance(c, (Angle, AngleBetween))
+
+
+def parse_degrees(text: str) -> float:
+    """Rung 2 grammar: an angle field wants a BARE number of degrees.
+    No units, no expressions, no named params (the panel row was a plain
+    double too - expressions are M89's LENGTH law, never angles), no
+    binding; the chip speaks [0, 180), exactly what it displays."""
+    t = str(text).strip()
+    if t.startswith("="):
+        raise params.ParamError("angles do not bind - fx is lengths-only")
+    try:
+        v = float(t)
+    except ValueError:
+        raise params.ParamError(
+            f"angle wants bare degrees, not {text!r}") from None
+    if not 0.0 <= v < 180.0:
+        raise params.ParamError(f"angle out of range [0, 180): {text!r}")
+    return v
+
+
 def bare_value(c) -> float:
     """The number the chip shows minus its decoration: circles speak Ø
-    (2x), arcs and distances speak their own value."""
+    (2x), angles speak their own degrees (the same % 180 the painter
+    used), arcs and distances speak their own value."""
+    if is_angle(c):
+        return math.degrees(float(c.value)) % 180.0
     return 2 * float(c.value) if is_dia(c) else float(c.value)
 
 
@@ -57,15 +86,17 @@ class ChipField(ExprField):
         super().__init__(value=bare, step=0.1, suffix="", parent=canvas)
         self.constraint = c                        # re-seat identity (is)
         self._provider = canvas._params_provider
+        self._angle = is_angle(c)                  # rung 2 grammar switch
         self.setFocusPolicy(Qt.NoFocus)
         self.edit.setAlignment(Qt.AlignCenter)
         pref = f"{bare:.2f}"                       # the chip's number,
         self.edit.setText(pref)                    #  selected on open so
         self._base = pref                          #  typing replaces it
         self.edit.setPlaceholderText(
-            "\u00d8 mm" if is_dia(c) else          # context lives in the
-            "R mm" if isinstance(c, Radius)        #  placeholder, never
-            else "mm")                             #  the editable text
+            "\u00b0" if self._angle else           # context lives in the
+            "\u00d8 mm" if is_dia(c) else          #  placeholder, never
+            "R mm" if isinstance(c, Radius)        #  the editable text
+            else "mm")
         self.edit.setStyleSheet(_CHIP_QSS)
         self.committed.connect(canvas._on_chip_commit)
         self.closeRequested.connect(canvas._on_chip_close)
@@ -78,9 +109,12 @@ class ChipField(ExprField):
         self._base = self._fmt(self._mm)           #  " mm" - the chip is
         self.edit.setText(self._base)              #   unit-naked
 
-    # ---- grammar: plain rides parse_scalar (mm); "=..." is M89's fx ----
+    # ---- grammar: plain rides parse_scalar (mm); "=..." is M89's fx;
+    # angles speak BARE DEGREES and nothing else (rung 2) ----
     def _eval(self, text):
         t = str(text).strip()
+        if self._angle:
+            return parse_degrees(t)
         vals, sc = self._provider()
         if t.startswith("="):                      # the old lstrip law
             expr = t.lstrip("=").strip()

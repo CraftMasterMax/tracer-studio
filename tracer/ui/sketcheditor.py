@@ -1225,6 +1225,13 @@ class SketchCanvas(QWidget):
         k = ev.key()
         if self.model is None:
             return super().keyPressEvent(ev)
+        if k == Qt.Key_F2:                         # M165 R2: the KEYBOARD
+            target = self._chip_under_cursor()     #  door to the chip -
+            if target is not None:                 #  deliberately NOT in
+                self._open_dim_editor(target)      #   SKETCH_KEYS (F2 is
+                return                             #   non-printable: a
+                                                   #   claim would be
+                                                   #   inert dead code)
         if self._pending is not None:               # M90: type-in first
             txt = ev.text()
             if txt.isdigit() or txt == ".":
@@ -1701,11 +1708,8 @@ class SketchCanvas(QWidget):
         q = ev.position()
         for rect, c in getattr(self, "_dim_hits", []):
             if rect.contains(q):
-                if isinstance(c, (Angle, AngleBetween)):
-                    self._edit_dim(c)            # angles: the panel verb
-                else:                            # M165 R1: value AT THE
-                    self._open_dim_editor(c)     #  cursor for length chips
-                return
+                self._open_dim_editor(c)           # M165 R2: every chip
+                return                             #  kind, ONE door
         super().mouseDoubleClickEvent(ev)
 
     # ---- M165 R1: the inline chip editor (design m165_rung1_chipfield) ----
@@ -1753,13 +1757,15 @@ class SketchCanvas(QWidget):
         self._apply_dim_edit(c, text)
 
     def _apply_dim_edit(self, c, text) -> bool:
-        """M165 R1: the dim commit, headless-callable (the seam's target).
-        The panel-era semantics, ported whole: identity door first (a dead
-        dim edits nobody), "=expr" binds (M89 - the prefix IS the old fx
-        row, doc units x scale), a plain number RELEASES the binding,
-        Ø halves on circles (M98), loud refusal strictly BEFORE any
-        _push_hist, and the spin era's 0.001..1e6 range restored on the
-        plain path (a chip can clamp where the panel could not)."""
+        """M165 R1 (angles in, R2): the dim commit, headless-callable
+        (the seam's target).  The panel-era semantics, ported whole:
+        identity door first (a dead dim edits nobody), "=expr" binds
+        (M89 - the prefix IS the old fx row, doc units x scale), a plain
+        number RELEASES the binding, Ø halves on circles (M98), loud
+        refusal strictly BEFORE any _push_hist, and the spin era's
+        0.001..1e6 range restored on the plain path (a chip can clamp
+        where the panel could not).  Angles: bare degrees, branch
+        re-snap, never bind - the panel's angle leg retired here."""
         from ..core.params import ParamError, eval_expr
         i = next((j for j, cc in enumerate(self.model.sketch.constraints)
                   if cc is c), None)
@@ -1767,6 +1773,21 @@ class SketchCanvas(QWidget):
             return False
         dia = dimedit.is_dia(c)
         t = str(text).strip()
+        if dimedit.is_angle(c):                  # M165 R2: the panel's
+            try:                                 #  last dim leg retired
+                deg = dimedit.parse_degrees(t)   #  INTO the chip - bare
+            except ParamError as e:              #  degrees only, no
+                self._warn(str(e))               #  (M89 stays lengths-
+                self.update()                    #   only)
+                return False
+            self._push_hist()
+            # re-snap to the branch the geometry currently occupies, so
+            # editing never flips the line through 180 deg (m24 law)
+            c.value = snapped(c.measured(), math.radians(deg))
+            self._last_dim = c
+            self._solve()
+            self.update()
+            return True
         expr = t.lstrip("=").strip() if t.startswith("=") else ""
         if expr:
             vals, sc = self._params_provider()   # fx: doc units x scale,
@@ -1820,49 +1841,27 @@ class SketchCanvas(QWidget):
         ed.raise_()
 
     def _edit_dim(self, c):
-        """M164 R4, narrowed by M165 R1: ANGLES ride the live panel here
-        (bare-degree row - ExprField speaks mm, never deg, so the suffix
-        stays empty and the label carries the unit; no fx row, M89's
-        lengths-only law).  Length/diameter chips open the INLINE editor
-        instead - dimedit + _apply_dim_edit own that grammar now.
-        remember_key=False: a dim never wears another dim's value."""
-        from . import cmdpanel
-        if not isinstance(c, (Angle, AngleBetween)):
-            self._open_dim_editor(c)             # value at the cursor
-            return
+        """M165 R2: EVERY chip kind edits inline now - the M164 R4
+        panel's angle leg retired into the chip's degree grammar
+        (dimedit.parse_degrees + the angle clause of _apply_dim_edit).
+        The door stays for direct drivers (m24) and the palette."""
+        self._open_dim_editor(c)
 
-        def _live():
-            return any(cc is c for cc in self.model.sketch.constraints)
-
-        fields = [dict(key="val", kind="double", label="Angle (deg)",
-                       default=round(math.degrees(c.value) % 180, 2),
-                       suffix="")]
-
-        def _preview(_vals):                 # cosmetic law: the ring, no
-            self._hover_c = c                #  speculative model write
-            self.update()
-
-        def _commit(vals):
-            if not _live():                  # rung-3 identity law: the
-                return                       #  dim died mid-edit - inert
-            self._push_hist()
-            # re-snap to the branch the geometry currently occupies, so
-            # editing never flips the line through 180 deg
-            c.value = snapped(c.measured(), math.radians(vals["val"]))
-            self._solve()
-            self.update()
-
-        def _abort():
-            if self._hover_c is c:           # the ring dies with the verb
-                self._hover_c = None
-            self.update()
-
-        p = cmdpanel.run(self, "sketch_dim", "Edit dimension", fields,
-                         preview=_preview, commit=_commit, abort=_abort,
-                         remember_key=False)
-        if p is not None:                    # the scripted seam answers
-            _preview(None)                   #  with None: no ring to arm
-        self.update()
+    def _chip_under_cursor(self):
+        """F2's target (M165 R2): the chip whose rect owns the mouse
+        point, else the last dim EDITED if it still lives (the rung-1
+        _last_dim seed finally gets a consumer), else None - and then
+        F2 is inert, like every verb without a selection."""
+        if self._cursor is not None:
+            s = self.w2s(*self._cursor)
+            for rect, c in self._dim_hits:
+                if rect.contains(s):
+                    return c
+        if self._last_dim is not None and any(
+                cc is self._last_dim
+                for cc in self.model.sketch.constraints):
+            return self._last_dim
+        return None
 
     def _commit_typed(self):
         """M90: Enter mid-type-in mints exactly the constraint act_dim

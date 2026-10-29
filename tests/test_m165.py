@@ -12,7 +12,8 @@ TOKEN (never a hex literal) and stays open to retry.  The editor tracks
 the chip through pan/zoom/solve via the paint post-hook (move-only-if-
 moved), and a discard-close (undo mid-type, model swap, chip death) can
 NEVER commit - the signals are disconnected before Qt's focus-out-on-
-hide can fire.  Angles stay on the live panel (M164 R4) this rung.
+hide can fire.  Rung 2 brought the angle chips in (bare degrees,
+[0,180), no units, no binding) and the KEYBOARD door: F2.
 
 Design law adopted from test_m164: mkcanvas CLOSES its canvases (leaked
 visible windows poison QTest routing), _reap processes the DeferredDelete
@@ -390,33 +391,29 @@ def test_typein_chips_never_coexist(dim_cv):
     _reap(qapp2)
 
 
-def test_angle_chip_stays_on_the_panel(dim_cv, monkeypatch):
-    # M165 RETARGET (cited, retarget doc S6.6): rung 1 moved LENGTHS
-    # inline; ANGLE chips keep the M164 R4 live panel (rung 2 takes
-    # them).  The old Shell.getDouble era is gone - pin the panel door.
-    seen = {}
-
-    def fake_run(parent, command_id, title, fields, *, preview, commit,
-                 abort, remember_key=None):
-        seen["id"] = command_id
-        seen["keys"] = [f["key"] for f in fields]
-        preview({"val": 30.0})
-        commit({"val": 30.0})
-        return None
-    monkeypatch.setattr(dimedit, "open", lambda canvas, c: pytest.fail(
-        "the angle chip must NOT open an inline editor this rung"))
-    from tracer.ui import cmdpanel
-    monkeypatch.setattr(cmdpanel, "run", fake_run)
+def test_angle_chip_goes_inline_too(dim_cv):
+    # M165 RUNG 2 (m165_build_plan): angles left the panel - the chip's
+    # BARE-DEGREES grammar took over (this gate inverted the rung-1
+    # "stays on the panel" pin, cited).  Range refusals paint red and
+    # STAY OPEN; a valid Enter commits through the branch re-snap.
     cv, m = dim_cv
     ang = m.sketch.constraints[3]
     rect = next(r for r, c in cv._dim_hits if c is ang)
     QTest.mouseDClick(cv, Qt.LeftButton, Qt.NoModifier,
                       rect.center().toPoint(), 10)
     _settle(qapp2)
-    assert seen["id"] == "sketch_dim"                # the panel verb
-    assert seen["keys"] == ["val"]                   # angle row, no fx
-    assert math.degrees(ang.value) % 180 == pytest.approx(30, abs=1e-6)
-    assert cv._dim_edit is None                      # no chip ANYWHERE
+    ed = cv._dim_edit
+    assert type(ed) is ChipField and ed.constraint is ang
+    assert ed.edit.text() == "30.00"                   # bare degrees...
+    assert ed.edit.placeholderText() == "\u00b0"       #  unit in the PH
+    _type(ed, "200")                                   # the old spin's
+    _settle(qapp2)                                     #  0..179.99: red,
+    assert ed.is_invalid()                             #   OPEN, honest
+    assert cv._dim_edit is ed                          #   rewind
+    _type(ed, "45")
+    _settle(qapp2)
+    assert math.degrees(ang.value) % 180 == pytest.approx(45, abs=1e-6)
+    assert m.dim_exprs == {}                           # angles NEVER bind
     _reap(qapp2)
 
 
@@ -520,6 +517,93 @@ def test_script_seam_one_liners(dim_cv, monkeypatch):
     assert m.sketch.lines[0].b.x == pytest.approx(40.0, abs=1e-6)
 
 
+# ------------------------------------------------ rung 2: angles + F2 ----
+
+def test_angle_grammar_refuses_units_and_bindings(dim_cv, monkeypatch):
+    cv, m = dim_cv
+    ang = m.sketch.constraints[3]
+    before = json.dumps(model_to_dict(m), sort_keys=True)
+    n = len(cv._hist)
+    ed = _chip_on(cv, ang)
+    _type(ed, "45mm")                                  # the oss doc's
+    _settle(qapp2)                                     #  "2mm + 4"
+    assert ed.is_invalid()                             #  class: units
+    assert ed.edit.toolTip()                           #   die red
+    _type(ed, "=width")                                # M89 lengths-only
+    _settle(qapp2)                                     #  is now RED-
+    assert ed.is_invalid()                             #  enforced
+    assert cv._dim_edit is ed                          #  stays OPEN
+    QTest.keyClick(ed.edit, Qt.Key_Escape)
+    _settle(qapp2)
+    assert len(cv._hist) == n                          # zero trace
+    assert json.dumps(model_to_dict(m), sort_keys=True) == before
+    from conftest import script_dim_edit               # the seam speaks
+    script_dim_edit(monkeypatch, "90")                 #  the SAME
+    cv._edit_dim(ang)                                  #   grammar: ...
+    assert math.degrees(ang.value) % 180 == pytest.approx(90, abs=1e-6)
+    n2 = len(cv._hist)
+    script_dim_edit(monkeypatch, "200")                # range refusal
+    cv._edit_dim(ang)                                  #  rides it too
+    assert cv._warn_text.startswith("angle out of range")
+    assert len(cv._hist) == n2                         #  zero write
+    _reap(qapp2)
+
+
+def test_f2_opens_the_chip_then_the_last_dim(dim_cv):
+    cv, m = dim_cv
+    dist = m.sketch.constraints[0]
+    rect = next(r for r, c in cv._dim_hits if c is dist)
+    cv._cursor = cv._world(rect.center())              # hover the chip
+    QTest.keyClick(cv, Qt.Key_F2)
+    _settle(qapp2)
+    ed = cv._dim_edit                                  # door 1: the
+    assert type(ed) is ChipField and ed.constraint is dist   #  hovered
+    QTest.keyClick(ed.edit, Qt.Key_Escape)             #   chip
+    _settle(qapp2)
+    assert cv._last_dim is None                        # EDITED nothing
+    cv._cursor = None                                  #  yet
+    QTest.keyClick(cv, Qt.Key_F2)                      # no chip, no
+    _settle(qapp2)                                     #  last dim:
+    assert cv._dim_edit is None                        #   F2 stays inert
+    ed = _chip_on(cv, dist)                            # NOW edit once:
+    _type(ed, "55")                                    #  the rung-1
+    _settle(qapp2)                                     #  _last_dim seed
+    assert cv._last_dim is dist                        #  finally lives
+    cv._cursor = None                                  # fallback door:
+    QTest.keyClick(cv, Qt.Key_F2)                      #  last dim wins
+    _settle(qapp2)
+    assert cv._dim_edit is not None
+    assert cv._dim_edit.constraint is dist
+    QTest.keyClick(cv._dim_edit.edit, Qt.Key_Escape)
+    _reap(qapp2)
+
+
+def test_angle_chip_death_mid_edit_closes_cleanly(dim_cv):
+    # Plan risk 5, made real the way the PAINTER actually drops an
+    # angle chip: an AngleBetween whose lines go unshared mid-edit
+    # (_angle_pivot -> None -> arc None -> continue: no chip). A
+    # single-line Angle survives zero-length (atan2(0,0)=0 still
+    # draws) - measured, not assumed. The re-seat death guard closes
+    # the field and the orphaned constraint is NEVER written.
+    cv, m = dim_cv
+    from tracer.core.sketch.constraints import AngleBetween
+    ln2 = m.sketch.lines[-1]                           # the 30 deg line
+    l3 = m.add_line(m.point(120, 30), m.point(130, 35))
+    ab = AngleBetween(ln2, l3, math.radians(20))
+    m.constrain(ab)
+    cv.grab()                                          # chip appears
+    ed = _chip_on(cv, ab)
+    assert ed.constraint is ab
+    dx, dy = ln2.b.x - ln2.a.x, ln2.b.y - ln2.a.y      # EXACT parallel:
+    l3.a.x, l3.a.y = 200.0, 200.0                      #  den = 0.0 to
+    l3.b.x, l3.b.y = 200.0 + dx, 200.0 + dy            #   the bit
+    cv.update()
+    _settle(qapp2)
+    assert cv._dim_edit is None                        # death guard
+    assert math.degrees(ab.value) % 180 == pytest.approx(20, abs=1e-9)
+    _reap(qapp2)
+
+
 # ------------------------------------------------------- the win door ----
 
 @pytest.fixture
@@ -613,18 +697,25 @@ def test_widget_edit_drives_the_solid(win, monkeypatch):
 
 
 def test_key_laws_untouched():
-    # The do-not-touch list, restated as greps (M165 kept every key law
-    # it inherited; only the EDIT door moved).
+    # The do-not-touch list, restated as greps. M165 R2 RETARGET
+    # (cited): F2 LANDED this rung - the law flipped from "absent" to
+    # "present in the canvas, absent from the claim tables" (F2 is
+    # non-printable: a SKETCH_KEYS entry would be inert dead code and
+    # m113's claim-set honesty gate must never see it).
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent / "tracer" / "ui"
     se = (root / "sketcheditor.py").read_text(encoding="utf-8")
-    assert "F2" not in se                            # F2 is rung 2's
-    for marker in ("_open_dim_editor", "_apply_dim_edit", "_reseat"):
+    assert "Qt.Key_F2" in se                           # the keyboard door
+    for marker in ("_open_dim_editor", "_apply_dim_edit", "_reseat",
+                   "_chip_under_cursor"):
         assert marker in se
     cp = (root / "cmdpanel.py").read_text(encoding="utf-8")
-    assert "parse_scalar" in cp                      # the ONE helper the
+    assert "parse_scalar" in cp                        # the ONE helper the
     #                                                   chip rides too
     cmds = (root / "commands.py").read_text(encoding="utf-8")
-    assert "SKETCH_KEYS" in cmds                     # claim tables byte-
-    from tracer.ui.commands import SKETCH_KEYS       #  untouched, and
-    assert "L" in SKETCH_KEYS                        #  still honest
+    assert '"F2"' not in cmds                          # NOT in the claim
+    assert "'F2'" not in cmds                          #  tables - rung 2
+    #                                                   law, m113 honest
+    assert "SKETCH_KEYS" in cmds                       # claim tables byte-
+    from tracer.ui.commands import SKETCH_KEYS         #  untouched, and
+    assert "L" in SKETCH_KEYS                          #  still honest
