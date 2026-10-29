@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QApplication,        # noqa: E402
 from tracer.core.sketch.constraints import Distance, Fixed, Radius  # noqa: E402
 from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.document import ExtrudeFeature      # noqa: E402
+from conftest import script_dim_edit                 # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -77,17 +78,11 @@ def test_dimension_labels_appear_and_edit_drives_solid(win, qapp, monkeypatch):
 
     rect, dim = next((r, c) for r, c in cv._dim_hits
                      if isinstance(c, Distance))
-    # M164 RETARGET (cited): the fx dialog became the LIVE sketch_dim
-    # panel (rung 4); a plain number with blank fx edits the dimension
-    # exactly as before - only the seam moved.
-    from tracer.ui import cmdpanel
-
-    def fake_run(parent, command_id, title, fields, *, preview, commit,
-                 abort, remember_key=None):
-        preview({"val": 60.0, "fx": ""})
-        commit({"val": 60.0, "fx": ""})
-        return None
-    monkeypatch.setattr(cmdpanel, "run", fake_run)
+    # M165 RETARGET (cited, m165_rung1_chipfield_design §d): the panel
+    # era collapsed into the INLINE chip editor - the double-click now
+    # seats a ChipField on the label; the seam drives its exact Enter
+    # commit path (_apply_dim_edit) headless, same plain-value law.
+    script_dim_edit(monkeypatch, "60")
     QTest.mouseDClick(cv, Qt.LeftButton, Qt.NoModifier,
                       rect.center().toPoint(), 10)
     qapp.processEvents()
@@ -112,16 +107,10 @@ def test_radius_label_edit(win, qapp, monkeypatch):
     cv.grab()
     rect, rad = next((r, c) for r, c in cv._dim_hits
                      if isinstance(c, Radius))
-    # M164 RETARGET (cited): live panel seam; the M98 law is untouched -
-    # a circle's field speaks DIAMETER, so Ø 18 is r 9, a bigger hole.
-    from tracer.ui import cmdpanel
-
-    def fake_run(parent, command_id, title, fields, *, preview, commit,
-                 abort, remember_key=None):
-        preview({"val": 18.0, "fx": ""})
-        commit({"val": 18.0, "fx": ""})
-        return None
-    monkeypatch.setattr(cmdpanel, "run", fake_run)
+    # M165 RETARGET (cited): radius chips edit inline now (the field
+    # speaks the chip's own Ø); a plain number also RELEASES (M89 law).
+    # M98 stands: a circle's field speaks DIAMETER - Ø 18 is r 9.
+    script_dim_edit(monkeypatch, "18")
     QTest.mouseDClick(cv, Qt.LeftButton, Qt.NoModifier,
                       rect.center().toPoint(), 10)
     qapp.processEvents()

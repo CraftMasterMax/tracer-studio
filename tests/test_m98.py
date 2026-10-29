@@ -121,26 +121,17 @@ def test_act_dim_on_a_circle_asks_diameter(sketch, qapp, monkeypatch):
 
 def test_double_click_edit_asks_and_stores_diameter(sketch, qapp,
                                                     monkeypatch):
-    # M164 RETARGET (cited): the dim editor moved from cmddialog.ask to
-    # the LIVE panel (rung 4).  The label/default/Ø-halving law is the
-    # same; now it is read off the panel's own field dict.
-    from tracer.ui import cmdpanel
+    # M165 RETARGET (cited, m165_rung1_chipfield_design §d): no dialog/
+    # panel FIELD exists for this path any more - the label/default
+    # capture moved to tests/test_m165.py::test_circle_chip_prefills_
+    # diameter_and_halves (the ChipField carries the Ø prefill).  The
+    # M98 value law is re-driven through the seam: Ø 18 lands r 9.
+    from conftest import script_dim_edit
     m = sketch.model
     c = m.add_circle(m.point(0.0, 0.0), 4.0)
     m.constrain(Radius(c, 4.0))
-    seen = {}
-
-    def fake_run(parent, command_id, title, fields, *, preview, commit,
-                 abort, remember_key=None):
-        seen["label"] = fields[0]["label"]
-        seen["default"] = fields[0]["default"]
-        preview({"val": 18.0, "fx": ""})
-        commit({"val": 18.0, "fx": ""})
-        return None
-    monkeypatch.setattr(cmdpanel, "run", fake_run)
+    script_dim_edit(monkeypatch, "18")
     sketch._edit_dim(m.sketch.constraints[-1])
-    assert "Diameter" in seen["label"]
-    assert seen["default"] == pytest.approx(8.0)         # shows Ø 8
     assert m.sketch.constraints[-1].value == pytest.approx(9.0)
 
 
@@ -148,20 +139,15 @@ def test_double_click_edit_asks_and_stores_diameter(sketch, qapp,
 
 def test_fx_binding_on_a_circle_drives_diameter(sketch, qapp,
                                                 monkeypatch):
-    # M164 RETARGET (cited): live panel seam (see the diameter gate).
-    from tracer.ui import cmdpanel
+    # M165 RETARGET (cited): fx is the "=" prefix inside the inline
+    # field now; the Ø-speaking (M98) is unchanged: bore=50 halves to 25.
+    from conftest import script_dim_edit
     m = sketch.model
     c = m.add_circle(m.point(0.0, 0.0), 4.0)
     m.constrain(Radius(c, 4.0))
-
-    def fake_run(parent, command_id, title, fields, *, preview, commit,
-                 abort, remember_key=None):
-        preview({"val": 8.0, "fx": "bore"})
-        commit({"val": 8.0, "fx": "bore"})
-        return None
-    monkeypatch.setattr(cmdpanel, "run", fake_run)
     monkeypatch.setattr(sketch, "_params_provider",
                         lambda: ({"bore": 50.0}, 1.0))
+    script_dim_edit(monkeypatch, "=bore")
     sketch._edit_dim(m.sketch.constraints[-1])
     i = len(m.sketch.constraints) - 1
     assert m.dim_exprs[i]["t"] == "DIA"

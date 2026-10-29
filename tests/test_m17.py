@@ -157,16 +157,11 @@ def test_canvas_badge_edit_and_arc_anchor(win, qapp, monkeypatch):
     cv.act_dim()
     con = cv.model.sketch.constraints[-1]
     # double-click editing path (badge hit already covered in m8)
-    # M164 RETARGET (cited): the fx dialog became the LIVE sketch_dim
-    # panel; blank fx = plain number, unchanged law, new seam.
-    from tracer.ui import cmdpanel
-
-    def fake_run(parent, command_id, title, fields, *, preview, commit,
-                 abort, remember_key=None):
-        preview({"val": 9.0, "fx": ""})
-        commit({"val": 9.0, "fx": ""})
-        return None
-    monkeypatch.setattr(cmdpanel, "run", fake_run)
+    # M165 RETARGET (cited, m165_rung1_chipfield_design §d): the fx
+    # panel collapsed into the INLINE chip editor; the seam answers "9"
+    # through _apply_dim_edit - blank-fx-was-plain becomes no-= IS plain.
+    from conftest import script_dim_edit
+    script_dim_edit(monkeypatch, "9")
     cv._edit_dim(con)
     qapp.processEvents()
     assert con.value == 9.0

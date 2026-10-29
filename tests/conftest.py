@@ -89,6 +89,21 @@ def script_panel_cancel(monkeypatch):
     monkeypatch.setattr(cmdpanel, "run", fake)
 
 
+def script_dim_edit(monkeypatch, text):
+    """M165: answer the INLINE chip editor with `text` — patches the
+    dimedit.open seam so _apply_dim_edit runs immediately (the exact
+    Enter commit path).  The dimedit twin of script_panel above: the
+    amended m5/m17/m89/m98/m164-r4 pins re-target in one line each.
+    Creates no widget; the M90 drop and the rung-4 ring live in the
+    canvas's _open_dim_editor, which still runs around the seam."""
+    from tracer.ui import dimedit
+
+    def fake(canvas, c):
+        canvas._apply_dim_edit(c, text)
+        return None
+    monkeypatch.setattr(dimedit, "open", fake)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _isolate_recovery_dir():
     """No headless test may poison the user's real crash-recovery folder

@@ -30,7 +30,7 @@ from ..core.sketch.model import (_dim_tag, SketchModel, math_dist,
 from ..core.sketch.profile import regions
 from ..core.sketch.solver import _eligible, find_removable
 from ..core import snaps
-from . import cmdpanel, theme
+from . import cmdpanel, dimedit, theme
 from .cmddialog import Shell
 from .commands import SKETCH_KEYS
 
@@ -139,6 +139,8 @@ class SketchCanvas(QWidget):
         self._dim_hits: list = []
         self._constraint_hits: list = []     # M164 R2: (rect, constraint)
         self._hover_c = None                 # constraint under the cursor
+        self._dim_edit = None                # M165 R1: open chip editor
+        self._last_dim = None                # M165 R1: rung-3 seed
         self._show_dof = False            # M119: degrees-of-freedom overlay
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMinimumSize(320, 240)
@@ -148,6 +150,7 @@ class SketchCanvas(QWidget):
 
     # ---- model attach ---------------------------------------------------
     def set_model(self, model: SketchModel):
+        self._close_dim_editor()   # M165: a swapped model means a dead chip
         self.model = model
         self._sel = []
         self._line_start = None
@@ -189,6 +192,7 @@ class SketchCanvas(QWidget):
         return True
 
     def _restore(self, d: dict):
+        self._close_dim_editor()   # M165: never type into a pre-jump object
         tmp = model_from_dict(d)
         # keep THIS model's identity: sid links features to their sketch
         self.model.sketch = tmp.sketch
@@ -1202,6 +1206,11 @@ class SketchCanvas(QWidget):
         answers its own alphabet while the model layer answers the rest
         — E extrudes FROM a sketch precisely because it is not one of
         these letters."""
+        if getattr(self, "_dim_edit", None) is not None \
+                and ev.type() == QEvent.Type.Paint:
+            r = super().event(ev)            # paintEvent -> _dim_hits FRESH
+            self._reseat()                   # field glued before stale shows
+            return r
         if ev.type() == QEvent.Type.ShortcutOverride:
             mods = ev.modifiers()
             if not (mods & (Qt.ControlModifier | Qt.AltModifier
@@ -1664,18 +1673,17 @@ class SketchCanvas(QWidget):
                 continue
             if bound:                       # M89: Fusion shows "=" driven
                 text = f"= {text}"
-            br = fm.boundingRect(text)
-            rect = QRectF(pos.x() - br.width() / 2 - 5,
-                          pos.y() - br.height() / 2 - 2,
-                          br.width() + 10, br.height() + 4)
-            p.setBrush(QColor(theme.DARK["bg2"]))
-            p.setPen(QPen(QColor(theme.DARK["accent"]) if bound
-                          else QColor(theme.DARK["accent_dim"]), 1))
-            p.drawRoundedRect(rect, 3, 3)
-            p.setPen(FG)
-            p.drawText(rect, Qt.AlignCenter, text)
-            p.setBrush(Qt.NoBrush)
-            self._dim_hits.append((rect, c))
+            rect = dimedit.chip_rect(fm, pos, text)   # shared with the seat
+            ed = getattr(self, "_dim_edit", None)     #  (early-Paint law)
+            if not (ed is not None and ed.constraint is c):   # M165 R1:
+                p.setBrush(QColor(theme.DARK["bg2"]))  # the chip under
+                p.setPen(QPen(QColor(theme.DARK["accent"]) if bound
+                              else QColor(theme.DARK["accent_dim"]), 1))
+                p.drawRoundedRect(rect, 3, 3)          #  edit loses its
+                p.setPen(FG)                           #   INK - the
+                p.drawText(rect, Qt.AlignCenter, text) #   field draws it
+                p.setBrush(Qt.NoBrush)
+            self._dim_hits.append((rect, c))     # hits ALWAYS: paint ==
 
     def _hover_hit(self, q: QPointF):
         """M164 R2: (rect, constraint) under the cursor - topmost wins.
@@ -1693,82 +1701,154 @@ class SketchCanvas(QWidget):
         q = ev.position()
         for rect, c in getattr(self, "_dim_hits", []):
             if rect.contains(q):
-                self._edit_dim(c)
+                if isinstance(c, (Angle, AngleBetween)):
+                    self._edit_dim(c)            # angles: the panel verb
+                else:                            # M165 R1: value AT THE
+                    self._open_dim_editor(c)     #  cursor for length chips
                 return
         super().mouseDoubleClickEvent(ev)
 
+    # ---- M165 R1: the inline chip editor (design m165_rung1_chipfield) ----
+    def _open_dim_editor(self, c):
+        if self._dim_edit is not None:
+            if self._dim_edit.constraint is c:   # same chip: just refocus
+                self._dim_edit.edit.setFocus()
+                return
+            self._close_dim_editor()             # a new chip closes the
+        self._pending = None                     #  last (one verb, one ed)
+        self._num_buf = ""                       # M90: type-ins never
+        self._hover_c = c                        #  coexist; rung-4's ring
+        dimedit.open(self, c)                    #  marks what is being edited
+
+    def _close_dim_editor(self):
+        ed = self._dim_edit
+        if ed is None:
+            return                               # re-entrancy: every hook
+        self._dim_edit = None                    #   tests this FIRST
+        try:                                     # a DISCARD close must never
+            ed.committed.disconnect()            #   commit through the
+            ed.closeRequested.disconnect()       #   hide()-induced focus-out
+        except (RuntimeError, TypeError):
+            pass
+        if self._hover_c is ed.constraint:       # the ring dies with the
+            self._hover_c = None                 #  editor, rung-4 law
+        ed.edit.clearFocus()
+        ed.hide()
+        ed.deleteLater()                         # null-then-deleteLater,
+        fw = self.window().focusWidget() if self.window() else None
+        if fw is None or fw is ed or fw is ed.edit or fw is self:
+            self.setFocus()                      # the Esc ladder resumes
+
+    def _on_chip_close(self):                    # Esc / unchanged Enter
+        self._close_dim_editor()
+
+    def _on_chip_commit(self, _mm):              # committed(float): the
+        ed = self._dim_edit                      #  float is a validity
+        if ed is None:                           #  witness, TEXT is input
+            return
+        c, text = ed.constraint, ed.edit.text()
+        self._close_dim_editor()                 # close BEFORE mutating
+        if not any(cc is c for cc in self.model.sketch.constraints):
+            return                               # dead object: no audience
+        self._apply_dim_edit(c, text)
+
+    def _apply_dim_edit(self, c, text) -> bool:
+        """M165 R1: the dim commit, headless-callable (the seam's target).
+        The panel-era semantics, ported whole: identity door first (a dead
+        dim edits nobody), "=expr" binds (M89 - the prefix IS the old fx
+        row, doc units x scale), a plain number RELEASES the binding,
+        Ø halves on circles (M98), loud refusal strictly BEFORE any
+        _push_hist, and the spin era's 0.001..1e6 range restored on the
+        plain path (a chip can clamp where the panel could not)."""
+        from ..core.params import ParamError, eval_expr
+        i = next((j for j, cc in enumerate(self.model.sketch.constraints)
+                  if cc is c), None)
+        if i is None:                            # rung-3/4 identity law
+            return False
+        dia = dimedit.is_dia(c)
+        t = str(text).strip()
+        expr = t.lstrip("=").strip() if t.startswith("=") else ""
+        if expr:
+            vals, sc = self._params_provider()   # fx: doc units x scale,
+            try:                                 #  no units, no clamp
+                newv = float(eval_expr(expr, vals)) * sc
+            except ParamError as e:              #  (M89's old contract)
+                self._warn(f"Binding refused: {e}")
+                self.update()
+                return False                     # the number stays honest
+            self._push_hist()                    # strictly AFTER eval
+            self.model.dim_exprs[i] = {"e": expr, "t": _dim_tag(c)}
+            c.value = newv * 0.5 if dia else newv        # M98: "=expr" is Ø
+        else:
+            try:
+                vals, _sc = self._params_provider()
+                newv = dimedit.parse_scalar(t, vals)     # plain: NATIVE mm
+            except ParamError as e:                      #  (the double-
+                self._warn(str(e))                       #   scale trap: sc
+                self.update()                            #   never touches
+                return False                             #   this path)
+            if not 0.001 <= newv <= 1e6:         # the restored spin range
+                self._warn(f"Dimension out of range (0.001..1e6): {t!r}")
+                self.update()
+                return False
+            self._push_hist()
+            self.model.dim_exprs.pop(i, None)    # plain ON A BOUND dim =
+            c.value = newv * 0.5 if dia else newv        #  release (M89)
+        self._last_dim = c                       # rung-3 adjust-last seed
+        self._solve()
+        self.update()
+        return True
+
+    def _reseat(self):
+        """Paint-derived geometry (plan law): runs from event() AFTER the
+        frame that rebuilt _dim_hits - pan/zoom/solve all end in
+        update(), so the field cannot lag the chip."""
+        ed = self._dim_edit
+        if ed is None:
+            return
+        rect = next((r for r, cc in self._dim_hits
+                     if cc is ed.constraint), None)
+        if rect is None:                         # chip gone this frame
+            ed.edit.clearFocus()                 # focus-out: commits IF
+            if not any(cc is ed.constraint       #  alive (shielded by
+                       for cc in self.model.sketch.constraints):
+                self._close_dim_editor()         #  _on_chip_commit's own
+            return                               #   identity recheck)
+        geom = rect.toRect().adjusted(-2, -2, 2, 2)          # chip + halo
+        if geom != ed.geometry():                # MOVE-ONLY-IF-MOVED: the
+            ed.setGeometry(geom)                 #   paint-loop guard
+        ed.raise_()
+
     def _edit_dim(self, c):
-        """M164 R4: dimension editing rides the LIVE panel - no modal.
-        TWO grammars, pinned apart (the double-scale trap): the value
-        field is the ExprField - native millimetres, units and params
-        (1inch = 25.4, wall*2 resolves); the fx row keeps M89's verbatim
-        text (doc-unit x scale through the provider) because the binding
-        provenance IS the string the ExprField would eat.  Angles ride
-        the same panel with a bare-degree value row (ExprField speaks
-        mm, never deg - the suffix stays empty and the label carries it).
+        """M164 R4, narrowed by M165 R1: ANGLES ride the live panel here
+        (bare-degree row - ExprField speaks mm, never deg, so the suffix
+        stays empty and the label carries the unit; no fx row, M89's
+        lengths-only law).  Length/diameter chips open the INLINE editor
+        instead - dimedit + _apply_dim_edit own that grammar now.
         remember_key=False: a dim never wears another dim's value."""
         from . import cmdpanel
-        from ..core.params import ParamError, eval_expr
-        angle = isinstance(c, (Angle, AngleBetween))
-        dia = (isinstance(c, Radius)
-               and isinstance(getattr(c, "curve", None), Circle))
+        if not isinstance(c, (Angle, AngleBetween)):
+            self._open_dim_editor(c)             # value at the cursor
+            return
 
-        def _live_index():
-            return next((j for j, cc in
-                         enumerate(self.model.sketch.constraints)
-                         if cc is c), None)
+        def _live():
+            return any(cc is c for cc in self.model.sketch.constraints)
 
-        if angle:
-            fields = [dict(key="val", kind="double", label="Angle (deg)",
-                           default=round(math.degrees(c.value) % 180, 2),
-                           suffix="")]
-        else:
-            i = _live_index()
-            rec = self.model.dim_exprs.get(i) if i is not None else None
-            fields = [
-                dict(key="val", kind="double",
-                     label="Diameter (mm)" if dia else "Value (mm)",
-                     default=round(2 * float(c.value) if dia
-                                   else float(c.value), 3)),
-                dict(key="fx", kind="text",
-                     label="fx  (blank = plain number)",
-                     default=(rec or {}).get("e", ""))]
+        fields = [dict(key="val", kind="double", label="Angle (deg)",
+                       default=round(math.degrees(c.value) % 180, 2),
+                       suffix="")]
 
         def _preview(_vals):                 # cosmetic law: the ring, no
             self._hover_c = c                #  speculative model write
             self.update()
 
         def _commit(vals):
-            if _live_index() is None:        # rung-3 identity law: the
+            if not _live():                  # rung-3 identity law: the
                 return                       #  dim died mid-edit - inert
-            if angle:
-                self._push_hist()
-                # re-snap to the branch the geometry currently occupies,
-                # so editing never flips the line through 180 deg
-                c.value = snapped(c.measured(), math.radians(vals["val"]))
-            else:
-                expr = str(vals["fx"]).strip().lstrip("=").strip()
-                if expr:
-                    pv, sc = self._params_provider()
-                    try:
-                        newv = float(eval_expr(expr, pv)) * sc
-                    except ParamError as e:
-                        self._warn(f"Binding refused: {e}")
-                        self.update()
-                        return               # the number stays honest
-                    self._push_hist()
-                    j = _live_index()        # the index can shift BEFORE
-                    if j is not None:        #  the click (fixer, undo)
-                        self.model.dim_exprs[j] = {"e": expr,
-                                                   "t": _dim_tag(c)}
-                    c.value = newv * 0.5 if dia else newv   # M98: fx is Ø
-                else:
-                    self._push_hist()
-                    j = _live_index()
-                    if j is not None:
-                        self.model.dim_exprs.pop(j, None)
-                    c.value = (float(vals["val"]) * 0.5 if dia
-                               else float(vals["val"]))
+            self._push_hist()
+            # re-snap to the branch the geometry currently occupies, so
+            # editing never flips the line through 180 deg
+            c.value = snapped(c.measured(), math.radians(vals["val"]))
             self._solve()
             self.update()
 
@@ -1781,9 +1861,8 @@ class SketchCanvas(QWidget):
                          preview=_preview, commit=_commit, abort=_abort,
                          remember_key=False)
         if p is not None:                    # the scripted seam answers
-            p.set_param_values(self._params_provider()[0])   #  with None
-            _preview(None)                   # ring the dim AT OPEN (the
-        self.update()                        #  real run never previews)
+            _preview(None)                   #  with None: no ring to arm
+        self.update()
 
     def _commit_typed(self):
         """M90: Enter mid-type-in mints exactly the constraint act_dim

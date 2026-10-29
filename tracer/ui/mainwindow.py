@@ -6252,8 +6252,10 @@ class MainWindow(QMainWindow):
         """Model-layer single keys — the one table (commands.MODEL_KEYS).
         The sketch widget claims its own letters before we ever see
         them; what bubbles up here is the model's to answer."""
-        if mods & Qt.MetaModifier or self._palette.isVisible():
-            return False
+        if mods & Qt.MetaModifier or self._palette.isVisible() \
+                or getattr(self.sketch, "_dim_edit", None) is not None:
+            return False                      # M165: an inline chip edit
+                                              #   swallows the model layer
         hit = MODEL_KEYS.get(self._key_str(key, mods))
         return self._run_command(hit[1]) if hit else False
 

@@ -1236,10 +1236,17 @@ def test_fixer_panel_forgets(win, qapp2):
     assert cd.remembered("sketch_fix") is None    # forgetful by law: a
     assert cd._REMEMBER_ON.get("sketch_fix") is None   #  pick never rides
 
+
 # ============================================ rung 4: the dim edit panel
+# M165 R1 RETARGET (cited, m165_rung1_retarget_post_m164r4.md S4): the
+# length/diameter leg of this rung moved from the live PANEL to the
+# INLINE chip editor (tracer/ui/dimedit.py).  Nine gates below re-drive
+# the SAME rung-4 laws through the chip door; the ANGLE gate keeps the
+# panel verbatim (that leg never moved).
 
 import math                                          # noqa: E402
 from tracer.core.sketch.constraints import Angle     # noqa: E402
+from tracer.ui.dimedit import ChipField              # noqa: E402
 
 
 def _line_dim(m):
@@ -1251,13 +1258,26 @@ def _line_dim(m):
     return d
 
 
-def test_dim_edit_opens_a_live_panel_not_a_dialog(mkcanvas, qapp2,
-                                                  monkeypatch):
+def _type(cv, text, qapp):
+    """Drive a REAL chip boundary: raw text in, editingFinished out
+    (the KiCad discrete-intention edge), then let commit+close settle."""
+    ed = cv._dim_edit
+    assert ed is not None and type(ed) is ChipField
+    ed.edit.setText(text)
+    ed.edit.editingFinished.emit()
+    qapp.processEvents()
+
+
+def test_dim_edit_goes_inline_not_to_the_panel(mkcanvas, qapp2,
+                                               monkeypatch):
+    # M165 R1 RETARGET (cited): rung 4's anti-modal panel was the way;
+    # the chip editor now IS the way for length dims - a dclick seats a
+    # ChipField on the label and touches NO panel.  The anti-modal law
+    # survives through the angle gate (panel keeps angles).
     from tracer.ui import cmddialog as cd
-    from tracer.ui.cmdpanel import CmdPanel
 
     def no_dialogs(*a, **k):
-        raise AssertionError("rung 4 edits on the LIVE panel, no modal")
+        raise AssertionError("no modal for dims - inline or panel")
     monkeypatch.setattr(cd, "ask", no_dialogs)
     m = SketchModel()
     d = _line_dim(m)
@@ -1266,18 +1286,20 @@ def test_dim_edit_opens_a_live_panel_not_a_dialog(mkcanvas, qapp2,
     QTest.mouseDClick(cv, Qt.LeftButton, Qt.NoModifier,
                       rect.center().toPoint())          # the real route
     qapp2.processEvents()
-    p = cv._cmd_panel
-    assert isinstance(p, CmdPanel) and p.command_id == "sketch_dim"
-    assert p.findChild(QDialogButtonBox) is None          # anti-modal law
-    assert list(p._edits) == ["val", "fx"]                # value+binding
-    assert p._edits["val"].value_mm() == pytest.approx(40.0)
-    p.btn_abort.click()
+    ed = cv._dim_edit
+    assert type(ed) is ChipField                        # the chip door
+    assert getattr(cv, "_cmd_panel", None) is None      # panel untouched
+    assert ed.edit.text() == "40.00"                    # bare prefill
+    assert cv._hover_c is d                             # rung-4 ring
+    assert rect.toRect().adjusted(-2, -2, 2, 2) == ed.geometry()  # SEAT
+    QTest.keyClick(ed.edit, Qt.Key_Escape)              # leave untouched
     _reap(qapp2)                                 # GC law (rung 3): reap
-    assert getattr(cv, "_cmd_panel", None) is None  #  while references
-    assert cv._hover_c is None                   #  live; abort kills ring
+    assert cv._dim_edit is None                        #   while refs live
+    assert cv._hover_c is None                         # ring dies closed
 
 
 def test_angle_dim_rides_the_same_panel(mkcanvas, qapp2, monkeypatch):
+    from tracer.ui import cmddialog as cd
     from tracer.ui.cmddialog import Shell
 
     def no_modal(*a, **k):
@@ -1289,7 +1311,7 @@ def test_angle_dim_rides_the_same_panel(mkcanvas, qapp2, monkeypatch):
     ang = Angle(ln, math.radians(20))
     m.constrain(Fixed(a, x=0.0, y=0.0), ang)
     cv = mkcanvas(m)
-    cv._edit_dim(ang)
+    cv._edit_dim(ang)                        # angle = the panel, still
     qapp2.processEvents()
     p = cv._cmd_panel
     assert p.command_id == "sketch_dim"
@@ -1300,81 +1322,73 @@ def test_angle_dim_rides_the_same_panel(mkcanvas, qapp2, monkeypatch):
     p.btn_commit.click()
     qapp2.processEvents()
     assert math.degrees(ang.value) % 180 == pytest.approx(30, abs=1e-6)
-    _reap(qapp2)
+    assert cd.remembered("sketch_dim") is None   # M165: the forgetful law
+    _reap(qapp2)                                 #  lives here now (chip
+                                                 #   prefill is per-dim by
+    assert cv._dim_edit is None                  #  construction, m165)
 
 
 def test_double_scale_trap_plain_and_fx_speak_different_grammars(
         mkcanvas, qapp2):
-    # The design's pinned split: the value field is the ExprField and
-    # speaks NATIVE MILLIMETRES (1inch = 25.4 even in a doc whose fx
-    # scale is 10); the fx row keeps M89's doc-unit x sc semantics.
-    # If either path ever multiplies twice, this gate dies.
+    # The design's pinned split, now inside ONE field: plain text rides
+    # parse_scalar - NATIVE millimetres (1inch = 25.4 even in a doc
+    # whose fx scale is 10); the "=" prefix keeps M89's doc-unit x sc
+    # semantics. If either path ever multiplies twice, this gate dies.
     m = SketchModel()
     d = _line_dim(m)
     cv = mkcanvas(m)
     cv._params_provider = lambda: ({"wall": 7.0}, 10.0)   # resolved sheet
-    cv._edit_dim(d)
-    p = cv._cmd_panel
-    w = p._edits["val"]
-    w.edit.setText("1inch")
-    w.edit.editingFinished.emit()
+    cv._open_dim_editor(d)
     qapp2.processEvents()
-    assert w.value_mm() == pytest.approx(25.4)   # NOT 254: sc never
-    assert d.value == pytest.approx(40.0)        #  touches the field...
-    p.btn_commit.click()                         # ...and preview never
-    qapp2.processEvents()                        #  writes the model
-    assert d.value == pytest.approx(25.4)
-    assert m.dim_exprs == {}                     # plain value: no bind
+    assert d.value == pytest.approx(40.0)      # open mutates NOTHING
+    _type(cv, "1inch", qapp2)                  # plain leg: the field
+    assert d.value == pytest.approx(25.4)      #  speaks mm - NOT 254:
+    assert m.dim_exprs == {}                   #  sc never touches plain
     _reap(qapp2)
-    cv._edit_dim(d)                              # phase 2: the fx row
-    p = cv._cmd_panel
-    assert p._edits["val"].value_mm() == pytest.approx(25.4)  # re-prefilled
-    p._edits["fx"].setText("wall")               # 7 DOC units...
-    p._edits["fx"].editingFinished.emit()
-    p.btn_commit.click()
+    cv._open_dim_editor(d)                     # phase 2: the fx leg
     qapp2.processEvents()
-    assert d.value == pytest.approx(70.0)        # ...x sc = 70, NOT 7
+    ed = cv._dim_edit
+    assert ed.edit.text() == "25.40"           # re-prefilled from LIFE
+    _type(cv, "=wall", qapp2)                  # 7 DOC units x sc(10)...
+    assert d.value == pytest.approx(70.0)      # ...= 70, NOT 7
     i = m.sketch.constraints.index(d)
     assert m.dim_exprs[i] == {"e": "wall", "t": _dim_tag(d)}
     _reap(qapp2)
 
 
 def test_the_value_field_resolves_document_params(mkcanvas, qapp2):
-    # feature#6 rides the panel: run() injects the provider sheet into
-    # every ExprField at open, so the VALUE row itself takes wall*2.
+    # feature#6 rides the chip: the provider sheet is the field's own
+    # _eval context, so the number leg itself takes wall*2.
     m = SketchModel()
     d = _line_dim(m)
     cv = mkcanvas(m)
-    cv._params_provider = lambda: ({"wall": 7.0}, 1.0)    # resolved sheet
-    cv._edit_dim(d)
-    p = cv._cmd_panel
-    assert p._edits["val"].values == {"wall": 7.0}        # provider INJECTED
-    w = p._edits["val"]
-    w.edit.setText("wall*2")
-    w.edit.editingFinished.emit()
+    cv._params_provider = lambda: ({"wall": 7.0}, 1.0)     # resolved sheet
+    cv._open_dim_editor(d)
     qapp2.processEvents()
-    assert w.value_mm() == pytest.approx(14.0)
-    p.btn_commit.click()
-    qapp2.processEvents()
+    assert cv._dim_edit._provider()[0] == {"wall": 7.0}    # LIVE provider
+    _type(cv, "wall*2", qapp2)
     assert d.value == pytest.approx(14.0)
     _reap(qapp2)
 
 
-def test_reopen_prefills_the_live_binding(mkcanvas, qapp2):
+def test_reopen_prefills_the_bare_value_and_plain_releases(mkcanvas,
+                                                           qapp2):
+    # M165 R1 RETARGET (cited): the panel's fx prefill RETIRED - the
+    # chip always prefills the bare displayed number (provenance lives
+    # in dim_exprs, the driven "= " lives on the painter).  The blank-
+    # fx RELEASE law re-borns as "no = means plain": type a number on
+    # a BOUND chip and the binding pops.
     m = SketchModel()
     d = _line_dim(m)
     i = m.sketch.constraints.index(d)
     m.dim_exprs[i] = {"e": "width", "t": _dim_tag(d)}
     cv = mkcanvas(m)
-    cv._edit_dim(d)
-    p = cv._cmd_panel
-    assert p._edits["fx"].text() == "width"           # provenance rides in
-    p._edits["fx"].setText("")                        # blank = release
-    p._edits["fx"].editingFinished.emit()
-    p.btn_commit.click()
+    cv._open_dim_editor(d)
     qapp2.processEvents()
-    assert m.dim_exprs == {}                          # M89 unbind law on
-    assert d.value == pytest.approx(40.0)             #  the new seam
+    assert cv._dim_edit.edit.text() == "40.00"  # BARE prefill (M98 law
+    _type(cv, "28", qapp2)                      #  rides plain numbers)
+    assert m.dim_exprs == {}                    # release, M89's old law
+    assert d.value == pytest.approx(28.0)
     _reap(qapp2)
 
 
@@ -1384,23 +1398,22 @@ def test_abort_leaves_value_hist_and_hover_untouched(mkcanvas, qapp2):
     cv = mkcanvas(m)
     before = json.dumps(model_to_dict(m), sort_keys=True)
     n = len(cv._hist)
-    cv._edit_dim(d)
-    p = cv._cmd_panel
-    assert cv._hover_c is d                           # ring on OPEN: the
-    w = p._edits["val"]                               #  edited dim
-    w.edit.setText("999")
-    w.edit.editingFinished.emit()                     # boundary is
-    qapp2.processEvents()                             #  cosmetic only
-    assert d.value == pytest.approx(40.0)
+    cv._open_dim_editor(d)
+    qapp2.processEvents()
+    assert cv._hover_c is d                     # rung-4 ring ports HERE
+    ed = cv._dim_edit
+    ed.edit.setText("999")                      # TYPED but never bounded
+    qapp2.processEvents()
+    assert d.value == pytest.approx(40.0)       # no write without Enter
     assert len(cv._hist) == n
-    p.btn_abort.click()
+    QTest.keyClick(ed.edit, Qt.Key_Escape)      # the real Esc route
     _reap(qapp2)
-    assert cv._hover_c is None                        # the ring dies
-    assert len(cv._hist) == n                         #  with the verb
+    assert cv._hover_c is None                  # the ring dies with the
+    assert len(cv._hist) == n                   #  editor; zero trace
     assert json.dumps(model_to_dict(m), sort_keys=True) == before
 
 
-def test_reopen_mid_edit_aborts_the_previous_panel(mkcanvas, qapp2):
+def test_reopen_mid_edit_discards_the_previous_chip(mkcanvas, qapp2):
     m = SketchModel()
     a, b = m.point(0, 0), m.point(40, 0)
     c = m.point(40, 30)
@@ -1409,76 +1422,73 @@ def test_reopen_mid_edit_aborts_the_previous_panel(mkcanvas, qapp2):
     d1, d2 = Distance(a, b, 40.0), Distance(b, c, 30.0)
     m.constrain(d1, d2)
     cv = mkcanvas(m)
-    cv._edit_dim(d1)
-    p1 = cv._cmd_panel
-    cv._edit_dim(d2)                                  # the run law: ONE
-    p2 = cv._cmd_panel                                #  verb, one panel
-    assert p2 is not p1
-    assert cv._hover_c is d2                          # the abandoned dim's
-    p2._edits["val"].set_value_mm(99.0)               #  ring died FIRST
-    p2.btn_commit.click()
+    cv._open_dim_editor(d1)
     qapp2.processEvents()
+    ed1 = cv._dim_edit
+    ed1.edit.setText("99")                      # typed, UNCOMMITTED
+    cv._open_dim_editor(d2)                     # the one-editor law:
+    qapp2.processEvents()                       #  a new chip closes the
+    assert cv._dim_edit is not ed1              #   last - DISCARD, not
+    assert ed1.isHidden()                       #   commit (the corpse
+    assert ed1.constraint is d1                 #    is deleteLater'd:
+    assert cv._hover_c is d2                    #    hidden NOW, gone at
+    _type(cv, "99", qapp2)                      #     only Enter commits)
     assert d2.value == pytest.approx(99.0)
-    assert d1.value == pytest.approx(40.0)            # first edit inert
-    _reap(qapp2)
+    assert d1.value == pytest.approx(40.0)      # the abandoned edit is
+    _reap(qapp2)                                #  gone with its chip
+    assert cv.findChildren(ChipField) == []     #  (GC law: reaped, both)
 
 
-def test_the_dim_panel_forgets(win, qapp2):
-    from tracer.ui import cmddialog as cd
-    cv = _sketch_on(win, qapp2)
-    m = cv.model
+def test_the_chip_forgets(mkcanvas, qapp2):
+    # The rung-4 footgun law, native to the chip: prefill is computed
+    # from THIS constraint's value at construction - a dim can never
+    # wear another dim's typed number (the remembered("sketch_dim")
+    # leg moved to the angle gate, where the panel still lives).
+    m = SketchModel()
     d1 = _line_dim(m)
     a2, b2 = m.point(100, 0), m.point(160, 0)
     m.add_line(a2, b2)
     d2 = Distance(a2, b2, 60.0)
     m.constrain(d2)
-    cv._solve()
+    cv = mkcanvas(m)
+    cv._open_dim_editor(d1)
     qapp2.processEvents()
-    cv._edit_dim(d1)
-    p = cv._cmd_panel
-    p._edits["val"].set_value_mm(12.0)
-    p.btn_commit.click()
-    qapp2.processEvents()
+    _type(cv, "12", qapp2)
     assert d1.value == pytest.approx(12.0)
-    cv._edit_dim(d2)
-    p = cv._cmd_panel
-    assert p._edits["val"].value_mm() == pytest.approx(60.0)   # NOT 12:
-    p.btn_abort.click()               # a dim never wears another's value
     _reap(qapp2)
-    assert cd.remembered("sketch_dim") is None                 # nothing
+    cv._open_dim_editor(d2)
+    qapp2.processEvents()
+    assert cv._dim_edit.edit.text() == "60.00"  # NOT "12.00"
+    QTest.keyClick(cv._dim_edit.edit, Qt.Key_Escape)
+    _reap(qapp2)
 
 
-def test_a_dead_dim_makes_the_commit_inert(mkcanvas, qapp2):
+def test_a_dead_dim_makes_the_commit_inert(mkcanvas, qapp2, monkeypatch):
+    from conftest import script_dim_edit
     m = SketchModel()
     d = _line_dim(m)
     cv = mkcanvas(m)
     n = len(cv._hist)
-    cv._edit_dim(d)
-    p = cv._cmd_panel
-    p._edits["val"].set_value_mm(999.0)
     m.remove_constraint(d)                      # the fixer struck first
-    cv._solve()
-    p.btn_commit.click()                        # identity recheck: inert
-    qapp2.processEvents()
+    script_dim_edit(monkeypatch, "999")         # the seam = _apply_dim
+    cv._edit_dim(d)                             #  _edit; identity door:
+    qapp2.processEvents()                       #   dead dim edits nobody
     assert len(cv._hist) == n                   # zero trace
     assert m.dim_exprs == {}
     assert all(cc is not d for cc in m.sketch.constraints)
-    _reap(qapp2)
 
 
-def test_binding_from_the_panel_survives_the_round_trip(mkcanvas, qapp2):
+def test_binding_from_the_chip_survives_the_round_trip(mkcanvas, qapp2,
+                                                       monkeypatch):
+    from conftest import script_dim_edit
     m = SketchModel()
     d = _line_dim(m)
     cv = mkcanvas(m)
     cv._params_provider = lambda: ({"width": 33.0}, 1.0)  # resolved sheet
+    script_dim_edit(monkeypatch, "=width")
     cv._edit_dim(d)
-    p = cv._cmd_panel
-    p._edits["fx"].setText("width")
-    p._edits["fx"].editingFinished.emit()
-    p.btn_commit.click()
     qapp2.processEvents()
     assert d.value == pytest.approx(33.0)
     m2 = model_from_dict(json.loads(json.dumps(model_to_dict(m))))
     assert [rec["e"] for rec in m2.dim_exprs.values()] == ["width"]
     assert m2.dim_exprs[0]["t"] == _dim_tag(d)  # the tag rode along
-    _reap(qapp2)
