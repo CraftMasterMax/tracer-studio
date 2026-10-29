@@ -484,21 +484,32 @@ class SketchCanvas(QWidget):
                 else:
                     self._sel.append(hit[1])
             else:
-                self._sel = [hit[1]]
-                movable = [p for p in self._grab_points(hit[1])
-                           if self._dof_of(p) > 0]      # M167 R1: locked
-                if hit[0] == "point":                   #  geometry holds
-                    if movable:                         #  STILL — the grab
-                        self._drag_pt = hit[1]          #  refuses it
+                e = hit[1]
+                # M167 R2: THE SELECTION IS ONE HANDLE. Grabbing a member
+                # of a MULTI selection drags the WHOLE selection (points
+                # AND bodies); grabbing a stranger re-selects it alone —
+                # universal CAD law. A lone selected point keeps rung 1's
+                # absolute cursor law byte-exact (crowd=False at len 1).
+                crowd = e in self._sel and len(self._sel) > 1
+                members = list(self._sel) if crowd else [e]
+                if not crowd:
+                    self._sel = [e]
+                movable, seen = [], set()
+                for m in members:               # union, id-deduped;
+                    for p in self._grab_points(m):   # locked members drop
+                        if id(p) not in seen and self._dof_of(p) > 0:
+                            seen.add(id(p))
+                            movable.append(p)
+                if hit[0] == "point" and not crowd:
+                    if movable:
+                        self._drag_pt = e
                         self._drag_pushed = False
                 elif movable:
-                    # M167 R1: a BODY is grabbable too. Selection law
-                    # unchanged today (stranger re-selects alone); the
-                    # drag record is (pts, starts, anchor, ent) — moves
+                    # The record: (pts, starts, anchor, members) — moves
                     # are DELTAS, so the grab offset survives (no jump).
                     self._drag = (movable,
                                   np.array([[p.x, p.y] for p in movable]),
-                                  self._world(q), hit[1])
+                                  self._world(q), members)
                     self._drag_pushed = False
             self.update()
             return
@@ -708,13 +719,13 @@ class SketchCanvas(QWidget):
                 if not self._drag_pushed:
                     self._push_hist()
                     self._drag_pushed = True
-                pts, starts, anchor, ent = self._drag
+                pts, starts, anchor, ents = self._drag
                 delta = self._world(q) - anchor
                 hint = None
                 for s0 in starts:               # ONE magnet: the first
                     w = s0 + delta              #  dragged member to
                     t = self._snap_target(self.w2s(w[0], w[1]),  #  arrive
-                                          skip=pts + [ent])      #  shifts
+                                          skip=pts + list(ents))  #  shifts
                     if t is not None:                            #  the
                         tv = (np.array([t.x, t.y])              #  WHOLE
                               if isinstance(t, Point)

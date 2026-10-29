@@ -215,3 +215,105 @@ def test_a_no_move_click_selects_without_history_or_motion(ed):
     assert ed._sel == [l]
     assert len(ed._hist) == n_hist           # nothing pushed
     assert (a.x, a.y, b.x, b.y) == (20.0, 10.0, 50.0, 10.0)
+
+
+# ---- Rung 2: the selection is ONE handle (crowd drag) ----------------------
+
+def _click(ed, x, y, mods=Qt.NoModifier):
+    _press(ed, x, y, mods)
+    _release(ed, x, y)
+
+
+def test_grabbing_a_member_moves_the_whole_point_selection(ed):
+    sk = ed.model.sketch
+    p1 = sk.point(10, 10); p2 = sk.point(30, 10); s = sk.point(60, -40)
+    ed._solve()
+    _click(ed, 10, 10)                      # select p1
+    _click(ed, 30, 10, Qt.ControlModifier)  # Ctrl adds p2
+    assert ed._sel == [p1, p2]
+    _press(ed, 10, 10)                      # grab the ALREADY-SELECTED p1:
+    assert ed._drag is not None             #  the CROWD arms, not a point
+    assert ed._drag_pt is None
+    _move(ed, 22.5, 22.5); _release(ed, 22.5, 22.5)
+    assert (p1.x, p1.y) == pytest.approx((22.5, 22.5), abs=1e-9)
+    assert (p2.x, p2.y) == pytest.approx((42.5, 22.5), abs=1e-9)  # rode too
+    assert (s.x, s.y) == (60.0, -40.0)     # the stranger never budged
+
+
+def test_a_mixed_selection_drags_as_one_crowd(ed):
+    sk = ed.model.sketch
+    a = sk.point(10, -30); b = sk.point(40, -30)
+    l = ed.model.add_line(a, b)
+    p = sk.point(60, -45); s = sk.point(60, -10)
+    ed._solve()
+    _click(ed, 60, -45)
+    _click(ed, 25, -30, Qt.ControlModifier)        # line + point together
+    assert ed._sel == [p, l]
+    _press(ed, 60, -45)                            # grab the POINT…
+    _move(ed, 67.5, -30); _release(ed, 67.5, -30)   # …the LINE rides with it
+    for pt, x0, y0 in ((p, 60, -45), (a, 10, -30), (b, 40, -30)):
+        assert (pt.x - x0, pt.y - y0) == pytest.approx((7.5, 15.0), abs=1e-9)
+    assert (s.x, s.y) == (60.0, -10.0)            # byte-still bystander
+
+
+def test_a_stranger_grab_reselects_and_moves_alone(ed):
+    sk = ed.model.sketch
+    a = sk.point(10, 10); b = sk.point(40, 10)
+    l1 = ed.model.add_line(a, b)
+    cc = sk.point(10, 25); d = sk.point(40, 25)
+    l2 = ed.model.add_line(cc, d)
+    ed._solve()
+    _click(ed, 25, 10)                             # select l1
+    assert ed._sel == [l1]
+    _press(ed, 25, 25)                             # grab the stranger l2…
+    assert ed._sel == [l2]                         #  …it becomes THE pick
+    _move(ed, 37.5, 37.5); _release(ed, 37.5, 37.5)
+    assert (cc.x, cc.y) == pytest.approx((22.5, 37.5), abs=1e-9)
+    assert (d.x, d.y) == pytest.approx((52.5, 37.5), abs=1e-9)
+    assert (a.x, a.y, b.x, b.y) == (10.0, 10.0, 40.0, 10.0)   # l1 byte-still
+
+
+def test_a_lone_selected_point_still_follows_the_cursor_absolutely(ed):
+    sk = ed.model.sketch
+    p = sk.point(20, 40)
+    ed._solve()
+    _click(ed, 20, 40)                             # select p (alone)
+    _press(ed, 20, 40)                             # grab it again: a crowd
+    assert ed._drag_pt is p and ed._drag is None    #  of ONE is NOT a crowd
+    _move(ed, 27.5, 45); _release(ed, 27.5, 45)
+    assert p.x == 27.5 and p.y == 45.0            # absolute law, byte-exact
+
+
+def test_the_point_crowd_rides_one_magnet_to_an_exact_catch(ed):
+    sk = ed.model.sketch
+    p1 = sk.point(10, 10); p2 = sk.point(40, 10); t = sk.point(52.5, 30)
+    ed._solve()
+    _click(ed, 10, 10)
+    _click(ed, 40, 10, Qt.ControlModifier)
+    _press(ed, 10, 10)
+    _move(ed, 22, 29.75)                           # raw p2 = (52, 29.75):
+    assert ed._snap_obj is not None                #  0.56mm short of t —
+    assert ed._snap_obj.kind == "endpoint"         #  INSIDE tolerance
+    _release(ed, 22, 29.75)
+    assert math.dist((p2.x, p2.y), (52.5, 30.0)) < 1e-12   # EXACT catch
+    assert (p1.x, p1.y) == pytest.approx((22.5, 30.0), abs=1e-9)
+    #  the catch shifted the WHOLE crowd by (+0.5, +0.25) — p1 rode it
+
+
+def test_one_undo_restores_the_whole_crowd_byte_exact(ed):
+    sk = ed.model.sketch
+    p1 = sk.point(10, 10); p2 = sk.point(30, -20)
+    ed._solve()
+    _click(ed, 10, 10)
+    _click(ed, 30, -20, Qt.ControlModifier)
+    n_hist = len(ed._hist)
+    _press(ed, 10, 10)
+    _move(ed, 12.5, 12.5)
+    _move(ed, 15, 15)                              # two moves…
+    _release(ed, 15, 15)
+    assert len(ed._hist) == n_hist + 1             #  ONE push for the drag
+    assert ed.undo_op()
+    #  _restore SWAPS model.sketch (new objects): assert on the RESTORED
+    #  model, not on the pre-jump references — both members byte-exact.
+    pos = sorted((p.x, p.y) for p, _ in ed._all_points())
+    assert pos == [(10.0, 10.0), (30.0, -20.0)]
