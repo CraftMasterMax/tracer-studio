@@ -107,7 +107,8 @@ class SketchCanvas(QWidget):
     state_changed = Signal(object)             # SolveResult after each
                                                # solve — the constraint
                                                # voice (M73)
-
+    dim_edited = Signal(object)                # M165 R3: a chip COMMITTED
+    #   (what ran, not what was attempted) - the window notes the ring
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMouseTracking(True)      # live coordinate readout, like Fusion
@@ -1784,8 +1785,9 @@ class SketchCanvas(QWidget):
             # re-snap to the branch the geometry currently occupies, so
             # editing never flips the line through 180 deg (m24 law)
             c.value = snapped(c.measured(), math.radians(deg))
-            self._last_dim = c
-            self._solve()
+            self._last_dim = c                   # rung-3 seed (also here)
+            self.dim_edited.emit(c)              #  the ring notes angles
+            self._solve()                        #  too (M165 R3)
             self.update()
             return True
         expr = t.lstrip("=").strip() if t.startswith("=") else ""
@@ -1816,6 +1818,7 @@ class SketchCanvas(QWidget):
             self.model.dim_exprs.pop(i, None)    # plain ON A BOUND dim =
             c.value = newv * 0.5 if dia else newv        #  release (M89)
         self._last_dim = c                       # rung-3 adjust-last seed
+        self.dim_edited.emit(c)                  # M165 R3: note the ring
         self._solve()
         self.update()
         return True

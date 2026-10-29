@@ -719,3 +719,199 @@ def test_key_laws_untouched():
     assert "SKETCH_KEYS" in cmds                       # claim tables byte-
     from tracer.ui.commands import SKETCH_KEYS         #  untouched, and
     assert "L" in SKETCH_KEYS                          #  still honest
+
+
+# ------------------------------------------- rung 3: repeat / adjust last ----
+#
+# The two-stack law in force: M165 R3 adds ZERO journaling calls - every
+# replay invokes a door that already journals (doc doors _capture, the
+# chip editor _push_hist). The recorder rides `triggered` slots connected
+# AFTER each command's own lambda (Qt fires in connection order): the ring
+# holds what RAN, and the palette's act.trigger bypass records too.
+# Keys: Ctrl+Shift+R repeat / F9 adjust - Ctrl is load-bearing (Shift+R
+# is sketch revolve, cmd's SKETCH_KEYS) and neither key enters the claim
+# tables (non-printable / m113 law). Fillet radii stay SMALL: a radius
+# at half-thickness degenerates the mesh kernel (measured: r=5 on a
+# 5 mm plate never returns) - the door's own guard is for users, not
+# for test time.
+
+def _plate_and_fillet(win, monkeypatch, radius=2.0):
+    from tracer.core.document import PrimitiveFeature
+    from tracer.ui.cmddialog import Shell
+    monkeypatch.setattr(Shell, "getDouble",
+                        staticmethod(lambda *a, **k: (radius, True)))
+    win.new_document()
+    win.doc.add(PrimitiveFeature(name="plate", kind="box",
+                                 dims={"dx": 20, "dy": 20, "dz": 5}))
+    win.recompute()
+    qapp2.processEvents()
+    win.act_fillet.trigger()                           # the MENU bypass -
+    for _ in range(40):                                #  triggered slots
+        qapp2.processEvents()                          #   fire in order
+    return win.doc.features[-1]
+
+
+def test_menu_bypass_records_the_ring(win, monkeypatch):
+    # The recon's flagged bypass (cmd:221: menu clicks fire act.trigger,
+    # never _run_command) is exactly what the recorder pass now covers.
+    from tracer.core.document import BodyFilletFeature
+    feat = _plate_and_fillet(win, monkeypatch)
+    assert isinstance(feat, BodyFilletFeature)          # the door RAN...
+    assert win._cmd_ring[-1] == ("Fillet body edges…",
+                                 "doc", "action", "Fillet body edges…")
+    #  ...and ONE line records it: key, stack, kind, payload - strings
+    #  only, no captured objects (self-heal law)
+
+
+def test_ring_caps_and_refreshes_one_line_per_command(win):
+    for i in range(15):
+        win._note_cmd(f"k{i}", "doc", "action", f"k{i}")
+    assert len(win._cmd_ring) == 12                    # cap, newest last
+    assert win._cmd_ring[-1][0] == "k14"
+    win._cmd_ring.clear()                              # one-line-per-cmd,
+    win._note_cmd("x", "doc", "action", "x")           #  tested OFF the
+    win._note_cmd("x", "doc", "action", "x")           #  cap boundary
+    assert len(win._cmd_ring) == 1                     #  same command:
+    assert win._cmd_ring[-1][0] == "x"                 #   ONE line only
+    win._note_cmd("y", "doc", "action", "y")           # a NEW command:
+    assert len(win._cmd_ring) == 2                     #  a new line rides
+
+
+def test_allowlist_always_resolves(win):
+    # Risk 2 (allow-list drift vs new commands): every REPEATABLE label
+    # must own a live QAction in the recorder's re-resolution map - or
+    # this rung silently forgets verbs. Self-healing like the palette's
+    # enabled check (cmd:222).
+    from tracer.ui.commands import REPEATABLE_LABELS
+    missing = REPEATABLE_LABELS - set(win._repeatable)
+    assert missing == set(), f"allow-list labels with no menu action: {missing}"
+    for lab, a in win._repeatable.items():
+        assert callable(getattr(a, "trigger", None))
+
+
+def test_repeat_refused_on_the_sketch_page(win, monkeypatch):
+    # Two-stack guard: a doc-tagged head waits for the sketch - status
+    # MESSAGE, never a silent drop (the undo refusal law, mw:5722 family).
+    from tracer.core.document import BodyFilletFeature
+    _plate_and_fillet(win, monkeypatch)
+    win.action_new_sketch()
+    qapp2.processEvents()
+    n = sum(isinstance(f, BodyFilletFeature) for f in win.doc.features)
+    assert win._dispatch_key(Qt.Key_R,
+                             Qt.ControlModifier | Qt.ShiftModifier) is True
+    msg = win.status.currentMessage()
+    assert "finish the sketch" in msg                  # refused, LOUD...
+    assert sum(isinstance(f, BodyFilletFeature)
+               for f in win.doc.features) == n          #  ...no new fillet
+    assert win._cmd_ring[-1][0] == "Fillet body edges…"  # head survives
+
+
+def test_adjust_last_doc_reopens_the_journaling_door(win, monkeypatch):
+    # F9 on the model page = _feature_activated on the LAST feature (the
+    # double-click door, rollback LAW-10 included). House stacks the
+    # adjust as +1 undo (the oss doc's "replace last entry" would need
+    # journal surgery against full-JSON snapshots - decision, rung doc).
+    from tracer.core.document import BodyFilletFeature
+    from tracer.ui.cmddialog import Shell
+    feat = _plate_and_fillet(win, monkeypatch)
+    assert isinstance(feat, BodyFilletFeature) and feat.radius == 2.0
+    monkeypatch.setattr(Shell, "getDouble",
+                        staticmethod(lambda *a, **k: (1.0, True)))
+    n = len(win.doc.features)
+    u = len(win._undo)
+    assert win._dispatch_key(Qt.Key_F9, Qt.NoModifier) is True
+    for _ in range(40):                                # ride the ONE-tick
+        qapp2.processEvents()                          #  interlock (M162)
+    assert len(win.doc.features) == n                  # adjust, not add
+    assert len(win._undo) == u + 1                     #  +1 undo, house law
+    assert feat.radius == 1.0                          # the door applied
+    assert "now 1 mm" in win.status.currentMessage()   #  and said so
+
+
+def test_chip_edit_records_and_f9_reseats_the_field(win):
+    # The rung-1 _last_dim seed finally gets its consumer: a chip COMMIT
+    # (dim_edited, what RAN) is the "sketch:chip" ring entry; F9 on the
+    # sketch page re-seats the inline editor on that same live dim - and
+    # the commit journals to the SKETCH stack only (zero doc captures).
+    win.new_document()
+    win.action_new_sketch()
+    m = win.sketch.model
+    p0, p1 = m.point(0, 0), m.point(40, 0)
+    m.add_line(p0, p1)
+    m.constrain(Distance(p0, p1, 40.0))
+    cv = win.sketch
+    qapp2.processEvents()
+    cv.grab()
+    dist = m.sketch.constraints[0]
+    cv._open_dim_editor(dist)
+    qapp2.processEvents()
+    ed = cv._dim_edit
+    _type(ed, "50")                                    # real commit path
+    _settle(qapp2)
+    assert win._cmd_ring[-1][:3] == ("sketch:chip", "sketch", "chip")
+    u = len(win._undo)
+    assert win._dispatch_key(Qt.Key_F9, Qt.NoModifier) is True
+    _settle(qapp2)
+    assert cv._dim_edit is not None                    # re-seated...
+    assert cv._dim_edit.constraint is dist             #  on the SAME dim
+    assert len(win._undo) == u                         # zero doc journal
+    QTest.keyClick(cv._dim_edit.edit, Qt.Key_Escape)
+    _reap(qapp2)
+
+
+def test_sketch_tools_record_only_the_listed_doors(win, monkeypatch):
+    # Record site 3 (the plan's own line placement): the sketch runner
+    # notes tool:dim / tool:angle whenever the DOOR runs; drawing tools
+    # stay silent. Replay RE-RUNS the verb - act_dim is selection-scoped
+    # (no points: the verb's OWN inertness, not a stack refusal; two
+    # points + scripted prompt: the repeat CREATES the dimension).
+    win.new_document()
+    win.action_new_sketch()
+    qapp2.processEvents()
+    from tracer.ui.commands import _sketch_runner
+    n = len(win._cmd_ring)
+    _sketch_runner(win, "tool:line")()
+    assert len(win._cmd_ring) == n                     # drawing: silent
+    _sketch_runner(win, "tool:dim")()
+    assert win._cmd_ring[-1] == ("sketch:tool:dim", "sketch",
+                                 "tool", "tool:dim")
+    win.status.showMessage("SENTINEL", 9000)
+    win.action_repeat_last()                           # nothing selected:
+    _settle(qapp2)                                     #  inert, but NOT
+    msg = win.status.currentMessage()                  #  a stack refusal
+    assert "belongs to" not in msg
+    assert "finish the sketch" not in msg
+    m = win.sketch.model                               # now arm the door:
+    p0, p1 = m.point(0, 0), m.point(30, 0)
+    m.add_line(p0, p1)
+    from tracer.ui.cmddialog import Shell
+    monkeypatch.setattr(Shell, "getDouble",
+                        staticmethod(lambda *a, **k: (25.0, True)))
+    win.sketch._sel = [p0, p1]
+    win.action_repeat_last()                           # the repeat CREATES
+    _settle(qapp2)
+    dims = [c for c in m.sketch.constraints if isinstance(c, Distance)]
+    assert any(abs(c.value - 25.0) < 1e-9 for c in dims)
+
+
+def test_repeat_and_adjust_are_deaf_while_a_field_is_open(win, monkeypatch):
+    # The rung-1 law REPEATED (m165 gate family): while the inline editor
+    # has the cursor, the model layer - including F9/Ctrl+Shift+R - is
+    # DEAF. One editor, one owner of the keyboard.
+    a = _plate_and_fillet(win, monkeypatch)            # ring now has a doc
+    win.action_new_sketch()                            #  head AND a page
+    m = win.sketch.model                               #  to travel on
+    p0, p1 = m.point(0, 0), m.point(30, 0)
+    m.add_line(p0, p1)
+    m.constrain(Distance(p0, p1, 30.0))
+    cv = win.sketch
+    qapp2.processEvents()
+    cv.grab()
+    dist = [c for c in m.sketch.constraints if isinstance(c, Distance)][-1]
+    cv._open_dim_editor(dist)
+    qapp2.processEvents()
+    assert win._dispatch_key(Qt.Key_F9, Qt.NoModifier) is False
+    assert win._dispatch_key(Qt.Key_R,
+                             Qt.ControlModifier | Qt.ShiftModifier) is False
+    QTest.keyClick(cv._dim_edit.edit, Qt.Key_Escape)
+    _reap(qapp2)

@@ -53,7 +53,26 @@ MODEL_KEYS: dict[str, tuple[str, str]] = {
     "Ctrl+Alt+N": ("Show/hide Navigation bar", "layout:nav"),
     "Ctrl+Alt+D": ("Show/hide Datum letters", "layout:datums"),
     "Ctrl+Alt+R": ("Reset panel layout", "layout:reset"),
+    "Ctrl+Shift+R": ("Repeat last command", "action_repeat_last"),
+    "F9":         ("Adjust last feature or dimension", "action_adjust_last"),
 }
+
+# M165 R3: the repeat-last allow-list — doc verbs whose DOOR IS the whole
+# command, so re-running the door IS the repeat.  Menu labels are matched
+# through plain(), so the "…" tail matters.  Sketch-born verbs (Extrude/
+# Revolve/Sweep/Loft) and the triad (Move) stay OUT: their replay needs a
+# live sketch/selection the ring cannot promise — v1 law, the plan's own
+# "allow-list gates junk".  Toggles/views were never candidates.
+REPEATABLE_LABELS = frozenset({
+    "Fillet body edges…", "Chamfer body edges…", "Shell…", "Hole…",
+    "Linear pattern…", "Circular pattern…", "Mirror…",
+})
+# MODEL_KEYS targets that BYPASS the QAction (method names): the recorder
+# pass owns every triggered route, so _run_command's method branch owns
+# these — the two branches are exclusive, the plan's risk 1 (double-
+# record) is structurally dead.  F targets act_fillet (a QAction): the
+# triggered recorder has it; only H needs the direct list.
+REPEATABLE_TARGETS = frozenset({"action_hole"})
 
 # ---- the sketch-context single-key table (widget-owned; bubbles to model) -----
 # key display -> label, for the palette + the sketch widget's override set
@@ -271,5 +290,8 @@ def _sketch_runner(win, target: str):
                 cv.act_construction()
             case _:                       # tool:<name> is a set_tool arg
                 cv.set_tool(target.split(":", 1)[1])
+        if target in ("tool:dim", "tool:angle"):    # M165 R3 record site 3
+            win._note_cmd("sketch:" + target, "sketch",
+                          "tool", target)
         win.viewport.setFocus()
     return run

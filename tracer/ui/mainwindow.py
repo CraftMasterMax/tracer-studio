@@ -48,7 +48,8 @@ from ..core.sketch.model import (SketchModel, face_axes, face_basis,
 from . import icons
 from . import cmddialog
 from . import cmdpanel
-from .commands import MODEL_KEYS, collect_commands
+from .commands import (MODEL_KEYS, REPEATABLE_LABELS, REPEATABLE_TARGETS,
+                       collect_commands, plain)
 from .palette import CommandPalette
 from .hole import HoleDialog
 from .loft import LoftDialog
@@ -114,6 +115,10 @@ class MainWindow(QMainWindow):
         self.file_path: Path | None = None
         self._undo: list[str] = []
         self._redo: list[str] = []
+        # M165 R3: the repeat/adjust ring (key, stack, kind, payload).
+        # Plain attrs, house style like _undo/_redo.  Populated by the
+        # recorder pass at the tail of _make_actions + the live doors.
+        self._cmd_ring: list[tuple] = []
         self._renderer = renderer or SceneRenderer()
         self.viewport = Viewport(self._renderer)
         self.rail = LeftRail()
@@ -664,9 +669,19 @@ class MainWindow(QMainWindow):
                                 triggered=self.redo)
         self.act_compute = QAction("Compute All", self, shortcut="Ctrl+B",
                                    triggered=self.action_recompute)
+        # M165 R3: NO shortcut= here - the keys live in MODEL_KEYS (the
+        # one table) and m10's shortcut-sheet law walks the Qt properties.
+        # Menu entries make both searchable with zero registration.
+        self.act_repeat = QAction("Repeat last\tCtrl+Shift+R", self,
+                                  triggered=self.action_repeat_last)
+        self.act_adjust = QAction("Adjust last…\tF9", self,
+                                  triggered=self.action_adjust_last)
         m_edit.addAction(self.act_undo)
         m_edit.addAction(self.act_redo)
         m_edit.addAction(self.act_compute)
+        m_edit.addSeparator()
+        m_edit.addAction(self.act_repeat)
+        m_edit.addAction(self.act_adjust)
 
         m_view = self.menuBar().addMenu("&View")
         view_acts = []
@@ -778,6 +793,21 @@ class MainWindow(QMainWindow):
         # offscreen tests never see. Disabled actions don't match shortcuts.
         self._sketch_conflicts = [self.act_undo, self.act_redo,
                                   self.act_grid, self.act_edges, *view_acts]
+
+        # M165 R3: the recorder pass - ONE post-build walk (NOT a wrapper
+        # at each creation site), same traversal collect_commands uses.
+        # Slots connect AFTER each command's own triggered-lambda, and
+        # Qt fires in connection order: the ring holds what RAN.  The
+        # palette bypass (run=act.trigger) and menu clicks ride the very
+        # same slots - the recon's flagged bypass is what records.
+        self._repeatable: dict[str, QAction] = {}
+        for a in self._menu_action_walk():
+            lab = plain(a.text())
+            if lab in REPEATABLE_LABELS:
+                self._repeatable[lab] = a
+                a.triggered.connect(                     # noqa: B023 - the
+                    lambda _c=False, k=lab: self._note_cmd(   #  default IS
+                        k, "doc", "action", k))                #  the bind
 
     def _show_page(self, page):
         self.stack.setCurrentWidget(page)
@@ -904,6 +934,115 @@ class MainWindow(QMainWindow):
             self._set_distance(feature)         # e.g. Press-Pull: no sketch
         else:
             self.status.showMessage("Feature has no editable sketch (yet)", 3000)
+
+    # ---- repeat last / adjust last (M165 R3) --------------------------------
+    # The memory is a ring of (key, stack, kind, payload), newest last.
+    # Entries are NOT lambdas holding references: they carry strings that
+    # RE-RESOLVE at replay, and a dead action/feature/dim is dropped -
+    # never replayed at a stale object (the palette recents' self-heal).
+    # The recorder pass connects to `triggered` AFTER each command's own
+    # lambda; triggered slots fire in connection order, so the ring holds
+    # what RAN, not what was attempted (plan law).  The palette bypass
+    # rides the same slots (cmd:221 run=act.trigger).
+    # The two-stack law applied: a replay invokes a door that ALREADY
+    # journals - doc doors _capture() (doc stack), sketch doors
+    # _push_hist (sketch stack).  M165 adds ZERO new capture calls.
+
+    _RING_CAP = 12
+
+    def _note_cmd(self, key: str, stack: str, kind: str, payload):
+        e = (key, stack, kind, payload)
+        if self._cmd_ring and self._cmd_ring[-1][:2] == e[:2]:
+            self._cmd_ring[-1] = e          # the same command wears ONE
+        else:                               #  line: replay refreshes
+            self._cmd_ring.append(e)
+        del self._cmd_ring[:-self._RING_CAP]
+
+    def _menu_action_walk(self):
+        """The SAME traversal collect_commands walks - menu is the source
+        of truth (the law reused): submenus entered, separators skipped,
+        top-level actions without a submenu included."""
+        for top in self.menuBar().actions():
+            sub = top.menu()
+            if sub is None:
+                if not top.isSeparator():
+                    yield top
+                continue
+            walk = [sub]
+            while walk:
+                m = walk.pop()
+                for a in m.actions():
+                    if a.isSeparator():
+                        continue
+                    child = a.menu()
+                    if child is not None:
+                        walk.append(child)
+                    else:
+                        yield a
+
+    def action_repeat_last(self):
+        if not self._cmd_ring:
+            self.status.showMessage("Nothing to repeat yet", 2500)
+            return
+        key, stack, kind, payload = self._cmd_ring[-1]
+        on_sketch = self.stack.currentWidget() is self._sketch_page
+        if stack == "doc" and on_sketch:      # two-stack guard, the undo
+            self.status.showMessage(          #  law (mw:5722 family):
+                f"'{key}' edits the solid - press X to finish "
+                "the sketch first", 4000)     #   no silent drop
+            return
+        if stack == "sketch" and not on_sketch:
+            self.status.showMessage(f"'{key}' belongs to the sketch - "
+                                    "open one first", 3000)
+            return
+        if kind == "action":
+            a = self._repeatable.get(key)     # re-resolve by LABEL, not
+            if a is None or not a.isEnabled():#  by captured reference
+                self._cmd_ring.pop()
+                self.status.showMessage(f"'{key}' is gone - dropped "
+                                        "from the ring", 3000)
+                return
+            a.trigger()                       # the door journals itself
+        elif kind == "tool":                  # re-arming the dim/angle
+            door = {"tool:dim": self.sketch.act_dim,
+                    "tool:angle": self.sketch.act_angle}.get(payload)
+            if door is not None:
+                door()                        #  tool IS the repeat
+        else:                                 # "chip": the editor goes
+            d = self.sketch._last_dim         #  back on the last EDITED
+            if (d is None or self.sketch.model is None
+                    or not any(cc is d for cc in
+                               self.sketch.model.sketch.constraints)):
+                self._cmd_ring.pop()          #  dim died in the solve -
+                self.status.showMessage("The last dimension is gone - "
+                                        "dropped from the ring", 3000)
+                return
+            self.sketch._open_dim_editor(d)   #  honest re-seat
+
+    def action_adjust_last(self):
+        """F9 adjusts the last ARTIFACT. The PAGE decides where it lives
+        - deliberate deviation from the plan's ring-head rule: the head
+        may come from the other page's history, and F9 owes the user the
+        artifact under their eyes. Doors are REUSED, never forked: doc
+        rides the double-click door (its LAW-10 rollback applies), the
+        sketch re-seats the inline chip editor."""
+        if self.stack.currentWidget() is self._sketch_page:
+            cv = self.sketch
+            d = cv._last_dim
+            if d is None or cv.model is None or not any(
+                    cc is d for cc in cv.model.sketch.constraints):
+                self.status.showMessage("Nothing to adjust in this "
+                                        "sketch (yet)", 2500)
+                return
+            cv._open_dim_editor(d)
+            return
+        if self.doc is None or not self.doc.features:
+            self.status.showMessage("Nothing to adjust yet", 2500)
+            return
+        feat = self.doc.features[-1]
+        # M162's law: this may ride a palette trigger INSIDE a menu
+        # dispatch frame - one clean tick, zero dangling views
+        QTimer.singleShot(0, lambda: self._feature_activated(feat))
 
     # ---- feature management (context menus: timeline + browser) --------------
     def _feature_menu(self, feature, pos):
@@ -5615,6 +5754,11 @@ class MainWindow(QMainWindow):
         self.sketch = SketchCanvas()
         self.sketch.profiles_ready.connect(self._on_profiles)
         self.sketch.state_changed.connect(self._on_sketch_state)
+        self.sketch.dim_edited.connect(           # M165 R3 record site 4:
+            lambda _c: self._note_cmd(            #  a chip commit; payload
+                "sketch:chip", "sketch", "chip", None))  #  stays None - the
+                #  ring holds NO stale object, the doors re-resolve via the
+                #  live canvas._last_dim (plan risk 3 self-heal)
         self._wire_sketch_params(self.sketch)      # M89 fx sees the sheet
         self._snap_btn.setChecked(self.sketch._snap_grid)
         lay.addWidget(bar)
@@ -6281,10 +6425,14 @@ class MainWindow(QMainWindow):
         if isinstance(obj, QAction):
             if not obj.isEnabled():
                 return False
-            obj.trigger()
-            return True
-        obj()
-        return True
+            obj.trigger()                      # M165 R3: the recorder
+            return True                        #  slots note the ring
+        if target in REPEATABLE_TARGETS:       # M165 R3: a METHOD door
+            self._note_cmd(target, "doc", "target",   #  (Hole's key path:
+                         target)               #   never a QAction) - the
+        obj()                                  #  two branches are
+        return True                            #  exclusive, so no double
+                                               #  record (risk 1, dead)
 
     def _layout_toggle(self, what: str) -> bool:
         if what == "browser":
