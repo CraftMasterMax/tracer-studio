@@ -36,6 +36,7 @@ from PySide6.QtWidgets import QApplication                       # noqa: E402
 
 from tracer.core.sketch.constraints import (Angle, Distance,     # noqa: E402
                                             Fixed, Midpoint, Radius)
+from tracer.core import step as _step                            # noqa: E402
 from tracer.core.sketch.model import SketchModel, model_to_dict  # noqa: E402
 from tracer.ui import dimedit, theme                             # noqa: E402
 from tracer.ui.dimedit import ChipField, chip_rect               # noqa: E402
@@ -735,40 +736,72 @@ def test_key_laws_untouched():
 # 5 mm plate never returns) - the door's own guard is for users, not
 # for test time.
 
+def _plate_and_mirror(win, monkeypatch):
+    """The CI-portable doc door: Mirror rides the live panel (m16's
+    scripted picks) and its mesh booleans run on EVERY platform - unlike
+    the solid-edge fillet, which needs the OpenCascade bridge (measured:
+    ubuntu CI run 40827317850 fails it with 'no circular rims, solid-edge
+    fillets need OpenCascade'; windows and local pass it)."""
+    from tracer.core.document import PrimitiveFeature
+    from conftest import script_panel
+    win.new_document()
+    win.doc.add(PrimitiveFeature(name="plate", kind="box",
+                                 dims={"dx": 20, "dy": 20, "dz": 5}))
+    win.doc.add(PrimitiveFeature(name="lug", kind="box",
+                                 dims={"dx": 2, "dy": 8, "dz": 5},
+                                 placement=(1, 2, 5)))
+    win.recompute()
+    qapp2.processEvents()
+    script_panel(monkeypatch, {"src": "lug", "plane": "XZ", "off": 10.0})
+    win.act_mirror.trigger()                           # the bypass the
+    for _ in range(40):                                #  recon flagged:
+        qapp2.processEvents()                          #  act.trigger IS
+    return win.doc.features[-1]                        #  what a menu
+                                                       #  click emits
+
+
 def _plate_and_fillet(win, monkeypatch, radius=2.0):
+    """Plate + ONE whole-body fillet through the menu door. Returns
+    (last_feature, warned_texts). The QMessageBox guard is law: on a
+    bridge-less runner the door WARNS (QMessageBox.exec - a native loop
+    no SIGALRM can wake: ubuntu CI attempts 40821971441/40824705735,
+    20 min silent THROUGH a 300 s budget) and rolls the feature back.
+    'Fillet failed' is CAPTURED (an honest platform refusal); any other
+    modal raises - a door that would ask the user asks the LOG instead."""
     from tracer.core.document import PrimitiveFeature
     from tracer.ui.cmddialog import Shell
+    from PySide6.QtWidgets import QMessageBox
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (radius, True)))
-    # Diagnostic law (CI attempt 40824705735: the ubuntu runner WEDGED
-    # in the first mesh gate, 20 min, while SIGALRM timeouts stayed
-    # silent - the signature of a native modal loop). A door that would
-    # ask the user asks the log instead - by name, or not at all.
-    from PySide6.QtWidgets import QMessageBox
+    warned: list[str] = []
 
-    def _no_modal(*a, **k):
-        raise AssertionError(f"headless modal attempted: {a[1:3]}")
+    def _modal(_parent, title, text, *a, **k):
+        if title == "Fillet failed":
+            warned.append(str(text))
+            return 0                      # the door rolls back itself
+        raise AssertionError(f"headless modal attempted: {title}")
     for _m in ("warning", "information", "question", "critical"):
-        monkeypatch.setattr(QMessageBox, _m, staticmethod(_no_modal))
+        monkeypatch.setattr(QMessageBox, _m, staticmethod(_modal))
     win.new_document()
     win.doc.add(PrimitiveFeature(name="plate", kind="box",
                                  dims={"dx": 20, "dy": 20, "dz": 5}))
     win.recompute()
     qapp2.processEvents()
-    win.act_fillet.trigger()                           # the MENU bypass -
-    for _ in range(40):                                #  triggered slots
-        qapp2.processEvents()                          #   fire in order
-    return win.doc.features[-1]
+    win.act_fillet.trigger()
+    for _ in range(40):
+        qapp2.processEvents()
+    return win.doc.features[-1], warned
 
 
 def test_menu_bypass_records_the_ring(win, monkeypatch):
     # The recon's flagged bypass (cmd:221: menu clicks fire act.trigger,
     # never _run_command) is exactly what the recorder pass now covers.
-    from tracer.core.document import BodyFilletFeature
-    feat = _plate_and_fillet(win, monkeypatch)
-    assert isinstance(feat, BodyFilletFeature)          # the door RAN...
-    assert win._cmd_ring[-1] == ("Fillet body edges…",
-                                 "doc", "action", "Fillet body edges…")
+    # Mirror, not fillet: the RECORDING law is geometry-free, and the
+    # door must not bet on a platform-optional kernel (ubuntu law below).
+    from tracer.core.document import MirrorFeature
+    feat = _plate_and_mirror(win, monkeypatch)
+    assert isinstance(feat, MirrorFeature)              # the door RAN...
+    assert win._cmd_ring[-1] == ("Mirror…", "doc", "action", "Mirror…")
     #  ...and ONE line records it: key, stack, kind, payload - strings
     #  only, no captured objects (self-heal law)
 
@@ -802,20 +835,30 @@ def test_allowlist_always_resolves(win):
 def test_repeat_refused_on_the_sketch_page(win, monkeypatch):
     # Two-stack guard: a doc-tagged head waits for the sketch - status
     # MESSAGE, never a silent drop (the undo refusal law, mw:5722 family).
-    from tracer.core.document import BodyFilletFeature
-    _plate_and_fillet(win, monkeypatch)
+    from tracer.core.document import MirrorFeature
+    _plate_and_mirror(win, monkeypatch)
     win.action_new_sketch()
     qapp2.processEvents()
-    n = sum(isinstance(f, BodyFilletFeature) for f in win.doc.features)
+    n = sum(isinstance(f, MirrorFeature) for f in win.doc.features)
     assert win._dispatch_key(Qt.Key_R,
                              Qt.ControlModifier | Qt.ShiftModifier) is True
     msg = win.status.currentMessage()
     assert "finish the sketch" in msg                  # refused, LOUD...
-    assert sum(isinstance(f, BodyFilletFeature)
-               for f in win.doc.features) == n          #  ...no new fillet
-    assert win._cmd_ring[-1][0] == "Fillet body edges…"  # head survives
+    assert sum(isinstance(f, MirrorFeature)
+               for f in win.doc.features) == n          #  ...no new mirror
+    assert win._cmd_ring[-1][0] == "Mirror…"           # head survives
 
 
+requires_bridge = pytest.mark.skipif(
+    not _step.available(),
+    reason="the F9 door under test needs a REAL baked fillet: a pure "
+           "box has no circular rims, so mesh-only machines refuse it "
+           "(measured: ubuntu CI run 40827317850 - 'no circular rims, "
+           "solid-edge fillets need OpenCascade'). m18's requires_occt "
+           "law; the ring mechanics run bridge-free on every runner.")
+
+
+@requires_bridge
 def test_adjust_last_doc_reopens_the_journaling_door(win, monkeypatch):
     # F9 on the model page = _feature_activated on the LAST feature (the
     # double-click door, rollback LAW-10 included). House stacks the
@@ -823,7 +866,10 @@ def test_adjust_last_doc_reopens_the_journaling_door(win, monkeypatch):
     # journal surgery against full-JSON snapshots - decision, rung doc).
     from tracer.core.document import BodyFilletFeature
     from tracer.ui.cmddialog import Shell
-    feat = _plate_and_fillet(win, monkeypatch)
+    feat, warned = _plate_and_fillet(win, monkeypatch)
+    if not isinstance(feat, BodyFilletFeature):        # belt (the marker
+        pytest.skip("fillet door refused here: " +                    #  got
+                    (warned[0][:72] if warned else "no feature"))     #  it)
     assert isinstance(feat, BodyFilletFeature) and feat.radius == 2.0
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (1.0, True)))
@@ -908,7 +954,7 @@ def test_repeat_and_adjust_are_deaf_while_a_field_is_open(win, monkeypatch):
     # The rung-1 law REPEATED (m165 gate family): while the inline editor
     # has the cursor, the model layer - including F9/Ctrl+Shift+R - is
     # DEAF. One editor, one owner of the keyboard.
-    a = _plate_and_fillet(win, monkeypatch)            # ring now has a doc
+    _plate_and_mirror(win, monkeypatch)                # ring now has a doc
     win.action_new_sketch()                            #  head AND a page
     m = win.sketch.model                               #  to travel on
     p0, p1 = m.point(0, 0), m.point(30, 0)
