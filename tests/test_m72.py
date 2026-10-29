@@ -130,6 +130,11 @@ def test_z_zooms_to_the_selection(win, qapp):
     assert vp._sel
     QTest.keyPress(vp, Qt.Key_Z)
     qapp.processEvents()
+    import time                                # M166 R3 cite-the-move:
+    _t = time.monotonic() + 2.5                #  Fit now FLIES, so this
+    while vp._anim is not None and time.monotonic() < _t:  #  pin rides
+        qapp.processEvents()                   #  the real flight to its
+        time.sleep(0.01)                       #  LANDED framing
     assert vp.camera().distance < d0 * 0.9    # framed the picked face
     # no selection -> Z is inert
     _click(win, qapp, (10, 5, 10))
@@ -137,4 +142,8 @@ def test_z_zooms_to_the_selection(win, qapp):
     d1 = vp.camera().distance
     QTest.keyPress(vp, Qt.Key_Z)
     qapp.processEvents()
+    _t = time.monotonic() + 2.5
+    while vp._anim is not None and time.monotonic() < _t:
+        qapp.processEvents()
+        time.sleep(0.01)
     assert vp.camera().distance == pytest.approx(d1)
