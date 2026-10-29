@@ -1,4 +1,5 @@
-"""Trim / extend two lines to their corner.
+"""Trim / extend two lines to their corner — and the CUT that trim-to-click
+needs (M168).
 
 The maker's cleanup verb: draw the lines of a profile freehand (they
 overshoot, fall short, leave gaps) and then close each corner with one
@@ -11,6 +12,15 @@ shared identity, not coincident coordinates.
      ╲    ╱     ──────►     ╲  ╱      one point, one corner
       ╲  ╱  overshoot        ╲╱
 
+split_entity() is the same identity law read in reverse: one entity
+becomes TWO that SHARE one new seam Point, so a profile keeps closing
+across the cut exactly as before.  Constraints re-home by a v1 law of two
+clauses: a SHA-class fact (parallel, horizontal, ...) is TRUE of every
+piece and is copied to both sides; anything METRIC or position-bound
+along the eaten entity (Equal length, Midpoint, PointOnLine, ...) is
+AMBIGUOUS across a cut and is DROPPED — consumption rides delete_entity
+(constraints drop, fx bindings follow).  Refusals land BEFORE mutation.
+
 Safety rules (v1):
   * only a FREE end moves — used by exactly this line (no arcs/circles
     sharing it) and referenced by NO constraint, so trimming can never
@@ -21,13 +31,21 @@ Safety rules (v1):
 """
 from __future__ import annotations
 
+import dataclasses
 import math
 
-from .entities import Line, Point
+from ..snaps import _arc_span, _circumference
+from .constraints import (Angle, Collinear, Horizontal, Parallel,
+                          Perpendicular, Radius, Symmetry, Vertical)
+from .entities import Arc, Line, Point
 
 PAR_TOL = 1e-9
 STUB_MAX = 0.4                     # an inside-crossing may only cut off
                                    # this fraction of the line's length
+SPLIT_ON_TOL = 1e-6                # a cut point must lie ON the curve
+SPLIT_END_TOL = 1e-6               # ... and strictly inside its ends
+SHA = (Horizontal, Vertical, Angle, Parallel, Perpendicular, Collinear,
+       Radius, Symmetry)           # kind-facts: true of every piece
 
 
 def close_corner(model, l1: Line, l2: Line) -> Point:
@@ -54,6 +72,92 @@ def close_corner(model, l1: Line, l2: Line) -> Point:
         _drop(model, c2)                    # the loser leaves sk.points
     P.x, P.y = X
     return P
+
+
+# ---- the CUT (M168 R1) -------------------------------------------------------
+
+def split_entity(model, ent, x, y):
+    """Cut `ent` at (x, y) into (left, right) sharing ONE new seam Point —
+    identity keeps every profile closed across the seam.  Lines and arcs
+    split; circles, ellipses and points refuse (v1).  SHA-class constraint
+    facts are re-copied to BOTH halves; metric/positional facts naming the
+    eaten entity drop with it (delete_entity's consumption, fx included).
+    Raises ValueError BEFORE touching the model when the cut is illegal."""
+    sk = model.sketch
+    if isinstance(ent, Line):
+        left, right = _cut_line(sk, ent, x, y)
+        lines = True
+    elif isinstance(ent, Arc):
+        left, right = _cut_arc(sk, ent, x, y)
+        lines = False
+    else:
+        raise ValueError("Only lines and arcs can be split (yet)")
+    pool = sk.lines if lines else sk.arcs
+    idx = next(i for i, e in enumerate(pool) if e is ent)
+    rehome = []
+    for c in sk.constraints:
+        if isinstance(c, SHA) and any(e is ent for e in c.entities()):
+            rehome += [_rehome(c, ent, left), _rehome(c, ent, right)]
+    model.delete_entity(ent)               # consumes: drops its constraints,
+    pool = sk.lines if lines else sk.arcs  #  fx follow; arcs REBIND the list,
+    pool[idx:idx] = [left, right]          #  so RE-FETCH, then the halves
+    sk.constrain(*rehome)                  #  land in the eaten one's own spot
+    return left, right
+
+
+def _cut_line(sk, l, x, y):
+    ax, ay, bx, by = l.a.x, l.a.y, l.b.x, l.b.y
+    L = math.hypot(bx - ax, by - ay)
+    if L < 1e-9:
+        raise ValueError("This line has no length to split")
+    t = ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / (L * L)
+    along = t * L
+    off = abs((x - ax) * (by - ay) - (y - ay) * (bx - ax)) / L
+    if off > SPLIT_ON_TOL or not -SPLIT_ON_TOL <= along <= L + SPLIT_ON_TOL:
+        raise ValueError("The cut must lie ON the curve")
+    if min(along, L - along) < SPLIT_END_TOL * max(1.0, L):
+        raise ValueError("Split the middle of a segment, not an end")
+    S = sk.point(x, y)
+    return (Line(l.a, S, l.construction), Line(S, l.b, l.construction))
+
+
+def _cut_arc(sk, ar, x, y):
+    geo = _circumference(ar.a, ar.m, ar.b)
+    if geo is None:
+        raise ValueError("This arc has no circle to split on")
+    cx, cy, r = geo
+    if abs(math.hypot(x - cx, y - cy) - r) > SPLIT_ON_TOL:
+        raise ValueError("The cut must lie ON the curve")
+    a0, sw = _arc_span(ar.a, ar.m, ar.b, cx, cy)
+
+    def frac(px, py):                      # angular position in [0, 1]
+        da = math.atan2(py - cy, px - cx) - a0
+        da = da % (2 * math.pi) if sw > 0 else -((-da) % (2 * math.pi))
+        return da / sw
+
+    fS = frac(x, y)
+    if min(fS, 1 - fS) * abs(sw) * r < SPLIT_END_TOL * max(1.0, r):
+        raise ValueError("Split the middle of an arc, not an end")
+    S = sk.point(x, y)
+
+    def at(f):                             # arc point at span-fraction f
+        a = a0 + sw * f
+        return Point(cx + r * math.cos(a), cy + r * math.sin(a))
+
+    return (Arc(ar.a, at(fS / 2), S, ar.construction),
+            Arc(S, at((1 + fS) / 2), ar.b, ar.construction))
+
+
+def _rehome(c, ent, side):
+    """Copy a SHA constraint onto one half: identity-swap the field(s)
+    naming the eaten entity; the src stamp (structural provenance) rides
+    the copy — a split is structural, its copies are never removable."""
+    kw = {f.name: side for f in dataclasses.fields(c)
+          if getattr(c, f.name) is ent}
+    n = dataclasses.replace(c, **kw)
+    if getattr(c, "src", ""):
+        setattr(n, "src", c.src)
+    return n
 
 
 # ---- plumbing ----------------------------------------------------------------
