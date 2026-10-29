@@ -13,6 +13,14 @@ everywhere.
   the HUD (names it), and the claim set (still swallows the letter).
   The corner act survives behind honest doors: the canvas context menu
   (built in _build_menu - m164's testable split) and direct act_trim().
+
+M169 rung 2 adds THE SCRIBE KERNEL: trim_stroke(model, touches) eats a whole
+gesture in stroke order - per touch the CONTAINING piece falls (trim_piece
+is the only mutation), and ON-cut touches, Points and already-consumed
+entities skip SILENTLY (a stroke is one verb and never warns mid-word).
+The gap-rect of m28 has one PURE GAP corner - the scribe trims OVERHANGS,
+it does not extend - so the clean-stroke gate rides an all-overhang rect;
+the gap corner keeps m28's close-corner story.
 """
 import pytest
 
@@ -20,7 +28,8 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtWidgets import QApplication, QToolButton                # noqa: E402
 
-from tracer.core.sketch.model import SketchModel                       # noqa: E402
+from tracer.core.sketch.model import SketchModel, model_to_dict        # noqa: E402
+from tracer.core.sketch.trim import trim_stroke                        # noqa: E402
 from tracer.ui.commands import SKETCH_KEYS, _sketch_runner             # noqa: E402
 from tracer.ui.mainwindow import MainWindow                            # noqa: E402
 from tracer.ui.renderer import SceneRenderer                           # noqa: E402
@@ -120,3 +129,138 @@ def test_the_corner_act_still_lives_in_the_menu(qapp):
     assert any(pa is pb for pa in (LA.a, LA.b) for pb in (LB.a, LB.b))
     assert len(m.sketch.points) == 3                   # orphan dropped
     cv.deleteLater()
+
+
+# ---- M169 rung 2: THE SCRIBE KERNEL (trim_stroke) -----------------------------
+
+
+def _scribble_rect():
+    """Four strokes of a hand-drawn rectangle - every corner a pure
+    OVERHANG (crossings at the exact corners (0,0), (40,0), (40,20),
+    (0,20)); m28's _gap_rect keeps a gap corner, which is EXTEND work."""
+    m = SketchModel()
+    L0 = m.add_line(m.point(-0.3, 0.0), m.point(40.4, 0.0))
+    L1 = m.add_line(m.point(40.0, -0.4), m.point(40.0, 20.4))
+    L2 = m.add_line(m.point(40.3, 20.0), m.point(-0.4, 20.0))
+    L3 = m.add_line(m.point(0.0, 20.3), m.point(0.0, -0.4))
+    return m, [L0, L1, L2, L3]
+
+
+def test_the_scribe_cleans_the_scribble_rect():
+    """The scribe eats all EIGHT overshoot pieces in two circuits - the
+    second circuit names the LIVE survivors, exactly what the canvas
+    re-resolves between moves - and the loop CLOSES by identity."""
+    m, (L0, L1, L2, L3) = _scribble_rect()
+    corners = ((0.0, 0.0), (40.0, 0.0), (40.0, 20.0), (0.0, 20.0))
+
+    def at_corner(p):                     # seams are COMPUTED crossings:
+        return any(abs(p.x - cx) < 1e-6   #  compare with tolerance, never
+                   and abs(p.y - cy) < 1e-6 for cx, cy in corners)
+    first = trim_stroke(m, [(L0, -0.15, 0.0), (L1, 40.0, -0.3),
+                            (L2, 40.15, 20.0), (L3, 0.0, 20.15)])
+    assert len(first) == 4
+    stubs = [e for e in m.sketch.lines if at_corner(e.a) ^ at_corner(e.b)]
+    assert len(stubs) == 4                             # the far overshoots
+    second = trim_stroke(m, [(e, (e.a.x + e.b.x) / 2, (e.a.y + e.b.y) / 2)
+                             for e in stubs])
+    assert len(second) == 4
+    assert len(m.sketch.lines) == 4
+    loops, warns = m.to_loops()
+    assert len(loops) == 1 and not warns
+    assert 799.0 < loops[0]["area"] < 801.0
+    for cx, cy in ((0.0, 0.0), (40.0, 0.0), (40.0, 20.0), (0.0, 20.0)):
+        seam = [p for p in m.sketch.points
+                if abs(p.x - cx) < 1e-6 and abs(p.y - cy) < 1e-6]
+        assert len(seam) == 1                          # ONE Point per corner
+        assert len([e for e in m.sketch.lines
+                    if seam[0] in (e.a, e.b)]) == 2    # it serves both sides
+
+
+def test_on_cut_touches_skip_silently():
+    """A stroke across nothing but crossings is a stroke that took nothing:
+    no fall, no warning, and the model never learns it was considered."""
+    m = SketchModel()
+    l1 = m.add_line(m.point(0, 0), m.point(40, 40))
+    l2 = m.add_line(m.point(0, 40), m.point(40, 0))
+    before = model_to_dict(m)
+    assert trim_stroke(m, [(l1, 20.0, 20.0), (l2, 20.0, 20.0)]) == []
+    assert model_to_dict(m) == before
+
+
+def test_dead_entities_and_points_skip_silently():
+    """The first touch consumes; the stale echo names nothing - and a Point
+    was never trimmable. The X under the strokes keeps every byte."""
+    m = SketchModel()
+    l1 = m.add_line(m.point(0, 0), m.point(40, 40))
+    l2 = m.add_line(m.point(0, 40), m.point(40, 0))
+    S = m.add_line(m.point(-5, 5), m.point(-5, -5))
+    P = m.point(99, 99)
+    x_bytes = model_to_dict(m)
+    fallen = trim_stroke(m, [(S, -5.0, 0.0), (S, -5.0, 1.0), (P, 99.0, 99.0)])
+    assert fallen == [S]                               # the echo took nothing
+    assert len(m.sketch.lines) == 2
+    cir = m.add_circle(m.point(10, 10), 2.0)
+    assert trim_stroke(m, [(cir, 12.0, 10.0), (cir, 8.0, 10.0)]) == [cir]
+    assert not m.sketch.circles
+    after = model_to_dict(m)
+    assert after["lines"] == x_bytes["lines"][:2]      # the X is byte-still
+
+
+def test_order_matters_the_stale_half_touch_is_hushed():
+    """First touch CONSUMES the original (split identity): a later touch
+    naming the dead object skips - the live survivor is another name."""
+    m = SketchModel()
+    a = m.point(0, 0)
+    m.add_line(a, m.point(40, 40))
+    m.add_line(m.point(0, 40), m.point(40, 0))
+    l1 = m.sketch.lines[0]
+    fallen = trim_stroke(m, [(l1, 30.0, 30.0), (l1, 10.0, 10.0)])
+    assert len(fallen) == 1                            # the echo hushed
+    assert l1 not in m.sketch.lines                    # consumed by the cut
+    assert len(m.sketch.lines) == 2                    # survivor + l2
+
+
+def test_the_survivor_touched_again_loses_the_rest():
+    """R3's promise at kernel level: resolving live each touch means the
+    same geometric line touched twice loses BOTH pieces - the survivor
+    crossed only at its own end is uncrossed, so it goes whole."""
+    m = SketchModel()
+    a = m.point(0, 0)
+    m.add_line(a, m.point(40, 40))
+    m.add_line(m.point(0, 40), m.point(40, 0))
+    l1 = m.sketch.lines[0]
+    trim_stroke(m, [(l1, 30.0, 30.0)])                 # the far piece falls
+    survivor = [e for e in m.sketch.lines if e.a is a][0]
+    fallen = trim_stroke(m, [(survivor, 10.0, 10.0)])
+    assert len(fallen) == 1 and fallen[0] is survivor
+    assert len(m.sketch.lines) == 1                    # only l2 remains
+
+
+def test_neighbours_keep_their_bytes():
+    """A stroke cuts what it touched - nothing else moves an atom."""
+    m = SketchModel()
+    l1 = m.add_line(m.point(0, 0), m.point(40, 40))
+    l2 = m.add_line(m.point(0, 40), m.point(40, 0))
+    cir = m.add_circle(m.point(-10, -10), 3.0)
+    before = {
+        "l2": (l2.a.x, l2.a.y, l2.b.x, l2.b.y),
+        "cir": (cir.c.x, cir.c.y, cir.r),
+        "dict": model_to_dict(m),
+    }
+    trim_stroke(m, [(l1, 30.0, 30.0)])
+    assert (l2.a.x, l2.a.y, l2.b.x, l2.b.y) == before["l2"]
+    assert (cir.c.x, cir.c.y, cir.r) == before["cir"]
+    after = model_to_dict(m)
+    for key in ("circles",):
+        assert after[key] == before["dict"][key]
+
+
+def test_the_scribe_is_pure_kernel():
+    """No Qt in the scribe: the canvas owns gestures, history and paint -
+    the kernel only knows pieces and silence."""
+    import inspect
+
+    import tracer.core.sketch.trim as tk
+    assert "trim_stroke" in dir(tk)
+    src = inspect.getsource(tk)
+    assert "PySide6" not in src and "QtCore" not in src

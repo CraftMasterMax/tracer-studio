@@ -221,6 +221,29 @@ def trim_piece(model, ent, x, y):
     #                                                the SHA copies R1 mints
 
 
+def trim_stroke(model, touches):
+    """THE SCRIBE (M169 R2): a whole gesture at once - touches
+    [(entity, x, y)] in STROKE ORDER, and per touch the piece CONTAINING it
+    falls (trim_piece, M168's verb, is the only mutation).  A stroke is ONE
+    verb and never warns mid-word: an ON-cut touch, a Point, and a
+    DEAD/consumed entity all skip SILENTLY.  A cut CONSUMES the original
+    (split identity), so a second touch naming the same object names
+    nothing - the next resolution of a live canvas names the survivor, and
+    a survivor touched again loses its remaining piece too.  Returns the
+    fallen entities in the order they fell.  NO history push: the caller
+    owns ONE push per gesture (m167's drag law)."""
+    sk = model.sketch
+    fallen = []
+    for ent, x, y in touches:
+        if not any(ent is e for grp in (sk.lines, sk.arcs, sk.circles,
+                                        sk.ellipses) for e in grp):
+            continue                                # dead or a Point: hush
+        gone = trim_piece(model, ent, x, y)
+        if gone is not None:                        # ON a cut: hush too
+            fallen.append(gone)
+    return fallen
+
+
 def extend_end(model, ent, x, y):
     """TRIM's OTHER half: when the clicked piece runs OFF an open end that
     another line crosses AHEAD of that end, the end is EXTENDED onto the
