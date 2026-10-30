@@ -148,6 +148,8 @@ class SketchCanvas(QWidget):
         #   motion = photocopy the selection instead (the copy-drag law).
         self._trim_arm = None                  # M168 R3: the trim TOOL:
         self._trim_hover = None                #   press arm / hover piece
+        self._corner = None                    # M172 R1: the ROUNDING
+        self._corner_pull = False              #   HAND: [kind,l1,l2,P,r]
         self._trim_last = None                 # M169 R3: the STROKE: last
         self._trim_done: set = set()           #   probe point, inert ids
         self._trim_stroke = False              #   held-drag flag + the one
@@ -255,6 +257,8 @@ class SketchCanvas(QWidget):
         self._trim_done = set()                #   with the tool switch
         self._trim_stroke = False
         self._trim_pushed = False
+        self._corner = None                    # M172 R1: the rounding
+        self._corner_pull = False              #  hand dies with the tool
         self._preview = None
         self._band = None
         self._snap_hint = None
@@ -537,6 +541,14 @@ class SketchCanvas(QWidget):
             if self._hover_c is not None:        # M164 R2: no ring while
                 self._hover_c = None             # grabbing (viewport's law)
                 self.setCursor(Qt.ArrowCursor)
+            if self._corner is not None:         # M172 R1: the ROUNDING
+                wp0 = self._world(q)             #  HAND: a press ON the
+                P = self._corner[3]              #   aimed corner starts
+                tol = 12.0 / max(self._scale, 1e-6)   #  the pull; a press
+                if math.hypot(wp0[0] - P.x, wp0[1] - P.y) <= tol:
+                    self._corner_pull = True     #   anywhere else VOIDS
+                    return                       #  the aim - and the
+                self._corner = None              #   click carries on
             hit = self._hit(q)
             if hit is None:
                 if not (ev.modifiers() & Qt.ControlModifier):
@@ -772,6 +784,22 @@ class SketchCanvas(QWidget):
             self._center -= np.array([d.x() / self._scale, -d.y() / self._scale])
             self._pan_from = q
             self.update()
+            return
+        if self._corner is not None and self._corner_pull:
+            # M172 R1: the pull SIZES the ghost - r is the cursor's own
+            # distance to the corner, clamped to the kernel's own max
+            # (a pull can never outrun the legs; commit stays honest).
+            kind, l1, l2, P, r = self._corner
+            wp = self._world(q)
+            g = self._corner_geom()
+            if g is None:
+                self._corner = self._corner_pull = None
+            else:
+                _P, _o1, _o2, _u1, _u2, len1, len2, theta = g
+                rmax = math.tan(theta / 2.0) * (min(len1, len2) / 2.0 - 0.02)
+                self._corner[4] = max(0.05, min(math.hypot(
+                    wp[0] - P.x, wp[1] - P.y), rmax))
+                self.update()
             return
         if self._tool == "trim":                  # M168 R3: hover previews
             if ev.buttons() & Qt.LeftButton and self._trim_last is not None:
@@ -1061,6 +1089,23 @@ class SketchCanvas(QWidget):
             self._solve(); self.update()
             return
         if self._tool == "select":
+            if self._corner_pull:                # M172 R1: THE ROUNDING
+                self._corner_pull = False        #  HAND files its arc:
+                corner, self._corner = self._corner, None   #  ONE push,
+                kind, l1, l2, P, r = corner      #  and a refusal pays
+                self._push_hist()                #   NOTHING (pop law)
+                from ..core.sketch.fillet import corner_fillet
+                try:
+                    arc = corner_fillet(self.model, l1, l2, r)
+                except ValueError as e:
+                    self._hist.pop()
+                    self._warn(str(e))
+                    self.update()
+                    return
+                self._solve()
+                self._sel = [arc]                # the arc is the pick now
+                self.update()
+                return
             if moved:                            # M170 R2: a point drag
                 self._weld_drop(grab, ev.position())   #  that ENDED on a
                 self._solve()                    #  magnet welds on drop.
@@ -1679,6 +1724,80 @@ class SketchCanvas(QWidget):
         self._sel = copies                         #  the copy is the pick
         self.update()
 
+    # ---- M172: the ROUNDING HAND (fillet & chamfer follow the drag) ----
+
+    def _corner_arm(self, kind: str, l1: Line, l2: Line) -> bool:
+        """F/G AIM the corner: the kernel's OWN validator is asked first
+        (every refusal it can raise - no shared point, a corner three
+        geometries share, near-parallel legs - surfaces as the canvas
+        warning it already words, and NOTHING arms: a refused aim is
+        byte-silent, no hist, no model touch). On success the state
+        holds the LIVE entities, not coordinates: nudges and solves
+        move the corner and the ghost rides it."""
+        g = self._corner_geom(l1, l2, kind, warn=True)
+        if g is None:
+            return False
+        _P, _o1, _o2, _u1, _u2, len1, len2, theta = g
+        leg = min(len1, len2)
+        default = max(0.5, round(min(5.0, leg / 4.0), 1))   # the dialog's
+        rmax = math.tan(theta / 2.0) * (leg / 2.0 - 0.02)   #  own default
+        self._corner = [kind, l1, l2, _P, min(default, rmax)]
+        self._corner_pull = False
+        self.update()
+        return True
+
+    def _corner_geom(self, l1=None, l2=None, kind="fillet", warn=False):
+        """Live, READ-ONLY revalidation through the kernel's _corner:
+        every arm/ghost/pull question is answered against TODAY's
+        geometry, and a corner that died under the aim (trimmed,
+        welded, deleted) answers None - the aim dies with it, SILENT
+        per-frame; only the ARM refusal speaks (warn=True)."""
+        if l1 is None:
+            if self._corner is None:
+                return None
+            kind, l1, l2 = self._corner[0], self._corner[1], self._corner[2]
+        from ..core.sketch.fillet import _corner as _ck
+        try:
+            return _ck(self.model, l1, l2, kind)
+        except ValueError as e:
+            if warn:
+                self._warn(str(e))
+            return None
+
+    def _corner_ghost(self) -> list:
+        """The preview arc at the aimed corner, computed with the
+        KERNEL's OWN fillet geometry at the state's r - paint only, the
+        model is never touched (the same sentence the trim hover lives
+        by). Returns world tuples, or [] when the corner went stale."""
+        if self._corner is None:
+            return []
+        kind, l1, l2, _P, r = self._corner
+        g = self._corner_geom()
+        if g is None:
+            return []
+        P, _o1, _o2, u1, u2, len1, len2, theta = g
+        if kind != "fillet":                       # R2 grows the flat
+            return [(P.x + u1[0] * r, P.y + u1[1] * r),
+                    (P.x + u2[0] * r, P.y + u2[1] * r)]
+        tan_len = r / math.tan(theta / 2.0)
+        t1 = (P.x + u1[0] * tan_len, P.y + u1[1] * tan_len)
+        t2 = (P.x + u2[0] * tan_len, P.y + u2[1] * tan_len)
+        cd = r / math.sin(theta / 2.0)
+        hx, hy = u1[0] + u2[0], u1[1] + u2[1]
+        hl = math.hypot(hx, hy)
+        bx, by = hx / hl, hy / hl
+        cen = (P.x + bx * cd, P.y + by * cd)
+        bul = (cen[0] - bx * r, cen[1] - by * r)
+        a1 = math.atan2(t1[1] - cen[1], t1[0] - cen[0])
+        a2 = math.atan2(t2[1] - cen[1], t2[0] - cen[0])
+        ab = math.atan2(bul[1] - cen[1], bul[0] - cen[0])
+        TAU = 2.0 * math.pi
+        ccw = (a2 - a1) % TAU
+        delta = ccw if (ab - a1) % TAU <= ccw else -(TAU - ccw)
+        return [(cen[0] + r * math.cos(a1 + delta * i / 23.0),
+                 cen[1] + r * math.sin(a1 + delta * i / 23.0))
+                for i in range(24)]
+
     def keyPressEvent(self, ev: QKeyEvent):
         k = ev.key()
         if self.model is None:
@@ -1785,9 +1904,12 @@ class SketchCanvas(QWidget):
             self.act_V()
         elif k == Qt.Key_F:
             if len(sel) == 2 and all(isinstance(e, Line) for e in sel):
-                self.act_fillet()                 # Fusion: F fillets a corner
-            else:
-                self.act_fix()
+                self._corner_arm("fillet", sel[0], sel[1])
+            else:                                # M172 R1: canvas F is
+                self.act_fix()                   #  the HAND now (aim,
+                                                 #   pull, file); the
+                                                 #   dialog lives on ONE
+                                                 #   door: menu Fillet...
         elif k == Qt.Key_G and len(sel) == 2 and \
                 all(isinstance(e, Line) for e in sel):
             self.act_chamfer()                    # G = the corner's flat twin
@@ -1863,6 +1985,8 @@ class SketchCanvas(QWidget):
             self._draw_hover(p)                # M164 R2: ring + re-stroke
             if self._tool == "trim":             # M168 R3: the piece the
                 self._draw_trim_piece(p)         #   click WOULD take
+            if self._corner is not None:         # M172 R1: the rounding
+                self._draw_corner_ghost(p)       #  hand's arc rides the
             if self._show_dof:                    # M119: the DOF overlay
                 self._draw_dof(p)
             self._draw_typein(p)              # M90: the live number chip
@@ -2686,6 +2810,26 @@ class SketchCanvas(QWidget):
         p.setPen(FG)
         p.drawText(rect, Qt.AlignCenter, text)
         p.setBrush(Qt.NoBrush)
+
+    def _draw_corner_ghost(self, p: QPainter):
+        """M172 R1: the ghost arc at the aimed corner - dashed accent,
+        paint only (the model is untouched until the release FILES it).
+        While armed a numeral rides beside the arc's bulge: the exact
+        radius the release would commit (R3 makes typing replace it)."""
+        pts = self._corner_ghost()
+        if not pts:
+            return
+        p.setPen(QPen(ACCENT, 1.2, Qt.DashLine))
+        q_prev = self.w2s(*pts[0])
+        for xy in pts[1:]:
+            qn = self.w2s(*xy)
+            p.drawLine(q_prev, qn)
+            q_prev = qn
+        r = self._corner[4]
+        mid = pts[len(pts) // 2]
+        qm = self.w2s(*mid)
+        p.setPen(DIM)
+        p.drawText(int(qm.x()) + 8, int(qm.y()) - 8, f"R {r:.2f}")
 
     def _draw_trim_piece(self, p: QPainter):
         """M168 R3: the trim tool paints the ENTIRE piece the next click

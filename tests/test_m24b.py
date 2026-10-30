@@ -238,7 +238,10 @@ def _canvas(win, qapp):
     return win.sketch
 
 
-def test_f_key_fillets_two_lines_undoable(win, qapp, monkeypatch):
+def test_fillet_menu_files_the_typed_radius_undoable(win, qapp, monkeypatch):
+    # M172 R1 migrated canvas F to the ROUNDING HAND (aim, pull, file -
+    # see test_m172); the typed dialog lives on behind the menu door
+    # "Fillet corner...", which calls act_fillet exactly as before.
     cv = _canvas(win, qapp)
     m = cv.model
     a = m.point(0, 0)
@@ -246,7 +249,7 @@ def test_f_key_fillets_two_lines_undoable(win, qapp, monkeypatch):
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *A, **K: (5.0, True)))
     cv._sel = [lines[1], lines[2]]
-    QTest.keyClick(cv, Qt.Key_F)
+    cv.act_fillet()                                # the menu's own call
     qapp.processEvents()
     assert len(m.sketch.arcs) == 1
     assert max(_tangent_errors(m)) < 1e-6
