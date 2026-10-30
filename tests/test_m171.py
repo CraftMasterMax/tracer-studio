@@ -19,6 +19,12 @@ screen-constant 5 px of world (Shift x5), then solves with the nudged
 points pinned - chains flex like a drag, a welded corner carries every
 rider, and a locked scene pays NOTHING: no undo row is born for a no-op.
 One press, one undo step. Outside SELECT mode the arrows stay PARKED.
+
+Rung 3: Ctrl+D photocopies the selection WITHOUT a hand - the Ctrl-drag's
+kernel (copy_geometry, identity survives, copies arrive FREE and BORN
+FREE), landing one nudge step beside the source with the pick re-homed
+to the copy for exactly one undo row. Empty hands and other tools pay
+the key nothing, and it is never the plain D's dim.
 """
 import math
 import pytest
@@ -276,3 +282,92 @@ def test_a_dragged_point_can_be_dragged_again(ed):
     _move(ed, 24, 15)
     QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier, _scr(24, 15))
     assert p.x == pytest.approx(24.0)              # drag 2 lands too
+
+
+# ---- RUNG 3: CTRL+D - the photocopy WITHOUT a hand -----------------------
+
+def _clickc(ed, x, y):                             # Ctrl+click: a stranger
+    QTest.mousePress(ed, Qt.LeftButton, Qt.ControlModifier, _scr(x, y))     # joins
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.ControlModifier, _scr(x, y))
+
+
+def _ctrl_d(ed):
+    QTest.keyClick(ed, Qt.Key_D, Qt.ControlModifier)
+
+
+def test_ctrl_d_photocopies_a_point_beside_its_source(ed):
+    m = ed.model
+    p = m.point(4, 4)
+    ed._solve()
+    _click(ed, 4, 4)
+    n0 = len(ed._hist)
+    _ctrl_d(ed)
+    sk = m.sketch
+    assert len(sk.points) == 2                     # a twin is born...
+    q = [pt for pt in sk.points if pt is not p][0]
+    assert (p.x, p.y) == (4.0, 4.0)                #  the source never rode
+    assert (q.x, q.y) == pytest.approx((5.25, 4.0))   # ONE nudge step over
+    assert ed._sel == [q]                          # the pick re-homes
+    assert len(ed._hist) == n0 + 1                 # one act, one undo row
+    assert ed.undo_op()                            # and ONE undo erases it
+    assert len(m.sketch.points) == 1
+
+
+def test_the_copy_keeps_its_corner_and_carries_no_constraints(ed):
+    m = ed.model
+    sk = m.sketch
+    a = m.point(-8.0, 0.0); c = m.point(6.0, 0.0); b = m.point(6.0, -8.0)
+    m.add_line(a, c)
+    m.add_line(c, b)
+    m.constrain(Distance(a, c, 14.0))
+    ed._solve()
+    _click(ed, -1, 0)                              # L1 by its body...
+    _clickc(ed, 6, -4)                             #  L2 joins via Ctrl
+    assert ed._sel == [sk.lines[0], sk.lines[1]]
+    _ctrl_d(ed)
+    assert len(sk.points) == 6 and len(sk.lines) == 4
+    assert len(sk.constraints) == 1                # copies arrive FREE
+    assert sk.lines[2].b is sk.lines[3].a           # corner IDENTITY rode
+    assert sk.lines[2].b is not c                   #  into the copy
+    assert (sk.lines[2].b.x, sk.lines[2].b.y) == pytest.approx((7.25, 0.0))
+    assert (a.x, a.y, b.x, b.y) == pytest.approx((-8.0, 0.0, 6.0, -8.0))
+
+
+def test_the_copy_is_born_free_and_the_nudge_rides_it(ed):
+    m = ed.model
+    p = m.point(0, 0)
+    m.toggle(Fixed, (p,))
+    ed._solve()
+    assert ed._dof_of(p) == 0
+    _click(ed, 0, 0)                               # even locked points pick
+    n0 = len(ed._hist)
+    _ctrl_d(ed)                                    # a locked source still
+    q = [pt for pt in m.sketch.points if pt is not p][0]    #  photocopies
+    assert ed._dof_of(q) == 2                      # BORN FREE: no Fixed rides
+    assert len(m.sketch.constraints) == 1          #  the copy has none
+    _key(ed, Qt.Key_Right)                         # and the RUNG 2 nudge
+    assert q.x == pytest.approx(2.5)               #  rides the COPY...
+    assert p.x == 0.0                              #   the nailed source stays
+    assert len(ed._hist) == n0 + 2                 # copy row + nudge row
+
+
+def test_ctrl_d_is_silent_without_hands_and_obeys_the_tool(ed):
+    m = ed.model
+    a = m.point(2, 2); b = m.point(8, 5)
+    m.add_line(a, b)
+    ed._solve()
+    st = (len(m.sketch.points), len(m.sketch.lines), len(m.sketch.constraints),
+          len(ed._hist), a.x, a.y, b.x, b.y)
+    assert ed._sel == []                           # EMPTY HANDS: the key
+    _ctrl_d(ed)                                    #  pays NOTHING it cannot
+    assert st == (len(m.sketch.points), len(m.sketch.lines),   # charge...
+                  len(m.sketch.constraints), len(ed._hist),
+                  a.x, a.y, b.x, b.y)
+    _click(ed, 5, 3.5)                             # a pick exists...
+    _key(ed, Qt.Key_T)                             #  but TRIM holds the hand
+    st2 = (len(m.sketch.points), len(m.sketch.lines),
+           len(m.sketch.constraints), len(ed._hist))
+    _ctrl_d(ed)
+    assert st2 == (len(m.sketch.points), len(m.sketch.lines),
+                   len(m.sketch.constraints), len(ed._hist))
+    assert ed._pending is None and ed._num_buf == ""    # never the D's dim

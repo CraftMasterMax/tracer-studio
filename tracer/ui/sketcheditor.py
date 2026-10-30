@@ -1654,6 +1654,31 @@ class SketchCanvas(QWidget):
                                                    #   NEXT press must find
                                                    #   the stepper mobile
 
+    def _photocopy_key(self):
+        """CTRL+D (M171 R3): the photocopy WITHOUT a hand - the same kernel
+        the Ctrl+DRAG arms (:505), no gesture required. The selection is
+        copied by copy_geometry (distinct points minted ONCE: identity
+        survives - a shared corner copies shared), the copy lands ONE
+        NUDGE STEP to the right so it is SEEN and grabbable beside its
+        source, copies arrive FREE (no constraint rides - Fusion law) and
+        BORN FREE (no dof filter - nothing resists a photocopy), the
+        SELECTION re-homes to the copy (you keep working on what you
+        made), and the whole act costs EXACTLY ONE undo row. Empty
+        selection never reaches here: the key door hears the tool and the
+        hands, and pays nothing it cannot charge."""
+        self._push_hist()
+        copies = self.model.copy_geometry(list(self._sel))
+        step = 5.0 / max(self._scale, 1e-6)
+        seen = set()
+        for e in copies:
+            for p in self._grab_points(e):
+                if id(p) not in seen:
+                    seen.add(id(p))
+                    p.x += step
+        self._solve()                              # originals were kept;
+        self._sel = copies                         #  the copy is the pick
+        self.update()
+
     def keyPressEvent(self, ev: QKeyEvent):
         k = ev.key()
         if self.model is None:
@@ -1708,6 +1733,12 @@ class SketchCanvas(QWidget):
         if k == Qt.Key_Y and ev.modifiers() & Qt.ControlModifier:
             self.redo_op()
             return
+        if k == Qt.Key_D and ev.modifiers() & Qt.ControlModifier:
+            if self._tool == "select" and self._sel:   # M171 R3: the
+                self._photocopy_key()                  #  photocopy WITH
+            return                                     #  NO hand - and
+                                                       #  never the plain
+                                                       #  D's dim either
         if k == Qt.Key_R and ev.modifiers() & Qt.ShiftModifier:
             self.finish(revolve=True)
             return
