@@ -1063,7 +1063,8 @@ class SketchCanvas(QWidget):
         if self._tool == "select":
             if moved:                            # M170 R2: a point drag
                 self._weld_drop(grab, ev.position())   #  that ENDED on a
-                return                           #  magnet welds on drop
+                self._solve()                    #  magnet welds on drop.
+                return                           #  M171 R2: a CLEAN settle
             if self._pend_toggle is not None:   # M167 R3: the Ctrl-press on
                 e, _ = self._pend_toggle        #  a member never MOVED —
                 self._pend_toggle = None        #  the deferred deselect
@@ -1615,6 +1616,44 @@ class SketchCanvas(QWidget):
             self._center[1] -= step
         self.update()
 
+    def _nudge_key(self, ev: QKeyEvent):
+        """THE NUDGE (M171 R2): a selection plus an arrow steps EVERY
+        movable Point of the selection - the crowd's _grab_points + dof>0
+        law, deduped by identity so a shared corner moves once - by a
+        screen-CONSTANT 5 px of world (Shift x5), then solves with the
+        moved points pinned: chains flex exactly as under a drag, because
+        a nudge IS a drag with keyboard manners. EXACTLY one history
+        snapshot per press that MOVES something; a scene that cannot move
+        pays NOTHING - no undo row is born for a no-op (the M169
+        zero-ambient law). Auto-repeat presses are consecutive undo
+        steps: one press, one step (Fusion)."""
+        k = ev.key()
+        dx = (k == Qt.Key_Right) - (k == Qt.Key_Left)
+        dy = (k == Qt.Key_Up) - (k == Qt.Key_Down)
+        step = 5.0 / max(self._scale, 1e-6)
+        if ev.modifiers() & Qt.ShiftModifier:
+            step *= 5.0
+        pts, seen = [], set()
+        for e in list(self._sel):
+            for p in self._grab_points(e):
+                if id(p) not in seen and self._dof_of(p) > 0:
+                    seen.add(id(p))
+                    pts.append(p)
+        if not pts:
+            return                                 # locked scene: silence
+        self._push_hist()
+        for p in pts:
+            p.x = float(p.x) + dx * step
+            p.y = float(p.y) + dy * step
+        self._solve(pins=pts)                      # the HAND holds (pins)...
+        self._solve()                              #  ...then a CLEAN settle
+        self.update()                              #  refreshes the witness:
+                                                   #   a pinned solve truth-
+                                                   #   fully says the pinned
+                                                   #   had 0 dof - but the
+                                                   #   NEXT press must find
+                                                   #   the stepper mobile
+
     def keyPressEvent(self, ev: QKeyEvent):
         k = ev.key()
         if self.model is None:
@@ -1648,7 +1687,9 @@ class SketchCanvas(QWidget):
         if k in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
             if not self._sel:                      # M171 R1: EMPTY HANDS
                 self._scroll_key(ev)               #  make VIEW keys
-            return                                 #  (R2 takes a selection)
+            elif self._tool == "select":           # M171 R2: HANDS FULL
+                self._nudge_key(ev)                #  in select mode the
+            return                                 #  SAME keys NUDGE
         sel = self._sel
         if k == Qt.Key_Escape:
             self._line_start = None
