@@ -285,14 +285,17 @@ def test_canvas_fillet_rejection_shows_warning_not_exception(win, qapp,
     assert "too large" in (getattr(cv, "_warn_text", "") or "")
 
 
-def test_G_key_chamfers_a_corner_and_undoes(win, qapp, monkeypatch):
+def test_chamfer_menu_files_the_typed_distance_and_undoes(win, qapp,
+                                                          monkeypatch):
+    # M172 R2 migrated canvas G to the ROUNDING HAND's flat mode (see
+    # test_m172); the typed dialog lives on behind the menu door.
     cv = _canvas(win, qapp)
     m = cv.model
     lines = m.add_rect(m.point(0, 0), m.point(40, 20))
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *A, **K: (5.0, True)))
     cv._sel = [lines[1], lines[2]]
-    QTest.keyClick(cv, Qt.Key_G)
+    cv.act_chamfer()                               # the menu's own call
     qapp.processEvents()
     assert len(m.sketch.lines) == 5 and not m.sketch.arcs
     loops, warns = m.to_loops()

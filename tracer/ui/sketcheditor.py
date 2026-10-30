@@ -1094,16 +1094,19 @@ class SketchCanvas(QWidget):
                 corner, self._corner = self._corner, None   #  ONE push,
                 kind, l1, l2, P, r = corner      #  and a refusal pays
                 self._push_hist()                #   NOTHING (pop law)
-                from ..core.sketch.fillet import corner_fillet
+                from ..core.sketch.fillet import (corner_chamfer,
+                                                  corner_fillet)
                 try:
-                    arc = corner_fillet(self.model, l1, l2, r)
+                    made = (corner_fillet(self.model, l1, l2, r)
+                            if kind == "fillet"
+                            else corner_chamfer(self.model, l1, l2, r))
                 except ValueError as e:
                     self._hist.pop()
                     self._warn(str(e))
                     self.update()
                     return
                 self._solve()
-                self._sel = [arc]                # the arc is the pick now
+                self._sel = [made]               # the cut is the pick
                 self.update()
                 return
             if moved:                            # M170 R2: a point drag
@@ -1912,7 +1915,9 @@ class SketchCanvas(QWidget):
                                                  #   door: menu Fillet...
         elif k == Qt.Key_G and len(sel) == 2 and \
                 all(isinstance(e, Line) for e in sel):
-            self.act_chamfer()                    # G = the corner's flat twin
+            self._corner_arm("chamfer", sel[0], sel[1])
+                                                 # M172 R2: the SAME hand
+                                                 #  files the FLAT cut
         elif k == Qt.Key_Period and self.on_ok(sel):
             self.act_on()                         # . pins a point on a curve
         elif k == Qt.Key_D:
@@ -2826,10 +2831,11 @@ class SketchCanvas(QWidget):
             p.drawLine(q_prev, qn)
             q_prev = qn
         r = self._corner[4]
+        tag = "R" if self._corner[0] == "fillet" else "D"
         mid = pts[len(pts) // 2]
         qm = self.w2s(*mid)
         p.setPen(DIM)
-        p.drawText(int(qm.x()) + 8, int(qm.y()) - 8, f"R {r:.2f}")
+        p.drawText(int(qm.x()) + 8, int(qm.y()) - 8, f"{tag} {r:.2f}")
 
     def _draw_trim_piece(self, p: QPainter):
         """M168 R3: the trim tool paints the ENTIRE piece the next click

@@ -193,3 +193,97 @@ def test_the_aim_rides_the_nudge_and_dies_with_the_tool(ed):
     assert ed._corner is not None                  #  RE-ARMS the hand
     _key(ed, Qt.Key_Escape)                        # Esc kills the aim
     assert ed._corner is None
+
+
+# ---- RUNG 2: G FLATS THE SAME HAND (chamfer) -----------------------------
+
+def test_g_arms_the_flat_ghost_and_files_the_chamfer(ed):
+    m, far1, P, far2 = _scene(ed)
+    _pick2(ed)
+    st = _sig(m)
+    n0 = len(ed._hist)
+    _key(ed, Qt.Key_G)
+    assert ed._corner is not None and ed._corner[0] == "chamfer"
+    assert ed._corner[4] == pytest.approx(2.0)
+    assert len(ed._hist) == n0 and _sig(m) == st      # aiming is not editing
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, _scr(6, 6))
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier, _scr(6, 6))
+    sk = m.sketch
+    assert len(sk.arcs) == 0                          # the cut is FLAT
+    assert len(sk.lines) == 3                         #  the chord is born
+    assert len(sk.constraints) == 0                   #   structural trim
+    assert len(sk.points) == 4                        #    tangent 2's Q
+    assert ed._sel == [sk.lines[2]]                   #     the cut's pick
+    assert (P.x, P.y) == pytest.approx((4.0, 6.0))    # P REUSED tangent 1
+    assert len(ed._hist) == n0 + 1
+
+
+def test_the_pull_distances_the_flat(ed):
+    m, far1, P, far2 = _scene(ed)
+    _pick2(ed)
+    _key(ed, Qt.Key_G)
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, _scr(6, 6))
+    _move(ed, 2.5, 6)                                 # pull 3.5 mm out
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier, _scr(2.5, 6))
+    assert (P.x, P.y) == pytest.approx((2.5, 6.0))    # d = the pull, exact
+    cut = m.sketch.lines[2]
+    others = [p for p in (cut.a, cut.b) if p is not P]
+    assert (others[0].x, others[0].y) == pytest.approx((6.0, 2.5))
+
+
+def test_fillet_then_chamfer_share_one_session_without_inheritance(ed):
+    m = ed.model
+    m.add_rect(m.point(-10, -10), m.point(10, 10))
+    ed._solve()
+    sk = m.sketch
+    n0 = len(ed._hist)
+
+    def corner_at(x, y):
+        return next(p for p in sk.points if (p.x, p.y) == (x, y))
+
+    def pick_corner(pt):
+        ed._sel = [l for l in sk.lines if pt in (l.a, l.b)][:2]
+
+    A = corner_at(10, 10)
+    pick_corner(A)
+    _key(ed, Qt.Key_F)
+    assert ed._corner[4] == pytest.approx(5.0)        # legs 20: default 5
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, _scr(10, 10))
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier, _scr(10, 10))
+    assert len(m.sketch.arcs) == 1 and len(ed._hist) == n0 + 1
+    assert ed._corner is None                         # the aim is spent
+    B = corner_at(-10, 10)
+    pick_corner(B)                                    # the NEXT corner
+    _key(ed, Qt.Key_G)                                #  finds its OWN
+    assert ed._corner[0] == "chamfer"                 #   default from
+    assert ed._corner[4] == pytest.approx(3.8)        #   LIVE legs (the
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, _scr(-10, 10))  # top
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier, _scr(-10, 10))  # was
+    assert len(m.sketch.arcs) == 1                    #  fillet kept
+    assert len(m.sketch.lines) == 5                   #  chamfer added one
+    assert len(ed._hist) == n0 + 2                    # two acts, two rows
+    assert ed.undo_op()                               # undo splits them
+    # the UNDO swaps model.sketch for a NEW object - re-read through the
+    # model (identity across undo is the M171 law this gate obeys).
+    assert len(m.sketch.lines) == 4 and len(m.sketch.arcs) == 1
+    assert len(m.sketch.points) == 6                  # Q gone, M kept
+
+
+def test_the_flat_refuses_its_own_way(ed):
+    m, far1, P, far2 = _scene(ed)
+    _pick2(ed)
+    _key(ed, Qt.Key_G)
+    ed._corner[4] = 99.0                              # impossible flat
+    st = _sig(m)
+    n0 = len(ed._hist)
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, _scr(6, 6))
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier, _scr(6, 6))
+    assert _sig(m) == st and len(ed._hist) == n0      # popped: zero ambient
+    far3 = m.point(12, 6)                             # a corner of THREE:
+    m.add_line(P, far3)                               #  the kernel words
+    ed._solve()                                       #   the KIND in its
+    n1 = len(ed._hist)                                #    own refusal
+    _key(ed, Qt.Key_G)
+    assert ed._corner is None
+    assert "chamfer" in ed._warn_text
+    assert len(ed._hist) == n1
