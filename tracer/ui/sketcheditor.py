@@ -1595,6 +1595,26 @@ class SketchCanvas(QWidget):
                     return True
         return super().event(ev)
 
+    def _scroll_key(self, ev: QKeyEvent):
+        """M171 R1: the empty-handed arrows are VIEW keys - the sketcher
+        scrolls a screen-CONSTANT step (10 px worth of world, Shift x5).
+        Nothing is modelled: the sketch and the history come out
+        byte-identical - only the centre rides (and _center is THE view
+        field, the M169 law: an alias here would be a silent no-op)."""
+        step = 10.0 / max(self._scale, 1e-6)
+        if ev.modifiers() & Qt.ShiftModifier:
+            step *= 5.0
+        k = ev.key()
+        if k == Qt.Key_Left:
+            self._center[0] -= step
+        elif k == Qt.Key_Right:
+            self._center[0] += step
+        elif k == Qt.Key_Up:
+            self._center[1] += step
+        else:
+            self._center[1] -= step
+        self.update()
+
     def keyPressEvent(self, ev: QKeyEvent):
         k = ev.key()
         if self.model is None:
@@ -1620,8 +1640,15 @@ class SketchCanvas(QWidget):
             if k in (Qt.Key_Return, Qt.Key_Enter) and self._num_buf:
                 self._commit_typed()
                 return
+            if k in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
+                self._scroll_key(ev)               # M171 R1: view keys
+                return                             #  neither eat digits
             self._pending = None                    # any other key lets go
             self._num_buf = ""                      # ...and is still heard
+        if k in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
+            if not self._sel:                      # M171 R1: EMPTY HANDS
+                self._scroll_key(ev)               #  make VIEW keys
+            return                                 #  (R2 takes a selection)
         sel = self._sel
         if k == Qt.Key_Escape:
             self._line_start = None
