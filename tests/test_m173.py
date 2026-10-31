@@ -16,6 +16,15 @@ a WINDOW (only fully-inside geometry), right->left a CROSSING (anything
 touched); the band wears its meaning (blue border vs green), Ctrl stays
 additive both ways, and ellipses - absent from the marquee until today
 - ride both tests on their own samples beside the arcs.
+
+Rung 3 puts a LEASH on the mouse: with Shift held, a point drag - and a
+whole dragged crowd - locks to the DOMINANT AXIS of the total
+displacement from the grab (recomputed every move, so the lock FLIPS
+for free when the other axis takes over, and releasing Shift frees the
+hand at once); the second click of the line tool files ORTHO from its
+start (minting a fresh free end only when the leash actually moves the
+magnet's answer). The snap magnet hides its hint while the leash rules:
+a stated constraint outranks a suggested one.
 """
 import numpy as np
 import pytest
@@ -27,6 +36,7 @@ from PySide6.QtGui import QImage, QMouseEvent                        # noqa
 from PySide6.QtTest import QTest                                    # noqa
 from PySide6.QtWidgets import QApplication                          # noqa
 
+from tracer.core.sketch.constraints import Horizontal               # noqa
 from tracer.core.sketch.model import SketchModel                    # noqa
 from tracer.ui.sketcheditor import SketchCanvas                     # noqa
 
@@ -56,6 +66,14 @@ def _mmove(ed, x, y):
     QApplication.sendEvent(
         ed, QMouseEvent(QEvent.Type.MouseMove, p, p, p,
                         Qt.MiddleButton, Qt.MiddleButton, Qt.NoModifier))
+
+
+def _lmove(ed, x, y, mods=Qt.NoModifier):
+    #  ONE left-held move, WITH a real modifier state (m37 + M171 laws)
+    p = QPointF(300.0 + 4.0 * x, 200.0 - 4.0 * y)
+    QApplication.sendEvent(
+        ed, QMouseEvent(QEvent.Type.MouseMove, p, p, p,
+                        Qt.LeftButton, Qt.LeftButton, mods))
 
 
 def _midclick(ed, x, y):
@@ -242,4 +260,74 @@ def test_the_curves_ride_the_split_and_ellipses_join_the_marquee(ed, qapp):
     sel = ed._sel
     assert e["e_out"] in sel and e["a_out"] in sel  # crossing takes both
     assert e["e_out"].c not in sel                  # centres outside: out
+
+
+# ---- RUNG 3: THE SHIFT LEASH (ORTHO DRAG) ---------------------------------
+
+def test_shift_leashes_a_point_drag_to_one_axis(ed):
+    m = ed.model
+    p = m.point(0, 0)
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, _scr(0, 0))
+    _lmove(ed, 7, 2, Qt.ShiftModifier)              # x dominates: the
+    assert (p.x, p.y) == pytest.approx((7.0, 0.0))  #  y is LEASHED
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.ShiftModifier, _scr(7, 2))
+    assert (p.x, p.y) == pytest.approx((7.0, 0.0))
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, _scr(7, 0))
+    _lmove(ed, 9, 3)                                # CONTROL: no leash,
+    assert (p.x, p.y) == pytest.approx((9.0, 3.0))  #  BOTH axes ride
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier, _scr(9, 3))
+
+
+def test_the_leash_flips_when_the_other_axis_takes_over(ed):
+    m = ed.model
+    p = m.point(0, 0)
+    h0 = len(ed._hist)
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, _scr(0, 0))
+    _lmove(ed, 7, 2, Qt.ShiftModifier)
+    assert (p.x, p.y) == pytest.approx((7.0, 0.0))
+    _lmove(ed, 2.5, 9, Qt.ShiftModifier)            # TOTAL (2.5,9): y
+    assert (p.x, p.y) == pytest.approx((0.0, 9.0))  #  rules; x is BACK
+    _lmove(ed, 6.5, 4.5)                            # Shift OFF: FREE
+    assert (p.x, p.y) == pytest.approx((6.5, 4.5))
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier, _scr(6.5, 4.5))
+    assert len(ed._hist) == h0 + 1                  # ONE row, whole act
+    ed.undo_op()                                    # undo-SWAP law:
+    q = m.sketch.points[0]                          #  RE-READ the model
+    assert (q.x, q.y) == pytest.approx((0.0, 0.0))
+
+
+def test_the_line_tool_files_ortho_under_shift(ed):
+    m = ed.model
+    ed.set_tool("line")
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, _scr(-8, -6))
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier, _scr(-8, -6))
+    QTest.mousePress(ed, Qt.LeftButton, Qt.ShiftModifier, _scr(2, -5.2))
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.ShiftModifier, _scr(2, -5.2))
+    assert len(m.sketch.lines) == 1
+    ln = m.sketch.lines[0]
+    assert ln.b.y == pytest.approx(-6.0, abs=1e-12)  # EXACTLY the start
+    assert ln.b.x == pytest.approx(2.0, abs=1e-12)   #  y; the x rode the
+    assert any(isinstance(c, Horizontal) for c in    #   cursor anyway...
+               m.sketch.constraints)                 # ...and auto saw it
+
+
+def test_the_leash_holds_the_whole_crowd_to_one_axis(ed):
+    m = ed.model
+    m.add_rect(m.point(-6, -4), m.point(6, 4))
+    ed._solve()
+    bottom = min(m.sketch.lines, key=lambda l: (l.a.y + l.b.y) / 2)
+    top = max(m.sketch.lines, key=lambda l: (l.a.y + l.b.y) / 2)
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, _scr(0, -4))
+    _lmove(ed, 7, 2, Qt.ShiftModifier)              # x dominates: the
+    assert {round(pt.y, 6) for pt in                #  WHOLE figure keeps
+            (bottom.a, bottom.b)} == {-4.0}         #  its y - bottom
+    assert {round(pt.x, 6) for pt in                #  slid +7 ONLY
+            (bottom.a, bottom.b)} == {1.0, 13.0}
+    assert {round(pt.y, 6) for pt in (top.a, top.b)} == {4.0}
+    assert {round(pt.x, 6) for pt in                #  (the V constraints
+            (top.a, top.b)} == {1.0, 13.0}          #   shear the top
+    assert ed._snap_hint is None                    #   along honestly)
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.ShiftModifier, _scr(7, 2))
+    # magnet OFF under Shift is the LAW (the leash outranks it): without
+    # the skip, the top edge's MIDPOINT magnet bends the delta first.
 

@@ -141,6 +141,7 @@ class SketchCanvas(QWidget):
         self._num_buf = ""                   # M90: type-in digits so far
         self._pending_stage = 0              # M90: rect width then height
         self._drag_pt: Point | None = None
+        self._drag_pt_start: np.ndarray | None = None  # M173 R3: the
         self._drag: tuple | None = None        # M167 R1: body drag
         #   (pts, starts, anchor_world) — the delta law's record
         self._pend_toggle = None               # M167 R3: Ctrl-press on a
@@ -235,6 +236,7 @@ class SketchCanvas(QWidget):
         self._num_buf = ""                      # a history jump
         self._sel = []
         self._drag_pt = None
+        self._drag_pt_start = None                 # M173 R3: the leash
         self._drag = None                      # M167 R1: grabs don't
         self._pend_toggle = None               # M167 R3: Ctrl-presses die
         self._line_start = None                #   survive a history jump
@@ -619,6 +621,7 @@ class SketchCanvas(QWidget):
                 if hit[0] == "point" and not crowd:
                     if movable:
                         self._drag_pt = e
+                        self._drag_pt_start = np.array([e.x, e.y])
                         self._drag_pushed = False
                 elif movable:
                     # The record: (pts, starts, anchor, members) — moves
@@ -647,6 +650,16 @@ class SketchCanvas(QWidget):
                     self._line_start = None          # close chain
                 else:
                     self._push_hist()
+                    if ev.modifiers() & Qt.ShiftModifier:      # M173
+                        sx, sy = self._line_start.x, self._line_start.y
+                        dx, dy = p.x - sx, p.y - sy            #  R3: a
+                        if abs(dx) >= abs(dy) and dy != 0.0:   #  SECOND
+                            p = self.model.point(p.x, sy)      #  click
+                        elif abs(dy) > abs(dx) and dx != 0.0:  #  ORTHO -
+                            p = self.model.point(sx, p.y)      #  mints a
+                            # free end ONLY when the leash moves the
+                            # magnet's answer; a shared snapped Point at
+                            # an already-ortho spot is reused untouched.
                     ln = self.model.add_line(self._line_start, p)
                     self._auto_constraints(ln, q)
                     self._solve()
@@ -877,13 +890,23 @@ class SketchCanvas(QWidget):
                     self._push_hist()
                     self._drag_pushed = True
                 # dragged points CLICK onto origins, grid and other
-                t = self._snap_target(q, skip=self._drag_pt)
-                if isinstance(t, Point):       # points, Fusion-style
-                    wp = np.array([t.x, t.y])
-                elif t is not None:
-                    wp = np.array(t)
-                else:
-                    wp = self._world(q)
+                ortho = bool(ev.modifiers() & Qt.ShiftModifier)  # M173
+                t = None if ortho else self._snap_target(        #  R3:
+                    q, skip=self._drag_pt)     #  the LEASH outranks the
+                if isinstance(t, Point):       # points, Fusion-style   #
+                    wp = np.array([t.x, t.y])  #  MAGNET: no suggestion
+                elif t is not None:            #  may bend a stated
+                    wp = np.array(t)           #   constraint, so under
+                else:                          #   Shift the magnet is
+                    wp = self._world(q)        #    simply OFF
+                if ortho and self._drag_pt_start is not None:    #  R3:
+                    d = wp - self._drag_pt_start      #  the LEASH: the
+                    if abs(d[0]) >= abs(d[1]):        #   dominant axis
+                        wp = np.array([wp[0],         #   rules from the
+                                       self._drag_pt_start[1]])    # grab
+                    else:                             #   point (raw -
+                        wp = np.array([self._drag_pt_start[0],     #  the
+                                       wp[1]])        #   magnet slept)
                 self._drag_pt.x, self._drag_pt.y = float(wp[0]), float(wp[1])
                 self._solve(pins=[self._drag_pt])
                 self._snap_hint = t
@@ -895,17 +918,24 @@ class SketchCanvas(QWidget):
                 pts, starts, anchor, ents = self._drag
                 delta = self._world(q) - anchor
                 hint = None
-                for s0 in starts:               # ONE magnet: the first
-                    w = s0 + delta              #  dragged member to
-                    t = self._snap_target(self.w2s(w[0], w[1]),  #  arrive
-                                          skip=pts + list(ents))  #  shifts
-                    if t is not None:                            #  the
-                        tv = (np.array([t.x, t.y])              #  WHOLE
-                              if isinstance(t, Point)
-                              else np.asarray(t, float))         #  crowd
-                        delta = delta + (tv - w)                 #  (Fusion)
-                        hint = t
-                        break
+                ortho = bool(ev.modifiers() & Qt.ShiftModifier)
+                if not ortho:                 # M173 R3: the LEASH
+                    for s0 in starts:         #  outranks the MAGNET:
+                        w = s0 + delta        #   under Shift no snap
+                        t = self._snap_target(self.w2s(w[0], w[1]),
+                                              skip=pts + list(ents))
+                        if t is not None:                     #  the
+                            tv = (np.array([t.x, t.y])       #  WHOLE
+                                  if isinstance(t, Point)
+                                  else np.asarray(t, float))  #  crowd
+                            delta = delta + (tv - w)         #  (Fusion)
+                            hint = t
+                            break
+                if ortho:                     #  R3: the dominant axis
+                    if abs(delta[0]) >= abs(delta[1]):   #  of the RAW
+                        delta = np.array([delta[0], 0.0])   #  total
+                    else:                     #  displacement rules the
+                        delta = np.array([0.0, delta[1]])   #  whole drag
                 for p, s0 in zip(pts, starts):
                     p.x, p.y = float(s0[0] + delta[0]), float(s0[1] + delta[1])
                 self._solve(pins=pts)
@@ -1105,6 +1135,7 @@ class SketchCanvas(QWidget):
         grab = self._drag_pt                    # M170 R2: remember WHOSE
         moved = grab is not None and self._drag_pushed   #  grab it was,
         self._drag_pt = None                    # M167 R1: a release ends
+        self._drag_pt_start = None              #  M173 R3: leash state
         self._drag = None                       #  ANY grab, tool or no tool
         if self._tool == "trim":                 # M168 R3: the armed entity
             if self._trim_stroke:                # M169 R3: a stroke ends at
