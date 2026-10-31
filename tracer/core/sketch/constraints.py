@@ -440,3 +440,16 @@ def expand(constraints: list[Constraint]) -> list[Constraint]:
         else:
             out.append(c)
     return out
+
+
+def speaks_dia(c) -> bool:
+    """M174 R3 THE ONE MOUTH OF DIALECT (FD5-L35): a Radius chip speaks
+    DIAMETER when the constraint carries an explicit override (c.dia,
+    flipped by the chip's right-click) and otherwise the ENTITY decides
+    - circles speak diameter (M98), arcs radius. Every mouth - chip
+    text, field placeholder, commit halving, binding tag - consults
+    THIS, so the dialect can never disagree with itself."""
+    if not isinstance(c, Radius):
+        return False
+    d = getattr(c, "dia", None)
+    return d if d is not None else isinstance(c.curve, Circle)

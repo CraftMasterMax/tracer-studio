@@ -17,7 +17,8 @@ from .constraints import (Angle, AngleBetween, ArcMiddle, Coincident,
                           Collinear, Concentric, Distance, Equal, Fixed,
                           Horizontal, Midpoint, Perpendicular,
                           PointOnCircle, PointOnLine, Parallel, Radius,
-                          Symmetry, Tangent, Vertical, make_tangent)
+                          Symmetry, Tangent, Vertical, make_tangent,
+                          speaks_dia)
 from .solver import Sketch, SolveResult
 
 # Sketch planes: (u_axis, v_axis) in world coords; extrude normal = u x v.
@@ -114,8 +115,7 @@ def _dim_tag(c) -> str:
     """Type fingerprint for a dimension binding (M89): a binding only
     drives a constraint whose serialized type still matches."""
     return ("D" if isinstance(c, Distance) else
-            "DIA" if isinstance(c, Radius) and isinstance(c.curve, Circle)
-            else                       # M98: circles speak diameter
+            "DIA" if speaks_dia(c) else          # M174 R3: one mouth
             "R" if isinstance(c, Radius) else
             "ang" if isinstance(c, Angle) else
             "angb" if isinstance(c, AngleBetween) else "?")
@@ -755,6 +755,9 @@ def model_to_dict(m: SketchModel) -> dict:
             else:
                 cons.append({"t": "R", "c": m.sketch.circles.index(ent),
                              "v": c.value})
+            dm = getattr(c, "dia", None)       # M174 R3: the DIALECT
+            if dm is not None:                 #  omitted at the entity
+                cons[-1]["dia"] = bool(dm)     #   default (M98 rides)
         elif isinstance(c, Coincident):
             cons.append({"t": "==",
                          "p": _add_pt(pts, idx, c.p), "q": _add_pt(pts, idx, c.q)})
@@ -950,4 +953,7 @@ def model_from_dict(d: dict) -> SketchModel:
             lo = e.get("lo")                # M174 R1: restamp homes the
             if lo:                          #  same way (and undo - the
                 obj.label_off = (float(lo[0]), float(lo[1]))   #  ledger
+            dm = e.get("dia")               #      IS this file)
+            if dm is not None:
+                obj.dia = bool(dm)
     return m                                             #  IS this file)

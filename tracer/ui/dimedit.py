@@ -18,7 +18,8 @@ import math
 from PySide6.QtCore import QRectF, Qt, Signal
 
 from ..core import params
-from ..core.sketch.constraints import Angle, AngleBetween, Radius
+from ..core.sketch.constraints import (Angle, AngleBetween, Radius,
+                                       speaks_dia)
 from ..core.sketch.entities import Circle
 from .cmdpanel import ExprField, parse_scalar          # the ONE eval helper
 from .theme import DARK
@@ -29,9 +30,10 @@ _CHIP_QSS = "QLineEdit { min-height: 0px; padding: 0px 2px; }"
 
 
 def is_dia(c) -> bool:
-    """M98 probe: a Radius ON A CIRCLE is a diameter chip (se's dia law,
-    was the panel's field-label branch)."""
-    return isinstance(c, Radius) and isinstance(c.curve, Circle)
+    """M98 probe RETIRED INTO THE ORACLE (M174 R3): who speaks diameter
+    is answered by constraints.speaks_dia - the constraint's explicit
+    override first (the chip's right-click), the entity as default."""
+    return speaks_dia(c)
 
 
 def is_angle(c) -> bool:

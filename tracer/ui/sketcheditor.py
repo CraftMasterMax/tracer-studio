@@ -22,7 +22,7 @@ from ..core.sketch.constraints import (Angle, AngleBetween, Collinear,
                                        PointOnCircle, PointOnLine, Radius,
                                        Symmetry, Tangent, Vertical,
                                        make_angle, make_angle_between,
-                                       make_tangent, snapped)
+                                       make_tangent, snapped, speaks_dia)
 from ..core.sketch.entities import (Arc, Circle, Ellipse, Line, Point,
                                      curve_center, curve_radius)
 from ..core.sketch.model import (_dim_tag, SketchModel, math_dist,
@@ -1642,6 +1642,10 @@ class SketchCanvas(QWidget):
             menu.addAction("Remove Constraint",    # hover (mousePress
                            lambda c=hv: self.act_remove_constraint(c))
             menu.addSeparator()                    # :427-429 clears not)
+        if hv is not None and isinstance(hv, Radius):   # M174 R3 (FD5-
+            menu.addAction("Toggle Radius / Diameter",  #  L35): a radial
+                           lambda c=hv: self.act_dia(c))  #  chip speaks
+                                                          #  EITHER way
         if len(sel) == 1 and isinstance(sel[0], Line):
             menu.addAction("Horizontal", self.act_H)
             menu.addAction("Vertical", self.act_V)
@@ -2386,6 +2390,16 @@ class SketchCanvas(QWidget):
         return _eligible(c, {id(cc) for cc in
                              self.model.sketch.constraints}) is not None
 
+    def act_dia(self, c):
+        """M174 R3 (FD5-L35): the chip changes DIALECT, never magnitude.
+        The stored value stays a radius - the solver never stirs; only
+        the explicit override flips. ONE undo row, no re-solve."""
+        if not any(cc is c for cc in self.model.sketch.constraints):
+            return                              # stale: zero trace (m164)
+        self._push_hist()
+        c.dia = not speaks_dia(c)
+        self.update()
+
     def act_remove_constraint(self, c):
         """Badge right-click: straight through the finder's door -
         identity-guarded, ONE undo step, re-solve.  Same anatomy as the
@@ -2410,12 +2424,10 @@ class SketchCanvas(QWidget):
 
     # ---- dimension labels (double-click editable, Fusion-style) ------------
     def _dim_text(self, c) -> str:
-        """The chip's wording (M98): circles speak DIAMETER like Fusion
-        (the constraint underneath stays a radius — only the UI
-        translates); arcs keep R, what a fillet gauge measures."""
+        """The chip's wording: the DIALECT oracle (M174 R3) decides who
+        speaks diameter - the stored value stays a radius either way."""
         if isinstance(c, Radius):
-            return (f"\u00d8 {2 * c.value:.2f}"
-                    if isinstance(c.curve, Circle)
+            return (f"\u00d8 {2 * c.value:.2f}" if speaks_dia(c)
                     else f"R {c.value:.2f}")
         if isinstance(c, Distance):
             return f"{c.value:.2f}"

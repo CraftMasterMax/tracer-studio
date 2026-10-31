@@ -19,6 +19,15 @@ default post and paints there, REDO re-files the label onto its new
 home (the future stack is the same JSON), and the positional fx
 bindings of M89 look the other way - a label that moved changes which
 pixel you click, never which constraint a driving expression steers.
+
+Rung 3 gives the radial chip its OTHER VOICE (FD5-L35 again): right-
+click offers "Toggle Radius / Diameter" and the chip changes DIALECT
+without the magnitude or the geometry ever stirring - the stored value
+stays a radius, only the speech flips, and it flips ON DEMAND for any
+Radius, arcs included. One mouth answers for the whole product: chip
+text, field placeholder, the commit's honest halving, and even the
+M89 binding tag all consult the same oracle, which reads the
+constraint's own override and falls back to M98's entity default.
 """
 import json
 import pytest
@@ -30,9 +39,10 @@ from PySide6.QtGui import QMouseEvent                                # noqa
 from PySide6.QtTest import QTest                                    # noqa
 from PySide6.QtWidgets import QApplication                          # noqa
 
-from tracer.core.sketch.constraints import Distance                 # noqa
+from tracer.core.sketch.constraints import Distance, Radius          # noqa
 from tracer.core.sketch.model import (SketchModel, model_from_dict,  # noqa
                                       model_to_dict)
+from tracer.ui import dimedit                                       # noqa
 from tracer.ui.sketcheditor import SketchCanvas                     # noqa
 
 
@@ -229,3 +239,95 @@ def test_filing_a_label_leaves_the_fx_bindings_alone(ed, qapp):
     assert int(k) == m2.sketch.constraints.index(       # the binding
         next(x for x in m2.sketch.constraints           #  still points
              if isinstance(x, Distance)))               #   at the dim
+
+
+# ---- RUNG 3: THE CHIP CHANGES DIALECT, NEVER MAGNITUDE ---------------------
+
+def _circle_dim(ed, qapp, r=4.0):
+    m = ed.model
+    ctr = m.point(0, 0)
+    circ = m.add_circle(ctr, r)
+    c = Radius(circ, r)
+    m.constrain(c)
+    ed._solve()
+    _paint(ed, qapp)
+    return m, ctr, circ, c
+
+
+def _slot_dim(ed, qapp):
+    m = ed.model
+    m.add_slot(m.point(-4, 0), m.point(4, 0), 1.5)
+    arc = next(e for e in m.sketch.arcs)               # slot mints its
+    ed._solve()                                        #  own Radius x2
+    c = next(x for x in m.sketch.constraints
+             if isinstance(x, Radius) and x.curve is arc)
+    _paint(ed, qapp)
+    return m, arc, c
+
+
+def test_a_circle_chip_toggles_dialect_geometry_untouched(ed, qapp):
+    m, ctr, circ, c = _circle_dim(ed, qapp)
+    assert ed._dim_text(c) == "\u00d8 8.00"            # M98 default:
+    h0 = len(ed._hist)                                 #  circles speak
+    before = (ctr.x, ctr.y, circ.r, c.value)           #  diameter
+    ed.act_dia(c)
+    assert ed._dim_text(c) == "R 4.00"                 # radius speech
+    assert (ctr.x, ctr.y, circ.r, c.value) == before   # BIT-EXACT, and
+    assert len(ed._hist) == h0 + 1                     #  ONE row, no solve
+    ed.act_dia(c)
+    assert ed._dim_text(c) == "\u00d8 8.00"            # round trip home
+    ed.undo_op()                                       # undo-SWAP law:
+    r = next(x for x in m.sketch.constraints           #  RE-READ - the
+             if isinstance(x, Radius))                 #   ledger rode
+    assert ed._dim_text(r) == "R 4.00"                 #    the dialect
+
+
+def test_an_arc_learns_diameter_speech_on_demand(ed, qapp):
+    m, arc, c = _slot_dim(ed, qapp)
+    assert ed._dim_text(c) == "R 1.50"                 # arcs keep R...
+    ed.act_dia(c)
+    assert ed._dim_text(c) == "\u00d8 3.00"            #  ...until asked
+    assert c.value == 1.5                              #   politely: the
+
+
+def test_the_commit_halves_when_the_chip_speaks_diameter(ed, qapp):
+    m, arc, c = _slot_dim(ed, qapp)
+    ed.act_dia(c)                                      #  now speaks Ø
+    dimedit.open(ed, c)
+    assert "Ø" in ed._dim_edit.edit.placeholderText()  #  the field says
+    ed._dim_edit.edit.setText("6")                     #  SIX diameter
+    ed._on_chip_commit(6.0)
+    assert c.value == pytest.approx(3.0)               #  THREE radius
+
+
+def test_the_right_click_door_offers_the_toggle_and_only_the_toggle(ed, qapp):
+    m, a, b, dist, rect0 = _dim_scene(ed, qapp)
+    ed._hover_c = dist                                 # a Distance chip
+    acts = {x.text() for x in ed._build_menu().actions()}
+    assert "Toggle Radius / Diameter" not in acts      # not its dialect
+    m2, ctr, circ, c = _circle_dim(ed, qapp)
+    ed._hover_c = c
+    menu = ed._build_menu()
+    item = next(x for x in menu.actions()
+                if x.text() == "Toggle Radius / Diameter")   # M164's
+    item.trigger()                                     #  testable split
+    assert c.dia is False                              #  pays the rent
+    assert ed._dim_text(c) == "R 4.00"
+    ed._hover_c = None
+
+
+def test_the_dialect_rides_the_file_and_the_entity_default_returns(ed, qapp):
+    m, ctr, circ, c = _circle_dim(ed, qapp)
+    assert "dia" not in model_to_dict(m)["constraints"][0]   # default:
+    ed.act_dia(c)                                            #  silent
+    payload = json.loads(json.dumps(model_to_dict(m)))
+    assert payload["constraints"][0]["dia"] is False
+    m2 = model_from_dict(payload)
+    r = next(x for x in m2.sketch.constraints if isinstance(x, Radius))
+    assert r.dia is False and ed._dim_text(r) == "R 4.00"
+    legacy = json.loads(json.dumps(payload))
+    legacy["constraints"][0].pop("dia")                # pre-M174 bytes
+    m3 = model_from_dict(legacy)
+    r3 = next(x for x in m3.sketch.constraints if isinstance(x, Radius))
+    assert getattr(r3, "dia", None) is None            #  the ENTITY
+    assert ed._dim_text(r3) == "\u00d8 8.00"           #   default rules
