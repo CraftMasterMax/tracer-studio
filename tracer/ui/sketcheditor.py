@@ -180,6 +180,7 @@ class SketchCanvas(QWidget):
         self._band: list | None = None      # select marquee (2 QPoints)
         self._snap_hint: Point | tuple | None = None
         self._snap_obj = None                    # M120: typed Snap (glyph)
+        self._placed_free = True                 # L25: _place_point verdict
         self._no_snap = False                    # M120: Alt suppresses snaps
         self._snap_grid = bool(QSettings().value("sketch/grid_snap",
                                                  False, type=bool))
@@ -372,13 +373,17 @@ class SketchCanvas(QWidget):
         free; theirs is batch and premium-gated [ui_sketchmode])."""
         t = self._snap_target(q)
         if isinstance(t, Point):
-            return t                             # identity IS coincidence
+            self._placed_free = False            # L25 (M177 R3): identity
+            return t                             #  IS coincidence - AND
+        #                                        EXISTING geometry
         pt = self.model.point(*(t if t is not None else self._world(q)))
         sn = self._snap_obj
+        self._placed_free = True                 # empty-space/origin/grid
         if t is not None and sn is not None and sn.pt is None:
-            for c in snaps.autolink(sn, pt):
-                c.src = "snap"               # M164 R1: magnet witness
+            for c in snaps.autolink(sn, pt):     #  mints ride free; a
+                c.src = "snap"                   #   DROP that autolinks
                 self.model.sketch.constraints.append(c)
+                self._placed_free = False        #   binds EXISTING
         return pt
 
     def _band_select(self, a: QPointF, b: QPointF, additive: bool):
@@ -709,11 +714,14 @@ class SketchCanvas(QWidget):
                         dx, dy = p.x - sx, p.y - sy            #  R3: a
                         if abs(dx) >= abs(dy) and dy != 0.0:   #  SECOND
                             p = self.model.point(p.x, sy)      #  click
-                        elif abs(dy) > abs(dx) and dx != 0.0:  #  ORTHO -
-                            p = self.model.point(sx, p.y)      #  mints a
-                            # free end ONLY when the leash moves the
-                            # magnet's answer; a shared snapped Point at
-                            # an already-ortho spot is reused untouched.
+                            self._placed_free = True           #  ORTHO -
+                        elif abs(dy) > abs(dx) and dx != 0.0:  #  mints a
+                            p = self.model.point(sx, p.y)      #  free end
+                            self._placed_free = True           #  ONLY
+                            # when the leash MOVES the magnet's answer;
+                            # a shared snapped Point at an already-ortho
+                            # spot is reused untouched - and stays the
+                            # EXISTING point the L25 land rule reads.
                     ln = self.model.add_line(self._line_start, p)
                     self._auto_constraints(ln, q)
                     self._solve()
@@ -721,6 +729,12 @@ class SketchCanvas(QWidget):
                     self._pending = ("line", ln)      # M90: type a length
                     self._pending_stage = 0
                     self._num_buf = ""
+                    if not self._placed_free:         # L25 (M177 R3):
+                        self._line_start = None       #  the chain ENDS
+                        #  on EXISTING geometry - the TOOL lives and
+                        #  RE-ARMS: the next click is a fresh start.
+                        #  A free end keeps chaining (Fusion's exact
+                        #  free-point exception, inverted).
             self.update()
         elif self._tool == "rect":
             # Fusion parity: supports BOTH corner-drag and click-move-click,

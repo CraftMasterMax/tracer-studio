@@ -27,7 +27,12 @@ with Enter), and swallowing Tab while a lock lives saves the canvas
 from focus traversals mid-gesture (Tab was unclaimed before: the
 editor could hand itself the boot). FD5-L23's length+angle field
 cycling is the [observed] sibling - deferred. L25's free-point chain
-exception is rung 3.
+exception is rung 3: the line chain now ENDS when a segment LANDS on
+existing geometry (an identity-reused Point, or a mint the autolink
+BINDS to a curve) - the tool re-arms for a fresh start - while FREE
+mints (empty space, origin, grid, an ortho leash that MOVED the
+magnet's answer) keep the chain walking. Back-clicking the chain's
+own free end is M176 R1's close law and stays untouched.
 """
 import pytest
 
@@ -241,3 +246,103 @@ def test_tab_honors_a_circle_diameter_and_stays_armed(ed, qapp):
     assert m.sketch.circles[0].r == pytest.approx(3.0, rel=1e-6)
     assert ed._pending is None
     assert ed._tool == "circle"                    # continue, not exit
+
+
+# ---- RUNG 3: L25 - THE FREE-POINT CHAIN EXCEPTION --------------------------
+# "Clicking empty space chains from the last endpoint; ending ON AN EXISTING
+# curve/point ENDS the chain (the tool re-arms for a new start)." The magnet
+# hands over the truth for free: an identity-reused Point IS an existing
+# point, and a drop whose autolink BINDS the mint (on-entity, midpoint,
+# intersection...) lands on an existing curve. Empty space, the origin and
+# the grid mint NOTHING-bound - free. The ortho leash that MOVES the magnet's
+# answer mints a fresh end too: nothing exists where the leash put it.
+
+
+def test_landing_on_an_existing_point_ends_the_chain(ed, qapp):
+    m = ed.model
+    ed.set_tool("rect")
+    _click(ed, 0, 0)
+    _click(ed, 10, 6)                    # a rect STANDS: corners EXIST
+    ed.set_tool("line")
+    _click(ed, 16, 10)                   # a FREE start (chain armed)
+    _click(ed, 10, 6)                    # the segment LANDS on a corner
+    assert len(m.sketch.lines) == 5      #  the segment is DRAWN...
+    assert ed._tool == "line"            #  ...the TOOL lives...
+    assert ed._line_start is None        #   ...the CHAIN ended
+    assert not ed._chain_armed()         #    the check went OUT
+    assert ed._pending is not None       #     the M90 lock still owns it
+
+
+def test_a_free_end_keeps_the_chain_walking(ed, qapp):
+    m = ed.model
+    ed.set_tool("line")
+    _click(ed, 2, 2)
+    _click(ed, 8, 2)                     # a FREE commit...
+    assert ed._line_start is not None    #  ...the chain CONTINUES
+    _click(ed, 8, 9)                     # another FREE commit
+    assert len(m.sketch.lines) == 2
+    assert ed._line_start is not None    #  still walking
+    assert ed._chain_armed()             #   the check stays LIT
+
+
+def test_the_next_click_after_a_landing_starts_fresh(ed, qapp):
+    m = ed.model
+    ed.set_tool("rect")
+    _click(ed, 0, 0)
+    _click(ed, 10, 6)
+    ed.set_tool("line")
+    _click(ed, 16, 10)
+    _click(ed, 10, 6)                    # lands: chain ENDED
+    _click(ed, 16, 16)                   # the NEXT click...
+    assert len(m.sketch.lines) == 5      #  ...is a FRESH START...
+    start = ed._line_start
+    assert start is not None             #   ...the tool RE-ARMED
+    _click(ed, 22, 20)                   # and the new chain WALKS
+    assert len(m.sketch.lines) == 6
+    assert m.sketch.lines[5].a is start  #  off the NEW anchor, not the
+    #                                     rect corner the last one died on
+
+
+def test_closing_back_onto_the_chains_own_start_lands_too(ed, qapp):
+    m = ed.model
+    ed.set_tool("line")
+    _click(ed, 2, 2)                     # A: free
+    _click(ed, 8, 2)                     # B: free - chain walks
+    _click(ed, 2, 6)                     # C: free - chain walks
+    _click(ed, 2, 2)                     # back onto A: by now EXISTING
+    assert len(m.sketch.lines) == 3      #  the closing segment DREW...
+    assert ed._line_start is None        #   ...and the chain LANDED
+    assert ed._tool == "line"            #    tool RE-ARMS for a start
+
+
+def test_back_click_on_the_free_end_still_closes_untouched(ed, qapp):
+    m = ed.model
+    ed.set_tool("line")
+    _click(ed, 0, 0)
+    _click(ed, 9, 0)                     # free commit, chain walks
+    end = ed._line_start
+    _click(ed, 9, 0)                     # back-click ON the free end
+    assert len(m.sketch.lines) == 1      #  NO zero-length segment...
+    assert ed._line_start is None        #   M176 R1's CLOSE law...
+    assert ed._tool == "line"            #    ...UNTOUCHED by L25
+    assert end is m.sketch.lines[0].b    #     (the identity snap proved
+    #                                     it WAS the free end)
+
+
+def test_the_ortho_leash_mint_rides_free_and_keeps_chaining(ed, qapp):
+    m = ed.model
+    ed.set_tool("rect")
+    _click(ed, 0, 0)
+    _click(ed, 20, 10)                   # a rect STANDS
+    ed.set_tool("line")
+    _click(ed, 6, 5)                     # free start INSIDE... far enough
+    q = ed.w2s(20, 10).toPoint()         # shift-click ON the far corner:
+    QTest.mousePress(ed, Qt.LeftButton, Qt.ShiftModifier, q)      # magnet
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.ShiftModifier, q)    # says
+    qapp.processEvents()                 # EXISTING - the leash says NO
+    assert len(m.sketch.lines) == 5      #  the leashed segment DREW...
+    assert ed._line_start is not None    #   to a FRESH minted end...
+    ln = m.sketch.lines[4]
+    assert ln.b.y == pytest.approx(5.0)  #    (20,5), NOT the corner:
+    assert ln.b.x == pytest.approx(20.0) #     nothing exists where the
+    #                                     leash put it - the chain rides on
