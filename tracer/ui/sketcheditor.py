@@ -177,6 +177,10 @@ class SketchCanvas(QWidget):
         self._line_typed = ""                  # M180 R2: the pre-mint cell
         self._line_angle = ""                  # M180 R3: its angle twin
         self._line_cell = "len"                #  Tab toggles WHICH one
+        self._rect_typed_w = ""                # M182 R2: the rect's TWO
+        self._rect_typed_h = ""                #  pre-mint cells (staff law:
+        self._rect_cell = "w"                  #   Tab toggles the focus)
+        self._circ_typed = ""                  # M182 R3: the circle's twin
         self._rect_corner: np.ndarray | None = None
         self._arc_pts: list[Point] = []       # 3-pt tool: start, end, bulge
         self._preview: tuple | None = None  # tool drag preview
@@ -208,6 +212,8 @@ class SketchCanvas(QWidget):
         self._line_start = None
         self._line_reset()                     # M180 R2/R3: cells die with
         #                                       the  model they were typed into
+        self._shape_reset()                    # M182 R2:  same for the
+        #                                       shape  cells
         self._rect_corner = None
         self._arc_pts = []
         self._slot: list = []                  # slot tool: c1, c2, width
@@ -264,6 +270,7 @@ class SketchCanvas(QWidget):
         self._line_start = None                #   survive a history jump
         self._line_reset()                     # M180 R2/R3:  neither do the
         #                                       half-typed  pre-mint cell
+        self._shape_reset()                    # M182 R2:  nor the shape's
         self._rect_corner = None
         self._arc_pts = []
         self._slot: list = []                  # slot tool: c1, c2, width
@@ -284,6 +291,7 @@ class SketchCanvas(QWidget):
             self._line_reset()                 # M180 R2/R3: a swapped tool
         #                    never inherits a half-typed cell
         self._rect_corner = None
+        self._shape_reset()                    # M182 R2: nor its cells
         self._arc_pts = []
         self._slot: list = []                  # slot tool: c1, c2, width
         self._poly: list = []                  # polygon tool: centre, vertex
@@ -799,6 +807,13 @@ class SketchCanvas(QWidget):
                 self._preview = ("rect", np.array([a.x, a.y]),
                                  np.array([a.x, a.y]))
             else:
+                if self._rect_typed_w or self._rect_typed_h:
+                    # M182 R2: the cells FILE the size the band promised;
+                    # the click still PLACES (deepdive: typing complements
+                    # the click, never replaces it).
+                    self._place_typed_rect()
+                    self.update()
+                    return
                 a = self._rect_corner
                 b = self._place_point(q)
                 self._rect_corner = None
@@ -2173,6 +2188,48 @@ class SketchCanvas(QWidget):
                     self._line_typed = ""
                     self.update()
                     return
+        if (self._tool == "rect" and self._pending is None
+                and self._rect_corner is not None):
+            # M182 R2 (FD5-L23): the rect rubber-band carries TWO type-in
+            # cells - W over H. Staff law (forum 6042363): a value, then
+            # TAB to the next; Enter places and ends; Esc frees ONLY the
+            # live cell (the M180 R3 discipline, inherited unchanged).
+            txt = ev.text()
+            cell = self._rect_typed_h if self._rect_cell == "h" \
+                else self._rect_typed_w
+            if txt.isdigit() or txt == ".":
+                if len(cell) < 12:
+                    if self._rect_cell == "h":
+                        self._rect_typed_h = cell + txt
+                    else:
+                        self._rect_typed_w = cell + txt
+                self.update()
+                return
+            if k == Qt.Key_Backspace:
+                if self._rect_cell == "h":
+                    self._rect_typed_h = cell[:-1]
+                else:
+                    self._rect_typed_w = cell[:-1]
+                self.update()
+                return
+            if k in (Qt.Key_Return, Qt.Key_Enter):
+                if self._rect_typed_w or self._rect_typed_h:
+                    self._place_typed_rect()     #  Enter PLACES and...
+                self.set_tool("select")          #  ...ENDS (docs law)
+                return
+            if k == Qt.Key_Tab:
+                self._rect_cell = ("h" if self._rect_cell == "w" else "w")
+                self.update()                    #  Tab TOGGLES the focus
+                return
+            if k == Qt.Key_Escape:
+                if self._rect_cell == "h" and self._rect_typed_h:
+                    self._rect_typed_h = ""      #  the LIVE cell frees
+                    self.update()                #   first; the other
+                    return                       #   keeps its number
+                if self._rect_cell == "w" and self._rect_typed_w:
+                    self._rect_typed_w = ""
+                    self.update()
+                    return
         if self._pending is not None:               # M90: type-in first
             txt = ev.text()
             if txt.isdigit() or txt == ".":
@@ -2817,6 +2874,7 @@ class SketchCanvas(QWidget):
         self._line_reset()                     # M180 R2/R3: finish washes
         #                                       the  cell with the arming
         self._rect_corner = None
+        self._shape_reset()                    # M182 R2: and the shape cells
         self._poly = []
         self._arc_pts = []
         self._slot = []
@@ -3144,7 +3202,8 @@ class SketchCanvas(QWidget):
         """M182 R1 (FD5-L23 siblings): the rect rubber-band's live WIDTH x
         HEIGHT readings - a None-pair until a corner is armed and the
         hover opens a real span (the line tool's whisper law: zero size
-        stays silent, the mint ends the conversation)."""
+        stays silent, the mint ends the conversation). M182 R2: a TYPED
+        cell OUTRANKS the recomputed hover reading, raw as typed."""
         if self._tool != "rect" or self._cursor is None \
                 or self._rect_corner is None:
             return None, None
@@ -3153,9 +3212,73 @@ class SketchCanvas(QWidget):
         ay = a.y if isinstance(a, Point) else a[1]
         w = abs(self._cursor[0] - ax)
         h = abs(self._cursor[1] - ay)
-        if max(w, h) <= 1e-9:
+        wt, ht = self._rect_typed_w, self._rect_typed_h
+        if max(w, h) <= 1e-9 and not (wt or ht):
             return None, None
-        return f"{w:.2f}", f"{h:.2f}"
+        return (wt if wt else f"{w:.2f}", ht if ht else f"{h:.2f}")
+
+    def _rect_typed_vals(self):
+        """(typed width, typed height) - None where the cell is blank,
+        half-typed or not a positive number; the PLACEMENT fills those
+        from the hover (docs: "the length, width, OR BOTH")."""
+        def one(s):
+            if not s.strip("."):
+                return None
+            try:
+                v = float(s)
+            except ValueError:
+                return None
+            return v if v > 0 else None
+        return one(self._rect_typed_w), one(self._rect_typed_h)
+
+    def _place_typed_rect(self):
+        """M182 R2 (FD5-L23): the cells FILE the rectangle - typed
+        MAGNITUDES rule while the hover still picks the QUADRANT (the
+        official step: "specify the length, width, or both values, then
+        click to place"). The tied numbers become REAL Distance dims
+        through M90's own staged mouth - indistinguishable from numbers
+        typed after the commit (staff: tying a value at creation IS a
+        dimension)."""
+        a = self._rect_corner
+        if a is None or self._cursor is None:
+            return
+        cw, ch = self._rect_typed_vals()
+        hx, hy = self._cursor[0] - a.x, self._cursor[1] - a.y
+        w = cw if cw is not None else abs(hx)
+        h = ch if ch is not None else abs(hy)
+        self._rect_corner = None
+        self._preview = None
+        self._shape_reset()
+        if w <= 1e-9 or h <= 1e-9:
+            return
+        sx = -1.0 if hx < 0 else 1.0             # the hover picks the
+        sy = -1.0 if hy < 0 else 1.0             #  quadrant; zero = RIGHT
+        b = self.model.point(a.x + sx * w, a.y + sy * h)
+        self._push_hist()
+        lines = self.model.add_rect(a, b)
+        self._solve()
+        if not lines:
+            return
+        self._pending = ("rect", lines)          # M90's stage machine:
+        self._pending_stage = 0                  #  stage 0 = width,
+        self._num_buf = ""                       #  stage 1 = height
+        if cw is not None:
+            self._num_buf = f"{cw:g}"
+            self._commit_typed()                 # files W, advances
+        if ch is not None and self._pending is not None:
+            if cw is None:
+                self._pending_stage = 1          # height's own slot
+            self._num_buf = f"{ch:g}"
+            self._commit_typed()                 # files H, clears lock
+
+    def _shape_reset(self):
+        """M182 R2: every pre-mint SHAPE cell goes dark together - the
+        wash law carried from the line's cells to rect W/H (and the
+        circle's): wherever the armed corner dies, its cells die."""
+        self._rect_typed_w = ""
+        self._rect_typed_h = ""
+        self._rect_cell = "w"
+        self._circ_typed = ""
 
     def _typein_pos(self):
         """Where Fusion's little white box lives for the armed entity."""
@@ -3666,21 +3789,24 @@ class SketchCanvas(QWidget):
             # the eye waited). normalized() survives any drag direction.
             p.drawRect(QRectF(self.w2s(*a), self.w2s(*b)).normalized())
             wt, ht = self._rect_live_wh()       # M182 R1: the shape speaks
-            if wt and ht and self._cursor is not None:
+            if (wt or ht) and self._cursor is not None:
                 s = self.w2s(self._cursor[0], self._cursor[1])
                 fm = p.fontMetrics()
                 p.setFont(self._font)
                 p.setBrush(QColor(theme.DARK["bg2"]))
-                p.setPen(Qt.NoPen)
-                for txt, dy in ((wt, -22), (ht, 4)):
+                for key, txt, dy in (("w", wt, -22), ("h", ht, 4)):
+                    if not txt:
+                        continue
                     br = fm.boundingRect(txt)
                     rect = QRectF(s.x() + 14 - br.width() / 2 - 6,
                                   s.y() + dy - br.height() / 2 - 3,
                                   br.width() + 12, br.height() + 6)
-                    p.drawRoundedRect(rect, 3, 3)
-                    p.setPen(FG)
+                    p.setPen(QPen(QColor(theme.DARK["accent"]), 1.4)
+                             if self._rect_cell == key else Qt.NoPen)
+                    p.drawRoundedRect(rect, 3, 3)   # the LIVE cell wears
+                    p.setPen(FG)                    #  the accent border
                     p.drawText(rect, Qt.AlignCenter, txt)
-                    p.setPen(Qt.NoPen)
+                p.setPen(Qt.NoPen)
                 p.setBrush(Qt.NoBrush)
                 p.setPen(QPen(ACCENT, 1.4, Qt.DashLine))
         elif kind == "ellipse":

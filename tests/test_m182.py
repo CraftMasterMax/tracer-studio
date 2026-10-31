@@ -194,3 +194,130 @@ def test_a_plain_hover_never_whispers(ed, qapp):
     wcx, wcy = _cell(324, 146)                  # s = (324,168)
     hcx, hcy = _cell(324, 172)
     assert _white(img, wcx, wcy) < 8 and _white(img, hcx, hcy) < 8
+
+
+# ---- RUNG 2: THE CELLS TAKE NUMBERS - AND FILE REAL DIMENSIONS ----------
+# Deepdive law (official "Create rectangles" + staff, forum 6042363): two
+# fields, Tab advances, typing feeds "the length, width, OR BOTH", the
+# typed MAGNITUDE rules while the hover still picks the QUADRANT; a value
+# tied in at creation is a REAL dimension (staff accepted, forum 10679423).
+
+def _type(ed, s):
+    QTest.keyClicks(ed, s)
+
+
+def _key(ed, k):
+    QTest.keyClick(ed, k)
+
+
+def _arm(ed, x=2.0, y=3.0):
+    ed.set_tool("rect")
+    _click(ed, x, y)
+
+
+def _dims_of(ed):
+    from tracer.core.sketch.constraints import Distance
+    return sorted(round(c.value, 6) for c in ed.model.sketch.constraints
+                  if type(c) is Distance)
+
+
+def _bbox(ed):
+    xs = [v for l in ed.model.sketch.lines for v in (l.a.x, l.b.x)]
+    ys = [v for l in ed.model.sketch.lines for v in (l.a.y, l.b.y)]
+    return (round(min(xs), 6), round(max(xs), 6),
+            round(min(ys), 6), round(max(ys), 6))
+
+
+def test_typing_feeds_the_width_cell(ed, qapp):
+    _arm(ed)
+    _move(ed, 5.0, 5.0)
+    assert ed._rect_live_wh() == ("3.00", "2.00")
+    _type(ed, "45")
+    assert ed._rect_typed_w == "45"
+    assert ed._rect_live_wh() == ("45", "2.00")     # typed OUTRANKS hover
+
+
+def test_tab_moves_the_focus(ed, qapp):
+    _arm(ed)
+    _move(ed, 5.0, 5.0)
+    _type(ed, "45")
+    _key(ed, Qt.Key_Tab)
+    assert ed._rect_cell == "h"
+    _type(ed, "30")
+    assert ed._rect_typed_h == "30"
+    assert ed._rect_typed_w == "45"                 # W keeps its number
+    assert ed._rect_live_wh() == ("45", "30")
+
+
+def test_esc_frees_the_live_cell_only(ed, qapp):
+    _arm(ed)
+    _move(ed, 5.0, 5.0)
+    _type(ed, "45")
+    _key(ed, Qt.Key_Tab)
+    _type(ed, "30")
+    _key(ed, Qt.Key_Escape)                         # the M180 R3 law:
+    assert ed._rect_typed_h == ""                   #  Esc frees the LIVE
+    assert ed._rect_typed_w == "45"                 #  cell, the other stays
+    _key(ed, Qt.Key_Escape)                         # empty live cell ->
+    assert ed._rect_typed_w == ""                   #  next Esc frees THAT
+
+
+def test_click_places_typed_size_in_the_hover_quadrant(ed, qapp):
+    _arm(ed)
+    _move(ed, -6.0, 7.0)                            # up-LEFT of the corner
+    _type(ed, "10")
+    _key(ed, Qt.Key_Tab)
+    _type(ed, "5")
+    n0 = len(ed.model.sketch.lines)
+    _click(ed, -6.0, 7.0)                           # the click FILES
+    assert len(ed.model.sketch.lines) == n0 + 4
+    assert _bbox(ed) == (-8.0, 2.0, 3.0, 8.0)       # 2-10, 3+5: magnitude
+    assert _dims_of(ed) == [5.0, 10.0]              #  typed, quadrant hover's
+    assert ed._pending is None                      #  both numbers filed
+    assert ed._tool == "rect"                       #  click keeps the tool
+                                                    #   live (docs multi-run)
+
+
+def test_one_typed_cell_rides_the_other_on_the_hover(ed, qapp):
+    _arm(ed)
+    _move(ed, -6.0, 7.0)
+    _type(ed, "10")                                 # W only
+    _click(ed, -6.0, 7.0)
+    assert _bbox(ed) == (-8.0, 2.0, 3.0, 7.0)       # H rides the hover (4)
+    assert _dims_of(ed) == [10.0]                   #  only the typed dim
+    assert ed._pending is not None                  #  stage 1 stands READY
+    assert ed._pending_stage == 1                   #   for a late height
+
+
+def test_enter_places_files_and_ends(ed, qapp):
+    _arm(ed)
+    _move(ed, -6.0, 7.0)
+    _type(ed, "10")
+    _key(ed, Qt.Key_Tab)
+    _type(ed, "5")
+    _key(ed, Qt.Key_Return)                         # staff law: Enter
+    assert _bbox(ed) == (-8.0, 2.0, 3.0, 8.0)       #  PLACES...
+    assert _dims_of(ed) == [5.0, 10.0]              #  ...FILES...
+    assert ed._tool == "select"                     #  ...and ENDS
+
+
+def test_zero_hover_delta_never_flips_the_sign(ed, qapp):
+    _arm(ed)
+    _move(ed, 2.0, 7.0)                             # straight UP: dx = 0
+    _type(ed, "10")
+    _click(ed, 2.0, 7.0)
+    assert _bbox(ed) == (2.0, 12.0, 3.0, 7.0)       # the RIGHT by law
+    assert _dims_of(ed) == [10.0]
+
+
+def test_the_typed_cells_wash_with_the_tool(ed, qapp):
+    _arm(ed)
+    _move(ed, 5.0, 5.0)
+    _type(ed, "45")
+    _key(ed, Qt.Key_Tab)
+    _type(ed, "30")
+    ed.set_tool("line")                             # the wash law (M180 R3):
+    assert ed._rect_typed_w == ""                   #  swapped tool ->
+    assert ed._rect_typed_h == ""                   #   every cell dark
+    assert ed._rect_cell == "w"                     #    focus re-homed
+
