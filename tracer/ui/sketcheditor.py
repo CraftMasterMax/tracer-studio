@@ -144,6 +144,9 @@ class SketchCanvas(QWidget):
         self._drag_pt_start: np.ndarray | None = None  # M173 R3: the
         self._dim_drag: tuple | None = None       # M174 R1: a LABEL is
         self._dim_pushed = False                  #  being dragged
+        self._dim_place = None                    # M175 R2: a NEWBORN
+        #   dimension follows the CURSOR (FD5-L35) until a press places
+        #   it and the value field opens; Esc unbirths it.
         self._drag: tuple | None = None        # M167 R1: body drag
         #   (pts, starts, anchor_world) — the delta law's record
         self._pend_toggle = None               # M167 R3: Ctrl-press on a
@@ -240,6 +243,7 @@ class SketchCanvas(QWidget):
         self._drag_pt = None
         self._drag_pt_start = None                 # M173 R3: the leash
         self._dim_drag = None                      # M174 R1: label grips
+        self._dim_place = None                     # M175 R2: place mode
         self._drag = None                      # M167 R1: grabs don't
         self._pend_toggle = None               # M167 R3: Ctrl-presses die
         self._line_start = None                #   survive a history jump
@@ -252,6 +256,11 @@ class SketchCanvas(QWidget):
         self.update()
 
     def set_tool(self, tool: str):
+        if self._dim_place is not None and tool != self._tool:
+            self._cancel_dim_place()        # M175 R2: walking to another
+        #                    tool unbirths the un-placed dimension; a
+        #                    REDUNDANT same-tool call never kills a live
+        #                    gesture (no re-entrancy guard exists here).
         self._tool = tool
         if tool != "line":
             self._line_start = None
@@ -578,6 +587,17 @@ class SketchCanvas(QWidget):
             return                             #  starts its travel count
         if ev.button() != Qt.LeftButton:
             return
+        if self._dim_place is not None:                   # M175 R2: PLACE
+            c = self._dim_place                           #  claims EVERY
+            self._dim_place = None                        #   left press,
+            lo = getattr(c, "label_off", None)            #   UNDER ANY
+            near = lo is not None and (                   #   TOOL (the
+                max(abs(lo[0]), abs(lo[1]))               #   pending act
+                * self._scale < 2.0)                      #   owns the
+            if near:                                      #   next click -
+                c.label_off = (0.0, 0.0)                  #   m165's tool
+            self._open_dim_editor(c)                      #   ledger says
+            return                                        #   so itself)
         if self._tool == "select":
             if self._hover_c is not None:        # M164 R2: no ring while
                 self._hover_c = None             # grabbing (viewport's law)
@@ -845,6 +865,15 @@ class SketchCanvas(QWidget):
             self._center -= np.array([d.x() / self._scale, -d.y() / self._scale])
             self._pan_from = q
             self.update()
+            return
+        if self._dim_place is not None:               # M175 R2: the ghost
+            c = self._dim_place                       #  follows the FREE
+            pos = self._dim_anchor_screen(c)          #  CURSOR (no button
+            if pos is not None:                       #   held) until the
+                qm = ev.position()                    #   press places it.
+                c.label_off = ((qm.x() - pos.x()) / self._scale,
+                               -(qm.y() - pos.y()) / self._scale)
+                self.update()
             return
         if self._corner is not None and self._corner_pull:
             # M172 R1: the pull SIZES the ghost - r is the cursor's own
@@ -1325,8 +1354,18 @@ class SketchCanvas(QWidget):
         if tgt is None:
             return
         self._solve()
-        self.update()
-        self._open_dim_editor(tgt)              # value input opens NOW
+        self._dim_place = tgt                   # M175 R2 (FD5-L35): the
+        self.update()                           #  newborn FOLLOWS THE
+        #               CURSOR until a press places it - the value
+        #               field then opens on the placed chip (R1's door).
+
+    def _cancel_dim_place(self):
+        """M175 R2: Esc (or a real tool switch) ABORTS the act - the
+        dimension never existed. The birth already paid one ledger row,
+        so the unbirth spends it: undo_op pops the birth snapshot and
+        the model is byte-for-byte what it was. Zero trace, both ends."""
+        self._dim_place = None
+        self.undo_op()
 
     def act_perp(self):
         if len(self._sel) == 2 and all(isinstance(e, Line) for e in self._sel):
@@ -2004,9 +2043,12 @@ class SketchCanvas(QWidget):
             return                                 #  SAME keys NUDGE
         sel = self._sel
         if k == Qt.Key_Escape:
-            self._line_start = None
-            self.set_tool("select")
-            return
+            if self._dim_place is not None:               # M175 R2: the
+                self._cancel_dim_place()                  #  cascade's
+                return                                    #  FIRST rung:
+            self._line_start = None                       #  an un-placed
+            self.set_tool("select")                       #  dimension
+            return                                        #  UNBIRTHS it
         if self._tool == "poly" and Qt.Key_3 <= k <= Qt.Key_9:
             self._poly_n = k - Qt.Key_0            # live side count (3..9)
             self.update()
@@ -2437,18 +2479,12 @@ class SketchCanvas(QWidget):
         for ci, c in enumerate(sk.constraints):
             bound = ci in self.model.dim_exprs      # M89: fx-driven dims
             text = pos = None
-            if isinstance(c, Distance):
-                mid = self.w2s((c.p.x + c.q.x) / 2, (c.p.y + c.q.y) / 2)
-                d = QPointF(c.q.x - c.p.x, c.q.y - c.p.y)
-                ln = math.hypot(d.x(), d.y())
-                if ln < 1e-9:
-                    continue
-                nx, ny = -d.y() / ln, d.x() / ln        # screen-space-ish normal
-                pos = QPointF(mid.x() + nx * 16, mid.y() - ny * 16)
-                text = f"{c.value:.2f}"
-            elif isinstance(c, Radius):
-                pos = self._radius_pos(c.curve)
-                text = self._dim_text(c)          # Ø on circles (M98)
+            if isinstance(c, (Distance, Radius)):
+                pos = self._dim_anchor_screen(c)  # M175 R2: painter and
+                if pos is None:                   #  place mode read ONE
+                    continue                      #   post (paint == hit)
+                text = (f"{c.value:.2f}" if isinstance(c, Distance)
+                        else self._dim_text(c))   #  Ø on circles (M98)
             elif isinstance(c, (Angle, AngleBetween)):
                 arc = None
                 pv = self._angle_pivot(c)
@@ -2927,6 +2963,22 @@ class SketchCanvas(QWidget):
         p.setBrush(BG)
         p.drawEllipse(at, 3.4, 3.4)
         p.setBrush(Qt.NoBrush)
+
+    def _dim_anchor_screen(self, c):
+        """M175 R2: the chip's DEFAULT post in screen pixels, computed by
+        the SAME formula the painter uses (paint == hit == place law).
+        None = degenerate (zero-length line) or no post for this kind."""
+        if isinstance(c, Distance):
+            d = QPointF(c.q.x - c.p.x, c.q.y - c.p.y)
+            ln = math.hypot(d.x(), d.y())
+            if ln < 1e-9:
+                return None
+            mid = self.w2s((c.p.x + c.q.x) / 2, (c.p.y + c.q.y) / 2)
+            return QPointF(mid.x() + (-d.y() / ln) * 16,
+                           mid.y() - (d.x() / ln) * 16)
+        if isinstance(c, Radius):
+            return self._radius_pos(c.curve)
+        return None
 
     def _radius_pos(self, e, dist: float = 16.0) -> QPointF:
         """Editable dimension anchor: top of a full circle, or the bulge

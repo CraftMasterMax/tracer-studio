@@ -127,9 +127,11 @@ def test_dimension_between_two_points(canvas, qapp, monkeypatch):
     m.constrain(Fixed(p, x=0.0, y=0.0))
     canvas.set_model(m)
     canvas._sel = [p, q]
-    from conftest import script_dim_edit
+    from conftest import place_dim, script_dim_edit
     script_dim_edit(monkeypatch, "50")
     QTest.keyPress(canvas, Qt.Key_D)
+    place_dim(canvas)                            # R2: the click settles
+    #                                            the wander and asks
     dims = [c for c in m.sketch.constraints if isinstance(c, Distance)]
     assert len(dims) == 1 and dims[0].value == 50.0
     assert math.hypot(q.x - p.x, q.y - p.y) == pytest.approx(50.0, rel=1e-6)

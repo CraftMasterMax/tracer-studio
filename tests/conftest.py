@@ -123,6 +123,27 @@ def script_dim_edit(monkeypatch, text):
     monkeypatch.setattr(dimedit, "open", fake)
 
 
+def place_dim(canvas, c=None):
+    """M175 R2: complete the PLACE gesture the way a hand does - paint
+    the ghost, click its rect. Birth alone only ARMS (the newborn has
+    been following the cursor); this click settles it and opens the
+    value field - so with script_dim_edit patched FIRST, the place-click
+    is the moment the scripted number is ANSWERED. Returns the
+    constraint placed (None if nothing was armed)."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    c = c if c is not None else canvas._dim_place
+    if c is None:
+        return None
+    canvas.grab()                          # fresh paint == fresh hits
+    rect = next((r for r, cc in canvas._dim_hits if cc is c), None)
+    QTest.mousePress(canvas, Qt.LeftButton, Qt.NoModifier,
+                     rect.center().toPoint())
+    QTest.mouseRelease(canvas, Qt.LeftButton, Qt.NoModifier,
+                       rect.center().toPoint())
+    return c
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _isolate_recovery_dir():
     """No headless test may poison the user's real crash-recovery folder

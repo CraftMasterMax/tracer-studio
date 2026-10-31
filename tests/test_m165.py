@@ -941,10 +941,11 @@ def test_sketch_tools_record_only_the_listed_doors(win, monkeypatch):
     p0, p1 = m.point(0, 0), m.point(30, 0)
     m.add_line(p0, p1)
     win.sketch._sel = [p0, p1]
-    from conftest import script_dim_edit               # M175 R1 RETARGET:
-    script_dim_edit(monkeypatch, "25")                 #  the modal died -
+    from conftest import place_dim, script_dim_edit      # M175 R1/R2:
+    script_dim_edit(monkeypatch, "25")                 #  the modal died;
     win.action_repeat_last()                           # the repeat CREATES
-    _settle(qapp2)                                     #  via the seam
+    place_dim(win.sketch)                              #  and the click
+    _settle(qapp2)                                     #   ANSWERS at rest
     dims = [c for c in m.sketch.constraints if isinstance(c, Distance)]
     assert any(abs(c.value - 25.0) < 1e-9 for c in dims)
 

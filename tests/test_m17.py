@@ -137,9 +137,12 @@ def test_canvas_dimension_tool_on_arc(win, qapp, monkeypatch):
     # M175 R1 RETARGET: act_dim's modal getDouble died - the dimension
     # is born at the arc's own radius and answers through the INLINE
     # seam (M165): the scripted chip types 7.5, the newborn obeys.
-    from conftest import script_dim_edit
+    # M175 R2 addendum: the newborn first FOLLOWS the cursor; the place
+    # click is what opens the field - here, what ANSWERS through it.
+    from conftest import place_dim, script_dim_edit
     script_dim_edit(monkeypatch, "7.5")
     cv.act_dim()
+    place_dim(cv)
     qapp.processEvents()
     dims = [c for c in cv.model.sketch.constraints
             if isinstance(c, Radius)]
@@ -157,9 +160,10 @@ def test_canvas_badge_edit_and_arc_anchor(win, qapp, monkeypatch):
     cv._sel = [ar]
     # M175 R1 RETARGET: no dialog at birth - the seam answers 12.0 for
     # the newborn, and the badge double-click below re-enters through it.
-    from conftest import script_dim_edit
+    from conftest import place_dim, script_dim_edit
     script_dim_edit(monkeypatch, "12.0")
     cv.act_dim()
+    place_dim(cv)                                # R2: click places+asks
     con = cv.model.sketch.constraints[-1]
     # double-click editing path (badge hit already covered in m8)
     # M165 RETARGET (cited, m165_rung1_chipfield_design §d): the fx

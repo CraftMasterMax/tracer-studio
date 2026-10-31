@@ -108,11 +108,12 @@ def test_act_dim_on_a_circle_asks_diameter(sketch, qapp, monkeypatch):
     c = m.add_circle(m.point(0.0, 0.0), 7.0)
     sketch._sel = [c]
     sketch.act_dim()                                   # no dialog to fear
+    from conftest import place_dim, script_dim_edit
+    place_dim(sketch)                                  # R2: place asks
     cons = [x for x in m.sketch.constraints if isinstance(x, Radius)]
     assert len(cons) == 1                              # born at measure...
     assert sketch._dim_text(cons[0]) == "\u00d8 14.00"  #  ...speaking Ø
     sketch._close_dim_editor()                         # unchanged: no trace
-    from conftest import script_dim_edit
     script_dim_edit(monkeypatch, "30")
     sketch._edit_dim(cons[0])                          # the door re-enters
     assert cons[0].value == pytest.approx(15.0)        # diameter 30 -> r 15
