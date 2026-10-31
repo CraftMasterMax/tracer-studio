@@ -15,9 +15,18 @@ PINS THE READING IT HOLDS - there is no resurrection of an old number
 (Fusion converting a driven dim re-pins the shown value). What returns
 is the VOTE: from the flip on, geometry that strays is pulled back.
 
-The creation-time mouth (right-click a NEWBORN before it is placed,
-L35's exact gesture) landed as rung 2; the inertness details
-(dbl-click on a driven, angle-dim quoting) are rung 3.
+Rung 2 landed L35's EXACT creation mouth: right-click a NEWBORN while
+it still follows the cursor and it arrives DRIVEN from birth, the
+editor never opening (a reader has no number to command). Rung 3 is the
+reader's INERTNESS: "can't be edited" [obs] enforced at ONE mouth -
+_open_dim_editor refuses a driven constraint at EVERY door (dbl-click,
+F2, palette _edit_dim), so no future driver can smuggle a value in.
+What the reader KEEPS: its label still rides the drag (position is not
+a value). One interaction the flip had to settle - toggling a chip
+mid-edit now CLOSES the editor first (the field owns the ink; a reader
+has none) - and the ring dies with it, rung-4's law. Angle-dim quoting
+stays deferred: the painter's Angle branch bypasses _dim_text and the
+menu never offers Make Driven there.
 """
 import math
 
@@ -25,7 +34,8 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import Qt                                           # noqa
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt                # noqa
+from PySide6.QtGui import QMouseEvent                                  # noqa
 from PySide6.QtTest import QTest                                        # noqa
 from PySide6.QtWidgets import QApplication                         # noqa
 
@@ -124,6 +134,9 @@ def test_the_hover_menu_flips_the_vote_both_ways(ed):
     m.solve()
     assert ln.b.x == pytest.approx(10.0)       #  - driven lets it
     assert d.value == pytest.approx(10.0)      #   and QUOTES the walk
+    ed._hover_c = d                            # the settle-first close
+    #  killed the ring (rung-4 law: it DIES with the editor) - re-arm,
+    #  the cursor never left the chip
     texts = [a.text() for a in ed._build_menu().actions()]
     assert "Make Driving" in texts             # the flip is two-way
     ed.act_driven(d)
@@ -203,3 +216,114 @@ def test_the_left_press_still_lands_it_driving_unchanged(ed, qapp):
     assert not d.driven                        # driving as ever...
     assert ed._dim_edit is not None            #  ...editor opens as ever
     ed._close_dim_editor()
+
+
+# ---- RUNG 3: THE READER IS INERT - EVERY DOOR - (FD5-L35) ----------------
+# "It shows up in parentheses and CAN'T BE EDITED" [obs, forum-verified].
+# The law is one gate at _open_dim_editor, not four sprinkled guards: the
+# dbl-click door, the F2 door, the palette's _edit_dim and any future
+# driver all answer through it. What the reader KEEPS: its label rides
+# the drag like any chip's (position is not a value) - and act_driven on
+# a chip mid-edit settles the editor FIRST (ink ownership, then the flip).
+
+
+def _settle_dim(ed, ln, wx=4.0, wy=-6.0):
+    ed._sel = [ln]
+    ed.act_dim()
+    p = ed.w2s(wx, wy).toPoint()
+    _slide(ed, p)                              # the ghost RIDES here on
+    QTest.mouseClick(ed, Qt.LeftButton, pos=p) #  the way (sets label_off)
+    QApplication.instance().processEvents()
+    d = [c for c in ed.model.sketch.constraints
+         if isinstance(c, Distance)][-1]
+    ed._close_dim_editor()
+    return d
+
+
+def _chip_at(ed, c):
+    ed.grab()                                    # paint == hit: _dim_hits
+    for rect, cc in ed._dim_hits:                #  is PAINT's ledger
+        if cc is c:
+            return QPoint(int(rect.center().x()), int(rect.center().y()))
+    raise AssertionError("chip not painted")
+
+
+def _key(ed, k):
+    QTest.keyClick(ed, k)
+    QApplication.instance().processEvents()
+
+
+def _slide(ed, pt, held=False):
+    """A DELIVERED move (m174's law: QTest.mouseMove does not drive a
+    hidden canvas's handler - sendEvent does). held=True rides a press."""
+    btn = Qt.LeftButton if held else Qt.NoButton
+    pos = QPointF(pt)
+    QApplication.sendEvent(
+        ed, QMouseEvent(QEvent.Type.MouseMove, pos, pos, pos,
+                        btn, btn, Qt.NoModifier))
+    QApplication.instance().processEvents()
+
+
+def test_dbl_click_on_a_driven_opens_nothing(ed, qapp):
+    m = ed.model
+    ln = m.add_line(m.point(0.0, 0.0), m.point(8.0, 0.0))
+    d = _settle_dim(ed, ln)
+    assert ed._dim_edit is None
+    ed.act_driven(d)
+    QTest.mouseDClick(ed, Qt.LeftButton, pos=_chip_at(ed, d))
+    QApplication.instance().processEvents()
+    assert ed._dim_edit is None                # the reader edits NOTHING
+    ed.act_driven(d)                           # driving again: the SAME
+    QTest.mouseDClick(ed, Qt.LeftButton, pos=_chip_at(ed, d))  #  dbl now
+    QApplication.instance().processEvents()                    #  ASKS
+    assert ed._dim_edit is not None and ed._dim_edit.constraint is d
+    ed._close_dim_editor()
+
+
+def test_the_f2_door_and_the_palette_door_stay_shut(ed, qapp):
+    m = ed.model
+    ln = m.add_line(m.point(0.0, 0.0), m.point(8.0, 0.0))
+    d = _settle_dim(ed, ln)
+    ed.act_driven(d)
+    _slide(ed, _chip_at(ed, d))                # the canvas's OWN eyes:
+    _key(ed, Qt.Key_F2)                        #  _cursor lives in moves
+    assert ed._dim_edit is None                #  inert on a reader
+    ed._edit_dim(d)                            # the PALETTE door:
+    assert ed._dim_edit is None                #  inert too
+    ed.act_driven(d)                           # while DRIVING, both
+    _slide(ed, _chip_at(ed, d))                #  doors still open
+    _key(ed, Qt.Key_F2)
+    assert ed._dim_edit is not None
+    ed._close_dim_editor()
+
+
+def test_act_driven_settles_an_open_editor_first(ed, qapp):
+    m = ed.model
+    ln = m.add_line(m.point(0.0, 0.0), m.point(8.0, 0.0))
+    ed._sel = [ln]
+    ed.act_dim()                               # newborn... editor OPEN
+    QTest.mouseClick(ed, Qt.LeftButton)
+    QApplication.instance().processEvents()
+    d = [c for c in m.sketch.constraints if isinstance(c, Distance)][-1]
+    assert ed._dim_edit is not None
+    ed.act_driven(d)                           # flip MID-EDIT:
+    assert ed._dim_edit is None                #  editor settled FIRST...
+    assert d.driven                            #   ...then the vote left
+
+
+def test_a_driven_label_still_rides_the_drag(ed, qapp):
+    m = ed.model
+    ln = m.add_line(m.point(0.0, 0.0), m.point(8.0, 0.0))
+    d = _settle_dim(ed, ln)
+    ed.act_driven(d)
+    p0 = _chip_at(ed, d)
+    off0 = tuple(d.label_off)
+    QTest.mousePress(ed, Qt.LeftButton, pos=p0)      # THE LABEL CLAIMS
+    p1 = QPoint(p0.x(), p0.y() + 20)                 #  a drag: position
+    _slide(ed, p1, held=True)                        #  is not a value -
+    QTest.mouseRelease(ed, Qt.LeftButton, pos=p1)    #  the reader still
+    QApplication.instance().processEvents()          #  rearranges freely
+    assert ed._dim_edit is None                      # no editor by drag
+    assert d.label_off != off0                       # the label MOVED
+    assert d.value == pytest.approx(8.0)             # the read survives
+    assert ln.b.x == pytest.approx(8.0)              # geometry untouched

@@ -2549,6 +2549,12 @@ class SketchCanvas(QWidget):
         value) - and from then on the geometry must obey again."""
         if not any(cc is c for cc in self.model.sketch.constraints):
             return                              # stale: zero trace (m164)
+        ed = getattr(self, "_dim_edit", None)   # M178 R3: the flip
+        if ed is not None and ed.constraint is c:   #  settles ink
+            self._close_dim_editor()            #  ownership first -
+            #                                     the editor commands
+            #                                     numbers; a reader has
+            #                                     none to command
         self._push_hist()
         c.driven = not getattr(c, "driven", False)
         self._solve()
@@ -2740,6 +2746,14 @@ class SketchCanvas(QWidget):
 
     # ---- M165 R1: the inline chip editor (design m165_rung1_chipfield) ----
     def _open_dim_editor(self, c):
+        if getattr(c, "driven", False):
+            return                               # M178 R3 (FD5-L35): a
+            #                                     READER cannot be
+            #                                     commanded - the editor
+            #                                     stays shut at EVERY
+            #                                     door (dbl-click, F2,
+            #                                     palette, _edit_dim):
+            #                                     one gate, all mouths
         if self._dim_edit is not None:
             if self._dim_edit.constraint is c:   # same chip: just refocus
                 self._dim_edit.edit.setFocus()
