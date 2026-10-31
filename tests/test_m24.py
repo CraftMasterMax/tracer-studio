@@ -11,7 +11,6 @@ import pytest
 from tracer.core.sketch.constraints import (Angle, AngleBetween, Distance,
                                             Fixed, make_angle,
                                             make_angle_between, snapped)
-from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.sketch.model import (SketchModel, model_from_dict,
                                       model_to_dict)
 from tracer.core.sketch.solver import Sketch
@@ -169,18 +168,21 @@ def test_key_I_angles_a_line_and_edits_it(win, qapp, monkeypatch):
     b = m.point(10 * math.cos(math.radians(5)), 10 * math.sin(math.radians(5)))
     ln = m.add_line(a, b)
     m.constrain(Fixed(a, x=0, y=0), Distance(a, b, 10.0))
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *A, **K: (40.0, True)))
+    # M175 R3 RETARGET: the I key opens no dialog now - the line is BORN
+    # angled at its own 5 degrees and the INLINE seam answers, twice.
+    from conftest import place_dim, script_dim_edit
+    script_dim_edit(monkeypatch, "40")
     cv._sel = [ln]
     QTest.keyClick(cv, Qt.Key_I)
+    place_dim(cv)
     qapp.processEvents()
     angs = [c for c in m.sketch.constraints if isinstance(c, Angle)]
     assert len(angs) == 1
     assert _deg(math.atan2(b.y - a.y, b.x - a.x)) == pytest.approx(40, abs=1e-6)
     # re-run with a different value: replaces, never stacks
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *A, **K: (55.0, True)))
+    script_dim_edit(monkeypatch, "55")
     QTest.keyClick(cv, Qt.Key_I)
+    place_dim(cv)
     qapp.processEvents()
     angs = [c for c in m.sketch.constraints if isinstance(c, Angle)]
     assert len(angs) == 1
@@ -246,10 +248,13 @@ def test_two_lines_angle_between_via_menu_action(win, qapp, monkeypatch):
     m.constrain(Fixed(o, x=0, y=0), Fixed(e1, x=10, y=0))
     # rotate L2 to 30° while keeping its length
     e2.x, e2.y = 10 * math.cos(math.radians(120)), 10 * math.sin(math.radians(120))
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *A, **K: (45.0, True)))
+    # M175 R3 RETARGET: the pair is BORN at its own 120 degrees; the
+    # INLINE seam answers 45 at the place click - the solver spends it.
+    from conftest import place_dim, script_dim_edit
+    script_dim_edit(monkeypatch, "45")
     cv._sel = [L1, L2]
     cv.act_angle()
+    place_dim(cv)
     qapp.processEvents()
     assert _deg(math.atan2(e2.y, e2.x)) == pytest.approx(45, abs=1e-6)
 

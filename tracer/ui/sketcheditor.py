@@ -1594,35 +1594,36 @@ class SketchCanvas(QWidget):
         self._solve(); self.update()
 
     def act_angle(self):
-        """Angular dimension: one line → angle from +X; two lines → angle
-        between (Fusion pivots the arc at the shared/intersection point)."""
+        """M175 R3 (FD5-L35): the angle is BORN speaking its own opening
+        and asks for degrees IN-CANVAS - the LAST dim modal is dead. One
+        line -> angle from +X; two lines -> angle between (Fusion pivots
+        the arc at the shared/intersection point). snapped() is a branch
+        picker, not a grid round, so birth-at-measurement never drags
+        geometry. The newborn rides the R2 place rails: it follows the
+        cursor, a press settles it (the field opens), Esc unbirths."""
         sel = self._sel
+        tgt = None
         if len(sel) == 1 and isinstance(sel[0], Line):
             ln = sel[0]
             deg = math.degrees(math.atan2(ln.b.y - ln.a.y, ln.b.x - ln.a.x)) % 180
-            val, ok = Shell.getDouble(self, "Angular dimension",
-                                             "Angle from +X (deg):",
-                                             round(deg, 2), 0.0, 179.99, 2)
-            if not ok:
-                return
             self._push_hist()
             self.model.remove_last(Angle, (ln,))
-            self.model.constrain(make_angle(ln, val))
-            self._solve(); self.update()
+            tgt = make_angle(ln, deg)
+            self.model.constrain(tgt)
         elif len(sel) == 2 and all(isinstance(e, Line) for e in sel):
             l1, l2 = sel
             t1 = math.atan2(l1.b.y - l1.a.y, l1.b.x - l1.a.x)
             t2 = math.atan2(l2.b.y - l2.a.y, l2.b.x - l2.a.x)
             deg = math.degrees(t2 - t1) % 180
-            val, ok = Shell.getDouble(self, "Angular dimension",
-                                             "Angle between (deg):",
-                                             round(deg, 2), 0.0, 179.99, 2)
-            if not ok:
-                return
             self._push_hist()
             self.model.remove_last(AngleBetween, (l1, l2))
-            self.model.constrain(make_angle_between(l1, l2, val))
-            self._solve(); self.update()
+            tgt = make_angle_between(l1, l2, deg)
+            self.model.constrain(tgt)
+        if tgt is None:
+            return
+        self._solve()
+        self._dim_place = tgt                     # the R2 rails take it
+        self.update()                             #  from here
 
     def act_construction(self):
         curves = (Line, Arc, Circle, Ellipse)
@@ -2978,7 +2979,10 @@ class SketchCanvas(QWidget):
                            mid.y() - (d.x() / ln) * 16)
         if isinstance(c, Radius):
             return self._radius_pos(c.curve)
-        return None
+        if isinstance(c, (Angle, AngleBetween)):
+            arc = self._angle_arc_pts(c, 0)       # ring 0 = the natural
+            return arc[1] if arc is not None else None   #  post of ONE
+        return None                               #   angle in the scene
 
     def _radius_pos(self, e, dist: float = 16.0) -> QPointF:
         """Editable dimension anchor: top of a full circle, or the bulge

@@ -22,8 +22,20 @@ post PARKS the label at home EXACTLY, so the bytes still read "never
 moved". And Esc (or walking to another tool) UNBIRTHS the un-placed
 dimension: the birth row is spent back, coordinates byte-identical -
 the act leaves zero trace at both of its ends.
+
+Rung 3 buries the LAST dim modal: act_angle answered FD5-L35 with a
+QInputDialog too, and now the angle is BORN speaking its own opening
+(one line: from +X; two lines: between) and rides the very same place
+rails - follows the cursor, clicks to rest into the degrees field, Esc
+unbirths. snapped() turned out to be a branch picker, not a grid round,
+so birth-at-measurement is exact: the newborn never drags the geometry
+it was measured from. The angle's post is the painter's OWN arc label
+(_dim_anchor_screen learned it), and the I key's two witnesses in m24
+migrated to the seam - the combo seat m175 lost the first time (keys
+are mouths) is now permanent.
 """
 import json
+import math
 import pytest
 
 pytest.importorskip("PySide6")
@@ -33,7 +45,8 @@ from PySide6.QtGui import QMouseEvent                               # noqa
 from PySide6.QtTest import QTest                                    # noqa
 from PySide6.QtWidgets import QApplication                          # noqa
 
-from tracer.core.sketch.constraints import Distance, Radius         # noqa
+from tracer.core.sketch.constraints import (Angle, AngleBetween,    # noqa
+                                            Distance, Radius)
 from tracer.core.sketch.model import SketchModel, model_to_dict     # noqa
 from tracer.ui.cmddialog import Shell                               # noqa
 from tracer.ui.sketcheditor import SketchCanvas                     # noqa
@@ -229,3 +242,105 @@ def test_tool_honesty_an_away_walk_unbirths_a_redundant_stay_does_not(
     assert [x for x in m.sketch.constraints
             if isinstance(x, Distance)] == []
     assert len(ed._hist) == h0
+
+
+# ---- RUNG 3: THE LAST DIM MODAL DIES (act_angle goes inline) ---------------
+
+def _angle_scene(ed, deg=30.0):
+    m = ed.model
+    a = m.point(0, 0)
+    th = math.radians(deg)
+    b = m.point(10 * math.cos(th), 10 * math.sin(th))
+    ln = m.add_line(a, b)
+    ed._solve()
+    return m, ln
+
+
+def test_the_angle_is_born_speaking_degrees(ed, qapp, monkeypatch):
+    _no_modal(monkeypatch)                       # the dead door TESTIFIES
+    m, ln = _angle_scene(ed, 30.0)
+    ed._sel = [ln]
+    h0 = len(ed._hist)
+    ed.act_angle()                               # RAISES if a dialog lives
+    a = next(x for x in m.sketch.constraints if isinstance(x, Angle))
+    assert ed._dim_place is a                    # born INTO the place rails
+    assert math.degrees(a.value) % 180 == pytest.approx(30.0, abs=1e-6)
+    assert (ln.b.x, ln.b.y) == pytest.approx((10 * math.cos(math.radians(30)),
+                                              10 * math.sin(math.radians(30))),
+                                             abs=1e-9)   # birth never drags
+    place_dim(ed)
+    assert ed._dim_edit is not None and ed._dim_edit.constraint is a
+    assert float(ed._dim_edit.edit.text()) == pytest.approx(30.0, abs=1e-6)
+    #                                   ...the field's tongue is DEGREES
+    assert len(ed._hist) == h0 + 1               # birth costs ONE row
+    ed._close_dim_editor()
+
+
+def test_the_typed_angle_is_spent_by_the_solver(ed, qapp, monkeypatch):
+    _no_modal(monkeypatch)
+    m, ln = _angle_scene(ed, 30.0)
+    script_dim_edit(monkeypatch, "45")
+    ed._sel = [ln]
+    ed.act_angle()
+    place_dim(ed)
+    ang = next(x for x in m.sketch.constraints if isinstance(x, Angle))
+    assert math.degrees(ang.value) % 180 == pytest.approx(45.0, abs=1e-6)
+    got = math.degrees(math.atan2(ln.b.y - ln.a.y, ln.b.x - ln.a.x)) % 180
+    assert got == pytest.approx(45.0, abs=1e-4)  # the LINE turned to obey
+
+
+def test_escape_unbirths_an_angle_with_zero_trace(ed, qapp, monkeypatch):
+    _no_modal(monkeypatch)
+    m = ed.model
+    o = m.point(0, 0)
+    e1 = m.point(10, 0)
+    th = math.radians(70)
+    e2 = m.point(10 * math.cos(th), 10 * math.sin(th))
+    L1 = m.add_line(o, e1)
+    L2 = m.add_line(o, e2)
+    ed._solve()
+    base = json.dumps(model_to_dict(m), sort_keys=True)
+    ed._sel = [L1, L2]
+    h0 = len(ed._hist)
+    ed.act_angle()
+    ab = next(x for x in m.sketch.constraints
+              if isinstance(x, AngleBetween))
+    assert math.degrees(ab.value) % 180 == pytest.approx(70.0, abs=1e-6)
+    _wander(ed, QPointF(430.0, 150.0))           # the pair rides too
+    QTest.keyClick(ed, Qt.Key_Escape)
+    assert [x for x in m.sketch.constraints
+            if isinstance(x, AngleBetween)] == []
+    assert len(ed._hist) == h0
+    assert json.dumps(model_to_dict(m), sort_keys=True) == base
+
+
+def test_re_angling_never_stacks(ed, qapp, monkeypatch):
+    _no_modal(monkeypatch)
+    m, ln = _angle_scene(ed, 30.0)
+    ed._sel = [ln]
+    ed.act_angle()
+    place_dim(ed)
+    ed._close_dim_editor()
+    ed.act_angle()                               # the door re-enters
+    place_dim(ed)
+    ed._close_dim_editor()
+    angs = [x for x in m.sketch.constraints if isinstance(x, Angle)]
+    assert len(angs) == 1                        # remove_last honesty
+
+
+def test_the_angle_anchor_is_the_painters_own_post(ed, qapp, monkeypatch):
+    _no_modal(monkeypatch)
+    m, ln = _angle_scene(ed, 30.0)
+    ed._sel = [ln]
+    ed.act_angle()
+    a = ed._dim_place
+    pos = ed._dim_anchor_screen(a)
+    assert pos is not None
+    ed.grab()                                    # paint == hit == place
+    rect = next(r for r, cc in ed._dim_hits if cc is a)
+    assert abs(rect.center().x() - pos.x()) < 1.0
+    assert abs(rect.center().y() - pos.y()) < 1.0
+    _wander(ed, QPointF(pos.x() + 60.0, pos.y() + 40.0))
+    assert a.label_off[0] == pytest.approx(60.0 / ed._scale)
+    assert a.label_off[1] == pytest.approx(-40.0 / ed._scale)
+    ed._cancel_dim_place()                       # leave no ghost behind
