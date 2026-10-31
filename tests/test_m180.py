@@ -18,6 +18,11 @@ from PySide6.QtGui import QMouseEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
+import math                                                   # noqa
+
+import pytest                                                  # noqa
+
+from tracer.core.sketch.constraints import Distance            # noqa
 from tracer.core.sketch.model import SketchModel                # noqa
 from tracer.ui.sketcheditor import SketchCanvas                 # noqa
 
@@ -113,3 +118,62 @@ def test_a_plain_hover_never_whispers(ed, qapp):
     _move(ed, 6.0, 8.0)                        # hover with NO anchor click
     assert ed._line_start is None
     assert ed._line_live_text() is None        # rubber-band off -> no field
+
+
+# ---- RUNG 2: THE TYPED NUMBER SIZES THE LEG (Fusion's cell grammar) ----
+
+def _key(ed, k):
+    QTest.keyClick(ed, k)
+
+
+def test_typing_becomes_the_reading(ed, qapp):
+    ed.set_tool("line")
+    _click(ed, 0.0, 0.0)
+    _move(ed, 6.0, 8.0)
+    assert ed._line_live_text() == "10.00"
+    QTest.keyClicks(ed, "7.5")                       # the FIELD takes over
+    assert ed._line_live_text() == "7.5"              # the TYPED truth, not
+    assert len(ed.model.sketch.lines) == 0            #  the recomputed hover
+
+
+def test_click_places_at_the_typed_length_as_a_real_dimension(ed, qapp):
+    ed.set_tool("line")
+    _click(ed, 0.0, 0.0)
+    _move(ed, 10.0, 0.0)                             # pure +X ray
+    QTest.keyClicks(ed, "4")
+    _click(ed, 10.0, 0.0)                            # PLACE (Fusion: click)
+    assert len(ed.model.sketch.lines) == 1
+    ln = ed.model.sketch.lines[0]
+    assert ln.b.x == pytest.approx(4.0, abs=1e-6)    # typed length ALONG
+    assert ln.b.y == pytest.approx(0.0, abs=1e-6)    #   THE CURSOR RAY
+    _key(ed, Qt.Key_Return)                          # Enter FILES the dim
+    dim = [c for c in ed.model.sketch.constraints
+           if isinstance(c, Distance)
+           and {c.p, c.q} == {ln.a, ln.b}]           #  a REAL parametric
+    assert len(dim) == 1 and dim[0].value == pytest.approx(4.0)
+    assert ed._tool == "select"                      #  (M177's grammar)
+
+
+def test_enter_completes_the_tool_after_a_typed_number(ed, qapp):
+    ed.set_tool("line")
+    _click(ed, 0.0, 0.0)
+    _move(ed, 6.0, 8.0)
+    QTest.keyClicks(ed, "7.5")
+    _key(ed, Qt.Key_Return)                          # ENTER = PLACE + DONE
+    assert len(ed.model.sketch.lines) == 1           # the number PLACED
+    ln = ed.model.sketch.lines[0]                    #  its leg, along the
+    assert math.hypot(ln.b.x - ln.a.x, ln.b.y - ln.a.y) \
+        == pytest.approx(7.5, abs=1e-6)              #   cursor's RAY
+    assert ed._tool == "select"                      # the TOOL is done
+    assert ed._line_live_text() is None              # the voice goes quiet
+
+
+def test_esc_surrenders_the_number_not_the_drag(ed, qapp):
+    ed.set_tool("line")
+    _click(ed, 0.0, 0.0)
+    _move(ed, 6.0, 8.0)
+    QTest.keyClicks(ed, "7.5")
+    _key(ed, Qt.Key_Escape)                          # the FIELD lets go...
+    assert len(ed.model.sketch.lines) == 0           # ...no line was born
+    assert ed._line_live_text() == "10.00"           # cursor reading again
+    assert ed._line_start is not None                # the drag is ALIVE

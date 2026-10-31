@@ -174,6 +174,7 @@ class SketchCanvas(QWidget):
         self._pan_from: QPointF | None = None
         self._pan_travel = 0.0                 # M173 R1: a CLICK is a
         self._line_start: Point | None = None  #   drag that never moved
+        self._line_typed = ""                  # M180 R2: the pre-mint cell
         self._rect_corner: np.ndarray | None = None
         self._arc_pts: list[Point] = []       # 3-pt tool: start, end, bulge
         self._preview: tuple | None = None  # tool drag preview
@@ -203,6 +204,8 @@ class SketchCanvas(QWidget):
         self.model = model
         self._sel = []
         self._line_start = None
+        self._line_typed = ""                  # M180 R2: cells die with
+        #                                       the  model they were typed into
         self._rect_corner = None
         self._arc_pts = []
         self._slot: list = []                  # slot tool: c1, c2, width
@@ -257,6 +260,8 @@ class SketchCanvas(QWidget):
         self._drag = None                      # M167 R1: grabs don't
         self._pend_toggle = None               # M167 R3: Ctrl-presses die
         self._line_start = None                #   survive a history jump
+        self._line_typed = ""                  # M180 R2:  neither does the
+        #                                       half-typed  pre-mint cell
         self._rect_corner = None
         self._arc_pts = []
         self._slot: list = []                  # slot tool: c1, c2, width
@@ -274,6 +279,8 @@ class SketchCanvas(QWidget):
         self._tool = tool
         if tool != "line":
             self._line_start = None
+            self._line_typed = ""              # M180 R2: a swapped tool
+        #                    never inherits a half-typed cell
         self._rect_corner = None
         self._arc_pts = []
         self._slot: list = []                  # slot tool: c1, c2, width
@@ -723,6 +730,7 @@ class SketchCanvas(QWidget):
             else:
                 if p is self._line_start:
                     self._line_start = None          # close chain
+                    self._line_typed = ""            # M180 R2: cell too
                 else:
                     self._push_hist()
                     if ev.modifiers() & Qt.ShiftModifier:      # M173
@@ -738,6 +746,22 @@ class SketchCanvas(QWidget):
                             # a shared snapped Point at an already-ortho
                             # spot is reused untouched - and stays the
                             # EXISTING point the L25 land rule reads.
+                    v = -1.0                           # M180 R2: the cell,
+                    if self._line_typed:               #  parsed ONCE - a
+                        try:                           #   typed length
+                            v = float(self._line_typed)   #  rules the point
+                        except ValueError:
+                            v = -1.0
+                        if v > 0:
+                            d = math.hypot(p.x - self._line_start.x,
+                                           p.y - self._line_start.y)
+                            if d > 1e-9:
+                                p = self.model.point(
+                                    self._line_start.x
+                                    + (p.x - self._line_start.x) / d * v,
+                                    self._line_start.y
+                                    + (p.y - self._line_start.y) / d * v)
+                    self._line_typed = ""      #  the cell empties either way
                     ln = self.model.add_line(self._line_start, p)
                     self._auto_constraints(ln, q)
                     self._solve()
@@ -745,6 +769,10 @@ class SketchCanvas(QWidget):
                     self._pending = ("line", ln)      # M90: type a length
                     self._pending_stage = 0
                     self._num_buf = ""
+                    if v > 0:                         # M180 R2: the typed
+                        self._num_buf = f"{v:g}"      #  length survives as
+                    #                                  the CHIP's number - the
+                    #  click PLACED it; Enter now files it (M177's grammar)
                     if not self._placed_free:         # L25 (M177 R3):
                         self._line_start = None       #  the chain ENDS
                         #  on EXISTING geometry - the TOOL lives and
@@ -2090,6 +2118,36 @@ class SketchCanvas(QWidget):
                 return                             #   non-printable: a
                                                    #   claim would be
                                                    #   inert dead code)
+        if (self._tool == "line" and self._pending is None
+                and self._line_start is not None):
+            # M180 R2 (FD5-L23): the rubber-band carries a live TYPE-IN
+            # CELL - the same numeric grammar M90 runs AFTER the commit,
+            # now voiced BEFORE it. Documented Fusion law (staff, forum
+            # 11459066): typing feeds the length cell, a CLICK places at
+            # the typed length, ENTER places AND ends, Esc surrenders the
+            # NUMBER but keeps the drag alive.
+            txt = ev.text()
+            if txt.isdigit() or txt == ".":
+                if len(self._line_typed) < 12:
+                    self._line_typed += txt
+                self.update()
+                return
+            if k == Qt.Key_Backspace:
+                self._line_typed = self._line_typed[:-1]
+                self.update()
+                return
+            if k in (Qt.Key_Return, Qt.Key_Enter):
+                if self._line_typed:
+                    self._place_typed_line()
+                self.set_tool("select")        #  ENTER = (place and) DONE
+                return
+            if k == Qt.Key_Tab:                # the cells' toggle arrives
+                return                         #  with R3; swallow the walk
+            if k == Qt.Key_Escape:
+                if self._line_typed:           # the FIELD lets go - the
+                    self._line_typed = ""      #  DRAG survives (one rung
+                    self.update()              #   shallower than L26's
+                    return                       #   command-out Esc)
         if self._pending is not None:               # M90: type-in first
             txt = ev.text()
             if txt.isdigit() or txt == ".":
@@ -2155,6 +2213,7 @@ class SketchCanvas(QWidget):
                 self._cancel_dim_place()                  #  cascade's
                 return                                    #  FIRST rung:
             self._line_start = None                       #  an un-placed
+            self._line_typed = ""              # M180 R2: the cell goes out
             self.set_tool("select")                       #  dimension
             return                                        #  UNBIRTHS it
         if self._tool == "poly" and Qt.Key_3 <= k <= Qt.Key_9:
@@ -2219,6 +2278,7 @@ class SketchCanvas(QWidget):
             # once guarded the line alone now keeps every chain verb -
             # rect/circle/arc/ellipse/slot/poly return to select too.
             self._line_start = None
+            self._line_typed = ""              # M180 R2: quiet the cell
             self.set_tool("select")
         elif k == Qt.Key_Return:
             self.finish()                         # Finish Sketch: Enter
@@ -2721,6 +2781,8 @@ class SketchCanvas(QWidget):
         Every committed stroke already stands on its own click, so ending
         means only: wash the pending arming + the number chip."""
         self._line_start = None
+        self._line_typed = ""                  # M180 R2: finish washes
+        #                                       the  cell with the arming
         self._rect_corner = None
         self._poly = []
         self._arc_pts = []
@@ -2961,10 +3023,46 @@ class SketchCanvas(QWidget):
         if self._tool != "line" or self._line_start is None \
                 or self._cursor is None:
             return None
-        import math
+        if self._line_typed:                   # M180 R2 (FD5-L23): the
+            return self._line_typed            #  TYPED cell outranks the
+        import math                            #   recomputed hover reading
         L = math.hypot(self._cursor[0] - self._line_start.x,
                        self._cursor[1] - self._line_start.y)
         return f"{L:.2f}" if L > 1e-9 else None
+
+    def _place_typed_line(self):
+        """M180 R2 (FD5-L23): the rubber-band PLACES at the typed length
+        ALONG THE CURSOR RAY, and the number survives as a REAL parametric
+        dimension (staff law: typing during Line 'adds a parametric
+        dimension'). ONE mouth serves click-place and Enter-place; the
+        commit rides M90's _commit_typed - a typed length is minted by the
+        very same solver act a post-mint type-in performs."""
+        try:
+            L = float(self._line_typed)
+        except ValueError:
+            self._line_typed = ""
+            return
+        if L <= 0 or self._cursor is None:
+            self._line_typed = ""
+            return
+        ax, ay = self._line_start.x, self._line_start.y
+        dx = self._cursor[0] - ax
+        dy = self._cursor[1] - ay
+        n = math.hypot(dx, dy)
+        if n <= 1e-9:
+            self._line_typed = ""
+            return
+        self._push_hist()
+        p = self.model.point(ax + dx / n * L, ay + dy / n * L)
+        ln = self.model.add_line(self._line_start, p)
+        self._auto_constraints(ln, self.w2s(*self._cursor))
+        self._solve()
+        self._line_typed = ""
+        self._line_start = None                # placed: the drag is OVER
+        self._pending = ("line", ln)
+        self._pending_stage = 0
+        self._num_buf = f"{L:g}"
+        self._commit_typed()                   # M90's own mouth: the dim
 
     def _typein_pos(self):
         """Where Fusion's little white box lives for the armed entity."""
