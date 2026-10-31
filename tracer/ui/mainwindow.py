@@ -5799,7 +5799,7 @@ class MainWindow(QMainWindow):
         # slid every x by 0.125 world. A handle must sit in its row at
         # its row's PARITY: even width, height no taller than siblings.
         self._pick_spin.setFixedHeight(self._snap_btn.sizeHint().height())
-        self._pick_spin.setFixedWidth(92)
+        self._pick_spin.setFixedWidth(106)      # "Target 20 px" + arrows
         self._pick_spin.setToolTip(
             "Selection target radius in pixels (the PICKBOX). Clicks\n"
             "and the hover preview share this ONE number; 0 turns the\n"
