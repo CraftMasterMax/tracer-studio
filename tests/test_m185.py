@@ -189,7 +189,13 @@ def mw(qapp):
     QSettings().remove("sketch/pickbox")            # POLLUTION LAW
     from tracer.ui.mainwindow import MainWindow
     from tracer.ui.renderer import SceneRenderer
-    w = MainWindow(renderer=SceneRenderer())
+    try:
+        r = SceneRenderer()
+    except Exception as e:
+        # House law (test_sketch_ui's win fixture): headless GL is a
+        # Linux-CI affordance; Windows runners skip the boot family.
+        pytest.skip(f"no headless GL: {e}")
+    w = MainWindow(renderer=r)
     w.resize(1000, 700)
     w.show()
     for _ in range(6):
