@@ -157,3 +157,144 @@ def test_both_canvases_ask_the_same_mouth(qapp, monkeypatch):
         f"sketch AND viewport must ask the SAME mouth (saw {calls})"
     assert any(c is False for c in calls), "the window answer was asked"
     assert any(c is True for c in calls), "the crossing answer was asked"
+
+
+# ---- R2: THE BAND SHOWS ITS TAKE (LAW-49's "otherwise highlighted") --------
+# While the band is ALIVE, the entities it currently TAKES must shine -
+# Fusion highlights what the window grabs as you sweep. The commit law
+# does not move a byte: _band_hits is the SAME mouth the release rides,
+# and the preview wears the commit's OWN face (the SEL glow), early.
+
+from PySide6.QtCore import QEvent, QPoint                            # noqa
+from PySide6.QtGui import QMouseEvent                                # noqa
+from PySide6.QtTest import QTest                                     # noqa
+from PySide6.QtWidgets import QApplication                           # noqa
+
+
+@pytest.fixture
+def ed(qapp):
+    from tracer.core.sketch.model import SketchModel
+    from tracer.ui.sketcheditor import SketchCanvas
+    c = SketchCanvas()
+    c.set_model(SketchModel())
+    c.resize(600, 400)
+    c._snap_grid = False
+    yield c
+    c.close()
+    c.deleteLater()
+
+
+def _scr(x, y):
+    return QPoint(int(round(300 + 4.0 * x)), int(round(200 - 4.0 * y)))
+
+
+def _two_lines(ed):
+    m = ed.model
+    l1 = m.add_line(m.point(-20, 2), m.point(20, 2))
+    l2 = m.add_line(m.point(-20, -2), m.point(20, -2))
+    ed._solve()
+    return l1, l2
+
+
+def _drag_live(ed, a_xy, b_xy, mid, qapp):
+    """press-EMPTY, move, WITNESS with the band alive, release.
+    PICK-RADIUS LAW (learned in red): presses here keep >=20px of air
+    from ALL geometry - a press closer GRABS the endpoint and drags
+    (the right product behavior, the wrong test)."""
+    a, b = _scr(*a_xy), _scr(*b_xy)
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, a)
+    p = QPointF(float(b.x()), float(b.y()))
+    QApplication.sendEvent(
+        ed, QMouseEvent(QEvent.Type.MouseMove, p, p, p,
+                        Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+    for _ in range(3):
+        qapp.processEvents()
+    witness = mid(ed)
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier, b)
+    for _ in range(3):
+        qapp.processEvents()
+    return witness
+
+
+def test_band_hits_is_a_pure_window_mouth(ed):
+    l1, l2 = _two_lines(ed)
+    got = ed._band_hits(_scr(-30, 4), _scr(30, 1))   # L->R window:
+    assert l1 in got and l2 not in got, \
+        "the mouth answers ALONE: fully-inside only for a window"
+
+
+def test_band_hits_is_a_pure_crossing_mouth(ed):
+    l1, l2 = _two_lines(ed)
+    tight = ed._band_hits(_scr(-30, 3), _scr(30, 3))  # degenerate: misses
+    assert l2 not in tight
+    win_narrow = ed._band_hits(_scr(-10, -4), _scr(10, 4))
+    assert l1 not in win_narrow and l2 not in win_narrow, \
+        "L->R narrow WINDOW: both lines poke out - takes NOTHING"
+    got = ed._band_hits(_scr(10, 4), _scr(-10, -4))   # SAME box flipped
+    assert l1 in got and l2 in got, \
+        "R->L CROSSING over the same box: touchers are TAKEN"
+
+
+def test_drag_previews_takes_without_committing(ed, qapp):
+    l1, l2 = _two_lines(ed)
+
+    def witness(c):
+        return dict(prev=list(c._band_prev), sel=list(c._sel))
+    w = _drag_live(ed, (-30, 4), (30, 1), witness, qapp)
+    assert l1 in w["prev"], "the LIVE band shows its take as it drags"
+    assert l2 not in w["prev"]
+    assert w["sel"] == [], "preview is PREVIEW: the set commits at release"
+
+
+def test_preview_bows_to_the_direction_law(ed, qapp):
+    l1, l2 = _two_lines(ed)
+    w_win = _drag_live(ed, (-30, 4), (30, 1),      # WINDOW: l2 below out
+                       lambda c: list(c._band_prev), qapp)
+    assert l1 in w_win and l2 not in w_win
+    ed._sel = []                                    # settle, then CROSS
+    w_cross = _drag_live(ed, (10, 10), (-10, -10),  # R->L through middle:
+                         lambda c: list(c._band_prev), qapp)   #  both poke
+    assert l1 in w_cross and l2 in w_cross, \
+        "flipping the drag flips the PREVIEW's law too (same mouth)"
+
+
+def test_release_clears_the_preview(ed, qapp):
+    l1, _ = _two_lines(ed)
+    _drag_live(ed, (-30, 4), (30, 1), lambda c: None, qapp)
+    assert ed._band_prev == [], \
+        "the ghost dies at release - only the COMMITTED set glows"
+    assert l1 in ed._sel                            # commit law intact
+
+
+def test_click_never_paints_a_take(ed, qapp):
+    _two_lines(ed)
+    a = _scr(-6, 4)
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, a)
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier, a)
+    for _ in range(3):
+        qapp.processEvents()
+    assert ed._band_prev == [], "a click is not a band - no live take"
+
+
+def test_the_take_is_frame_cyan(ed, qapp):
+    import numpy
+    l1, l2 = _two_lines(ed)
+
+    def witness(c):
+        qimg = c.grab().toImage().convertToFormat(
+            QImage.Format.Format_RGBA8888)
+        return numpy.frombuffer(bytes(qimg.bits()), numpy.uint8).reshape(
+            qimg.height(), qimg.width(), 4)[:, :, :3].copy()
+    F = _drag_live(ed, (-30, 4), (30, 1), witness, qapp)
+
+    def cyan_rows(img, y0, y1):
+        best = 0
+        for y in range(y0, y1):
+            px = img[y, 100:500].astype(int)
+            best = max(best, int(((px[:, 2] - px[:, 0]) > 120).sum()))
+        return best
+    c1 = cyan_rows(F, 189, 196)      # l1's screen row (world y 2)
+    c2 = cyan_rows(F, 205, 212)      # l2's screen row (world y -2)
+    print("cyan taken", c1, "cyan untouched", c2)
+    assert c1 >= 30, "the TAKEN line glows SEL cyan WHILE THE BAND LIVES"
+    assert c2 <= 8, "the UNTOUCHED line keeps its base ink"

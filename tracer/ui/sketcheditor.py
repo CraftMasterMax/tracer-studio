@@ -221,6 +221,7 @@ class SketchCanvas(QWidget):
         self._poly_n = 6                       # sides, 3..9 (sticky setting)
         self._preview = None
         self._band = None
+        self._band_prev: list = []          # M184 R2: the LIVE take
         self._last_result = None
         self._hist = []
         self._fut = []
@@ -307,6 +308,7 @@ class SketchCanvas(QWidget):
         self._corner_typed = False             #  the typed mouth
         self._preview = None
         self._band = None
+        self._band_prev = []                     # M184 R2: no orphan glow
         self._snap_hint = None
         self._snap_obj = None                    # M120: stale magnet glyph
         self._hover_c = None                     # M164 R2: stale ring dies
@@ -403,15 +405,14 @@ class SketchCanvas(QWidget):
                 self._placed_free = False        #   binds EXISTING
         return pt
 
-    def _band_select(self, a: QPointF, b: QPointF, additive: bool):
-        """M173 R2: the marquee learned its LEFT from its RIGHT - the
-        real Fusion split. A left->right drag is a WINDOW: only
-        geometry FULLY INSIDE is caught. A right->left drag is a
-        CROSSING: everything it TOUCHES lands in the set (a vertical
-        drag reads as a window: the >= law). The direction needs NO
-        new state - it is written in the band's OWN stored endpoints.
-        Ellipses - invisible to the marquee until today - ride both
-        tests on their own samples, beside the arcs."""
+    def _band_hits(self, a: QPointF, b: QPointF) -> list:
+        """M184 R2: the marquee's ANSWER as a pure mouth - endpoints in,
+        takes out. The live PREVIEW (LAW-49's \"otherwise highlighted\":
+        \"displayed as dashed or otherwise highlighted\") asks it on
+        EVERY move, and the release commits the very same answer - the
+        preview can never disagree with what actually lands.
+        M173 R2 law intact: left->right WINDOW takes only fully-inside
+        geometry; right->left CROSSING takes everything it TOUCHES."""
         window = b.x() >= a.x()
         w0, w1 = self._world(a), self._world(b)
         lo = np.array([min(w0[0], w1[0]), min(w0[1], w1[1])])
@@ -454,6 +455,12 @@ class SketchCanvas(QWidget):
                   or any(_seg_hits_box(smp[i], smp[i + 1], lo, hi)
                          for i in range(len(smp) - 1))):
                 found.append(e)
+        return found
+
+    def _band_select(self, a: QPointF, b: QPointF, additive: bool):
+        """The COMMIT half: the answer comes from the ONE mouth above
+        (so the live glow and the committed set can never drift)."""
+        found = self._band_hits(a, b)
         if additive:
             for e in found:
                 if e not in self._sel:
@@ -686,6 +693,7 @@ class SketchCanvas(QWidget):
                 if not (ev.modifiers() & Qt.ControlModifier):
                     self._sel = []          # plain click clears; Ctrl keeps
                 self._band = [QPointF(q), QPointF(q)]   # drag = marquee
+                self._band_prev = []                    # M184 R2: fresh ghost
             elif ev.modifiers() & Qt.ControlModifier:
                 if hit[1] in self._sel:
                     # M167 R3: Ctrl on a SELECTED member is a CLICK waiting
@@ -1104,6 +1112,11 @@ class SketchCanvas(QWidget):
                 self.update()
             elif self._band is not None:
                 self._band[1] = q
+                # M184 R2 [LAW-49 "otherwise highlighted"]: while the
+                # band lives, what it currently TAKES asks the SAME
+                # pure mouth the release commits through - the glow
+                # and the set can never disagree.
+                self._band_prev = self._band_hits(self._band[0], q)
                 self.update()
             else:                              # M164 R2: idle select hover
                 hit = self._hover_hit(q)
@@ -1345,6 +1358,9 @@ class SketchCanvas(QWidget):
             elif self._band is not None:
                 a, b = self._band
                 self._band = None
+                self._band_prev = []             # M184 R2: the ghost dies
+                                                 #  - only the committed
+                                                 #  set keeps glowing
                 if (abs(a.x() - b.x()) > 3
                         or abs(a.y() - b.y()) > 3):
                     self._band_select(           # real drag: marquee wins
@@ -3471,9 +3487,13 @@ class SketchCanvas(QWidget):
                      else solid_pen)
             cen = self.w2s(e.c.x, e.c.y)
             p.drawEllipse(cen, e.rx * self._scale, e.ry * self._scale)
-        # selected
+        # selected - and M184 R2: what the LIVE band currently TAKES
+        # rides the SAME glow (LAW-49: "displayed as dashed or
+        # OTHERWISE HIGHLIGHTED"). The preview is not a new color law -
+        # it is the commit's face, worn early; the ghost list draws
+        # FIRST so a truly selected member keeps the final word.
         p.setPen(QPen(SEL, 2.4))
-        for e in self._sel:
+        for e in list(self._band_prev) + list(self._sel):
             if isinstance(e, Line):
                 p.drawLine(self.w2s(e.a.x, e.a.y), self.w2s(e.b.x, e.b.y))
             elif isinstance(e, Circle):
@@ -3492,7 +3512,7 @@ class SketchCanvas(QWidget):
         # points
         for pt, _ in self._all_points():
             pos = self.w2s(pt.x, pt.y)
-            selected = pt in self._sel
+            selected = pt in self._sel or pt in self._band_prev
             p.setPen(QPen(SEL if selected else DIM, 1.2))
             p.setBrush(SEL if selected else BG)
             s = 3.8 if selected else 2.6
