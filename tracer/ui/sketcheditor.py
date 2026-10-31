@@ -157,7 +157,8 @@ class SketchCanvas(QWidget):
         self._trim_stroke = False              #   held-drag flag + the one
         self._trim_pushed = False              #   snapshot the gesture pays
         self._pan_from: QPointF | None = None
-        self._line_start: Point | None = None
+        self._pan_travel = 0.0                 # M173 R1: a CLICK is a
+        self._line_start: Point | None = None  #   drag that never moved
         self._rect_corner: np.ndarray | None = None
         self._arc_pts: list[Point] = []       # 3-pt tool: start, end, bulge
         self._preview: tuple | None = None  # tool drag preview
@@ -290,6 +291,11 @@ class SketchCanvas(QWidget):
                 pts += [(l.a.x, l.a.y), (l.b.x, l.b.y)]
             for c in self.model.sketch.circles:
                 pts += [(c.c.x - c.r, c.c.y - c.r), (c.c.x + c.r, c.c.y + c.r)]
+            for e in self.model.sketch.arcs + self.model.sketch.ellipses:
+                pts += [(float(s[0]), float(s[1]))          # M173 R1:
+                        for s in e.sample(24)]              #  the curve's
+            for p in self.model.sketch.points:              #  own pixels
+                pts.append((p.x, p.y))                      #  + lone pts
         if not pts:
             self._scale, self._center = 4.0, np.array([0.0, 0.0])
             return
@@ -537,8 +543,9 @@ class SketchCanvas(QWidget):
             if ev.button() == Qt.RightButton and self._tool == "select":
                 self._context_menu(ev)
                 return
-            self._pan_from = q
-            return
+            self._pan_from = q                 # M173 R1: the pan half
+            self._pan_travel = 0.0             #  of the middle button
+            return                             #  starts its travel count
         if ev.button() != Qt.LeftButton:
             return
         if self._tool == "select":
@@ -786,6 +793,7 @@ class SketchCanvas(QWidget):
         self.update()                    # keep the readout live
         if self._pan_from is not None:
             d = (q - self._pan_from)
+            self._pan_travel += abs(d.x()) + abs(d.y())   # M173 R1:
             self._center -= np.array([d.x() / self._scale, -d.y() / self._scale])
             self._pan_from = q
             self.update()
@@ -1062,8 +1070,13 @@ class SketchCanvas(QWidget):
 
     def mouseReleaseEvent(self, ev: QMouseEvent):
         if ev.button() in (Qt.MiddleButton, Qt.RightButton):
-            self._pan_from = None
-            return
+            if (ev.button() == Qt.MiddleButton        # M173 R1: the
+                    and self._pan_from is not None    #  middle CLICK is
+                    and self._pan_travel <= 3.0):     #  Fusion's ZOOM
+                self.fit_view()                       #  FIT; a DRAG was
+                self.update()                         #  a PAN, and the
+            self._pan_from = None                     #  right button
+            return                                    #  never fits
         grab = self._drag_pt                    # M170 R2: remember WHOSE
         moved = grab is not None and self._drag_pushed   #  grab it was,
         self._drag_pt = None                    # M167 R1: a release ends
