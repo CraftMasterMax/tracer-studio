@@ -2311,6 +2311,14 @@ class SketchCanvas(QWidget):
         elif k == Qt.Key_X:
             self.act_construction()               # Fusion: X toggles
         elif k == Qt.Key_Delete:
+            if not sel and self._cursor is not None:     # M181 R1 (L32):
+                qp = self.w2s(*self._cursor)             #  EMPTY hands +
+                chip = next((c for r, c in reversed(     #   a DIM CHIP
+                    getattr(self, "_dim_hits", []))      #   under the
+                    if r.contains(qp)), None)            #  CURSOR: Delete
+                if chip is not None:                     #  eats THE DIM,
+                    self.act_remove_constraint(chip)     #   not the
+                    return                               #   geometry.
             self.act_delete()
         elif k == Qt.Key_H:
             self.act_H()
