@@ -14,7 +14,7 @@ import numpy as np
 from PySide6.QtCore import QEvent, QPointF, QSettings, QRectF, Qt, Signal
 from PySide6.QtGui import (QColor, QFont, QKeyEvent, QMouseEvent, QPainter,
                            QPen, QWheelEvent)
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QApplication, QWidget
 
 from ..core.sketch.constraints import (Angle, AngleBetween, Collinear,
                                        Concentric, Distance, Equal, Fixed,
@@ -147,6 +147,9 @@ class SketchCanvas(QWidget):
         self._dim_place = None                    # M175 R2: a NEWBORN
         #   dimension follows the CURSOR (FD5-L35) until a press places
         #   it and the value field opens; Esc unbirths it.
+        self._dbl_exit: tuple | None = None       # M176 R1 (L26): the
+        #   timestamp+pos of a chain-exit DblClick; the press-2 a real
+        #   platform sends afterwards is swallowed within the interval.
         self._drag: tuple | None = None        # M167 R1: body drag
         #   (pts, starts, anchor_world) — the delta law's record
         self._pend_toggle = None               # M167 R3: Ctrl-press on a
@@ -587,7 +590,16 @@ class SketchCanvas(QWidget):
             return                             #  starts its travel count
         if ev.button() != Qt.LeftButton:
             return
-        if self._dim_place is not None:                   # M175 R2: PLACE
+        if self._dbl_exit is not None:                      # M176 R1
+            qt, qp = self._dbl_exit                         #  (L26): the
+            self._dbl_exit = None                           #  press-2 a
+            if (ev.timestamp() - qt                         #   real platform
+                    <= QApplication.instance()              #   sends AFTER
+                    .doubleClickInterval()                  #   its DblClick
+                    and (q - qp).manhattanLength() <= 6):   #  is a GHOST -
+                return                                      #  the act is
+            #                                               #  already over
+        if self._dim_place is not None:                     # M175 R2: PLACE
             c = self._dim_place                           #  claims EVERY
             self._dim_place = None                        #   left press,
             lo = getattr(c, "label_off", None)            #   UNDER ANY
@@ -2540,6 +2552,17 @@ class SketchCanvas(QWidget):
             if rect.contains(q):
                 self._open_dim_editor(c)           # M165 R2: every chip
                 return                             #  kind, ONE door
+        if self._tool in ("line", "rect", "circle", "arc",
+                          "ellipse", "slot", "poly"):
+            # FD5-L26 (M176 R1): a DOUBLE-CLICK ENDS THE CHAIN AND EXITS.
+            # The count-1 press already drew its stroke - that is the last
+            # segment the maker wanted; the act ENDS HERE, and the press-2
+            # a real platform still sends arrives DEAD (guarded above).
+            # set_tool washes every chain's arming; drawn geometry
+            # SURVIVES.
+            self._dbl_exit = (ev.timestamp(), QPointF(q))
+            self.set_tool("select")
+            return
         super().mouseDoubleClickEvent(ev)
 
     # ---- M165 R1: the inline chip editor (design m165_rung1_chipfield) ----
