@@ -11,7 +11,16 @@ still pays the ledger honestly: exactly ONE undo row per gesture, and
 - because the undo ledger is model_to_dict itself - the position rides
 the "lo" key, omitted at zero so an undragged file stays byte-identical
 and an undone label comes back HOME, not merely near it.
+
+Rung 2 audits that ledger as a FILE: the position survives the full
+json transport, a parked-at-zero label keeps the bytes EXACTLY as
+untouched as never having moved, a PRE-M174 file (no key) loads at the
+default post and paints there, REDO re-files the label onto its new
+home (the future stack is the same JSON), and the positional fx
+bindings of M89 look the other way - a label that moved changes which
+pixel you click, never which constraint a driving expression steers.
 """
+import json
 import pytest
 
 pytest.importorskip("PySide6")
@@ -22,7 +31,8 @@ from PySide6.QtTest import QTest                                    # noqa
 from PySide6.QtWidgets import QApplication                          # noqa
 
 from tracer.core.sketch.constraints import Distance                 # noqa
-from tracer.core.sketch.model import SketchModel, model_to_dict      # noqa
+from tracer.core.sketch.model import (SketchModel, model_from_dict,  # noqa
+                                      model_to_dict)
 from tracer.ui.sketcheditor import SketchCanvas                     # noqa
 
 
@@ -150,3 +160,72 @@ def test_the_double_click_door_survives_the_move(ed, qapp):
     assert abs(ctr.y() - round(newc.y())) <= 1       #    rides the move
     assert len(ed._hist) == h1                       # a door is not an edit
     ed._close_dim_editor()
+
+
+# ---- RUNG 2: THE POSITION SURVIVES THE FILE --------------------------------
+
+def test_the_label_home_survives_the_file_round_trip(ed, qapp):
+    m, a, b, c, rect0 = _dim_scene(ed, qapp)
+    c.label_off = (6.0, -14.0)
+    payload = json.loads(json.dumps(model_to_dict(m)))   # the FILE bytes
+    assert payload["constraints"][0]["lo"] == [6.0, -14.0]
+    m2 = model_from_dict(payload)
+    r = next(x for x in m2.sketch.constraints
+             if isinstance(x, Distance))
+    assert getattr(r, "label_off", None) == (6.0, -14.0)  # EXACT floats
+
+
+def test_a_label_parked_at_zero_leaves_the_bytes_untouched(ed, qapp):
+    m, a, b, c, rect0 = _dim_scene(ed, qapp)
+    base = json.dumps(model_to_dict(m), sort_keys=True)
+    c.label_off = (0.0, 0.0)         # dragged AND parked back home
+    assert json.dumps(model_to_dict(m), sort_keys=True) == base
+    assert "lo" not in model_to_dict(m)["constraints"][0]
+
+
+def test_pre_m174_files_load_at_the_default_post(ed, qapp):
+    m, a, b, c, rect0 = _dim_scene(ed, qapp)
+    legacy = model_to_dict(m)
+    legacy["constraints"][0].pop("lo", None)             # old bytes
+    m2 = model_from_dict(legacy)
+    assert getattr(next(x for x in m2.sketch.constraints
+                        if isinstance(x, Distance)),
+                   "label_off", None) is None
+    ed.set_model(m2)
+    hits = _paint(ed, qapp)                              # set_model FITS
+    rp = next(x for x in m2.sketch.constraints           #  the view - so
+              if isinstance(x, Distance))                #  the law: the
+    s = ed.w2s((rp.p.x + rp.q.x) / 2, (rp.p.y + rp.q.y) / 2)   #  label
+    assert hits[0][0].center().x() == pytest.approx(s.x(), abs=0.5)     #
+    assert hits[0][0].center().y() == pytest.approx(s.y() - 16.0,       #
+                                                    abs=0.5)            # post
+
+
+def test_redo_refiles_the_label_onto_its_new_home(ed, qapp):
+    m, a, b, c, rect0 = _dim_scene(ed, qapp)
+    cx = rect0.center()
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, _pt(cx))
+    p2 = QPointF(cx.x() + 24.0, cx.y() + 56.0)
+    _lmove_px(ed, p2)
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier, _pt(p2))
+    ed.undo_op()
+    assert ed.redo_op()
+    r = next(x for x in m.sketch.constraints            # undo-SWAP law:
+             if isinstance(x, Distance))                #  RE-READ
+    assert r.label_off == pytest.approx((6.0, -14.0))
+    hits = _paint(ed, qapp)
+    assert hits[0][0].center().x() == pytest.approx(cx.x() + 24.0, abs=0.5)
+    assert hits[0][0].center().y() == pytest.approx(cx.y() + 56.0, abs=0.5)
+
+
+def test_filing_a_label_leaves_the_fx_bindings_alone(ed, qapp):
+    m, a, b, c, rect0 = _dim_scene(ed, qapp)
+    i = m.sketch.constraints.index(c)
+    m.dim_exprs[i] = {"e": "width", "t": "D"}           # M89: fx steers it
+    c.label_off = (6.0, -14.0)                          # ship the label
+    m2 = model_from_dict(json.loads(json.dumps(model_to_dict(m))))
+    k = next(iter(m2.dim_exprs))
+    assert m2.dim_exprs[k] == {"e": "width", "t": "D"}
+    assert int(k) == m2.sketch.constraints.index(       # the binding
+        next(x for x in m2.sketch.constraints           #  still points
+             if isinstance(x, Distance)))               #   at the dim
