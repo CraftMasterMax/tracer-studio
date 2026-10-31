@@ -359,34 +359,56 @@ class SketchCanvas(QWidget):
         return pt
 
     def _band_select(self, a: QPointF, b: QPointF, additive: bool):
-        """Everything the marquee TOUCHES (window + crossing at once,
-        the way Fusion's sketch box behaves)."""
+        """M173 R2: the marquee learned its LEFT from its RIGHT - the
+        real Fusion split. A left->right drag is a WINDOW: only
+        geometry FULLY INSIDE is caught. A right->left drag is a
+        CROSSING: everything it TOUCHES lands in the set (a vertical
+        drag reads as a window: the >= law). The direction needs NO
+        new state - it is written in the band's OWN stored endpoints.
+        Ellipses - invisible to the marquee until today - ride both
+        tests on their own samples, beside the arcs."""
+        window = b.x() >= a.x()
         w0, w1 = self._world(a), self._world(b)
         lo = np.array([min(w0[0], w1[0]), min(w0[1], w1[1])])
         hi = np.array([max(w0[0], w1[0]), max(w0[1], w1[1])])
+
+        def ins(xy):                             # tuple twin of _in_box
+            return lo[0] <= xy[0] <= hi[0] and lo[1] <= xy[1] <= hi[1]
+
         sk = self.model.sketch
         found = []
         for p in sk.points:
-            if _in_box(p, lo, hi):
-                found.append(p)
+            if _in_box(p, lo, hi):               # a point is its OWN
+                found.append(p)                  #  whole bbox
         for ln in sk.lines:
-            if _seg_hits_box((ln.a.x, ln.a.y), (ln.b.x, ln.b.y), lo, hi):
+            if window:
+                if _in_box(ln.a, lo, hi) and _in_box(ln.b, lo, hi):
+                    found.append(ln)
+            elif _seg_hits_box((ln.a.x, ln.a.y), (ln.b.x, ln.b.y), lo, hi):
                 found.append(ln)
         for c in sk.circles:
-            d = np.array([max(lo[0] - c.c.x, 0.0, c.c.x - hi[0]),
-                          max(lo[1] - c.c.y, 0.0, c.c.y - hi[1])])
-            dmin = float(np.hypot(*d))
-            dmax = max(math.hypot(c.c.x - cx, c.c.y - cy)
-                       for cx in (lo[0], hi[0]) for cy in (lo[1], hi[1]))
-            if dmin <= c.r or dmax <= c.r:
-                found.append(c)
-        for ar in sk.arcs:                    # two chords trace the curve
-            if (any(_in_box(pt, lo, hi) for pt in (ar.a, ar.m, ar.b))
-                    or _seg_hits_box((ar.a.x, ar.a.y), (ar.m.x, ar.m.y),
-                                     lo, hi)
-                    or _seg_hits_box((ar.m.x, ar.m.y), (ar.b.x, ar.b.y),
-                                     lo, hi)):
-                found.append(ar)
+            if window:
+                if (lo[0] <= c.c.x - c.r and c.c.x + c.r <= hi[0]
+                        and lo[1] <= c.c.y - c.r and c.c.y + c.r <= hi[1]):
+                    found.append(c)
+            else:
+                d = np.array([max(lo[0] - c.c.x, 0.0, c.c.x - hi[0]),
+                              max(lo[1] - c.c.y, 0.0, c.c.y - hi[1])])
+                dmin = float(np.hypot(*d))
+                dmax = max(math.hypot(c.c.x - cx, c.c.y - cy)
+                           for cx in (lo[0], hi[0]) for cy in (lo[1], hi[1]))
+                if dmin <= c.r or dmax <= c.r:
+                    found.append(c)
+        for e in sk.arcs + sk.ellipses:          # the curve family:
+            smp = [(float(s[0]), float(s[1]))    #  honest bboxes -
+                   for s in e.sample(32)]        #   32 samples deep
+            if window:
+                if all(ins(xy) for xy in smp):
+                    found.append(e)
+            elif (any(ins(xy) for xy in smp)
+                  or any(_seg_hits_box(smp[i], smp[i + 1], lo, hi)
+                         for i in range(len(smp) - 1))):
+                found.append(e)
         if additive:
             for e in found:
                 if e not in self._sel:
@@ -397,8 +419,10 @@ class SketchCanvas(QWidget):
     def _draw_band(self, p: QPainter):
         if self._band is None:
             return
-        p.setPen(QPen(ACCENT, 1.0, Qt.DotLine))
-        p.setBrush(QColor(ACCENT.red(), ACCENT.green(), ACCENT.blue(), 28))
+        crossing = self._band[1].x() < self._band[0].x()   # M173 R2: the
+        col = QColor(80, 220, 130) if crossing else ACCENT #  band WEARS
+        p.setPen(QPen(col, 1.0, Qt.DotLine))               #  its meaning
+        p.setBrush(QColor(col.red(), col.green(), col.blue(), 28))
         p.drawRect(QRectF(self._band[0], self._band[1]).normalized())
         p.setBrush(Qt.NoBrush)
 

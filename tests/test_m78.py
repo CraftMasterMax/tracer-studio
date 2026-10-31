@@ -5,7 +5,11 @@ one piddling click per entity.  Dragging from empty space now throws a
 dashed band, and everything the band TOUCHES (window + crossing at
 once, as Fusion's sketch marquee behaves — a line passing clean through
 with both ends outside is still caught) lands in the selection; Ctrl
-keeps what was already picked, plain empty-click clears.  The band is
+keeps what was already picked, plain empty-click clears.  (M173 R2
+later split this by direction — left→right windows fully-inside only,
+right→left crosses by touch — and every marquee witness in this file
+is a left→right drag with everything fully enclosed: no migration, all
+kept green.)  The band is
 real: the two lines it catches take an H constraint on the next
 keystroke.
 
@@ -94,8 +98,8 @@ def test_band_crossing_a_circle_edge_selects_it(win, qapp):
     cv = _sk(win, qapp)
     m = cv.model
     m.add_circle(m.point(30, 0), 8.0)
-    _drag(cv, qapp, (33, -2), (46, 12))         # bites the right flank only
-    assert cv.model.sketch.circles[0] in cv._sel
+    _drag(cv, qapp, (46, 12), (33, -2))         # right->left: a CROSSING
+    assert cv.model.sketch.circles[0] in cv._sel  # bite (M173 R2 law)
 
 
 def test_band_selects_points_inside_too(win, qapp):

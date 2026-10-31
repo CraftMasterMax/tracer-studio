@@ -10,13 +10,20 @@ arc's bulge (which lives beyond its chords), ellipses, and lone points
 LAW: an empty fit resets EXACTLY to scale 4 / centre 0. And navigation
 is NOT editing: no undo row, the pick survives, not one byte of
 geometry moves.
+
+Rung 2 splits the marquee by DIRECTION like real Fusion: left->right is
+a WINDOW (only fully-inside geometry), right->left a CROSSING (anything
+touched); the band wears its meaning (blue border vs green), Ctrl stays
+additive both ways, and ellipses - absent from the marquee until today
+- ride both tests on their own samples beside the arcs.
 """
+import numpy as np
 import pytest
 
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QEvent, QPointF, QPoint, Qt               # noqa
-from PySide6.QtGui import QMouseEvent                                # noqa
+from PySide6.QtGui import QImage, QMouseEvent                        # noqa
 from PySide6.QtTest import QTest                                    # noqa
 from PySide6.QtWidgets import QApplication                          # noqa
 
@@ -116,3 +123,123 @@ def test_navigation_is_not_editing_and_the_empty_fit_is_the_default(ed):
     _midclick(ed, 5, 5)                             # a click BRINGS BACK
     assert ed._scale == pytest.approx(4.0)          #  the film law:
     assert tuple(ed._center) == pytest.approx((0.0, 0.0))  # exact 4 / 0
+
+
+# ---- RUNG 2: WINDOW vs CROSSING -------------------------------------------
+
+def _marquee(ed):
+    m = ed.model
+    ent = {}
+    ent["l_in"] = m.add_line(m.point(0.5, 2), m.point(8.5, 2))
+    ent["l_out"] = m.add_line(m.point(6, 2), m.point(24, 2))
+    ent["c_in"] = m.add_circle(m.point(4, -4), 1.5)
+    ent["c_out"] = m.add_circle(m.point(10, -4), 3.0)
+    ent["p_in"] = m.point(5, 5)
+    ent["p_out"] = m.point(20, 5)
+    ent["e_in"] = m.sketch.ellipse(m.point(3, -1), 1.5, 1.0)
+    ent["e_out"] = m.sketch.ellipse(m.point(9.5, -2), 2.0, 1.0)
+    ent["a_in"] = m.sketch.arc(m.point(0.8, 5), m.point(2, 5.7),
+                               m.point(3.5, 5))
+    ent["a_out"] = m.sketch.arc(m.point(7.5, -3), m.point(9.5, -4),
+                                m.point(8, -5))
+    ed._solve()
+    return m, ent
+
+
+def _band_drag(ed, a_xy, b_xy, ctrl=False, mid=None, qapp=None):
+    """press-EMPTY, one big move, release - the marquee's whole life.
+    mid(ed) runs while the band is still ALIVE (pixel witness)."""
+    mods = Qt.ControlModifier if ctrl else Qt.NoModifier
+    a, b = _scr(*a_xy), _scr(*b_xy)
+    QTest.mousePress(ed, Qt.LeftButton, mods, a)
+    p = QPointF(float(b.x()), float(b.y()))
+    QApplication.sendEvent(
+        ed, QMouseEvent(QEvent.Type.MouseMove, p, p, p,
+                        Qt.LeftButton, Qt.LeftButton, mods))
+    for _ in range(3):
+        qapp.processEvents()
+    shot = mid(ed) if mid is not None else None
+    QTest.mouseRelease(ed, Qt.LeftButton, mods, b)
+    for _ in range(3):
+        qapp.processEvents()
+    return shot
+
+
+def _grab_px(ed):
+    qimg = ed.grab().toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+    return np.frombuffer(bytes(qimg.bits()), np.uint8).reshape(
+        qimg.height(), qimg.width(), 4)[:, :, :3].copy()
+
+
+def test_window_drag_takes_only_what_is_fully_inside(ed, qapp):
+    m, e = _marquee(ed)
+    _band_drag(ed, (0, -6), (9, 6), qapp=qapp)      # left->right: WINDOW
+    sel = ed._sel
+    assert e["l_in"] in sel and e["c_in"] in sel    # whole bboxes IN
+    assert e["p_in"] in sel                         #  (a point is its own)
+    assert e["l_out"] not in sel                    # one end pokes out
+    assert e["c_out"] not in sel                    # circle bulges out...
+    assert e["c_out"].c not in sel                  #  centre outside: out
+    assert e["l_out"].b not in sel                  #  the far END too
+    assert e["l_out"].a in sel                      # inside end: IN (a
+    assert e["p_out"] not in sel                    #  point is its bbox)
+
+
+def test_crossing_drag_takes_everything_it_touches(ed, qapp):
+    m, e = _marquee(ed)
+    _band_drag(ed, (9, 6), (0, -6), qapp=qapp)      # right->left: CROSS
+    sel = ed._sel
+    assert e["l_out"] in sel and e["c_out"] in sel  # touching is enough
+    assert e["l_in"] in sel and e["c_in"] in sel    # enclosed still IN
+    assert e["p_out"] not in sel                    # untouched stays out
+
+
+def test_the_band_wears_its_direction(ed, qapp):
+    _marquee(ed)
+
+    def slate(f):                                   # the dotted WINDOW
+        px = f[170:230, 294:342].reshape(-1, 3).astype(int)      # border
+        return int(((np.abs(px[:, 0] - 78) <= 6)                   # as
+                    & (np.abs(px[:, 1] - 126) <= 8)                # MEASURED
+                    & (np.abs(px[:, 2] - 152) <= 8)).sum())
+
+    def grn(f):                                     # the dotted CROSSING
+        px = f[170:230, 294:342].reshape(-1, 3).astype(int)       # green
+        return int(((px[:, 0] >= 55) & (px[:, 0] <= 100)
+                    & (px[:, 1] >= 130) & (px[:, 1] <= 196)
+                    & (px[:, 2] >= 90) & (px[:, 2] <= 130)).sum())
+
+    fw = _band_drag(ed, (0, -6), (9, 6), mid=_grab_px, qapp=qapp)
+    fc = _band_drag(ed, (9, 6), (0, -6), mid=_grab_px, qapp=qapp)
+    assert slate(fw) >= 40 and slate(fc) <= 5       # 76 vs 0 measured
+    assert grn(fc) >= 40 and grn(fw) <= 5           # 108 vs 0 measured
+
+
+def test_ctrl_stays_additive_both_ways(ed, qapp):
+    m, e = _marquee(ed)
+    _band_drag(ed, (0, -6), (9, 6), qapp=qapp)      # plain WINDOW first
+    base = list(ed._sel)
+    assert e["l_in"] in base and e["l_out"] not in base
+    _band_drag(ed, (9, 6), (0, -6), ctrl=True, qapp=qapp)   # Ctrl CROSS
+    sel = ed._sel
+    assert e["l_out"] in sel and e["c_out"] in sel  # the crossing ADDED
+    for keep in base:                               # and the WINDOW set
+        assert keep in sel                          #  is KEPT whole
+    _band_drag(ed, (0, -6), (9, 6), qapp=qapp)      # plain again: law of
+    assert e["l_out"] not in ed._sel                #  REPLACE unharmed
+
+
+def test_the_curves_ride_the_split_and_ellipses_join_the_marquee(ed, qapp):
+    m, e = _marquee(ed)
+    _band_drag(ed, (0, -6), (9, 6), qapp=qapp)
+    sel = ed._sel
+    assert e["e_in"] in sel                         # ellipse IN a window
+    assert e["e_out"] not in sel                    #  (absent till today)
+    assert e["a_in"] in sel                         # arc wholly inside
+    assert e["a_out"] not in sel                    # arc pokes past x=9...
+    assert e["a_out"].a in sel                      #  ...its inside END is
+    _band_drag(ed, (9, 6), (0, -6), qapp=qapp)
+    sel = ed._sel
+    assert e["e_out"] in sel and e["a_out"] in sel  # crossing takes both
+    assert e["e_out"].c not in sel                  # centres outside: out
+
