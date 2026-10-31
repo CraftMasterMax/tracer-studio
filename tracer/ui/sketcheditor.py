@@ -2953,6 +2953,19 @@ class SketchCanvas(QWidget):
         self._solve()
         self.update()
 
+    def _line_live_text(self):
+        """M180 R1 (FD5-L23): the rubber-band's live LENGTH reading - the
+        anchor is set and the hover is elsewhere; None once the line mints
+        (the pre-mint anchor dies with the commit) or when either end of
+        the gesture is missing."""
+        if self._tool != "line" or self._line_start is None \
+                or self._cursor is None:
+            return None
+        import math
+        L = math.hypot(self._cursor[0] - self._line_start.x,
+                       self._cursor[1] - self._line_start.y)
+        return f"{L:.2f}" if L > 1e-9 else None
+
     def _typein_pos(self):
         """Where Fusion's little white box lives for the armed entity."""
         kind, ent = self._pending
@@ -3374,6 +3387,21 @@ class SketchCanvas(QWidget):
             p.setPen(QPen(ACCENT, 1.2, Qt.DashLine))
             p.drawLine(self.w2s(self._line_start.x, self._line_start.y),
                        self.w2s(*wp))
+            txt = self._line_live_text()           # M180 R1 (FD5-L23): the
+            if txt:                                #  LENGTH rides the
+                s = self.w2s(*self._cursor)        #   cursor WHILE the
+                fm = p.fontMetrics()               #   line rubber-bands -
+                br = fm.boundingRect(txt)          #   Fusion's live field,
+                rect = QRectF(s.x() + 14 - br.width() / 2 - 6,
+                              s.y() - 22 - br.height() / 2 - 3,
+                              br.width() + 12, br.height() + 6)
+                p.setFont(self._font)
+                p.setBrush(QColor(theme.DARK["bg2"]))
+                p.setPen(Qt.NoPen)
+                p.drawRoundedRect(rect, 3, 3)
+                p.setPen(FG)
+                p.drawText(rect, Qt.AlignCenter, txt)
+                p.setBrush(Qt.NoBrush)
         if self._tool == "arc" and self._arc_pts:
             cur = self.mapFromGlobal(self.cursor().pos())
             wp = self._world(QPointF(cur))
