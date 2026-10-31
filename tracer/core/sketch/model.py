@@ -805,6 +805,11 @@ def model_to_dict(m: SketchModel) -> dict:
         s = getattr(c, "src", "")
         if s and len(cons) > before:
             cons[-1]["s"] = s               # M164 R1: provenance witness
+        lo = getattr(c, "label_off", None)  # M174 R1: the label's HOME
+        if lo and len(cons) > before and (  #  omitted at ZERO - files
+                abs(lo[0]) > 1e-12 or abs(lo[1]) > 1e-12):   #  that
+            cons[-1]["lo"] = [float(lo[0]), float(lo[1])]    #  never
+                                                               #  moved
     d = {"name": m.name, "plane": m.plane,
          "points": [[p.x, p.y] for p in pts],
          "lines": [[idx[l.a.id], idx[l.b.id], int(l.construction)]
@@ -942,4 +947,7 @@ def model_from_dict(d: dict) -> SketchModel:
         for e, obj in zip(entries, m.sketch.constraints):
             if e.get("s"):
                 obj.src = str(e["s"])
-    return m
+            lo = e.get("lo")                # M174 R1: restamp homes the
+            if lo:                          #  same way (and undo - the
+                obj.label_off = (float(lo[0]), float(lo[1]))   #  ledger
+    return m                                             #  IS this file)

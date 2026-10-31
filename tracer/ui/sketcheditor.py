@@ -142,6 +142,8 @@ class SketchCanvas(QWidget):
         self._pending_stage = 0              # M90: rect width then height
         self._drag_pt: Point | None = None
         self._drag_pt_start: np.ndarray | None = None  # M173 R3: the
+        self._dim_drag: tuple | None = None       # M174 R1: a LABEL is
+        self._dim_pushed = False                  #  being dragged
         self._drag: tuple | None = None        # M167 R1: body drag
         #   (pts, starts, anchor_world) — the delta law's record
         self._pend_toggle = None               # M167 R3: Ctrl-press on a
@@ -237,6 +239,7 @@ class SketchCanvas(QWidget):
         self._sel = []
         self._drag_pt = None
         self._drag_pt_start = None                 # M173 R3: the leash
+        self._dim_drag = None                      # M174 R1: label grips
         self._drag = None                      # M167 R1: grabs don't
         self._pend_toggle = None               # M167 R3: Ctrl-presses die
         self._line_start = None                #   survive a history jump
@@ -588,6 +591,13 @@ class SketchCanvas(QWidget):
                     self._corner_typed = False   #  a fresh grip gives
                     return                       #  the HAND the word
                 self._corner = None              #   click carries on
+            for rect, c in reversed(self._dim_hits):    # M174 R1: THE
+                if rect.contains(q):             #  LABEL CLAIMS THE
+                    self._dim_drag = (c, self._world(q),                #
+                                      tuple(getattr(c, "label_off",     #
+                                                    (0.0, 0.0))))  # A
+                    self._dim_pushed = False     #  chip outranks the
+                    return                       #   canvas beneath it
             hit = self._hit(q)
             if hit is None:
                 if not (ev.modifiers() & Qt.ControlModifier):
@@ -854,6 +864,16 @@ class SketchCanvas(QWidget):
                         wp[0] - P.x, wp[1] - P.y), rmax))
                 self.update()                    # mouth spoke? then the
             return                               #  cursor just rides
+        if self._dim_drag is not None:           # M174 R1: a LABEL is
+            c, grab, lo0 = self._dim_drag        #  not GEOMETRY: raw
+            if not self._dim_pushed:             #  delta, NO magnet,
+                self._push_hist()                #   no solve, no
+                self._dim_pushed = True          #    selection change
+            wp = self._world(q)
+            c.label_off = (lo0[0] + wp[0] - grab[0],
+                           lo0[1] + wp[1] - grab[1])
+            self.update()
+            return                               #  chrome costs the
         if self._tool == "trim":                  # M168 R3: hover previews
             if ev.buttons() & Qt.LeftButton and self._trim_last is not None:
                 # M169 R3: HELD LMB = the scribe. Past the click radius the
@@ -1136,6 +1156,7 @@ class SketchCanvas(QWidget):
         moved = grab is not None and self._drag_pushed   #  grab it was,
         self._drag_pt = None                    # M167 R1: a release ends
         self._drag_pt_start = None              #  M173 R3: leash state
+        self._dim_drag = None                   #  M174 R1: label grips
         self._drag = None                       #  ANY grab, tool or no tool
         if self._tool == "trim":                 # M168 R3: the armed entity
             if self._trim_stroke:                # M169 R3: a stroke ends at
@@ -2441,6 +2462,10 @@ class SketchCanvas(QWidget):
                 continue
             if bound:                       # M89: Fusion shows "=" driven
                 text = f"= {text}"
+            off = getattr(c, "label_off", None)  # M174 R1: the label
+            if off:                              #  keeps its HOME -
+                pos = QPointF(pos.x() + off[0] * self._scale,
+                              pos.y() - off[1] * self._scale)
             rect = dimedit.chip_rect(fm, pos, text)   # shared with the seat
             ed = getattr(self, "_dim_edit", None)     #  (early-Paint law)
             if not (ed is not None and ed.constraint is c):   # M165 R1:
