@@ -23,33 +23,35 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              ShellFeature, SweepFeature, LoftFeature,
                              ThickenFeature,
                              ThreadFeature)
+from . import icons
 from .theme import DARK
 
 _OP_GLYPH = {"union": "+", "subtract": "−", "intersect": "∩"}
 
 
-def _sketch_label(sk: dict) -> str:
-    """'✎ Sketch1 (fully constrained)' — Fusion appends the constraint
-    state to browser sketches (M73), and we can honestly say it: the
-    same LM solver the editor speaks with answers from the stored
-    payload.  Tiny sketches, tiny solves."""
+def _sketch_state(sk: dict) -> tuple:
+    """('✎ Sketch1 (fully constrained)', True) — M73 banked the TEXT
+    (Fusion appends the constraint state to browser sketches), M186 R3
+    adds the documented RED LOCK beside it — and both voices come from
+    ONE solve of the stored payload on purpose: the label and the lock
+    are the same answer read once, they can never disagree. Tiny
+    sketches, tiny solves.
+    """
     name = sk.get("name", "Sketch")
     try:
         from tracer.core.sketch.model import model_from_dict
         m = model_from_dict(sk)
         s = m.sketch
         if not (s.points or s.lines or s.circles or s.arcs):
-            return f"\u270e {name}"
+            return f"\u270e {name}", False
         r = m.solve()
     except Exception:
-        return f"\u270e {name}"
+        return f"\u270e {name}", False
     if not r.converged:
-        state = " (\u26a0 conflicting constraints)"
-    elif r.dof == 0:
-        state = " (fully constrained)"
-    else:
-        state = " (under-constrained)"
-    return f"\u270e {name}{state}"
+        return f"\u270e {name} (\u26a0 conflicting constraints)", False
+    if r.dof == 0:
+        return f"\u270e {name} (fully constrained)", True
+    return f"\u270e {name} (under-constrained)", False
 
 
 def _paint_eye(p: QPainter, x: float, cy: float, hidden: bool):
@@ -525,9 +527,11 @@ class FeatureTree(QTreeWidget):
             parent.addChild(item)
             if (isinstance(f, (ExtrudeFeature, RevolveFeature, HoleFeature))
                     and f.sketch):
-                lbl = _sketch_label(f.sketch) + _badge(
+                base, full = _sketch_state(f.sketch)
+                lbl = base + _badge(
                     f.sketch.get("host") or "")   # M152: ✎ → [A]
                 sk = QTreeWidgetItem([lbl])
+                sk.setIcon(0, icons.sketch_icon(locked=full))
                 sk.setData(0, Qt.UserRole, ("sketch", i))
                 if f.name in warn_names:
                     sk.setForeground(0, QColor(DARK["warn"]))
@@ -542,7 +546,9 @@ class FeatureTree(QTreeWidget):
         sketches.setData(0, Qt.UserRole, ("folder", "sketches"))
         root.addChild(sketches)
         for i in sketchers:
-            it = QTreeWidgetItem([_sketch_label(feats[i].sketch)])
+            base, full = _sketch_state(feats[i].sketch)
+            it = QTreeWidgetItem([base])
+            it.setIcon(0, icons.sketch_icon(locked=full))
             it.setData(0, Qt.UserRole, ("sketch", i))
             sketches.addChild(it)
 

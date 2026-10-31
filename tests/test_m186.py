@@ -377,3 +377,181 @@ def test_select_time_ctrl_never_met_the_brake(ed, qapp):
     assert l1 in ed._sel and l2 in ed._sel, \
         "Ctrl at REST still adds to selection - the brake lives ONLY " \
         "in the drawing hand"
+
+
+# ---- R3: THE BROWSER WEARS THE RED LOCK [LAW-55, documented] ----------------
+# "In the Browser, a red lock displays on the icon next to the sketch
+# when it is fully constrained." M73 banked the TEXT of that truth;
+# the LOCK itself is the missing pixel. One solve answers both voices
+# (the label and the lock can never disagree because they are the same
+# answer read once) - and our one red token (SKETCH error) wears it:
+# the vendor publishes no hex (M160's law), and no artwork is copied -
+# the face is OUR drawn sketch glyph, the badge a drawn padlock.
+
+import tracer.ui.icons as icons                                        # noqa
+from PySide6.QtGui import QIcon                                        # noqa
+from tracer.core.sketch.model import (SketchModel, model_from_dict,      # noqa
+                                      model_to_dict)
+from tracer.core.document import ExtrudeFeature                        # noqa
+
+_RED = np.array([QColor(theme.SKETCH["error"]).red(),
+                 QColor(theme.SKETCH["error"]).green(),
+                 QColor(theme.SKETCH["error"]).blue()])
+
+
+def _icon_arr(icon):
+    pm = icon.pixmap(32, 32)
+    img = pm.toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+    return np.frombuffer(bytes(img.bits()), np.uint8).reshape(32, 32, 4)
+
+
+def _icon_red(icon):
+    a = _icon_arr(icon)
+    d = np.abs(a[:, :, :3].astype(int) - _RED).sum(axis=2)
+    return int(((d <= 150) & (a[:, :, 3] > 40)).sum())
+
+
+def _icon_ink(icon):
+    return int((_icon_arr(icon)[:, :, 3] > 40).sum())
+
+
+@pytest.fixture
+def win(qapp):
+    try:
+        from tracer.ui.renderer import SceneRenderer
+        from tracer.ui.mainwindow import MainWindow
+        try:
+            r = SceneRenderer()
+        except Exception as e:                 # CI windows: no headless GL
+            pytest.skip(f"no headless GL available: {e}")
+        w = MainWindow(renderer=r)
+        w.resize(1000, 700)
+        w.show()
+        qapp.processEvents()
+        yield w
+        w._unsaved = False
+        w.close()
+        r.close()
+    except AttributeError:                     # skip raised inside try
+        raise
+    finally:
+        QApplication.processEvents()
+
+
+def _r3_rect():
+    return np.array([[0, 0], [40, 0], [40, 20], [0, 20]], float)
+
+
+def _r3_payload(mode):
+    mm = SketchModel()
+    mm.name = "Sketch1"
+    a, b = mm.point(0.0, 0.0), mm.point(40.0, 0.0)
+    mm.add_line(a, b)
+    mm.constrain(Fixed(a, x=0.0, y=0.0))
+    if mode == "full":
+        mm.constrain(Fixed(b, x=40.0, y=0.0))
+    elif mode == "conflict":
+        mm.constrain(Fixed(b, x=40.0, y=0.0))
+        mm.constrain(Fixed(b, x=11.0, y=0.0))    # same point, elsewhere
+    return model_to_dict(mm)
+
+
+def _sketch_rows(win):
+    out = []
+
+    def walk(node):
+        for i in range(node.childCount()):
+            ch = node.child(i)
+            role = ch.data(0, Qt.UserRole)
+            if role and role[0] == "sketch":
+                out.append(ch)
+            walk(ch)
+    walk(win.rail.tree.invisibleRootItem())
+    return out
+
+
+def test_the_lock_lives_only_in_the_locked_icon(qapp):
+    off = icons.sketch_icon(locked=False)
+    on = icons.sketch_icon(locked=True)
+    assert isinstance(off, QIcon) and isinstance(on, QIcon)
+    assert _icon_ink(off) > 8 and _icon_ink(on) > 8, \
+        "both wear the sketch face - the lock is a badge, not a swap"
+    assert _icon_red(off) == 0, "an unlocked icon shows NO red"
+    assert _icon_red(on) >= 4, "the locked icon's padlock burns red"
+
+
+def test_the_browser_locks_a_fully_constrained_sketch(win, qapp):
+    win.new_document()
+    win.doc.add(ExtrudeFeature(name="w", outer=_r3_rect(), height=10.0,
+                               sketch=_r3_payload("full")))
+    win.recompute()
+    qapp.processEvents()
+    rows = _sketch_rows(win)
+    assert rows, "the sketch family still lives in the browser"
+    for it in rows:
+        assert "(fully constrained)" in it.text(0), \
+            "M73's text voice rides UNTOUCHED"
+        ic = it.icon(0)
+        assert not ic.isNull() and _icon_red(ic) >= 4, \
+            "and the SAME truth now wears the documented red lock"
+
+
+def test_the_underconstrained_row_carries_no_lock(win, qapp):
+    win.new_document()
+    win.doc.add(ExtrudeFeature(name="w", outer=_r3_rect(), height=10.0,
+                               sketch=_r3_payload("under")))
+    win.recompute()
+    qapp.processEvents()
+    for it in _sketch_rows(win):
+        assert "(under-constrained)" in it.text(0)
+        assert not it.icon(0).isNull() and _icon_red(it.icon(0)) == 0, \
+            "the face is always honest; the lock is always EARNED"
+
+
+def test_conflict_is_the_warning_not_the_lock(win, qapp):
+    win.new_document()
+    win.doc.add(ExtrudeFeature(name="w", outer=_r3_rect(), height=10.0,
+                               sketch=_r3_payload("conflict")))
+    win.recompute()
+    qapp.processEvents()
+    for it in _sketch_rows(win):
+        assert "conflicting" in it.text(0)
+        assert _icon_red(it.icon(0)) == 0, \
+            "a red lock would SAY DEFINED - a fighting sketch owns no lie"
+
+
+def test_the_lock_arrives_with_the_last_constraint(win, qapp):
+    win.new_document()
+    feat = ExtrudeFeature(name="w", outer=_r3_rect(), height=10.0,
+                          sketch=_r3_payload("under"))
+    win.doc.add(feat)
+    win.recompute()
+    qapp.processEvents()
+    rows = _sketch_rows(win)
+    assert all(_icon_red(it.icon(0)) == 0 for it in rows)
+    feat.sketch = _r3_payload("full")            # the last constraint lands
+    win.recompute()
+    qapp.processEvents()
+    rows = _sketch_rows(win)
+    assert rows and all(_icon_red(it.icon(0)) >= 4 for it in rows), \
+        "the browser answers the LATEST solve, never the last-known one"
+
+
+def test_a_pin_survives_the_save_as_the_value_it_demanded():
+    # R3's fidelity repair: model_to_dict used to write a Fixed from
+    # the point's CURRENT POSITION - two pins fighting over one point
+    # serialized as two copies of wherever the point sat, and the
+    # browser (which solves the stored payload) cheerfully reported
+    # the fight as converged. The payload must keep what was DEMANDED.
+    mm = SketchModel()
+    mm.name = "S"
+    a = mm.point(0.0, 0.0)
+    mm.constrain(Fixed(a, x=0.0, y=0.0))
+    mm.constrain(Fixed(a, x=5.0, y=5.0))          # the honest FIGHT
+    back = model_from_dict(model_to_dict(mm))
+    xs = sorted(c.x for c in back.sketch.constraints)
+    assert xs == [0.0, 5.0], \
+        "both demands ride the payload - no silent rewrite of the book"
+    r = back.solve()
+    assert not r.converged or r.conflicting, \
+        "and the solve-from-payload now FEELS the fight"

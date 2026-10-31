@@ -131,6 +131,30 @@ _DRAW = {"sketch": _sketch, "extrude": _box, "revolve": _revolve,
          "fillet": _fillet, "chamfer": _chamfer}
 
 
+def sketch_icon(locked: bool = False) -> QIcon:
+    """M186 R3 [LAW-55, documented]: \"In the Browser, a red lock
+    displays on the icon next to the sketch when it is fully
+    constrained.\" The FACE is our own drawn sketch glyph (the ribbon's
+    - plain geometry, no third-party art); the LOCK is a drawn padlock
+    in our one red token (SKETCH error - the vendor publishes no hex,
+    M160's law). Unlocked, the face simply carries no badge: the lock
+    is EARNED, never decorative.
+    """
+    pm = _pm(_sketch)
+    if locked:
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing)
+        red = QColor(theme.SKETCH["error"])
+        pen = QPen(red)
+        pen.setWidthF(2.0)
+        p.setPen(pen)
+        p.drawArc(QRectF(21.5, 15.5, 6.5, 7.5), 0, 180 * 16)  # shackle
+        p.setBrush(red)                                        # body
+        p.drawRoundedRect(QRectF(18.5, 20.5, 12.5, 9), 1.8, 1.8)
+        p.end()
+    return QIcon(pm)
+
+
 # ---- ribbon glyphs: generic geometry only (identity-safe) --------------------
 
 def _hole(p: QPainter):

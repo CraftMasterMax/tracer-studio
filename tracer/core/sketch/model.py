@@ -756,8 +756,14 @@ def model_to_dict(m: SketchModel) -> dict:
         elif isinstance(c, Vertical):
             cons.append({"t": "V", "line": m.sketch.lines.index(c.line)})
         elif isinstance(c, Fixed):
+            # M186 R3 fidelity repair: a pin's VALUE is its truth, not
+            # where the point happens to sit. Serialized from position,
+            # a conflicting second pin was rewritten to the first's and
+            # the browser's solve-from-payload swore "converged" about
+            # a fight the maker actually drew (a healthy solved sketch
+            # is unchanged - position equals value there).
             cons.append({"t": "F", "p": _add_pt(pts, idx, c.p),
-                         "x": c.p.x, "y": c.p.y})
+                         "x": c.x, "y": c.y})
         elif isinstance(c, Distance):
             cons.append({"t": "D", "p": _add_pt(pts, idx, c.p),
                          "q": _add_pt(pts, idx, c.q), "v": c.value})
