@@ -12,7 +12,6 @@ from PySide6.QtWidgets import QApplication, QInputDialog  # noqa: E402
 
 from tracer.core.sketch.constraints import (Distance, Equal, Fixed,  # noqa: E402
                                            Perpendicular)
-from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.sketch.model import (SketchModel,      # noqa: E402
                                      model_from_dict, model_to_dict)
 
@@ -119,14 +118,17 @@ def test_key_Q_equal_lengths(canvas, qapp):
 
 
 def test_dimension_between_two_points(canvas, qapp, monkeypatch):
+    # M175 R1 RETARGET: the D key opens no dialog now - the pair is BORN
+    # at its own 30.0 and the INLINE seam types 50, which the solver
+    # spends exactly as the old prompt's number was spent.
     m = SketchModel()
     p, q = m.point(0, 0), m.point(30, 0)
     m.add_line(p, q)
     m.constrain(Fixed(p, x=0.0, y=0.0))
     canvas.set_model(m)
     canvas._sel = [p, q]
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *a, **k: (50.0, True)))
+    from conftest import script_dim_edit
+    script_dim_edit(monkeypatch, "50")
     QTest.keyPress(canvas, Qt.Key_D)
     dims = [c for c in m.sketch.constraints if isinstance(c, Distance)]
     assert len(dims) == 1 and dims[0].value == 50.0
