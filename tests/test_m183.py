@@ -14,7 +14,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QSettings, Qt                          # noqa: E402
+from PySide6.QtCore import QSettings, QPoint, Qt                  # noqa: E402
 from PySide6.QtWidgets import QApplication, QWidget               # noqa: E402
 
 from tracer.ui.commands import Command                            # noqa: E402
@@ -169,3 +169,122 @@ def test_two_promoted_keep_rank_order_between_them(host):
     ci = next(i for i, t in enumerate(texts) if "Circle" in t)
     hi = next(i for i, t in enumerate(texts) if "Cham" in t)
     assert ci < hi, "the pins keep the RANK order among themselves"
+
+
+# ---- R2: THE SPACE SUMMON (the law's sentence) + its button --------------
+# "pressing 'c' followed by Spacebar/Enter will now invoke the Chamfer
+# command" - [documented] verbatim.  Fusion's vehicle: "the Promote
+# button NEXT TO a resulting command" - an inline row button, which
+# lands here too (R1's right-click mouth stays as the keyboard route).
+
+from PySide6.QtCore import QEvent, QPointF, QRect                    # noqa: E402
+from PySide6.QtGui import QMouseEvent, QImage                        # noqa: E402
+from PySide6.QtTest import QTest                                     # noqa: E402
+from PySide6.QtWidgets import QStyleOptionViewItem                   # noqa: E402
+
+
+def _opened(host, cmds, query="", ran=None):
+    p = _pal(host, cmds)
+    if ran is not None:                 # the kit's seam: picked rides ran
+        p.picked.connect(lambda: ran.append("picked"))   # BEFORE cmd.run()
+    p.show()
+    QTest.qWaitForWindowExposed(p)
+    p.open_at(200, 100)
+    if query:
+        p.edit.setText(query)
+        QTest.qWait(10)
+    return p
+
+
+def test_space_runs_the_current_row(host):
+    ran = []
+    p = _opened(host, _cmds(ran), "c", ran)
+    QTest.keyClick(p.edit, Qt.Key_Space)
+    assert ran == ["picked", "circle"], "Space INVOKES the top hit (LAW-36)"
+    assert not p.isVisible(), "invoking closes the toolbox"
+
+
+def test_law_sentence_c_then_space(host):
+    ran = []
+    p = _pal(host, _cmds(ran))
+    p.toggle_promote(_cmds(ran)[2])          # teach: Chamfer
+    p2 = _opened(host, _cmds(ran), "c", ran)  # the letter, fresh toolbox
+    assert STAR in p2.list.item(0).text()    # pinned row 0 (R1's law)
+    QTest.keyClick(p2.edit, Qt.Key_Space)
+    assert ran == ["picked", "chamfer"], \
+        "'c' + Space invokes Chamfer - the documented sentence end to end"
+
+
+def test_space_types_only_when_nothing_matches(host):
+    ran = []
+    p = _opened(host, _cmds(ran), "zzqx")    # the empty-list escape hatch
+    assert p.list.count() == 0
+    QTest.keyClick(p.edit, Qt.Key_Space)
+    assert not ran, "nothing to run: Space is just a space (multi-word fuel)"
+    assert p.edit.text() == "zzqx "
+
+
+def test_modified_space_passes_through(host):
+    ran = []
+    p = _opened(host, _cmds(ran), "c")
+    QTest.keyClick(p.edit, Qt.Key_Space, Qt.ControlModifier)
+    assert not ran, "the summon is PLAIN Space; Ctrl+Space is not the law"
+
+
+def test_enter_still_runs_after_the_filter(host):
+    ran = []
+    p = _opened(host, _cmds(ran), "c")
+    QTest.keyClick(p.edit, Qt.Key_Return)
+    assert ran, "R2's event filter may not steal Enter (R1/M113 regression)"
+
+
+def test_button_label_reads_the_state(host):
+    ran = []
+    cham = _cmds(ran)[2]
+    p = _pal(host, _cmds(ran))
+    assert p._btn_label(cham) == "promote"
+    p.toggle_promote(cham)
+    assert p._btn_label(cham) == "unpromote", \
+        "the row's button speaks the current state (Fusion's mouth)"
+
+
+def test_press_on_the_button_promotes_without_running(host):
+    ran = []
+    p = _opened(host, _cmds(ran))            # empty query: all rows
+    idx = p.list.model().index(2, 0)         # the Cham&fer row
+    opt = QStyleOptionViewItem()
+    opt.rect = QRect(0, 0, 620, 24)
+    inside = p.delegate._btn_rect(opt.rect).center()
+    ev = QMouseEvent(QEvent.Type.MouseButtonRelease, QPointF(inside),
+                     QPointF(inside), QPointF(inside),
+                     Qt.LeftButton, Qt.NoButton, Qt.NoModifier)
+    assert p.delegate.editorEvent(ev, p.list.model(), opt, idx), \
+        "the button CLAIMS the press"
+    assert p._promoted, "pressing the button taught the toolbox"
+    assert not ran, "and NOTHING RAN - the button is not the row"
+    outside = QPoint(20, 12)
+    ev2 = QMouseEvent(QEvent.Type.MouseButtonRelease, QPointF(outside),
+                      QPointF(outside), QPointF(outside),
+                      Qt.LeftButton, Qt.NoButton, Qt.NoModifier)
+    assert not p.delegate.editorEvent(ev2, p.list.model(), opt, idx), \
+        "outside the button the row keeps its own life"
+
+
+from PySide6.QtCore import QPoint as QPoint2                          # noqa: E402
+
+
+def test_the_button_is_frame_ink(host, qapp):
+    ran = []
+    p = _opened(host, _cmds(ran))
+    qapp.processEvents()
+    img = p.list.viewport().grab().toImage().convertToFormat(
+        QImage.Format.Format_RGBA8888)
+    import numpy
+    a = numpy.frombuffer(bytes(img.bits()), numpy.uint8).reshape(
+        img.height(), img.width(), 4)[:, :, :3].astype(int)
+    row0 = p.list.visualItemRect(p.list.item(0))
+    r = p.delegate._btn_rect(row0)
+    win = a[r.top():r.bottom() + 1, r.left():r.right() + 1].reshape(-1, 3)
+    bright = int((win.min(axis=1) > 120).sum())
+    print("button ink px", bright, "rect", r.getRect())
+    assert bright > 20, "the promote button is PAINTED on the row"

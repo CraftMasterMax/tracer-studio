@@ -10,16 +10,64 @@ their letters match — the pin is an ORDER, never a resurrection.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QSettings, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt, QEvent, QRect, QSettings, Signal
+from PySide6.QtGui import QColor, QFont, QPen
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QMenu,
-                               QVBoxLayout, QWidget)
+                               QStyledItemDelegate, QVBoxLayout, QWidget)
 
 from .commands import Command, plain, rank
 from .theme import SP, TYPE, DARK
 
 STAR = "\u2605"                       # ★ the promoted marker
+
+
+class _PromoteDelegate(QStyledItemDelegate):
+    """M183 R2: the row IS Fusion's result row - the command at left,
+    the little PROMOTE button at its right ("select the Promote button
+    next to a resulting command", LAW-36 verbatim).  A press inside the
+    button CLAIMS the event: the row teaches, it never runs."""
+    BW, BH = 72, 18                   # the button box
+
+    def __init__(self, pal: "CommandPalette"):
+        super().__init__(pal)
+        self.pal = pal
+
+    def _btn_rect(self, row_rect):
+        return _btn(row_rect, self.BW, self.BH)
+
+    def paint(self, p, opt, index):
+        super().paint(p, opt, index)
+        cmd = index.data(Qt.ItemDataRole.UserRole)
+        if cmd is None:
+            return
+        r = self._btn_rect(opt.rect)
+        p.save()
+        col = QColor(DARK["fg_dim"])
+        p.setPen(QPen(col, 1))
+        p.setBrush(QColor(col.red(), col.green(), col.blue(), 26))
+        p.drawRoundedRect(r, 4, 4)
+        p.setPen(col)
+        f = QFont(opt.font)
+        f.setPointSize(max(7, f.pointSize() - 2))
+        p.setFont(f)
+        p.drawText(r, Qt.AlignmentFlag.AlignCenter, self.pal._btn_label(cmd))
+        p.restore()
+
+    def editorEvent(self, ev, model, opt, index):
+        if (ev.type() == QEvent.Type.MouseButtonRelease
+                and ev.button() == Qt.MouseButton.LeftButton
+                and self._btn_rect(opt.rect).contains(ev.position().toPoint())):
+            cmd = index.data(Qt.ItemDataRole.UserRole)
+            if cmd is not None:
+                self.pal.toggle_promote(cmd)
+            return True               # the button ate it - the row sleeps
+        return super().editorEvent(ev, model, opt, index)
+
+
+def _btn(row_rect, bw, bh):
+    return QRect(row_rect.right() - bw - 8,
+                 row_rect.center().y() - bh // 2, bw, bh)
 
 
 class CommandPalette(QFrame):
@@ -49,6 +97,16 @@ class CommandPalette(QFrame):
         # M183 R1: the row itself is the promote button (FD8-36's mouth)
         self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list.customContextMenuRequested.connect(self._row_menu)
+        # M183 R2: Fusion's button NEXT TO the command, painted on the
+        # row itself - and the documented 'c' + Space SUMMON: the edit
+        # field normally swallows Space, so the palette filters the key
+        # before the field sees it.  Plain Space runs the current row;
+        # with NOTHING matched Space stays a typing space (the multi-
+        # word escape hatch - ours-said, subsequence search scores
+        # spaceless queries just as well).
+        self.delegate = _PromoteDelegate(self)
+        self.list.setItemDelegate(self.delegate)
+        self.edit.installEventFilter(self)
 
         row = QHBoxLayout()
         row.setContentsMargins(SP * 2, SP * 2, SP * 2, SP)
@@ -120,6 +178,24 @@ class CommandPalette(QFrame):
         m.addAction(f"{verb}  {plain(c.label)}",
                     lambda: self.toggle_promote(c))
         return m
+
+    def _btn_label(self, c: Command) -> str:
+        """The row button's mouth: it SPEAKS the current state."""
+        return "unpromote" if self._pid(c) in self._promoted else "promote"
+
+    def eventFilter(self, obj, ev):
+        """The law's sentence: 'c' + Spacebar/Enter invokes the tool.
+        The edit field owns Space for typing, so this filter claims it
+        for INVOKING - but only when there is a row to run (an empty
+        result leaves Space as ordinary typing)."""
+        if (obj is self.edit
+                and ev.type() == QEvent.Type.KeyPress
+                and ev.key() == Qt.Key.Key_Space
+                and ev.modifiers() == Qt.KeyboardModifier.NoModifier
+                and self.list.currentItem() is not None):
+            self.run_current()
+            return True
+        return super().eventFilter(obj, ev)
 
     def _row_menu(self, pos):
         it = self.list.itemAt(pos)
