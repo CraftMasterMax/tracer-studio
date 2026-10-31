@@ -123,6 +123,7 @@ def _seg_hits_box(p1, p2, lo, hi) -> bool:
 
 class SketchCanvas(QWidget):
     profiles_ready = Signal(list, str, bool)   # profiles, name, revolve?
+    pick_radius_changed = Signal(int)          # M185 LAW-45: THE PICKBOX
     state_changed = Signal(object)             # SolveResult after each
                                                # solve — the constraint
                                                # voice (M73)
@@ -191,6 +192,12 @@ class SketchCanvas(QWidget):
         self._no_snap = False                    # M120: Alt suppresses snaps
         self._snap_grid = bool(QSettings().value("sketch/grid_snap",
                                                  False, type=bool))
+        # M185 R1 [LAW-45]: ONE knob - the selection target radius in
+        # px; the hover preview reads the SAME number (the law's own
+        # "hover radius == pick radius"), and 0 kills PREVIEWS only.
+        self._pick = min(max(int(QSettings().value("sketch/pickbox",
+                                                   _HIT_PX, type=int)), 0),
+                         20)                       # PICKBOX clamps: 0..20
         self._last_result = None
         self._dim_hits: list = []
         self._constraint_hits: list = []     # M164 R2: (rect, constraint)
@@ -323,6 +330,27 @@ class SketchCanvas(QWidget):
         QSettings().setValue("sketch/grid_snap", self._snap_grid)
         self.update()
 
+    @property
+    def pick_radius(self) -> int:
+        """LAW-45 [documented]: PICKBOX - the selection target radius.
+        ONE knob: the hover preview and the press grab read the SAME
+        number (the pick legs and the preselect share _hit), and the
+        zero answers the law's clause "PICKBOX = 0 -> selection
+        PREVIEWING is not available". Tools (magnet, trim) are NOT
+        selection targets and keep their own module tolerance."""
+        return self._pick
+
+    def set_pick_radius(self, px: int):
+        px = min(max(int(px), 0), 20)
+        if px == self._pick:
+            return                               # a no-change says nothing
+        self._pick = px
+        QSettings().setValue("sketch/pickbox", px)   # grid-snap precedent
+        self._hover_e = None                     # a smaller target must
+        self._band_prev = []                     #  evict NOW, not on move
+        self.pick_radius_changed.emit(px)
+        self.update()
+
     # ---- view transform -------------------------------------------------
     def w2s(self, x, y) -> QPointF:
         cx, cy = self.width() / 2.0, self.height() / 2.0
@@ -352,7 +380,7 @@ class SketchCanvas(QWidget):
 
     # ---- hit testing ------------------------------------------------------
     def _snap_point(self, q: QPointF, skip=None) -> Point | None:
-        best, bd = None, _HIT_PX
+        best, bd = None, float(self._pick)     # M185: the knob IS the target
         for p, _ in self._all_points():
             if p is skip:
                 continue                 # dragged point must not eat itself
@@ -507,7 +535,7 @@ class SketchCanvas(QWidget):
         for c in sk.circles:
             d = math.hypot(q.x() - self.w2s(c.c.x, c.c.y).x(),
                            q.y() - self.w2s(c.c.x, c.c.y).y())
-            if abs(d - c.r * self._scale) <= _HIT_PX:
+            if abs(d - c.r * self._scale) <= self._pick:
                 return ("circle", c)
         for ar in sk.arcs:
             if self._arc_hit(ar, q):
@@ -516,7 +544,7 @@ class SketchCanvas(QWidget):
             if self._arc_hit(e, q):
                 return ("ellipse", e)
         for l in sk.lines:
-            if self._pt_seg_px(q, l.a, l.b) <= _HIT_PX:
+            if self._pt_seg_px(q, l.a, l.b) <= self._pick:
                 return ("line", l)
         return None
 
@@ -528,13 +556,13 @@ class SketchCanvas(QWidget):
             abx, aby = b.x() - a.x(), b.y() - a.y()
             L2 = abx * abx + aby * aby
             if L2 < 1e-9:
-                if math.hypot(q.x() - a.x(), q.y() - a.y()) <= _HIT_PX:
+                if math.hypot(q.x() - a.x(), q.y() - a.y()) <= self._pick:
                     return True
                 continue
             t = max(0.0, min(1.0, ((q.x() - a.x()) * abx
                                    + (q.y() - a.y()) * aby) / L2))
             px, py = a.x() + t * abx, a.y() + t * aby
-            if math.hypot(q.x() - px, q.y() - py) <= _HIT_PX:
+            if math.hypot(q.x() - px, q.y() - py) <= self._pick:
                 return True
         return False
 
@@ -1120,15 +1148,17 @@ class SketchCanvas(QWidget):
                 # M184 R2 [LAW-49 "otherwise highlighted"]: while the
                 # band lives, what it currently TAKES asks the SAME
                 # pure mouth the release commits through - the glow
-                # and the set can never disagree.
-                self._band_prev = self._band_hits(self._band[0], q)
+                # and the set can never disagree. LAW-45 zero: PICKBOX
+                # 0 means selection PREVIEWING is not available.
+                self._band_prev = (self._band_hits(self._band[0], q)
+                                   if self._pick else [])
                 self.update()
             else:                              # M164 R2: idle select hover
                 hit = self._hover_hit(q)
                 new = hit[1] if hit else None
-                ent = self._hit(q)             # M184 R3 [LAW-50]: the
-                newe = ent[1] if ent else None #  geometry UNDER THE
-                                               #  CURSOR preselects
+                ent = self._hit(q) if self._pick else None  # M184 R3
+                newe = ent[1] if ent else None  #  [LAW-50] preselect;
+                                                #  LAW-45 zero mutes it
                 if new is not self._hover_c or newe is not self._hover_e:
                     self._hover_c = new        # twin constraints compare equal
                     self._hover_e = newe       #  identity rules here too
