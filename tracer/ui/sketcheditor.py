@@ -18,9 +18,10 @@ from PySide6.QtWidgets import QApplication, QWidget
 
 from ..core.sketch.constraints import (Angle, AngleBetween, Collinear,
                                        Concentric, Distance, Equal, Fixed,
-                                       Horizontal, Midpoint, Perpendicular,
-                                       PointOnCircle, PointOnLine, Radius,
-                                       Symmetry, Tangent, Vertical,
+                                       Horizontal, LineDistance, Midpoint,
+                                       Perpendicular, PointOnCircle,
+                                       PointOnLine, Radius, Symmetry,
+                                       Tangent, Vertical,
                                        make_angle, make_angle_between,
                                        make_tangent, snapped, speaks_dia)
 from ..core.sketch.entities import (Arc, Circle, Ellipse, Line, Point,
@@ -2897,12 +2898,17 @@ class SketchCanvas(QWidget):
         """The chip's wording: the DIALECT oracle (M174 R3) decides who
         speaks diameter - the stored value stays a radius either way.
         M178 R1: a DRIVEN quote wears PARENTHESES [obs: forum-verified];
-        the painter routes EVERY Distance/Radius word through here."""
+        the painter routes EVERY Distance/Radius word through here.
+        M187 R3: the gap (LineDistance) speaks its MAGNITUDE - the sign
+        says which side, the dimension says how far (LAW-59's offset
+        number is the distance, not the algebra)."""
         if isinstance(c, Radius):
             text = (f"\u00d8 {2 * c.value:.2f}" if speaks_dia(c)
                     else f"R {c.value:.2f}")
         elif isinstance(c, Distance):
             text = f"{c.value:.2f}"
+        elif isinstance(c, LineDistance):
+            text = f"{abs(c.value):.2f}"
         else:
             text = ""
         if text and getattr(c, "driven", False):
@@ -2942,6 +2948,24 @@ class SketchCanvas(QWidget):
                 self._draw_arc(p, pts)
                 pos = label
                 text = f"{math.degrees(c.value) % 180:.2f}\u00b0"
+            elif isinstance(c, LineDistance):
+                # M187 R3 [LAW-59's visible distance]: the gap wears a
+                # chip like any dimension - and a short witness tick
+                # from its point to the parent's FOOT, so the number
+                # points at what it measures. Delete this chip and the
+                # distance is unlocked: the same row the weld minted.
+                pos = self._dim_anchor_screen(c)
+                if pos is None:
+                    continue
+                ln = c.line
+                ddx, ddy = ln.b.x - ln.a.x, ln.b.y - ln.a.y
+                Lg = math.hypot(ddx, ddy)
+                ux, uy = ddx / Lg, ddy / Lg
+                t = ((c.p.x - ln.a.x) * ux + (c.p.y - ln.a.y) * uy)
+                p.setPen(QPen(DIMC, 1))
+                p.drawLine(self.w2s(c.p.x, c.p.y),
+                           self.w2s(ln.a.x + ux * t, ln.a.y + uy * t))
+                text = self._dim_text(c)
             if text is None:
                 continue
             if bound:                       # M89: Fusion shows "=" driven
@@ -3749,6 +3773,18 @@ class SketchCanvas(QWidget):
                            mid.y() - (d.x() / ln) * 16)
         if isinstance(c, Radius):
             return self._radius_pos(c.curve)
+        if isinstance(c, LineDistance):
+            ln = c.line
+            dx, dy = ln.b.x - ln.a.x, ln.b.y - ln.a.y
+            L = math.hypot(dx, dy)
+            if L < 1e-9:
+                return None
+            # the chip rides the measured point, offset ALONG the
+            # gap's own side so it never sits on the parent line
+            ux, uy = dx / L, dy / L
+            sgn = 1.0 if c.value >= 0 else -1.0
+            s = self.w2s(c.p.x, c.p.y)
+            return QPointF(s.x() - sgn * uy * 16, s.y() - sgn * ux * 16)
         if isinstance(c, (Angle, AngleBetween)):
             arc = self._angle_arc_pts(c, 0)       # ring 0 = the natural
             return arc[1] if arc is not None else None   #  post of ONE

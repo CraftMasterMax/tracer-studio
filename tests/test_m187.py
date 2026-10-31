@@ -212,3 +212,117 @@ def test_the_bind_round_trips_through_the_payload():
     r = back.solve()
     assert r.converged and r.dof == 0, \
         "the association rides the book and re-opens fully bound"
+
+
+# ---- R3: THE GAP GETS A FACE -------------------------------------------------
+# LAW-59's second half needs a clickable distance: "delete the
+   # dimension UNLOCKS the distance". A weld that lives only in the
+   # book has no dimension to delete - the gap now wears a CHIP like
+   # every other dimension (one mouth, paint == hit) with a witness
+   # tick to the parent's foot, opens the editor on double-click, and
+   # unlocks through the ordinary delete door.
+
+from PySide6.QtCore import Qt                                        # noqa
+from PySide6.QtGui import QImage                                     # noqa
+from PySide6.QtTest import QTest                                     # noqa
+from PySide6.QtWidgets import QApplication                           # noqa
+from tracer.ui.sketcheditor import SketchCanvas                      # noqa
+
+
+@pytest.fixture(scope="module")
+def qapp():
+    return QApplication.instance() or QApplication([])
+
+
+def _canvas(m):
+    c = SketchCanvas()
+    c.set_model(m)
+    c.resize(600, 400)
+    c._snap_grid = False
+    c._scale = 5.0
+    return c
+
+
+def _painted(c):
+    img = QImage(c.width(), c.height(), QImage.Format.Format_RGBA8888)
+    img.fill(0)
+    c.render(img)                          # paint populates _dim_hits
+    return img
+
+
+def test_the_gap_speaks_its_chip(qapp):
+    m, made, w = _bound()
+    c = _canvas(m)
+    ld = _cons(m, LineDistance)[0]
+    assert c._dim_text(ld) == "5.00", \
+        "the chip says the MAGNITUDE - the sign is which side, not" \
+        " the dimension"
+    ld.driven = True
+    assert c._dim_text(ld) == "(5.00)", \
+        "and M178's parenthesised READER law rides the new family"
+    c.deleteLater()
+
+
+def test_the_gap_has_a_post_and_degenerate_lines_have_none(qapp):
+    m, made, w = _bound()
+    c = _canvas(m)
+    ld = _cons(m, LineDistance)[0]
+    pos = c._dim_anchor_screen(ld)
+    assert pos is not None and 0 <= pos.x() <= 600 and \
+        0 <= pos.y() <= 400
+    z = m.point(0.0, 0.0)
+    zl = m.add_line(z, m.point(0.0, 0.0))          # zero-length parent
+    assert c._dim_anchor_screen(LineDistance(z, zl, 1.0)) is None, \
+        "a degenerate line offers no post - the chip skips it (paint" \
+        " == hit == None)"
+    c.deleteLater()
+
+
+def test_every_weld_chips_and_answers_the_hit(qapp):
+    m, made, w = _bound()
+    c = _canvas(m)
+    _painted(c)
+    gap_hits = [hc for hc in c._dim_hits
+                if isinstance(hc[1], LineDistance)]
+    assert len(gap_hits) == 4, \
+        "four welds, four CHIPS - the association is now VISIBLE"
+    for rect, cc in gap_hits:
+        assert rect.isValid() and rect.right() <= 600 and \
+            rect.bottom() <= 400
+    c.deleteLater()
+
+
+def test_double_click_opens_the_gaps_editor(qapp):
+    m, made, w = _bound()
+    c = _canvas(m)
+    _painted(c)
+    rect, ld = next(hc for hc in c._dim_hits
+                    if isinstance(hc[1], LineDistance))
+    QTest.mouseDClick(c, Qt.LeftButton, Qt.NoModifier,
+                      rect.center().toPoint())   # chip rects are QRectF
+    assert c._dim_edit is not None and c._dim_edit.constraint is ld, \
+        "the M165 door opens on the gap chip like on any dimension"
+    c._close_dim_editor()
+    c.deleteLater()
+
+
+def test_deleting_the_chip_unlocks_only_its_distance(qapp):
+    m, made, w = _bound()
+    c = _canvas(m)
+    _painted(c)
+    rect, ld0 = next(hc for hc in c._dim_hits
+                     if isinstance(hc[1], LineDistance))
+    c.act_remove_constraint(ld0)            # THE DIMENSION IS DELETED
+    assert len(_cons(m, LineDistance)) == 3
+    assert m.remove_constraint is not None
+    w.value = 60.0                          # the parent RIDES...
+    r = m.solve()
+    assert r.converged
+    kept = _cons(m, LineDistance)
+    for kc in kept:                         # ...the other welds HOLD
+        assert abs(_signed_gap(kc.p, kc.line) - kc.value) < 1e-3
+    err0 = abs(_signed_gap(ld0.p, ld0.line) - 5.0)
+    assert err0 > 0.5, \
+        "but the UNCHIPPED edge fell behind - delete the dimension," \
+        " the distance UNLOCKS (LAW-59, out loud)"
+    c.deleteLater()
