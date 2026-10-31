@@ -188,7 +188,11 @@ def test_recovery_is_news(win, qapp, monkeypatch):
     win.doc = _failing_doc()
     win.recompute()
     win.doc.features[0].op = "union"
-    win.recompute()
+    # CITE-THE-MOVE (M188 R1): the fault now OWNS the marker - the bar
+    # shifted before it (LAW-64), and a pass that skips never heals.
+    # Recovery rides the law's own second half: "as you fix one error,
+    # ROLL FORWARD to the next". The roll-forward IS the recompute.
+    win._apply_rollback(None)
     qapp.processEvents()
     assert any("clean again" in e.text for e in L.entries())
     # the chip counts the session's events, like Fusion's log badge:

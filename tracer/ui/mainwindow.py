@@ -6380,6 +6380,19 @@ class MainWindow(QMainWindow):
             if self.timeline.bar.doc is not self.doc:
                 self.timeline.set_document(self.doc)
             self.timeline.bar.update()
+            if where is not None and self.doc.rollback_to != where[0]:
+                # M188 R1 [LAW-64 documented]: "when repairing a model
+                # with errors, the rollback bar SHIFTS TO THE FEATURE
+                # WITH THE FIRST ERROR." The marker lands right BEFORE
+                # the fault and the rebuild re-runs as the repair pass:
+                # what the maker sees is now the last honest state, the
+                # fault waiting past the marker in its red badge (a
+                # skip never heals a scar). View state - never saved.
+                self.doc.rollback_to = where[0]
+                self.recompute()              # the fault is skipped now
+                self.status.showMessage(
+                    f"Rollback shifted to {where[1]} — the marker waits "
+                    "before it; roll forward to test the fix", 6000)
             QMessageBox.warning(self, "Recompute failed", str(e))
             return
         # Keep every view following self.doc, even if a host code swapped
@@ -6414,9 +6427,13 @@ class MainWindow(QMainWindow):
             logservice.warn(line, source="kernel")
         if aw:
             self.status.showMessage(aw[0], 6000)
-        if was_bad:                     # M118: recovery is news too
-            logservice.info("recompute clean again", source="kernel")
-            self.timeline.bar.update()  # badges were wiped by the pass
+        if was_bad:                     # M118: recovery is news too -
+            # M188 R1: but ONLY when every scar actually healed. A pass
+            # that SKIPPED the fault under the marker must not shout
+            # "clean again" over a badge still wearing red.
+            if getattr(self.doc, "failed_feature", None) is None:
+                logservice.info("recompute clean again", source="kernel")
+            self.timeline.bar.update()  # badges follow the pass either way
 
     def _toggle_message_log(self):
         self._log_menu.toggle()       # menu check IS the truth

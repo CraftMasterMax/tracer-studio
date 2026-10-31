@@ -3222,12 +3222,20 @@ class Document:
             self._result = solids[0]          # the single-body world:
         else:                                 # the very solid it always was
             self._result = Solid.batch_union(solids)   # the PART is the union
-        # M118: a clean pass wipes every failure badge and pointer
+        # M118: a clean pass wipes failure badges and the pointer - but
+        # M188 R1 [LAW-64] narrows the honesty: a feature the rollback
+        # band SKIPPED this pass never RAN, and a pass that never ran
+        # a fault cannot call it healed. Only built features shed their
+        # scars; the pointer survives while any scar still wears one.
         self._in_feature = None
-        self.failed_feature = None
-        for f in self.features:
+        _cut = self.rollback_to
+        for _i, f in enumerate(self.features):
+            if _cut is not None and _i >= _cut:
+                continue                      # skipped: scar rides on
             if getattr(f, "error", None):
                 f.error = None
+        if not any(getattr(f, "error", None) for f in self.features):
+            self.failed_feature = None
         # rung D (M152): two states a model can live with but must
         # never live in SILENCE — a registered letter whose datum has
         # died, and a sketch hosted on a construction plane that is
@@ -3261,7 +3269,13 @@ class Document:
         error badge and remembers it for the log's click-to-select.
         Returns (pos, name) — or None if no feature was in flight."""
         info = getattr(self, "_in_feature", None)
-        for f in self.features:
+        _cut = self.rollback_to
+        for _i, f in enumerate(self.features):
+            # M188 R1: a fresh failure wipes the scars of features that
+            # RAN on the way here (they just proved themselves again) -
+            # never a wound sitting BEHIND the marker, untested.
+            if _cut is not None and _i >= _cut:
+                continue
             f.error = None
         if info is None:
             self.failed_feature = None
