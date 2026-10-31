@@ -8,8 +8,9 @@ import time
 
 import numpy as np
 import trimesh
-from PySide6.QtCore import QPoint, QSize, Qt, QSettings, QTimer, Signal
-from PySide6.QtGui import (QAction, QActionGroup, QKeySequence, QShortcut)
+from PySide6.QtCore import QPoint, QRect, QSize, Qt, QSettings, QTimer, Signal
+from PySide6.QtGui import (QAction, QActionGroup, QCursor, QKeySequence,
+                           QShortcut)
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, 
                                QLabel, QMainWindow, QMenu, QMessageBox,
                                QPushButton, QSplitter, QStackedWidget,
@@ -6440,8 +6441,10 @@ class MainWindow(QMainWindow):
 
     def open_command_search(self):
         self._palette.set_commands(collect_commands(self))
-        g = self.viewport.mapToGlobal(QPoint(0, 0))
-        self._palette.open_at(g.x() + self.viewport.width() // 2, g.y() + 72)
+        vp = self.viewport
+        self._palette.open_near(QRect(vp.mapToGlobal(QPoint(0, 0)),
+                                      vp.size()),
+                                QCursor.pos())
 
     def keyPressEvent(self, ev):
         if self._dispatch_key(ev.key(), ev.modifiers()):

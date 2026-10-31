@@ -288,3 +288,107 @@ def test_the_button_is_frame_ink(host, qapp):
     bright = int((win.min(axis=1) > 120).sum())
     print("button ink px", bright, "rect", r.getRect())
     assert bright > 20, "the promote button is PAINTED on the row"
+
+
+# ---- R3: THE PALETTE AT THE CURSOR ----------------------------------------
+# The same Autodesk post is explicit: "Command Search is designed to
+# place access to every Fusion command AT YOUR CURSOR... typing 'c' will
+# present the following list NEAR THE CURSOR" [documented].  Landing a
+# PURE placement mouth + the window rides IT (one mouth = no drift).
+
+from PySide6.QtCore import QSize                                     # noqa: E402
+from tracer.ui.palette import place_near_cursor                      # noqa: E402
+
+PARENT = QRect(100, 50, 900, 700)          # a viewport's global rect
+SIZE = QSize(620, 237)
+GAP = 6
+
+
+def test_cursor_open_room_lands_below_right():
+    p = place_near_cursor(PARENT, QPoint(300, 300), SIZE, GAP)
+    assert p == QPoint(306, 306), "the list opens AT the cursor, gap aside"
+
+
+def test_right_edge_flips_left_of_the_cursor():
+    cur = QPoint(PARENT.right() - 40, 300)
+    p = place_near_cursor(PARENT, cur, SIZE, GAP)
+    assert p.x() + SIZE.width() == cur.x() - GAP, \
+        "no room right? the palette FLIPS left of the cursor (still AT it)"
+    assert p.x() >= PARENT.left(), "and it never escapes the parent"
+
+
+def test_bottom_edge_flips_above_the_cursor():
+    cur = QPoint(400, PARENT.bottom() - 30)
+    p = place_near_cursor(PARENT, cur, SIZE, GAP)
+    assert p.y() + SIZE.height() == cur.y() - GAP, \
+        "no room below? it rides ABOVE the cursor - never off-parent"
+
+
+def test_top_left_corner_clamps_inside():
+    p = place_near_cursor(PARENT, QPoint(101, 51), SIZE, GAP)
+    assert p.x() >= PARENT.left() and p.y() >= PARENT.top(), \
+        "corner cursor: the WHOLE box stays inside the parent"
+    assert p.x() + SIZE.width() <= PARENT.right() + 1 \
+        and p.y() + SIZE.height() <= PARENT.bottom() + 1, \
+        "a box bigger than the corner clamps to fit"
+
+
+def test_open_near_clears_refocuses_and_relearns(host):
+    cham = Command("Cham&fer", "Modify", "G", lambda: None, lambda: True)
+    pa = _pal(host, [cham])
+    pa.toggle_promote(cham)              # teach through the store
+    pb = _pal(host, [cham])              # a second toolbox (fresh state)
+    pb.edit.setText("stale")
+    pb.open_near(QRect(0, 0, 1400, 900), QPoint(60, 60))
+    assert pb.edit.text() == "", "open clears the query (open_at law rides)"
+    assert pb._promoted and STAR in pb.list.item(0).text(), \
+        "open_near RE-READS the store - the lesson is visible at once"
+    assert pb.edit.hasFocus(), "the field owns the keyboard (LAW-35 twin)"
+    pb.hide()
+
+
+def test_open_near_actually_fits_the_parent(host):
+    p = _pal(host, [Command("Aa", "C", "", lambda: None, lambda: True)])
+    p.open_near(QRect(0, 0, 800, 600), QPoint(780, 590))
+    inside = p.pos().x() >= 0 and p.pos().y() >= 0 \
+        and p.pos().x() + p.width() <= 800 + 4 \
+        and p.pos().y() + p.height() <= 600 + 4     # offscreen wobble ≤4
+    print("corner pal pos", p.pos(), "size", p.width(), p.height())
+    assert inside, "the SHOWN box lives inside the parent's global rect"
+    p.hide()
+
+
+def test_the_window_rides_the_same_mouth(win, qapp):
+    from PySide6.QtGui import QCursor
+    vp = win.viewport
+    rect = QRect(vp.mapToGlobal(QPoint(0, 0)), vp.size())
+    cur = QPoint(rect.center().x() - 80, rect.center().y() - 40)
+    QCursor.setPos(cur)
+    qapp.processEvents()
+    win.open_command_search()
+    qapp.processEvents()
+    want = place_near_cursor(rect, QCursor.pos(),
+                             QSize(win._palette.width(),
+                                   win._palette.height()), 6)
+    got = win._palette.pos()
+    win._palette.hide()
+    assert abs(got.x() - want.x()) <= 4 and abs(got.y() - want.y()) <= 4, \
+        f"S places the toolbox AT THE CURSOR via the ONE mouth " \
+        f"(want {want}, got {got})"
+
+
+@pytest.fixture
+def win(qapp, settings_scrub):
+    from tracer.ui.mainwindow import MainWindow
+    from tracer.ui.renderer import SceneRenderer
+    try:
+        r = SceneRenderer()
+    except Exception as e:
+        pytest.skip(f"no headless GL: {e}")
+    w = MainWindow(renderer=r)
+    w.resize(1100, 720)
+    w.show()
+    qapp.processEvents()
+    yield w
+    w._unsaved = False
+    w.close()

@@ -10,7 +10,7 @@ their letters match — the pin is an ORDER, never a resurrection.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QEvent, QRect, QSettings, Signal
+from PySide6.QtCore import Qt, QEvent, QPoint, QRect, QSettings, Signal, QSize
 from PySide6.QtGui import QColor, QFont, QPen
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QMenu,
@@ -68,6 +68,24 @@ class _PromoteDelegate(QStyledItemDelegate):
 def _btn(row_rect, bw, bh):
     return QRect(row_rect.right() - bw - 8,
                  row_rect.center().y() - bh // 2, bw, bh)
+
+
+def place_near_cursor(parent_rect, cursor, size, gap: int = 6):
+    """M183 R3 [documented]: "Command Search is designed to place access
+    to every Fusion command AT YOUR CURSOR... the list NEAR THE CURSOR".
+    Below-right of the pointer is home; no room there, the box FLIPS to
+    the far side of the cursor (still AT it); a corner cursor clamps the
+    whole box inside the parent.  PURE on purpose - the window rides
+    this one mouth, so placement can never drift from the law."""
+    x = cursor.x() + gap
+    if x + size.width() > parent_rect.right():
+        x = cursor.x() - gap - size.width()
+    y = cursor.y() + gap
+    if y + size.height() > parent_rect.bottom():
+        y = cursor.y() - gap - size.height()
+    x = max(x, parent_rect.left())
+    y = max(y, parent_rect.top())
+    return QPoint(x, y)
 
 
 class CommandPalette(QFrame):
@@ -140,6 +158,19 @@ class CommandPalette(QFrame):
         self._refilter("")                       #   never cached-stale
         self.move(max(0, center_x - self.width() // 2), max(0, top_y))
         self.show()
+        self.edit.setFocus()
+        self.edit.selectAll()
+
+    def open_near(self, parent_rect, cursor):
+        """M183 R3: open AT THE CURSOR (place_near_cursor's one mouth).
+        Same open ritual as open_at (re-learn, clear, refocus) - only
+        the placement differs, and it rides the pure law."""
+        self._promoted = self._load_promoted()
+        self.edit.setText("")
+        self._refilter("")
+        self.show()
+        self.move(place_near_cursor(parent_rect, cursor,
+                                    QSize(self.width(), self.height())))
         self.edit.setFocus()
         self.edit.selectAll()
 
