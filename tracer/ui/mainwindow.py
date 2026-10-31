@@ -5791,6 +5791,15 @@ class MainWindow(QMainWindow):
         self._pick_spin.setRange(0, 20)
         self._pick_spin.setPrefix("Target ")
         self._pick_spin.setSuffix(" px")
+        # LAYOUT PARITY LAW (learned in CI-red): the sketch bar's
+        # natural size sets the offscreen window, and the window sets
+        # the canvas - the drag fixtures round w2s() to screen pixels,
+        # so BOTH canvas halves must stay integers. The spin's stock
+        # sizeHint entered the bar with an ODD footprint (99px) and
+        # slid every x by 0.125 world. A handle must sit in its row at
+        # its row's PARITY: even width, height no taller than siblings.
+        self._pick_spin.setFixedHeight(self._snap_btn.sizeHint().height())
+        self._pick_spin.setFixedWidth(92)
         self._pick_spin.setToolTip(
             "Selection target radius in pixels (the PICKBOX). Clicks\n"
             "and the hover preview share this ONE number; 0 turns the\n"

@@ -248,3 +248,23 @@ def test_the_knob_boots_from_settings(mw, qapp):
     w2._unsaved = False
     w2.close()
     w2.deleteLater()
+
+
+def test_the_chrome_never_moves_the_canvas_center(mw, qapp):
+    # LAYOUT PARITY LAW (learned CI-red twice over): the sketch bar's
+    # natural size sets the offscreen window, the window sets the
+    # canvas - and drag fixtures round w2s() to screen PIXELS, so both
+    # canvas halves must be integers. The spin's stock footprint came
+    # ODD (99px wide, 28px tall), slid every x by 0.125 world, and
+    # turned exact drags into 802.5s. A handle may not redecorate the
+    # studio: it sits in its row at its row's PARITY.
+    cv = mw.sketch
+    mw.action_new_sketch()                       # the VICTIM's context:
+    for _ in range(4):                           #  sketch page LIVE
+        qapp.processEvents()
+    assert cv.width() % 2 == 0 and cv.height() % 2 == 0, \
+        f"canvas {cv.width()}x{cv.height()} - centre on a half-pixel"
+    for wx, wy in ((40, 20), (-40, -20), (0, 0)):
+        p = cv.w2s(wx, wy)
+        assert p.x() == int(p.x()) and p.y() == int(p.y()), \
+            "w2s must survive toPoint() unharmed at ANY target"
