@@ -150,6 +150,8 @@ class SketchCanvas(QWidget):
         self._trim_hover = None                #   press arm / hover piece
         self._corner = None                    # M172 R1: the ROUNDING
         self._corner_pull = False              #   HAND: [kind,l1,l2,P,r]
+        self._corner_buf = ""                  # M172 R3: its OWN typed
+        self._corner_typed = False             #   mouth (not M90's)
         self._trim_last = None                 # M169 R3: the STROKE: last
         self._trim_done: set = set()           #   probe point, inert ids
         self._trim_stroke = False              #   held-drag flag + the one
@@ -259,6 +261,8 @@ class SketchCanvas(QWidget):
         self._trim_pushed = False
         self._corner = None                    # M172 R1: the rounding
         self._corner_pull = False              #  hand dies with the tool
+        self._corner_buf = ""                  # M172 R3: and so does
+        self._corner_typed = False             #  the typed mouth
         self._preview = None
         self._band = None
         self._snap_hint = None
@@ -547,7 +551,8 @@ class SketchCanvas(QWidget):
                 tol = 12.0 / max(self._scale, 1e-6)   #  the pull; a press
                 if math.hypot(wp0[0] - P.x, wp0[1] - P.y) <= tol:
                     self._corner_pull = True     #   anywhere else VOIDS
-                    return                       #  the aim - and the
+                    self._corner_typed = False   #  a fresh grip gives
+                    return                       #  the HAND the word
                 self._corner = None              #   click carries on
             hit = self._hit(q)
             if hit is None:
@@ -795,12 +800,14 @@ class SketchCanvas(QWidget):
             if g is None:
                 self._corner = self._corner_pull = None
             else:
-                _P, _o1, _o2, _u1, _u2, len1, len2, theta = g
-                rmax = math.tan(theta / 2.0) * (min(len1, len2) / 2.0 - 0.02)
-                self._corner[4] = max(0.05, min(math.hypot(
-                    wp[0] - P.x, wp[1] - P.y), rmax))
-                self.update()
-            return
+                if not self._corner_typed:       # M172 R3: once the
+                    _P, _o1, _o2, _u1, _u2, len1, len2, theta = g
+                    rmax = math.tan(theta / 2.0) * (min(len1, len2)
+                                                    / 2.0 - 0.02)
+                    self._corner[4] = max(0.05, min(math.hypot(
+                        wp[0] - P.x, wp[1] - P.y), rmax))
+                self.update()                    # mouth spoke? then the
+            return                               #  cursor just rides
         if self._tool == "trim":                  # M168 R3: hover previews
             if ev.buttons() & Qt.LeftButton and self._trim_last is not None:
                 # M169 R3: HELD LMB = the scribe. Past the click radius the
@@ -1090,25 +1097,10 @@ class SketchCanvas(QWidget):
             return
         if self._tool == "select":
             if self._corner_pull:                # M172 R1: THE ROUNDING
-                self._corner_pull = False        #  HAND files its arc:
-                corner, self._corner = self._corner, None   #  ONE push,
-                kind, l1, l2, P, r = corner      #  and a refusal pays
-                self._push_hist()                #   NOTHING (pop law)
-                from ..core.sketch.fillet import (corner_chamfer,
-                                                  corner_fillet)
-                try:
-                    made = (corner_fillet(self.model, l1, l2, r)
-                            if kind == "fillet"
-                            else corner_chamfer(self.model, l1, l2, r))
-                except ValueError as e:
-                    self._hist.pop()
-                    self._warn(str(e))
-                    self.update()
-                    return
-                self._solve()
-                self._sel = [made]               # the cut is the pick
-                self.update()
-                return
+                self._corner_pull = False        #  HAND files its cut
+                self._corner_file()              #  (R3: same door Enter
+                return                           #   knocks from the
+                                                 #   keyboard side)
             if moved:                            # M170 R2: a point drag
                 self._weld_drop(grab, ev.position())   #  that ENDED on a
                 self._solve()                    #  magnet welds on drop.
@@ -1746,6 +1738,8 @@ class SketchCanvas(QWidget):
         rmax = math.tan(theta / 2.0) * (leg / 2.0 - 0.02)   #  own default
         self._corner = [kind, l1, l2, _P, min(default, rmax)]
         self._corner_pull = False
+        self._corner_buf = ""                    # M172 R3: fresh aim,
+        self._corner_typed = False               #  fresh mouth
         self.update()
         return True
 
@@ -1800,6 +1794,88 @@ class SketchCanvas(QWidget):
         return [(cen[0] + r * math.cos(a1 + delta * i / 23.0),
                  cen[1] + r * math.sin(a1 + delta * i / 23.0))
                 for i in range(24)]
+
+    def _corner_file(self) -> bool:
+        """FILE whatever the arm holds - the release and the Enter key
+        knock on this ONE door: ONE history row, the kernel's own
+        refusal POPs it (took nothing = paid nothing), the cut becomes
+        the pick, and the aim is spent. Returns True when it filed."""
+        corner, self._corner, self._corner_buf = self._corner, None, ""
+        if corner is None:
+            return False
+        kind, l1, l2, _P, r = corner
+        self._push_hist()
+        from ..core.sketch.fillet import corner_chamfer, corner_fillet
+        try:
+            made = (corner_fillet(self.model, l1, l2, r)
+                    if kind == "fillet"
+                    else corner_chamfer(self.model, l1, l2, r))
+        except ValueError as e:
+            self._hist.pop()
+            self._warn(str(e))
+            self.update()
+            return False
+        self._solve()
+        self._sel = [made]                       # the cut is the pick
+        self.update()
+        return True
+
+    def _corner_rmax(self) -> float:
+        """The legs' own answer to 'how big?' - the kernel's numbers,
+        live (0.0 when the corner died under the aim)."""
+        g = self._corner_geom()
+        if g is None:
+            return 0.0
+        _P, _o1, _o2, _u1, _u2, len1, len2, theta = g
+        return math.tan(theta / 2.0) * (min(len1, len2) / 2.0 - 0.02)
+
+    def _corner_type_key(self, k: int):
+        """THE TYPE-IN RIDE (M172 R3): while the rounding hand is armed,
+        digits feed the CORNER'S OWN buffer - two verbs must not share
+        one mouth (M90's _num_buf belongs to the dimmer, and this hook
+        only fires when nothing is pending, so every digit that was
+        rightfully the dimmer's stays its own). Enter files the EXACT
+        typed number with NO MOUSE: the mouth outruns the hand (typed
+        text replaces a pull in flight; the cursor afterwards just
+        rides). Empty buffer + Enter commits the ghost's own number -
+        the default, or the pulled radius. Garbage WARNS and the ARM
+        STAYS ALIVE: a typo is not a cancelled verb. And the number
+        must still fit the legs - steel is steel for the mouth too."""
+        if k in (Qt.Key_Return, Qt.Key_Enter):
+            buf = self._corner_buf
+            if not buf:
+                self._corner_file()              # the ghost's own number
+                return
+            try:
+                v = float(buf)
+            except ValueError:
+                self._warn(f'"{buf}" is not a number')
+                return
+            rmax = self._corner_rmax()
+            if v <= 0.0:
+                self._warn("The cut needs a positive number")
+                return
+            if v > rmax:
+                self._warn(f"Too large for these legs (max {rmax:.2f})")
+                return
+            self._corner[4] = v                  # typed text OUTRANKS
+            self._corner_file()                  #  the pull: one door
+            return
+        if k == Qt.Key_Backspace:
+            self._corner_buf = self._corner_buf[:-1]
+        elif k == Qt.Key_Period:
+            if "." not in self._corner_buf:
+                self._corner_buf += "."          # one mouth, one point
+        else:
+            self._corner_buf += chr(k)           # Key_0..9 == '0'..'9'
+        self._corner_typed = True                # the mouth has the floor
+        try:                                     # the ghost rides every
+            v = float(self._corner_buf)          #  honest keystroke...
+            if 0.0 < v <= self._corner_rmax():
+                self._corner[4] = v
+        except ValueError:                       # ...and a half-typed
+            pass                                 #  "2.." moves nothing
+        self.update()
 
     def keyPressEvent(self, ev: QKeyEvent):
         k = ev.key()
@@ -1861,6 +1937,14 @@ class SketchCanvas(QWidget):
             return                                     #  NO hand - and
                                                        #  never the plain
                                                        #  D's dim either
+        if self._corner is not None and self._pending is None \
+                and (Qt.Key_0 <= k <= Qt.Key_9
+                     or k in (Qt.Key_Period, Qt.Key_Backspace,
+                              Qt.Key_Return, Qt.Key_Enter)):
+            self._corner_type_key(k)             # M172 R3: the numeral
+            return                               #  is TYPE-ABLE - the
+                                                 #   corner's OWN mouth,
+                                                 #   behind M90's door
         if k == Qt.Key_R and ev.modifiers() & Qt.ShiftModifier:
             self.finish(revolve=True)
             return

@@ -15,6 +15,17 @@ commit pops its row - a no-op leaves no undo. The aim is not modal:
 the rung-2 NUDGE moves the corner and the aim RIDES it (the state holds
 LIVE entities, not coordinates). One undo erases the whole fillet: the
 arc, the two minted points, all four structural constraints.
+
+Rung 2: G arms the FLAT twin on the same machine (chord ghost, D
+numeral, pull = distance, corner_chamfer files ZERO constraints).
+
+Rung 3 gives the ghost a voice: while ARMED, digits feed the corner's
+OWN buffer (M90's _num_buf stays the dimmer's mouth - the corner hook
+only fires with nothing pending). Enter files the EXACT typed number
+with no mouse; typed text OUTRANKS a pull in flight (the cursor
+afterwards just rides); empty buffer + Enter commits the ghost's own
+number; garbage warns and the ARM STAYS ALIVE; and the typed number
+must still fit the legs - steel is steel for the mouth too.
 """
 import pytest
 
@@ -192,6 +203,88 @@ def test_the_aim_rides_the_nudge_and_dies_with_the_tool(ed):
     _key(ed, Qt.Key_F)                             #  still-picked pair
     assert ed._corner is not None                  #  RE-ARMS the hand
     _key(ed, Qt.Key_Escape)                        # Esc kills the aim
+    assert ed._corner is None
+
+
+# ---- RUNG 3: THE NUMERAL AND THE TYPE-IN ----------------------------------
+
+def test_typing_the_radius_files_it_with_no_mouse(ed):
+    m, far1, P, far2 = _scene(ed)
+    _pick2(ed)
+    _key(ed, Qt.Key_F)
+    n0 = len(ed._hist)
+    QTest.keyClick(ed, Qt.Key_3)                   # NO MOUSE at all:
+    assert ed._corner_buf == "3"                   #  the corner's mouth
+    assert ed._corner[4] == pytest.approx(3.0)     #  the ghost rides it
+    QTest.keyClick(ed, Qt.Key_Return)
+    sk = m.sketch
+    assert len(sk.arcs) == 1
+    rad = [c for c in sk.constraints if isinstance(c, Radius)]
+    assert len(rad) == 1 and rad[0].value == pytest.approx(3.0)  # EXACT
+    assert ed._corner is None and ed._corner_buf == ""           # spent
+    assert len(ed._hist) == n0 + 1                 # still ONE row
+    assert ed._num_buf == ""                       # M90's mouth SHUT
+    assert (P.x, P.y) == pytest.approx((3.0, 6.0)) # tan_len rides the word
+
+
+def test_the_mouth_outruns_the_hand(ed):
+    m, far1, P, far2 = _scene(ed)
+    _pick2(ed)
+    _key(ed, Qt.Key_F)
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, _scr(6, 6))
+    _move(ed, 2.5, 6)                              # the hand asks 3.5...
+    assert ed._corner[4] == pytest.approx(3.5)
+    for k in (Qt.Key_2, Qt.Key_Period, Qt.Key_5):  # the mouth says 2.5
+        QTest.keyClick(ed, k)
+    assert ed._corner_buf == "2.5"
+    assert ed._corner[4] == pytest.approx(2.5)
+    _move(ed, 1.5, 6)                              # hand keeps moving...
+    assert ed._corner[4] == pytest.approx(2.5)     #  the number HOLDS
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier, _scr(1.5, 6))
+    rad = [c for c in m.sketch.constraints if isinstance(c, Radius)]
+    assert rad[0].value == pytest.approx(2.5, abs=1e-9)   # the mouth WON
+    assert (P.x, P.y) == pytest.approx((3.5, 6.0))
+
+
+def test_garbage_warns_the_arm_survives_and_empty_enter_files_the_ghost(ed):
+    m, far1, P, far2 = _scene(ed)
+    _pick2(ed)
+    _key(ed, Qt.Key_F)
+    n0 = len(ed._hist)
+    QTest.keyClick(ed, Qt.Key_Period)              # "." alone: typed...
+    assert ed._corner_buf == "."
+    assert ed._corner[4] == pytest.approx(2.0)     #  ghost unmoved
+    QTest.keyClick(ed, Qt.Key_Return)              # Enter on garbage:
+    assert "." in ed._warn_text                    #  WARNS...
+    assert ed._corner is not None                  #  ARM ALIVE...
+    assert len(ed._hist) == n0                     #   zero rows born
+    assert len(m.sketch.arcs) == 0
+    QTest.keyClick(ed, Qt.Key_Backspace)           # erase the typo
+    assert ed._corner_buf == ""
+    QTest.keyClick(ed, Qt.Key_Return)              # EMPTY Enter:
+    rad = [c for c in m.sketch.constraints if isinstance(c, Radius)]
+    assert len(rad) == 1 and rad[0].value == pytest.approx(2.0)  # the
+    assert len(ed._hist) == n0 + 1                 #  ghost's own number
+
+
+def test_the_corner_mouth_is_a_separate_mouth(ed):
+    m, far1, P, far2 = _scene(ed)
+    _pick2(ed)
+    _key(ed, Qt.Key_F)
+    QTest.keyClick(ed, Qt.Key_7)                   # digits while ARMED
+    assert ed._corner_buf == "7"                   #  feed the CORNER
+    assert ed._num_buf == ""                       #  M90's mouth stays
+    assert ed._pending is None                     #   SHUT...
+    assert ed._tool == "select"                    #   and no tool stole
+    assert len(m.sketch.arcs) == 0                 #    the keystroke
+    QTest.keyClick(ed, Qt.Key_Backspace)
+    assert ed._corner_buf == ""
+    ed._pending = ("dim-witness", None)            # open the DIMMER'S
+    QTest.keyClick(ed, Qt.Key_5)                   # mouth: the digit
+    assert ed._num_buf == "5"                      #  belongs to M90...
+    assert ed._corner_buf == ""                    #   corner hook slept
+    _key(ed, Qt.Key_Escape)                        # Esc lets go of BOTH
+    assert ed._pending is None and ed._num_buf == ""
     assert ed._corner is None
 
 
