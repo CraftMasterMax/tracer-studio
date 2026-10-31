@@ -3140,6 +3140,23 @@ class SketchCanvas(QWidget):
             self._cursor[0] - self._line_start.x)) % 360.0
         return f"{deg:.1f}"
 
+    def _rect_live_wh(self):
+        """M182 R1 (FD5-L23 siblings): the rect rubber-band's live WIDTH x
+        HEIGHT readings - a None-pair until a corner is armed and the
+        hover opens a real span (the line tool's whisper law: zero size
+        stays silent, the mint ends the conversation)."""
+        if self._tool != "rect" or self._cursor is None \
+                or self._rect_corner is None:
+            return None, None
+        a = self._rect_corner
+        ax = a.x if isinstance(a, Point) else a[0]
+        ay = a.y if isinstance(a, Point) else a[1]
+        w = abs(self._cursor[0] - ax)
+        h = abs(self._cursor[1] - ay)
+        if max(w, h) <= 1e-9:
+            return None, None
+        return f"{w:.2f}", f"{h:.2f}"
+
     def _typein_pos(self):
         """Where Fusion's little white box lives for the armed entity."""
         kind, ent = self._pending
@@ -3643,8 +3660,29 @@ class SketchCanvas(QWidget):
         kind, a, b = self._preview
         p.setPen(QPen(ACCENT, 1.4, Qt.DashLine))
         if kind == "rect":
-            p.drawRect(min(a[0], b[0]), max(a[1], b[1]),
-                       abs(b[0] - a[0]), abs(b[1] - a[1]))
+            # M182 R1: the band is a SCREEN story - both corners mapped
+            # through w2s (the pre-M182 branch fed RAW world numbers to
+            # drawRect: a speck at the canvas top-left, invisible where
+            # the eye waited). normalized() survives any drag direction.
+            p.drawRect(QRectF(self.w2s(*a), self.w2s(*b)).normalized())
+            wt, ht = self._rect_live_wh()       # M182 R1: the shape speaks
+            if wt and ht and self._cursor is not None:
+                s = self.w2s(self._cursor[0], self._cursor[1])
+                fm = p.fontMetrics()
+                p.setFont(self._font)
+                p.setBrush(QColor(theme.DARK["bg2"]))
+                p.setPen(Qt.NoPen)
+                for txt, dy in ((wt, -22), (ht, 4)):
+                    br = fm.boundingRect(txt)
+                    rect = QRectF(s.x() + 14 - br.width() / 2 - 6,
+                                  s.y() + dy - br.height() / 2 - 3,
+                                  br.width() + 12, br.height() + 6)
+                    p.drawRoundedRect(rect, 3, 3)
+                    p.setPen(FG)
+                    p.drawText(rect, Qt.AlignCenter, txt)
+                    p.setPen(Qt.NoPen)
+                p.setBrush(Qt.NoBrush)
+                p.setPen(QPen(ACCENT, 1.4, Qt.DashLine))
         elif kind == "ellipse":
             cen = self.w2s(a[0], a[1])
             p.drawEllipse(cen, abs(b[0] - a[0]) * self._scale,
