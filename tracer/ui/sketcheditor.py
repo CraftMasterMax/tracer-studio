@@ -834,6 +834,11 @@ class SketchCanvas(QWidget):
                 self._preview = ("circle", np.array([c.x, c.y]),
                                  np.array([c.x, c.y]))
             else:
+                if self._circ_typed:
+                    # M182 R3: the cell FILES the size the band promised.
+                    self._place_typed_circle()
+                    self.update()
+                    return
                 a = self._rect_corner
                 t = self._snap_target(q)       # aim, but mint NO point:
                 xy = ((t.x, t.y) if isinstance(t, Point)      # a stray
@@ -2230,6 +2235,31 @@ class SketchCanvas(QWidget):
                     self._rect_typed_w = ""
                     self.update()
                     return
+        if (self._tool == "circle" and self._pending is None
+                and self._rect_corner is not None):
+            # M182 R3 (FD5-L23): the circle carries ONE cell and speaks
+            # the DIALECT of speaks_dia - the live reading is a DIAMETER,
+            # the typed number is a diameter too, and the commit halves
+            # it honestly into a Radius dim (M98's mouth, unchanged).
+            txt = ev.text()
+            if txt.isdigit() or txt == ".":
+                if len(self._circ_typed) < 12:
+                    self._circ_typed += txt
+                self.update()
+                return
+            if k == Qt.Key_Backspace:
+                self._circ_typed = self._circ_typed[:-1]
+                self.update()
+                return
+            if k in (Qt.Key_Return, Qt.Key_Enter):
+                if self._circ_typed:
+                    self._place_typed_circle()       # places AND...
+                self.set_tool("select")              # ...ENDS (docs law)
+                return
+            if k == Qt.Key_Escape and self._circ_typed:
+                self._circ_typed = ""                # the cell frees;
+                self.update()                        #  the drag lives
+                return
         if self._pending is not None:               # M90: type-in first
             txt = ev.text()
             if txt.isdigit() or txt == ".":
@@ -3271,6 +3301,57 @@ class SketchCanvas(QWidget):
             self._num_buf = f"{ch:g}"
             self._commit_typed()                 # files H, clears lock
 
+    def _circ_live_d(self):
+        """M182 R3 (FD5-L23): the circle rubber-band's live DIAMETER
+        reading - the dialect is speaks_dia's ONE mouth (M174 R3): circles
+        speak diameter, so this reads 2r. The typed cell outranks the
+        recomputed hover; zero span stays silent (whisper law)."""
+        if self._tool != "circle" or self._cursor is None \
+                or self._rect_corner is None:
+            return None
+        if self._circ_typed:
+            return self._circ_typed
+        a = self._rect_corner
+        ax = a.x if isinstance(a, Point) else a[0]
+        ay = a.y if isinstance(a, Point) else a[1]
+        d = 2.0 * math.hypot(self._cursor[0] - ax, self._cursor[1] - ay)
+        return f"{d:.2f}" if d > 1e-9 else None
+
+    def _place_typed_circle(self):
+        """M182 R3: the cell FILES the circle - the CENTER stays where
+        click1 placed it (the armed Point is REUSED, M77's no-orphan law),
+        the hover RAY aims the rim and the typed DIAMETER rules; the
+        number is born a REAL Radius dim through M90's own honest halving
+        mouth (the same one post-commit typing always used)."""
+        a = self._rect_corner
+        if a is None or self._cursor is None:
+            return
+        d = None
+        if self._circ_typed.strip("."):
+            try:
+                d = float(self._circ_typed)
+            except ValueError:
+                d = None
+            if d is not None and d <= 0:
+                d = None
+        hx, hy = self._cursor[0] - a.x, self._cursor[1] - a.y
+        n = math.hypot(hx, hy)
+        r = d / 2.0 if d is not None else n
+        self._rect_corner = None
+        self._preview = None
+        self._shape_reset()
+        if r <= 1e-9:
+            return
+        self._push_hist()
+        c = self.model.add_circle(a, r)              # a IS the Point (M77)
+        self._solve()
+        self._pending = ("circle", c)
+        self._pending_stage = 0
+        self._num_buf = ""
+        if d is not None:
+            self._num_buf = f"{d:g}"
+            self._commit_typed()                     # dia in, R dim out
+
     def _shape_reset(self):
         """M182 R2: every pre-mint SHAPE cell goes dark together - the
         wash law carried from the line's cells to rect W/H (and the
@@ -3809,14 +3890,32 @@ class SketchCanvas(QWidget):
                 p.setPen(Qt.NoPen)
                 p.setBrush(Qt.NoBrush)
                 p.setPen(QPen(ACCENT, 1.4, Qt.DashLine))
-        elif kind == "ellipse":
-            cen = self.w2s(a[0], a[1])
-            p.drawEllipse(cen, abs(b[0] - a[0]) * self._scale,
-                          abs(b[1] - a[1]) * self._scale)
-        else:
+        elif kind == "circle":
             r = float(np.linalg.norm(b - a))
             cen = self.w2s(a[0], a[1])
             p.drawEllipse(cen, r * self._scale, r * self._scale)
+            dtxt = self._circ_live_d()            # M182 R3: the DIALECT -
+            if dtxt and self._cursor is not None:  # circles speak diameter
+                s = self.w2s(self._cursor[0], self._cursor[1])
+                shown = dtxt if self._circ_typed \
+                    else "\N{DIAMETER SIGN} " + dtxt   # hover wears the
+                fm = p.fontMetrics()                     #  unit; typing raw
+                p.setFont(self._font)
+                p.setBrush(QColor(theme.DARK["bg2"]))
+                p.setPen(QPen(QColor(theme.DARK["accent"]), 1.4))
+                br = fm.boundingRect(shown)
+                rect = QRectF(s.x() + 14 - br.width() / 2 - 6,
+                              s.y() - 22 - br.height() / 2 - 3,
+                              br.width() + 12, br.height() + 6)
+                p.drawRoundedRect(rect, 3, 3)     # the single cell is the
+                p.setPen(FG)                      #  live cell: ring always
+                p.drawText(rect, Qt.AlignCenter, shown)
+                p.setPen(Qt.NoPen)
+                p.setBrush(Qt.NoBrush)
+        else:
+            cen = self.w2s(a[0], a[1])
+            p.drawEllipse(cen, abs(b[0] - a[0]) * self._scale,
+                          abs(b[1] - a[1]) * self._scale)
 
     def _draw_hud(self, p: QPainter):
         lines = []

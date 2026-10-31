@@ -88,6 +88,21 @@ def _accent(img, x0, x1, y0, y1):
                 & (abs(w[:, :, 2] - ACCENT.blue()) < 50)).sum())
 
 
+def _accent_ring(img, cx, cy, hw=40, hh=14):
+    """The LIVE cell's focus border ink - theme DARK accent (76,155,255).
+    NOT chromatically separated from the band's SKETCH ACCENT (106,192,231)
+    - the deltas are (30,37,24), inside each other's ±50! - separation is
+    GEOMETRIC: the ring window must never touch band ink (M182 R3 law)."""
+    from PySide6.QtGui import QColor
+    from tracer.ui import theme
+    ra = QColor(theme.DARK["accent"])
+    w = img[max(0, cy - hh):cy + hh,
+            max(0, cx - hw):cx + hw].astype(int)
+    return int(((abs(w[:, :, 0] - ra.red()) < 50)
+                & (abs(w[:, :, 1] - ra.green()) < 50)
+                & (abs(w[:, :, 2] - ra.blue()) < 50)).sum())
+
+
 def _cell(cx, cy):
     """The W (dy -22) / H (dy +4) cell centers the line tool's M180 R1
     grammar paints at cursor screen s: (s.x()+14, s.y()+dy)."""
@@ -320,4 +335,94 @@ def test_the_typed_cells_wash_with_the_tool(ed, qapp):
     assert ed._rect_typed_w == ""                   #  swapped tool ->
     assert ed._rect_typed_h == ""                   #   every cell dark
     assert ed._rect_cell == "w"                     #    focus re-homed
+
+
+# ---- RUNG 3: THE CIRCLE SPEAKS DIAMETER (the ONE dialect, M98/M174 R3) ---
+# One cell (no Tab - one field), the hover RAY aims, the typed diameter
+# rules, and the commit is M90's honest halving: typed dia -> Radius dim.
+
+def _arm_c(ed, x=2.0, y=3.0):
+    ed.set_tool("circle")
+    _click(ed, x, y)
+
+
+def _radii(ed):
+    from tracer.core.sketch.constraints import Radius
+    return sorted(round(c.value, 6) for c in ed.model.sketch.constraints
+                  if type(c) is Radius)
+
+
+def test_the_circle_states_its_diameter_live(ed, qapp):
+    _arm_c(ed)
+    _move(ed, 5.0, 7.0)                             # r = 5 -> dia 10
+    qapp.processEvents()
+    assert ed._circ_live_d() == "10.00"
+    wcx, wcy = _cell(320, 150)                      # s = w2s(5,7) = (320,172)
+    img = _grab(ed)
+    assert _white(img, wcx, wcy) > 20               # the cell rides the
+    assert _accent_ring(img, wcx, wcy) >= 8         #  cursor WITH its ring
+
+
+def test_typing_feeds_the_circle_cell(ed, qapp):
+    _arm_c(ed)
+    _move(ed, 5.0, 7.0)
+    _type(ed, "12")
+    assert ed._circ_typed == "12"
+    assert ed._circ_live_d() == "12"                # raw typed outranks
+
+
+def test_esc_frees_the_circle_cell(ed, qapp):
+    _arm_c(ed)
+    _move(ed, 5.0, 7.0)
+    _type(ed, "12")
+    _key(ed, Qt.Key_Escape)
+    assert ed._circ_typed == ""                     # the drag LIVES
+    assert ed._rect_corner is not None
+
+
+def test_click_places_typed_diameter_along_the_hover_ray(ed, qapp):
+    _arm_c(ed)
+    _move(ed, 5.0, 7.0)                             # ray (0.6, 0.8)
+    _type(ed, "20")
+    _click(ed, 5.0, 7.0)
+    cs = ed.model.sketch.circles
+    assert len(cs) == 1
+    c = cs[0]
+    assert round(c.r, 6) == 10.0                    # dia 20 halved
+    assert round(c.c.x, 6) == 2.0 and round(c.c.y, 6) == 3.0
+    #  the CENTER stays where click1 put it - only the RIM aim matters
+    assert _radii(ed) == [10.0]                     # REAL Radius dim at birth
+    assert ed._pending is None                      #  the number filed
+    assert ed._tool == "circle"                     #  click keeps it live
+    assert ed._circ_live_d() is None                #  cells died with the rim
+
+
+def test_untyped_click_rides_the_hover_unchanged(ed, qapp):
+    _arm_c(ed)
+    _move(ed, 5.0, 7.0)
+    _click(ed, 5.0, 7.0)
+    c = ed.model.sketch.circles[-1]
+    assert round(c.r, 6) == 5.0
+    assert _radii(ed) == []                         #  nothing typed: no dim
+    assert ed._pending is not None                  #  M90's late-type ready
+
+
+def test_enter_places_files_and_ends_the_circle(ed, qapp):
+    _arm_c(ed)
+    _move(ed, 5.0, 7.0)
+    _type(ed, "10")
+    _key(ed, Qt.Key_Return)
+    c = ed.model.sketch.circles[-1]
+    assert round(c.r, 6) == 5.0                     # typed 10 = dia -> R 5
+    assert round(c.c.x, 6) == 2.0 and round(c.c.y, 6) == 3.0
+    assert _radii(ed) == [5.0]                      # filed through halving
+    assert ed._tool == "select"
+
+
+def test_the_circle_cell_washes_with_the_tool(ed, qapp):
+    _arm_c(ed)
+    _move(ed, 5.0, 7.0)
+    _type(ed, "12")
+    ed.set_tool("line")
+    assert ed._circ_typed == ""
 
