@@ -326,3 +326,105 @@ def test_deleting_the_chip_unlocks_only_its_distance(qapp):
         "but the UNCHIPPED edge fell behind - delete the dimension," \
         " the distance UNLOCKS (LAW-59, out loud)"
     c.deleteLater()
+
+
+# ---- R4: THE GLYPH THAT REMEMBERS WHAT THE CHIP RELEASED --------------------
+# LAW-59's last clause: "delete the dimension UNLOCKS the distance
+# (right-click glyph -> Add Offset Dimension restores)". After the
+# chip dies the weld still lives in the book - and now it wears a
+# GLYPH (the parallel mark on the child edge) that speaks ONLY while
+# the pair has no distance row: chip and glyph are one voice per
+# pair, never two. The glyph's menu RESTORES - stamping the CURRENT
+# gap (re-weld where the copy STANDS, not where it was born) - or
+# dissociates outright (Remove Association kills the Parallel too).
+
+from tracer.core.sketch.constraints import Parallel as _Par           # noqa
+
+
+def _dangling(c, ld0):
+    """Paint and hand back the dangling glyph's Parallel row for the
+    pair that lost its dimension (None if the law broke)."""
+    _painted(c)
+    for rect, cc in c._constraint_hits:
+        if isinstance(cc, _Par) and cc.l2 is ld0.line \
+                and cc.l1 is ld0.p_line:
+            return cc
+    return None
+
+
+def test_the_dangling_weld_wears_a_glyph_and_the_chipped_one_does_not(qapp):
+    m, made, w = _bound()
+    c = _canvas(m)
+    _painted(c)
+    pars = [cc for _, cc in c._constraint_hits if isinstance(cc, _Par)]
+    assert pars == [], "a pair WITH its chip grows no second voice"
+    ld0 = _cons(m, LineDistance)[0]
+    # remember the child line before the row's witness point (ld0.p)
+    ld0.p_line = next(ln for ln in (made) if ld0.p in (ln.a, ln.b))
+    c.act_remove_constraint(ld0)
+    g = _dangling(c, ld0)
+    assert g is not None, \
+        "delete the dimension and the WELD surfaces as a glyph"
+    c.deleteLater()
+
+
+def test_the_glyph_menu_offers_the_restore_and_the_cut(qapp):
+    m, made, w = _bound()
+    c = _canvas(m)
+    ld0 = _cons(m, LineDistance)[0]
+    ld0.p_line = next(ln for ln in made if ld0.p in (ln.a, ln.b))
+    c.act_remove_constraint(ld0)
+    par = _dangling(c, ld0)
+    c._hover_c = par                          # right-click ON the glyph
+    texts = [x.text() for x in c._build_menu().actions()]
+    assert "Add Offset Dimension" in texts, \
+        "the law's own door: right-click glyph -> Add Offset Dimension"
+    assert "Remove Association" in texts, \
+        "and delete-the-glyph dissociates - both halves of LAW-59"
+    c._hover_c = None
+    c.deleteLater()
+
+
+def test_the_glyph_restores_at_the_gap_it_stands_in(qapp):
+    m, made, w = _bound()
+    c = _canvas(m)
+    ld0 = _cons(m, LineDistance)[0]
+    ld0.p_line = next(ln for ln in made if ld0.p in (ln.a, ln.b))
+    c.act_remove_constraint(ld0)
+    par = _dangling(c, ld0)
+    w.value = 60.0
+    m.solve()                                 # the copy falls behind
+    now = _signed_gap(ld0.p, ld0.line)
+    c._hover_c = par
+    acts = {x.text(): x for x in c._build_menu().actions()}
+    acts["Add Offset Dimension"].trigger()    # the restore, via the menu
+    fresh = [cc for cc in _cons(m, LineDistance) if cc.p is ld0.p]
+    assert len(fresh) == 1 and fresh[0].value == pytest.approx(now), \
+        "RESTORE stamps the CURRENT gap - re-weld where it STANDS"
+    assert fresh[0] is not ld0
+    w.value = 80.0
+    r = m.solve()
+    assert r.converged and \
+        abs(_signed_gap(fresh[0].p, fresh[0].line) - now) < 1e-3, \
+        "and the restored promise RULES again: the copy rides"
+    c.deleteLater()
+
+
+def test_removing_the_association_dissolves_every_promise(qapp):
+    m, made, w = _bound()
+    c = _canvas(m)
+    ld0 = _cons(m, LineDistance)[0]
+    ld0.p_line = next(ln for ln in made if ld0.p in (ln.a, ln.b))
+    c.act_remove_constraint(ld0)              # the dimension is gone
+    par = _dangling(c, ld0)
+    c._hover_c = par
+    acts = {x.text(): x for x in c._build_menu().actions()}
+    acts["Remove Association"].trigger()      # the glyph dies too
+    assert not any(cc is par for cc in m.sketch.constraints), \
+        "delete the offset glyph -> DISSOCIATES (LAW-59 first clause)"
+    assert len(_cons(m, _Par)) == 3 and len(_cons(m, LineDistance)) == 3
+    w.value = 60.0
+    m.solve()
+    assert abs(_signed_gap(ld0.p, ld0.line) - 5.0) > 0.5, \
+        "no promise remains - nothing pulls that edge any more"
+    c.deleteLater()

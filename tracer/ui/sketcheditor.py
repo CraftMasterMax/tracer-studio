@@ -19,9 +19,9 @@ from PySide6.QtWidgets import QApplication, QWidget
 from ..core.sketch.constraints import (Angle, AngleBetween, Collinear,
                                        Concentric, Distance, Equal, Fixed,
                                        Horizontal, LineDistance, Midpoint,
-                                       Perpendicular, PointOnCircle,
-                                       PointOnLine, Radius, Symmetry,
-                                       Tangent, Vertical,
+                                       Parallel, Perpendicular,
+                                       PointOnCircle, PointOnLine, Radius,
+                                       Symmetry, Tangent, Vertical,
                                        make_angle, make_angle_between,
                                        make_tangent, snapped, speaks_dia)
 from ..core.sketch.entities import (Arc, Circle, Ellipse, Line, Point,
@@ -1906,6 +1906,12 @@ class SketchCanvas(QWidget):
             menu.addAction("Remove Constraint",    # hover (mousePress
                            lambda c=hv: self.act_remove_constraint(c))
             menu.addSeparator()                    # :427-429 clears not)
+        if isinstance(hv, Parallel) and self._weld_gap(hv) is None:
+            menu.addAction("Add Offset Dimension",  # M187 R4 (LAW-59):
+                           lambda c=hv: self.act_add_offset_dim(c))
+            menu.addAction("Remove Association",    # the glyph owns BOTH
+                           lambda c=hv: self.act_remove_association(c))
+            menu.addSeparator()                     #  its own doors
         if hv is not None and isinstance(hv, Radius):   # M174 R3 (FD5-
             menu.addAction("Toggle Radius / Diameter",  #  L35): a radial
                            lambda c=hv: self.act_dia(c))  #  chip speaks
@@ -2883,6 +2889,54 @@ class SketchCanvas(QWidget):
         self._solve()
         self.update()
 
+    def _weld_gap(self, par):
+        """M187 R4 [LAW-59]: the LineDistance a parallel weld shares
+        its pair with - ONE mouth (paint == menu == act) answering
+        whether the association already speaks a distance. A dangling
+        weld wears the glyph; a chip-speaking pair never does."""
+        for cc in self.model.sketch.constraints:
+            if isinstance(cc, LineDistance) and cc.line is par.l2 and \
+                    cc.p in (par.l1.a, par.l1.b):
+                return cc
+        return None
+
+    def act_add_offset_dim(self, par):
+        """M187 R4 [LAW-59]: right-click the dangling offset glyph ->
+        ADD OFFSET DIMENSION. The weld gets a number back - the gap AS
+        IT STANDS, not the one it was born with: restore re-welds
+        where the copy lives (the book's LATEST truth wins, and a
+        dimension that lied about the drawing was never a promise)."""
+        if not any(cc is par for cc in self.model.sketch.constraints):
+            return                              # stale: zero trace
+        if self._weld_gap(par) is not None:
+            return                              # already speaks: no twin
+        ln = par.l2
+        dx, dy = ln.b.x - ln.a.x, ln.b.y - ln.a.y
+        L = math.hypot(dx, dy)
+        if L < 1e-9:
+            self._warn("That weld's parent line is degenerate")
+            return                              # zero trace, no hist
+        gap = (dx * (par.l1.a.y - ln.a.y) - dy * (par.l1.a.x - ln.a.x)) / L
+        self._push_hist()
+        self.model.constrain(LineDistance(par.l1.a, ln, gap))
+        self._hover_c = None
+        self._solve()
+        self.update()
+
+    def act_remove_association(self, par):
+        """M187 R4 [LAW-59 first clause]: delete the offset glyph and
+        the association DISSOCIATES - the parallel weld itself dies
+        (one undo, one re-solve). The dimension row, if any, was
+        already deleted through its own chip door; nothing half-
+        promises here."""
+        if not any(cc is par for cc in self.model.sketch.constraints):
+            return                              # stale: zero trace
+        self._push_hist()
+        self.model.remove_constraint(par)
+        self._hover_c = None
+        self._solve()
+        self.update()
+
     def _dof_hud_text(self) -> str:
         """M164 R1: the DOF line the HUD paints - dof_summary()'s contract
         byte-exact, plus the rank truth the solve now remembers
@@ -3721,6 +3775,18 @@ class SketchCanvas(QWidget):
                     self._tangent_mark(p, pt)
                     self._constraint_hits.append(   # M164 R2: the mark is
                         (QRectF(pt.x() - 5, pt.y() - 5, 10, 10), c))  # hot
+            elif isinstance(c, Parallel):
+                # M187 R4 [LAW-59]: a weld whose dimension was deleted
+                # wears the offset GLYPH (the parallel mark on the
+                # child edge) - the law's handle for "right-click glyph
+                # -> Add Offset Dimension restores" and "delete the
+                # glyph dissociates". A pair that still speaks its
+                # distance shows the CHIP only: one voice per promise,
+                # never two colliding glyphs (M164's own precedent).
+                if self._weld_gap(c) is None:
+                    self._badge(p, self.w2s(
+                        (c.l1.a.x + c.l1.b.x) / 2,
+                        (c.l1.a.y + c.l1.b.y) / 2), "\u2225", c=c)
             # Distance & Radius: no badge — the editable dimension label
             # from _draw_dimensions is the single indicator (as in
             # Fusion). Two glyphs for one value used to collide
