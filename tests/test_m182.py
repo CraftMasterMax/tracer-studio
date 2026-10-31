@@ -77,11 +77,15 @@ def _white(img, cx, cy, hw=18, hh=9):
 
 
 def _accent(img, x0, x1, y0, y1):
-    """ACCENT dashed rubber-band ink inside a screen box."""
+    """ACCENT dashed rubber-band ink inside a screen box. Tolerance 50:
+    an AA 1.4px stroke blends to ~(89,152,183) and NEVER hits pure
+    ACCENT (106,192,231) - a ±30 box counts only lucky pixels and LIES
+    (M182 film law). Grid (69,79,97), bg (46,52,64) and HUD white stay
+    outside ±50."""
     w = img[y0:y1, x0:x1].astype(int)
-    return int(((abs(w[:, :, 0] - ACCENT.red()) < 30)
-                & (abs(w[:, :, 1] - ACCENT.green()) < 30)
-                & (abs(w[:, :, 2] - ACCENT.blue()) < 30)).sum())
+    return int(((abs(w[:, :, 0] - ACCENT.red()) < 50)
+                & (abs(w[:, :, 1] - ACCENT.green()) < 50)
+                & (abs(w[:, :, 2] - ACCENT.blue()) < 50)).sum())
 
 
 def _cell(cx, cy):
@@ -106,6 +110,23 @@ def test_the_rubber_band_lives_where_you_draw_it(ed, qapp):
     assert true_px >= 8, f"band absent at the cursor ({true_px} px)"
     assert raw_px == 0, f"band still painting raw world-as-pixels " \
                         f"({raw_px} px top-left)"
+
+
+def test_the_band_REPAINTS_when_the_hover_moves(ed, qapp):
+    # M182 R1 film law: the F2 frame caught a dead band at first glance -
+    # a move that RE-EXTENDS an already-painted band must repaint it at
+    # the NEW span. A still frame is a lie; the band must TRACK every
+    # move (root-caused to a lying ±30 color box, not the product - the
+    # gate stays as the tracking law it encodes).
+    ed.set_tool("rect")
+    _click(ed, 2.0, 3.0)
+    _move(ed, 10.0, 8.0)                        # first extension: painted
+    qapp.processEvents()
+    assert _accent(_grab(ed), 304, 344, 164, 192) >= 8
+    _move(ed, 14.0, 12.0)                       # RE-extension: must repaint
+    qapp.processEvents()
+    later = _accent(_grab(ed), 304, 360, 148, 192)
+    assert later >= 8, f"band went stale on the second move ({later} px)"
 
 
 # ---- THE VOICE: live W x H at the cursor (M180 R1 grammar) --------------
