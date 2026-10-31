@@ -13,7 +13,8 @@ from PySide6.QtGui import (QAction, QActionGroup, QCursor, QKeySequence,
                            QShortcut)
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, 
                                QLabel, QMainWindow, QMenu, QMessageBox,
-                               QPushButton, QSplitter, QStackedWidget,
+                               QPushButton, QSpinBox, QSplitter,
+                               QStackedWidget,
                                QToolBar, QToolButton, QVBoxLayout, QWidget,
                                QDialog)
 
@@ -5782,6 +5783,19 @@ class MainWindow(QMainWindow):
         self._snap_btn.setToolTip("Snap drawing clicks to grid "
                                   "intersections")
         bl.addWidget(self._snap_btn)
+        # M185 R2 [LAW-45]: the PICKBOX meets the hand - the selection
+        # target radius lives right beside the grid toggle. The spin is
+        # a WINDOW onto the canvas mouth: it never writes QSettings -
+        # set_pick_radius (R1) is the ONE door that persists.
+        self._pick_spin = QSpinBox()
+        self._pick_spin.setRange(0, 20)
+        self._pick_spin.setPrefix("Target ")
+        self._pick_spin.setSuffix(" px")
+        self._pick_spin.setToolTip(
+            "Selection target radius in pixels (the PICKBOX). Clicks\n"
+            "and the hover preview share this ONE number; 0 turns the\n"
+            "live selection previews off - targets still click-select.")
+        bl.addWidget(self._pick_spin)
         # Fusion's constraint voice on the toolbar (M73): fully / dof
         self._sketch_state = ClickableLabel("")    # M164 R2: the chip acts
         self._sketch_state.setStyleSheet(
@@ -5830,6 +5844,11 @@ class MainWindow(QMainWindow):
                 #  live canvas._last_dim (plan risk 3 self-heal)
         self._wire_sketch_params(self.sketch)      # M89 fx sees the sheet
         self._snap_btn.setChecked(self.sketch._snap_grid)
+        self._pick_spin.setValue(self.sketch.pick_radius)   # M185 R2:
+        self._pick_spin.valueChanged.connect(               #  two doors,
+            self.sketch.set_pick_radius)                    #  one mouth -
+        self.sketch.pick_radius_changed.connect(            #  it converges
+            self._pick_spin.setValue)                       #  by design
         lay.addWidget(bar)
         lay.addWidget(self.sketch, 1)
         return page

@@ -173,3 +173,78 @@ def test_ink_follows_the_knob(ed, qapp):
     assert hover_ink() >= 100, "at 9 the near miss still wears the voice"
     ed.set_pick_radius(4)                      # eviction repaints at once
     assert hover_ink() <= 40, "shrinking the knob silences the frame NOW"
+
+
+# ---- R2: THE KNOB MEETS THE HAND (the toolbar carries it) ------------------
+# A behavior with no handle is half a feature: Fusion keeps the target
+# radius in Options; Tracer's canvas settings live on the sketch
+# toolbar beside Snap-to-grid. ONE control, both-way bound, persisted
+# only by the canvas mouth (R1) - the chrome never writes QSettings.
+
+import pytest                                                        # noqa
+
+
+@pytest.fixture
+def mw(qapp):
+    QSettings().remove("sketch/pickbox")            # POLLUTION LAW
+    from tracer.ui.mainwindow import MainWindow
+    from tracer.ui.renderer import SceneRenderer
+    w = MainWindow(renderer=SceneRenderer())
+    w.resize(1000, 700)
+    w.show()
+    for _ in range(6):
+        qapp.processEvents()
+    yield w
+    w._unsaved = False
+    w.close()
+    w.deleteLater()
+    QSettings().remove("sketch/pickbox")
+    for _ in range(3):
+        qapp.processEvents()
+
+
+def test_the_toolbar_carries_the_knob(mw):
+    sp = mw._pick_spin
+    assert (sp.minimum(), sp.maximum()) == (0, 20), \
+        "the chrome knows the law's range"
+    assert sp.value() == 9 and mw.sketch.pick_radius == 9, \
+        "it OPENS where the canvas lives"
+
+
+def test_spin_turns_the_canvas_and_persists(mw):
+    mw._pick_spin.setValue(3)
+    assert mw.sketch.pick_radius == 3, "the hand turns the mouth"
+    assert int(QSettings().value("sketch/pickbox")) == 3, \
+        "the canvas (not the spin) persists it - ONE mouth"
+
+
+def test_canvas_turns_the_spin(mw):
+    mw.sketch.set_pick_radius(15)                   # any other door
+    assert mw._pick_spin.value() == 15, \
+        "the spin listens: it shows the truth, never a copy"
+
+
+def test_the_loop_never_spins(mw):
+    got = []
+    mw.sketch.pick_radius_changed.connect(got.append)
+    mw._pick_spin.setValue(9)                       # the SAME number
+    assert got == [], "a no-change says NOTHING (no echo at all)"
+    mw._pick_spin.setValue(6)
+    assert got == [6], "ONE turn, ONE emission - the loop converges"
+    mw._pick_spin.setValue(6)
+    assert got == [6]
+
+
+def test_the_knob_boots_from_settings(mw, qapp):
+    QSettings().setValue("sketch/pickbox", 5)
+    from tracer.ui.mainwindow import MainWindow
+    from tracer.ui.renderer import SceneRenderer
+    w2 = MainWindow(renderer=SceneRenderer())
+    w2.show()
+    for _ in range(6):
+        qapp.processEvents()
+    assert w2.sketch.pick_radius == 5 == w2._pick_spin.value(), \
+        "the remembered knob greets the next session"
+    w2._unsaved = False
+    w2.close()
+    w2.deleteLater()
