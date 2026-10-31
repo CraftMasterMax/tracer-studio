@@ -346,6 +346,8 @@ class SketchModel:
             raise ValueError("Offset of outlines with holes is not "
                              "supported yet")
         pts = np.asarray(loops[0]["points"], float)
+        parents = list(self.sketch.lines)     # R2 (LAW-59): the book
+        #  BEFORE the copy - the parents the children will be welded to
         n = len(pts)
         if n < 3 or abs(d) < 1e-9:
             return []
@@ -391,7 +393,62 @@ class SketchModel:
                                  "choose a smaller distance")
         sk = self.sketch
         ps = [sk.point(float(p[0]), float(p[1])) for p in corners]
-        return [sk.line(ps[i], ps[(i + 1) % m]) for i in range(m)]
+        made = [sk.line(ps[i], ps[(i + 1) % m]) for i in range(m)]
+        self._bind_offset(parents, made, d)
+        return made
+
+    def _bind_offset(self, parents, made, d):
+        """M187 R2 [LAW-59 OFFSET ASSOCIATION]: an offset copy holds
+        its parent - each child edge is welded with PARALLELism plus
+        the signed gap AS MINTED (LineDistance measured from the very
+        geometry just built, so no winding algebra can be wrong). A
+        parent is matched by the construction's own fingerprint:
+        parallel within 1e-6, its midpoint exactly |d| off the child
+        edge, projecting onto it. An edge whose parent cannot be
+        named uniquely keeps no fake promise - it stays free rather
+        than lie about an association."""
+        from .constraints import LineDistance, Parallel
+
+        def unit(p, q):
+            e = np.array([q.x - p.x, q.y - p.y], float)
+            L = float(np.hypot(*e))
+            return (e / L, L) if L > 1e-12 else (None, 0.0)
+
+        def cr(u, v):
+            return u[0] * v[1] - u[1] * v[0]
+
+        for child in made:
+            cu, clen = unit(child.a, child.b)
+            if cu is None:
+                continue
+            cands = []
+            for p in parents:
+                if p is child:
+                    continue
+                pu, plen = unit(p.a, p.b)
+                if pu is None or abs(cr(cu, pu)) > 1e-6:
+                    continue
+                mid = np.array([(p.a.x + p.b.x) / 2.0,
+                                (p.a.y + p.b.y) / 2.0])
+                v = mid - np.array([child.a.x, child.a.y])
+                g = float(cr(cu, v))                 # mid's gap to child
+                if abs(abs(g) - abs(d)) > 1e-6:
+                    continue
+                t = float(np.dot(mid - np.array([child.a.x, child.a.y]),
+                                 cu))
+                if not (-1e-6 <= t <= clen + 1e-6):   # must OVERLAP
+                    continue
+                cands.append(p)
+            if len(cands) != 1:
+                continue                              # no fake promise
+            par = cands[0]
+            v = np.array([child.a.x - par.a.x, child.a.y - par.a.y])
+            pu, _pl = unit(par.a, par.b)
+            gap = float(cr(pu, v))                    # child.a's SIGNED
+            #  gap to the parent line as minted (sign follows the
+            #  parent's own a->b - the same form LineDistance speaks)
+            self.constrain(Parallel(child, par))
+            self.constrain(LineDistance(child.a, par, gap))
 
     # ---- constraints ------------------------------------------------------
     def constrain(self, *cs: object, src: str = ""):
