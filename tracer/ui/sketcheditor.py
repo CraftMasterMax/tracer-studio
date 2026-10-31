@@ -13,7 +13,7 @@ import math
 import numpy as np
 from PySide6.QtCore import QEvent, QPointF, QSettings, QRectF, Qt, Signal
 from PySide6.QtGui import (QColor, QFont, QKeyEvent, QMouseEvent, QPainter,
-                           QPen, QWheelEvent)
+                           QPen, QPolygonF, QWheelEvent)
 from PySide6.QtWidgets import QApplication, QWidget
 
 from ..core.sketch.constraints import (Angle, AngleBetween, Collinear,
@@ -73,6 +73,9 @@ AXIS_X = QColor.fromRgbF(*theme.DARK["axis_x"])
 AXIS_Y = QColor.fromRgbF(*theme.DARK["axis_y"])
 OK = QColor(theme.SUCCESS)
 WARN = QColor(theme.WARNING)
+
+CHAIN_TOOLS = ("line", "rect", "circle", "arc",            # M176: the
+               "ellipse", "slot", "poly")                  #  chain verbs
 HOVER = QColor(theme.SKETCH["hover"])       # M164 R2: constraint-hover ring
 
 _HIT_PX = 9
@@ -150,6 +153,9 @@ class SketchCanvas(QWidget):
         self._dbl_exit: tuple | None = None       # M176 R1 (L26): the
         #   timestamp+pos of a chain-exit DblClick; the press-2 a real
         #   platform sends afterwards is swallowed within the interval.
+        self._check_hit: QRectF | None = None     # M176 R2 (L26): the
+        #   green-check affordance's rect (end the chain, KEEP the tool);
+        #   painted only while a chain tool is armed.
         self._drag: tuple | None = None        # M167 R1: body drag
         #   (pts, starts, anchor_world) — the delta law's record
         self._pend_toggle = None               # M167 R3: Ctrl-press on a
@@ -599,6 +605,12 @@ class SketchCanvas(QWidget):
                     and (q - qp).manhattanLength() <= 6):   #  is a GHOST -
                 return                                      #  the act is
             #                                               #  already over
+        if self._chain_armed() and self._chain_check_rect().contains(q):
+            #  M176 R2 (L26): a press on the GREEN CHECK ends the chain but
+            #  KEEPS the tool. The rect is computed LIVE (same formula the
+            #  painter uses - one post, no stale hit-list, paint-independent).
+            self._finish_chain()
+            return
         if self._dim_place is not None:                     # M175 R2: PLACE
             c = self._dim_place                           #  claims EVERY
             self._dim_place = None                        #   left press,
@@ -2224,6 +2236,10 @@ class SketchCanvas(QWidget):
                 self._draw_dof(p)
             self._draw_typein(p)              # M90: the live number chip
             self._draw_preview(p)
+            if self._chain_armed():            # M176 R2 (L26): the GREEN
+                self._draw_chain_check(p)      #  CHECK ends the chain but
+            else:                              #  KEEPS the tool armed -
+                self._check_hit = None         #  painted on top, last.
         self._draw_band(p)
         self._draw_hud(p)
         p.end()
@@ -2552,8 +2568,7 @@ class SketchCanvas(QWidget):
             if rect.contains(q):
                 self._open_dim_editor(c)           # M165 R2: every chip
                 return                             #  kind, ONE door
-        if self._tool in ("line", "rect", "circle", "arc",
-                          "ellipse", "slot", "poly"):
+        if self._tool in CHAIN_TOOLS:
             # FD5-L26 (M176 R1): a DOUBLE-CLICK ENDS THE CHAIN AND EXITS.
             # The count-1 press already drew its stroke - that is the last
             # segment the maker wanted; the act ENDS HERE, and the press-2
@@ -2564,6 +2579,64 @@ class SketchCanvas(QWidget):
             self.set_tool("select")
             return
         super().mouseDoubleClickEvent(ev)
+
+    # ---- M176 R2 (L26): the green check ends the chain, KEEPS the tool ----
+    def _chain_armed(self) -> bool:
+        """Is a chain tool live with work in progress (a start point, a
+        corner, or in-progress poly/arc/slot points)? The check glyph is
+        painted only when this is true - a bare armed tool with nothing
+        drawn yet has no chain to END."""
+        if self._tool not in CHAIN_TOOLS:
+            return False
+        return (self._line_start is not None
+                or self._rect_corner is not None
+                or bool(getattr(self, "_poly", []))
+                or bool(getattr(self, "_arc_pts", []))
+                or bool(getattr(self, "_slot", [])))
+
+    def _finish_chain(self):
+        """FD5-L26 middle clause (M176 R2): the check mark ENDS THE CHAIN
+        but LEAVES THE TOOL ARMED - the next click opens a FRESH chain, so
+        the maker draws many lines without re-arming. Contrast the
+        double-click (ends AND exits to select) and Esc (ends the command).
+        Every committed stroke already stands on its own click, so ending
+        means only: wash the pending arming + the number chip."""
+        self._line_start = None
+        self._rect_corner = None
+        self._poly = []
+        self._arc_pts = []
+        self._slot = []
+        self._preview = None
+        self._pending = None
+        self._num_buf = ""
+        self.update()
+
+    def _chain_check_rect(self) -> QRectF:
+        """The fixed top-right affordance (the SAME post the painter and
+        the press claim read - one rectangle, three mouths)."""
+        return QRectF(self.width() - 34, 10, 24, 24)
+
+    def _draw_chain_check(self, p: QPainter):
+        """A Fusion-style GREEN CHECK: a rounded success square with a
+        dark tick, seated top-right while a chain is armed. Clicking it
+        finishes the chain and KEEPS the tool (vs the double-click's
+        end-AND-exit)."""
+        rect = self._chain_check_rect()
+        self._check_hit = rect
+        p.save()
+        p.setBrush(BG.darker(150))               # a neutral pressed-button
+        p.setPen(QPen(BG.darker(240), 1))        #  square so the tick reads
+        p.drawRoundedRect(rect, 4, 4)            #   green (Fusion's check)
+        tick = QPen(OK)                          # the GREEN check itself
+        tick.setWidthF(2.4)
+        tick.setCapStyle(Qt.RoundCap)
+        tick.setJoinStyle(Qt.RoundJoin)
+        p.setPen(tick)
+        cx, cy = rect.center().x(), rect.center().y()
+        p.drawPolyline(QPolygonF([
+            QPointF(cx - 6, cy + 0.5), QPointF(cx - 1.5, cy + 5),
+            QPointF(cx + 6.5, cy - 5)]))
+        p.restore()
 
     # ---- M165 R1: the inline chip editor (design m165_rung1_chipfield) ----
     def _open_dim_editor(self, c):
