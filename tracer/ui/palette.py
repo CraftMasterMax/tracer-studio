@@ -4,18 +4,22 @@ S or / anywhere that isn't a text field opens it; typing filters
 (fuzzy subsequence over the whole command index); Enter runs the top
 hit — two keys to any command in the app.  The list is rebuilt from
 the live menu tree on every open, so enabled state and coverage can
-never drift.
+never drift.  M183 added the HAND: promoted commands (FD8 LAW-36)
+persist across restarts, wear a star, and ride the top of every list
+their letters match — the pin is an ORDER, never a resurrection.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QSettings, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
-                               QListWidget, QListWidgetItem, QVBoxLayout,
-                               QWidget)
+                               QListWidget, QListWidgetItem, QMenu,
+                               QVBoxLayout, QWidget)
 
 from .commands import Command, plain, rank
 from .theme import SP, TYPE, DARK
+
+STAR = "\u2605"                       # ★ the promoted marker
 
 
 class CommandPalette(QFrame):
@@ -27,6 +31,7 @@ class CommandPalette(QFrame):
         self.setFixedWidth(620)
         self._commands: list[Command] = []
         self._live: list[Command] = []
+        self._promoted: set[str] = self._load_promoted()
 
         self.edit = QLineEdit(self)
         self.edit.setPlaceholderText(
@@ -41,6 +46,9 @@ class CommandPalette(QFrame):
         self.list.itemActivated.connect(lambda _i: self.run_current())
         self.list.itemClicked.connect(lambda _i: self.run_current())
         self.list.currentRowChanged.connect(lambda _r: self.update())
+        # M183 R1: the row itself is the promote button (FD8-36's mouth)
+        self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.list.customContextMenuRequested.connect(self._row_menu)
 
         row = QHBoxLayout()
         row.setContentsMargins(SP * 2, SP * 2, SP * 2, SP)
@@ -69,15 +77,68 @@ class CommandPalette(QFrame):
 
     # ---- behaviour --------------------------------------------------------------
     def open_at(self, center_x: int, top_y: int):
-        self.edit.setText("")
-        self._refilter("")
+        self._promoted = self._load_promoted()   # M183 R1: the store is
+        self.edit.setText("")                    #  re-read every open,
+        self._refilter("")                       #   never cached-stale
         self.move(max(0, center_x - self.width() // 2), max(0, top_y))
         self.show()
         self.edit.setFocus()
         self.edit.selectAll()
 
+    # ---- M183 R1: the PROMOTE MOUTH (FD8 LAW-36) ------------------------------
+    # "select the Promote button... the tool appears at the top each time
+    # the character is keyed in".  Identity = category + plain(label), so
+    # "Cham&fer" and "Chamfer" are one tool (the plain() mouth again).
+    @staticmethod
+    def _pid(c: Command) -> str:
+        return f"{c.category}\u0001{plain(c.label)}"
+
+    @staticmethod
+    def _load_promoted() -> set[str]:
+        v = QSettings().value("palette/promoted", [])
+        if isinstance(v, str):
+            v = [v] if v else []
+        return set(v)
+
+    def toggle_promote(self, c: Command) -> bool:
+        """Returns the state AFTER the flip (True = promoted now)."""
+        pid = self._pid(c)
+        if pid in self._promoted:
+            self._promoted.discard(pid)
+        else:
+            self._promoted.add(pid)
+        s = QSettings()
+        s.setValue("palette/promoted", sorted(self._promoted))
+        s.sync()
+        self._refilter(self.edit.text())
+        return pid in self._promoted
+
+    def _promote_menu(self, c: Command) -> QMenu:
+        on = self._pid(c) in self._promoted
+        m = QMenu(self)
+        verb = "Unpromote" if on else "Promote"
+        m.addAction(f"{verb}  {plain(c.label)}",
+                    lambda: self.toggle_promote(c))
+        return m
+
+    def _row_menu(self, pos):
+        it = self.list.itemAt(pos)
+        if it is None:
+            return
+        self.list.setCurrentRow(self.list.row(it))
+        cmd = it.data(Qt.ItemDataRole.UserRole)
+        if cmd is not None:
+            self._promote_menu(cmd).exec(self.list.mapToGlobal(pos))
+
     def _refilter(self, query: str):
-        self._live = [c for c in rank(query, self._commands) if c.enabled()]
+        live = [c for c in rank(query, self._commands) if c.enabled()]
+        # the PIN: promoted hits keep the TOP, in rank order among
+        # themselves; a promoted-but-disabled hit is already gone (the
+        # enabled law outranks the pin - the pin is an ORDER, not a
+        # resurrection).
+        top = [c for c in live if self._pid(c) in self._promoted]
+        self._live = top + [c for c in live if self._pid(c)
+                            not in self._promoted]
         self.list.clear()
         f = QFont(self.list.font())
         f.setPointSize(TYPE["ui"])
@@ -89,10 +150,10 @@ class CommandPalette(QFrame):
         if self.list.count():
             self.list.setCurrentRow(0)
 
-    @staticmethod
-    def _render(c: Command) -> str:
+    def _render(self, c: Command) -> str:
         key = f'\t{c.key}' if c.key else ""
-        return f"{plain(c.label)}  ·  {c.category}{key}"
+        mark = f"{STAR} " if self._pid(c) in self._promoted else ""
+        return f"{mark}{plain(c.label)}  ·  {c.category}{key}"
 
     def run_current(self):
         it = self.list.currentItem()
