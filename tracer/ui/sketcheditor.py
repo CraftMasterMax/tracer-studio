@@ -420,7 +420,8 @@ class SketchCanvas(QWidget):
         if self._band is None:
             return
         crossing = self._band[1].x() < self._band[0].x()   # M173 R2: the
-        col = QColor(80, 220, 130) if crossing else ACCENT #  band WEARS
+        col = (QColor(theme.SKETCH["marquee_x"]) if crossing
+               else ACCENT)                                #  band WEARS
         p.setPen(QPen(col, 1.0, Qt.DotLine))               #  its meaning
         p.setBrush(QColor(col.red(), col.green(), col.blue(), 28))
         p.drawRect(QRectF(self._band[0], self._band[1]).normalized())

@@ -130,6 +130,7 @@ SKETCH = {
     "construction": "#db5942",    # construction geometry
     "dim": SUCCESS,               # dimension text and lines
     "infer": INFER,               # inference / live measure
+    "marquee_x": "#50dc82",       # M173 R2: crossing marquee, OURS-Said
     "profile": BLUE[".300"],      # profile fill
     "hud": BLUE[".400"],          # heads-up text
     "error": ERROR,               # conflicting constraint
