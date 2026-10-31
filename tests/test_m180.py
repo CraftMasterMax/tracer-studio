@@ -177,3 +177,60 @@ def test_esc_surrenders_the_number_not_the_drag(ed, qapp):
     assert len(ed.model.sketch.lines) == 0           # ...no line was born
     assert ed._line_live_text() == "10.00"           # cursor reading again
     assert ed._line_start is not None                # the drag is ALIVE
+
+
+# ---- RUNG 3: THE SECOND CELL - ANGLE, AND TAB TOGGLES THE CELLS ----
+
+def test_the_angle_cell_follows_the_cursor(ed, qapp):
+    ed.set_tool("line")
+    _click(ed, 0.0, 0.0)
+    _move(ed, 6.0, 8.0)                            # atan2(8,6) = 53.13 deg
+    assert ed._line_live_angle() == "53.1"
+    _move(ed, -6.0, 8.0)                           # quadrant II
+    assert ed._line_live_angle() == "126.9"
+    _move(ed, 0.0, -5.0)                           # straight down = 270
+    assert ed._line_live_angle() == "270.0"
+
+
+def test_tab_toggles_which_cell_the_digits_enter(ed, qapp):
+    ed.set_tool("line")
+    _click(ed, 0.0, 0.0)
+    _move(ed, 6.0, 8.0)
+    QTest.keyClicks(ed, "7.5")                     # LENGTH cell
+    assert ed._line_live_text() == "7.5"
+    _key(ed, Qt.Key_Tab)                           # the staff law: Tab
+    assert ed._line_cell == "ang"                  #  TOGGLES the cells
+    QTest.keyClicks(ed, "30")                      # now digits feed angle
+    assert ed._line_live_angle() == "30"
+    assert ed._line_live_text() == "7.5"           # the length holds its own
+
+
+def test_a_typed_angle_rotates_the_placed_leg(ed, qapp):
+    ed.set_tool("line")
+    _click(ed, 0.0, 0.0)
+    _move(ed, 10.0, 0.0)                           # hover: ray 0 deg, len 10
+    _key(ed, Qt.Key_Tab)                           # straight to the angle
+    QTest.keyClicks(ed, "90")                      # type 90 degrees
+    _click(ed, 10.0, 0.0)                          # PLACE: 10 long UP
+    ln = ed.model.sketch.lines[0]
+    assert ln.b.x == pytest.approx(0.0, abs=1e-6)
+    assert ln.b.y == pytest.approx(10.0, abs=1e-6)
+    _key(ed, Qt.Key_Return)                        # FILE the pair + done
+    ang = [c for c in ed.model.sketch.constraints
+           if type(c).__name__ == "Angle" and c.line is ln]
+    assert len(ang) == 1
+    assert math.degrees(ang[0].measured()) == pytest.approx(90.0, abs=1e-3)
+    assert ed._tool == "select"
+
+
+def test_esc_surrenders_only_the_live_cell(ed, qapp):
+    ed.set_tool("line")
+    _click(ed, 0.0, 0.0)
+    _move(ed, 6.0, 8.0)
+    QTest.keyClicks(ed, "7.5")                     # length typed
+    _key(ed, Qt.Key_Tab)
+    QTest.keyClicks(ed, "30")                      # angle typed too
+    _key(ed, Qt.Key_Escape)                        # Esc: the ANGLE lets go
+    assert ed._line_live_angle() == "53.1"         #  hover reading returns
+    assert ed._line_live_text() == "7.5"           # the LENGTH cell KEEPS
+    assert ed._line_start is not None              # the drag still lives
