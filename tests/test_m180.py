@@ -63,10 +63,13 @@ def _grab(ed):
     return a.copy()
 
 
-def _white(img, cx, cy, hw=46, hh=11):
+def _white(img, cx, cy, hw=18, hh=9):
+    """AA-tolerant WHITE ink: glyph cores survive any platform font -
+    #e1e1e1 blended 50/50 with bg2 is still ~130 (Ubuntu CI law: a gate
+    tuned to one machine's font is tuned to NO machine)."""
     w = img[max(0, cy - hh):cy + hh,
             max(0, cx - hw):cx + hw].reshape(-1, 3).astype(int)
-    return int(((w[:, 0] > 215) & (w[:, 1] > 215) & (w[:, 2] > 215)).sum())
+    return int((w.min(axis=1) > 120).sum())
 
 
 def test_the_rubber_band_carries_a_live_length(ed, qapp):
