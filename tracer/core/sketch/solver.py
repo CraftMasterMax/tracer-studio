@@ -130,9 +130,13 @@ class Sketch:
     def solve(self, tol: float = 1e-9, max_iter: int = 100) -> SolveResult:
         rows = []                                   # M87: tag each row
         for c in self.constraints:                  # with its origin so
-            sub = expand([c])                       # diagnosis can name
-            for rw in sub:                          # the user constraint
-                rw.origin = c                       # behind it
+            if getattr(c, "driven", False):         # M178 R1 (FD5-L35):
+                continue                            #  a driven dim is a
+            sub = expand([c])                       #  READER: no row, no
+            for rw in sub:                          #  rule, no DOF bill -
+                rw.origin = c                       #  diagnosis can name
+                #                                    the user constraint
+                #                                    behind it
             rows.extend(sub)
         pts, circles, ells, x0 = self._pack()
         x = x0.copy()

@@ -1719,6 +1719,12 @@ class SketchCanvas(QWidget):
             menu.addAction("Toggle Radius / Diameter",  #  L35): a radial
                            lambda c=hv: self.act_dia(c))  #  chip speaks
                                                           #  EITHER way
+        if hv is not None and isinstance(hv, (Distance, Radius)):
+            menu.addAction("Make Driving" if getattr(hv, "driven",
+                                                     False)
+                           else "Make Driven",   # M178 R1 (FD5-L35): the
+                           lambda c=hv: self.act_driven(c))  #  reference
+                                                             #  toggle
         if len(sel) == 1 and isinstance(sel[0], Line):
             menu.addAction("Horizontal", self.act_H)
             menu.addAction("Vertical", self.act_V)
@@ -2517,6 +2523,21 @@ class SketchCanvas(QWidget):
         c.dia = not speaks_dia(c)
         self.update()
 
+    def act_driven(self, c):
+        """M178 R1 (FD5-L35): DRIVEN = reference. The chip reports the
+        live measurement; the solver never sees the row. Unlike act_dia
+        (cosmetic dialect, solver asleep) the flip MUST re-solve. Note
+        the round trip: while driven the chip QUOTED the walking
+        geometry, so making it driving PINS WHERE IT READS - the old
+        number is gone (Fusion semantics: converting re-pins the shown
+        value) - and from then on the geometry must obey again."""
+        if not any(cc is c for cc in self.model.sketch.constraints):
+            return                              # stale: zero trace (m164)
+        self._push_hist()
+        c.driven = not getattr(c, "driven", False)
+        self._solve()
+        self.update()
+
     def act_remove_constraint(self, c):
         """Badge right-click: straight through the finder's door -
         identity-guarded, ONE undo step, re-solve.  Same anatomy as the
@@ -2542,13 +2563,19 @@ class SketchCanvas(QWidget):
     # ---- dimension labels (double-click editable, Fusion-style) ------------
     def _dim_text(self, c) -> str:
         """The chip's wording: the DIALECT oracle (M174 R3) decides who
-        speaks diameter - the stored value stays a radius either way."""
+        speaks diameter - the stored value stays a radius either way.
+        M178 R1: a DRIVEN quote wears PARENTHESES [obs: forum-verified];
+        the painter routes EVERY Distance/Radius word through here."""
         if isinstance(c, Radius):
-            return (f"\u00d8 {2 * c.value:.2f}" if speaks_dia(c)
+            text = (f"\u00d8 {2 * c.value:.2f}" if speaks_dia(c)
                     else f"R {c.value:.2f}")
-        if isinstance(c, Distance):
-            return f"{c.value:.2f}"
-        return ""
+        elif isinstance(c, Distance):
+            text = f"{c.value:.2f}"
+        else:
+            text = ""
+        if text and getattr(c, "driven", False):
+            text = f"({text})"
+        return text
 
     def _draw_dimensions(self, p: QPainter):
         self._dim_hits = []
@@ -2563,8 +2590,10 @@ class SketchCanvas(QWidget):
                 pos = self._dim_anchor_screen(c)  # M175 R2: painter and
                 if pos is None:                   #  place mode read ONE
                     continue                      #   post (paint == hit)
-                text = (f"{c.value:.2f}" if isinstance(c, Distance)
-                        else self._dim_text(c))   #  Ø on circles (M98)
+                text = self._dim_text(c)          # M178 R1: ONE mouth -
+                #                                  dialect, parens and the
+                #                                  "\u00d8 on circles (M98)"
+                #                                  all answer from here
             elif isinstance(c, (Angle, AngleBetween)):
                 arc = None
                 pv = self._angle_pivot(c)
@@ -2593,10 +2622,14 @@ class SketchCanvas(QWidget):
             ed = getattr(self, "_dim_edit", None)     #  (early-Paint law)
             if not (ed is not None and ed.constraint is c):   # M165 R1:
                 p.setBrush(QColor(theme.DARK["bg2"]))  # the chip under
+                dr = getattr(c, "driven", False)       # M178 R1: a driven
                 p.setPen(QPen(QColor(theme.DARK["accent"]) if bound
-                              else QColor(theme.DARK["accent_dim"]), 1))
-                p.drawRoundedRect(rect, 3, 3)          #  edit loses its
-                p.setPen(FG)                           #   INK - the
+                              else QColor(theme.DARK["fg_faint"] if dr
+                                             else theme.DARK["accent_dim"]),
+                              1))                      #  quote is a quiet
+                p.drawRoundedRect(rect, 3, 3)          #  citizen: faint
+                p.setPen(QColor(theme.DARK["fg_dim"]) if dr else FG)  # ring,
+                #                                       dim ink
                 p.drawText(rect, Qt.AlignCenter, text) #   field draws it
                 p.setBrush(Qt.NoBrush)
             self._dim_hits.append((rect, c))     # hits ALWAYS: paint ==

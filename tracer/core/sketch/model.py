@@ -485,7 +485,13 @@ class SketchModel:
 
     def remove_last(self, ctype: type, ents: tuple):
         drop = [i for i, c in enumerate(self.sketch.constraints)
-                if isinstance(c, ctype) and self._same_entities(c, ents)]
+                if isinstance(c, ctype) and self._same_entities(c, ents)
+                and not getattr(c, "driven", False)]   # M178 R1: a driven
+                #                                        bystander is never
+                #                                        the twin being
+                #                                        re-dimmed - "no
+                #                                        stacking" speaks
+                #                                        of driving dims
         self.sketch.constraints = [
             c for i, c in enumerate(self.sketch.constraints)
             if i not in set(drop)]
@@ -573,6 +579,14 @@ class SketchModel:
         finally:
             self.sketch.constraints = [c for c in self.sketch.constraints
                                        if id(c) not in temp_ids]
+        for c in self.sketch.constraints:           # M178 R1 (FD5-L35):
+            if not getattr(c, "driven", False):     #  a driven dim is a
+                continue                            #  READER - after the
+            if isinstance(c, Distance):             #  solve it QUOTES the
+                c.value = math.hypot(c.q.x - c.p.x,  #  geometry, never the
+                                     c.q.y - c.p.y)  #  other way round
+            elif isinstance(c, Radius):
+                c.value = curve_radius(c.curve)
         return res
 
     def apply_dim_params(self, values: dict, scale: float = 1.0) -> list:

@@ -23,6 +23,10 @@ def _unit(v):
 
 @dataclass
 class Constraint:
+    driven = False             # M178 R1 (FD5-L35): a DRIVEN dim REPORTS,
+    #  never RULES. Deliberately UNannotated: a plain class attribute is
+    #  invisible to @dataclass fields (the src convention), yet every
+    #  instance carries it and c.driven = True shadows per-object.
     def entities(self) -> list: ...
     def residual(self, pos: dict) -> float: ...
 
