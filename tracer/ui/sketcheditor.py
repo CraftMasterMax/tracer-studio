@@ -2007,6 +2007,19 @@ class SketchCanvas(QWidget):
         self._solve()
         self._sel = [made]                       # the cut is the pick
         self.update()
+        # M179 R1 (FD5-L30): a FILLET ships with a permanent radius dim,
+        # and the moment the corner is rounded its input box AUTO-OPENS -
+        # Fusion asks the number on placement, in the SAME editor a
+        # hand-placed dim uses (so M178's driven-guard + settle-first ride
+        # for free). The newborn is found by IDENTITY on the arc, NEVER by
+        # list position: the kernel appends Radius THEN ArcMiddle, so a
+        # positional read would open the wrong chip. A CHAMFER is a flat
+        # Line with no radius, so it keeps its silence.
+        if kind == "fillet":
+            rr = next((cc for cc in reversed(self.model.sketch.constraints)
+                       if isinstance(cc, Radius) and cc.curve is made), None)
+            if rr is not None:
+                self._open_dim_editor(rr)
         return True
 
     def _corner_rmax(self) -> float:
