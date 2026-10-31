@@ -940,12 +940,11 @@ def test_sketch_tools_record_only_the_listed_doors(win, monkeypatch):
     m = win.sketch.model                               # now arm the door:
     p0, p1 = m.point(0, 0), m.point(30, 0)
     m.add_line(p0, p1)
-    from tracer.ui.cmddialog import Shell
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *a, **k: (25.0, True)))
     win.sketch._sel = [p0, p1]
+    from conftest import script_dim_edit               # M175 R1 RETARGET:
+    script_dim_edit(monkeypatch, "25")                 #  the modal died -
     win.action_repeat_last()                           # the repeat CREATES
-    _settle(qapp2)
+    _settle(qapp2)                                     #  via the seam
     dims = [c for c in m.sketch.constraints if isinstance(c, Distance)]
     assert any(abs(c.value - 25.0) < 1e-9 for c in dims)
 

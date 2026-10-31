@@ -100,21 +100,22 @@ def test_arc_chip_still_reads_radius(sketch):
 # ---------------------------------------------------------------- act_dim
 
 def test_act_dim_on_a_circle_asks_diameter(sketch, qapp, monkeypatch):
-    from tracer.ui.cmddialog import Shell
+    # M175 R1 RETARGET: the dialog's "Diameter (mm):" label died WITH the
+    # modal. The dialect's proof now lives on the canvas: the newborn chip
+    # READS diameter (the chip's number is the chip's text), and the typed
+    # number is halved into core by the same commit every edit pays.
     m = sketch.model
     c = m.add_circle(m.point(0.0, 0.0), 7.0)
     sketch._sel = [c]
-    seen = {}
-
-    def fake(parent, title, label, cur, lo, hi, dec):
-        seen["label"], seen["cur"] = label, cur
-        return 30.0, True
-    monkeypatch.setattr(Shell, "getDouble", staticmethod(fake))
-    sketch.act_dim()
-    assert "Diameter" in seen["label"]
-    assert seen["cur"] == pytest.approx(14.0)         # the chip's number
+    sketch.act_dim()                                   # no dialog to fear
     cons = [x for x in m.sketch.constraints if isinstance(x, Radius)]
-    assert cons[0].value == pytest.approx(15.0)       # diameter 30 -> r 15
+    assert len(cons) == 1                              # born at measure...
+    assert sketch._dim_text(cons[0]) == "\u00d8 14.00"  #  ...speaking Ø
+    sketch._close_dim_editor()                         # unchanged: no trace
+    from conftest import script_dim_edit
+    script_dim_edit(monkeypatch, "30")
+    sketch._edit_dim(cons[0])                          # the door re-enters
+    assert cons[0].value == pytest.approx(15.0)        # diameter 30 -> r 15
 
 
 # ------------------------------------------------------------------ edit

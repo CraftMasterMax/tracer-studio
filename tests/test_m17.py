@@ -134,8 +134,11 @@ def test_canvas_dimension_tool_on_arc(win, qapp, monkeypatch):
     ar = cv.model.sketch.arcs[0]
     cv.set_tool("select")
     cv._sel = [ar]
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *a, **k: (7.5, True)))
+    # M175 R1 RETARGET: act_dim's modal getDouble died - the dimension
+    # is born at the arc's own radius and answers through the INLINE
+    # seam (M165): the scripted chip types 7.5, the newborn obeys.
+    from conftest import script_dim_edit
+    script_dim_edit(monkeypatch, "7.5")
     cv.act_dim()
     qapp.processEvents()
     dims = [c for c in cv.model.sketch.constraints
@@ -152,15 +155,16 @@ def test_canvas_badge_edit_and_arc_anchor(win, qapp, monkeypatch):
     qapp.processEvents()
     ar = cv.model.sketch.arcs[0]
     cv._sel = [ar]
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *a, **k: (12.0, True)))
+    # M175 R1 RETARGET: no dialog at birth - the seam answers 12.0 for
+    # the newborn, and the badge double-click below re-enters through it.
+    from conftest import script_dim_edit
+    script_dim_edit(monkeypatch, "12.0")
     cv.act_dim()
     con = cv.model.sketch.constraints[-1]
     # double-click editing path (badge hit already covered in m8)
     # M165 RETARGET (cited, m165_rung1_chipfield_design §d): the fx
     # panel collapsed into the INLINE chip editor; the seam answers "9"
     # through _apply_dim_edit - blank-fx-was-plain becomes no-= IS plain.
-    from conftest import script_dim_edit
     script_dim_edit(monkeypatch, "9")
     cv._edit_dim(con)
     qapp.processEvents()

@@ -1296,42 +1296,37 @@ class SketchCanvas(QWidget):
             self._solve(); self.update()
 
     def act_dim(self):
+        """M175 R1 (FD5-L35): the dimension is BORN of the geometry's
+        own measurement and asks for its number IN-CANVAS - the modal
+        dialog is dead. The remove_last habit survives (M90: re-dimming
+        never stacks); the chip editor opens on the newborn (M165's
+        door), so the whole pipeline is pick-dim-type-Enter without a
+        panel. Dialect rides for free: a circle chip already speaks
+        diameter and the commit does the honest halving."""
+        tgt = None
         if len(self._sel) == 2 and all(isinstance(e, Point) for e in self._sel):
             p, q = self._sel
-            cur = math_dist(p, q)
-            val, ok = Shell.getDouble(self, "Dimension",
-                                             "Distance (mm):",
-                                             round(cur, 3), 0.001, 1e6, 3)
-            if ok:
-                self._push_hist()
-                self.model.remove_last(Distance, (p, q))
-                self.model.constrain(Distance(p, q, val))
-                self._solve(); self.update()
-            return
-        if len(self._sel) != 1:
-            return
-        e = self._sel[0]
-        if isinstance(e, Line):
-            cur = math_dist(e.a, e.b)
-            val, ok = Shell.getDouble(self, "Dimension", "Length (mm):",
-                                             round(cur, 3), 0.001, 1e6, 3)
-            if ok:
+            self._push_hist()
+            self.model.remove_last(Distance, (p, q))
+            tgt = Distance(p, q, math_dist(p, q))
+            self.model.constrain(tgt)
+        elif len(self._sel) == 1:
+            e = self._sel[0]
+            if isinstance(e, Line):
                 self._push_hist()
                 self.model.remove_last(Distance, (e.a, e.b))
-                self.model.constrain(Distance(e.a, e.b, val))
-                self._solve(); self.update()
-        elif isinstance(e, (Circle, Arc)):
-            dia = isinstance(e, Circle)               # M98: Ø for circles
-            cur = curve_radius(e)
-            val, ok = Shell.getDouble(
-                self, "Dimension",
-                "Diameter (mm):" if dia else "Radius (mm):",
-                round(cur * 2 if dia else cur, 3), 0.001, 1e6, 3)
-            if ok:
+                tgt = Distance(e.a, e.b, math_dist(e.a, e.b))
+                self.model.constrain(tgt)
+            elif isinstance(e, (Circle, Arc)):
                 self._push_hist()
                 self.model.remove_last(Radius, (e,))
-                self.model.constrain(Radius(e, val / 2 if dia else val))
-                self._solve(); self.update()
+                tgt = Radius(e, curve_radius(e))
+                self.model.constrain(tgt)
+        if tgt is None:
+            return
+        self._solve()
+        self.update()
+        self._open_dim_editor(tgt)              # value input opens NOW
 
     def act_perp(self):
         if len(self._sel) == 2 and all(isinstance(e, Line) for e in self._sel):
