@@ -586,6 +586,35 @@ class SketchCanvas(QWidget):
         dof = getattr(res, "point_dof", {}).get(p.id)
         return 2 if dof is None else int(dof)
 
+    def _ent_locked(self, ent) -> bool:
+        """M186 R1 [LAW-55, documented MIX]: an entity reads DEFINED the
+        moment EVERY variable it owns rests - its points (M119's
+        point_dof) and its size (M186's size_dof: a circle's radius, an
+        ellipse's axes). The vendor's own figure shows defined and
+        under-constrained geometry COEXISTING mid-solve; that mix is
+        the law. No witness, a stale witness, or a solve that never
+        converged claims NOTHING - fail OPEN to blue, M167's law."""
+        res = getattr(self, "_last_result", None)
+        if res is None or not res.converged \
+                or not getattr(res, "point_dof", None):
+            return False
+        if isinstance(ent, Line):
+            pts: tuple = (ent.a, ent.b)
+        elif isinstance(ent, Arc):
+            pts = (ent.a, ent.m, ent.b)
+        elif isinstance(ent, Point):
+            pts = (ent,)
+        else:
+            size = getattr(res, "size_dof", {})
+            if isinstance(ent, Circle):
+                return (self._dof_of(ent.c) == 0
+                        and int(size.get(ent.id, 1)) == 0)
+            if isinstance(ent, Ellipse):
+                return (self._dof_of(ent.c) == 0
+                        and int(size.get(ent.id, 2)) == 0)
+            return False
+        return all(self._dof_of(p) == 0 for p in pts)
+
     def _grab_points(self, ent) -> list:
         """M167 R1: the points a body drag translates. A line carries
         both ends; an arc all three defining points (SAME delta each →
@@ -3523,31 +3552,36 @@ class SketchCanvas(QWidget):
 
     def _draw_entities(self, p: QPainter):
         sk = self.model.sketch
-        r = self._last_result
-        constrained = r is not None and r.converged and r.dof == 0
-        solid_pen = QPen(FG if constrained else ACCENT, 1.7)
+        # M186 R1 [LAW-55]: EVERY ENTITY TELLS ITS OWN TRUTH - the flip
+        # is per-entity now, so the DEFINED ink arrives on the line you
+        # just dimensioned, not on the whole canvas in one frame. The
+        # old whole-sketch law survives as the special case: dof == 0
+        # makes every entity answer yes, and no witness fails every
+        # entity open to blue - the same canvas, read one by one.
+        def solid_for(ent):
+            return QPen(FG if self._ent_locked(ent) else ACCENT, 1.7)
         constr_pen = QPen(CONSTR, 1.2, Qt.DashLine)
         for l in sk.lines:
-            p.setPen(constr_pen if l.construction else solid_pen)
+            p.setPen(constr_pen if l.construction else solid_for(l))
             p.drawLine(self.w2s(l.a.x, l.a.y), self.w2s(l.b.x, l.b.y))
         for ar in sk.arcs:
-            p.setPen(constr_pen if ar.construction else solid_pen)
+            p.setPen(constr_pen if ar.construction else solid_for(ar))
             smp = ar.sample(64)
             q_prev = self.w2s(float(smp[0][0]), float(smp[0][1]))
             for xy in smp[1:]:
                 qn = self.w2s(float(xy[0]), float(xy[1]))
                 p.drawLine(q_prev, qn)
                 q_prev = qn
-        p.setPen(solid_pen)
+        p.setPen(QPen(ACCENT, 1.7))   # neutral default (fail-open)
         for c in sk.circles:
             p.setPen(constr_pen if getattr(c, "construction", False)
-                     else solid_pen)
+                     else solid_for(c))
             cen = self.w2s(c.c.x, c.c.y)
             r = c.r * self._scale
             p.drawEllipse(cen, r, r)
         for e in sk.ellipses:
             p.setPen(constr_pen if getattr(e, "construction", False)
-                     else solid_pen)
+                     else solid_for(e))
             cen = self.w2s(e.c.x, e.c.y)
             p.drawEllipse(cen, e.rx * self._scale, e.ry * self._scale)
         # M184 R3 [LAW-50 EnablePreselection]: the FIRST voice - the

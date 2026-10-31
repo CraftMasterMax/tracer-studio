@@ -25,6 +25,10 @@ class SolveResult:
     redundant: list = field(default_factory=list)    # M87: add-nothing
     conflicting: list = field(default_factory=list)  # M87: won't close
     point_dof: dict = field(default_factory=dict)    # M119: point.id -> 0..2
+    size_dof: dict = field(default_factory=dict)     # M186: entity.id ->
+    #   0..2 for the SIZE variables a circle/ellipse also answers to -
+    #   M119's null-space answer extended from point columns to size
+    #   columns, so the canvas can colour ONE entity at a time (LAW-55).
     free_dirs: dict = field(default_factory=dict)  # M119: point.id -> (dx,dy)
     # M164 R1 "the solver remembers": the FINAL linear-algebra state,
     # kept so on-demand questions (which ONE constraint could I delete to
@@ -147,6 +151,10 @@ class Sketch:
             for p in pts:                   # no constraints: every point
                 res.point_dof[p.id] = 2     # floats free, two ways
                 res.free_dirs[p.id] = (1.0, 0.0)
+            for c in circles:               # M186: sizes float too -
+                res.size_dof[c.id] = 1      #  the all-free answer must
+            for e in ells:                  #  cover every variable
+                res.size_dof[e.id] = 2
             return res
 
         def res(vec):
@@ -252,6 +260,21 @@ class Sketch:
                 w, V = np.linalg.eigh(ux)
                 d = V[:, -1]                        # richest free direction
                 result.free_dirs[p.id] = (float(d[0]), float(d[1]))
+        # M186 R1 [LAW-55]: the SAME null-space answer for the SIZE
+        # variables. Column layout from _pack: 2*len(pts) point columns,
+        # then one per circle radius, two per ellipse. An empty basis
+        # (nothing moves) reports zero everywhere - the whole-sketch
+        # truth and the per-entity truth can never disagree.
+        p2 = 2 * len(pts)
+        for j, c in enumerate(circles):
+            sl = N[p2 + j:p2 + j + 1, :]
+            result.size_dof[c.id] = 0 if sl.size == 0 else min(
+                int(np.linalg.matrix_rank(sl, tol=1e-9)), 1)
+        for k, e in enumerate(ells):
+            base = p2 + len(circles) + 2 * k
+            sl = N[base:base + 2, :]
+            result.size_dof[e.id] = 0 if sl.size == 0 else min(
+                int(np.linalg.matrix_rank(sl, tol=1e-9)), 2)
         return result
 
 
