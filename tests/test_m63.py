@@ -95,11 +95,15 @@ def test_hovered_cube_face_renders_different(win, qapp):
 def test_rubber_window_is_blue_crossing_is_green(win, qapp):
     from PySide6.QtGui import QColor
     vp = win.viewport
+    # M184 R1: rubber_style now returns (QPen, QColor) so the DRESS (the
+    # LAW-49 solid-vs-dashed style) rides the mouth, not the call site.
+    # The M63 law SURVIVES: window blue, crossing green.
     w_pen, _ = vp.rubber_style(True)
     c_pen, _ = vp.rubber_style(False)
-    assert w_pen != c_pen
-    assert QColor(w_pen).blue() > QColor(w_pen).red()
-    assert QColor(c_pen).green() > QColor(c_pen).blue()
+    wc, cc = QColor(w_pen.color()), QColor(c_pen.color())
+    assert wc != cc
+    assert wc.blue() > wc.red()                            # window: blue
+    assert cc.green() > cc.blue()                          # crossing: green
     vp._box = [QPoint(100, 100), QPoint(300, 300)]
     assert vp._box_is_window() is True          # left→right
     vp._box = [QPoint(300, 300), QPoint(100, 100)]

@@ -155,8 +155,11 @@ def test_rubber_band_voices_are_tokens():
     from PySide6.QtGui import QColor
 
     from tracer.ui.viewport import Viewport
+    # M184 R1: the mouth now answers (QPen, QColor) - the pen carries the
+    # LAW-49 dress. The M112 law SURVIVES: both voices are TOKENS, never
+    # loose hex - and the fill is the law's 25%, not the old ~9% wash.
     w, wb = Viewport.rubber_style(True)             # window: blue
     c, cb = Viewport.rubber_style(False)            # crossing: green
-    assert w == QColor(theme.DARK["accent_soft"])
-    assert c == QColor(theme.DARK["success"])
-    assert wb.alpha() == 24 and cb.alpha() == 24
+    assert w.color() == QColor(theme.DARK["accent_soft"])
+    assert c.color() == QColor(theme.DARK["success"])
+    assert wb.alpha() == 64 and cb.alpha() == 64
