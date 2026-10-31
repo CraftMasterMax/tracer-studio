@@ -2054,6 +2054,16 @@ class SketchCanvas(QWidget):
                 return
             if k in (Qt.Key_Return, Qt.Key_Enter) and self._num_buf:
                 self._commit_typed()
+                # M177 R1 (L24): Enter COMMITS AND ENDS - and the END
+                # comes at the END of the ENTRY SEQUENCE: a staged rect's
+                # width-Enter leaves the lock ADVANCED (m90's two-number
+                # grammar, FD5-L29's mid-command W/H entry) and stays in
+                # the command; the commit that CLEARS the lock - line/
+                # circle/arc, and a rect's height - is the one that ENDS
+                # it, handing the canvas back to select.
+                # (select-mode commits - M90's own stage - stay inert.)
+                if self._pending is None and self._tool in CHAIN_TOOLS:
+                    self.set_tool("select")
                 return
             if k in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
                 self._scroll_key(ev)               # M171 R1: view keys
@@ -2143,7 +2153,10 @@ class SketchCanvas(QWidget):
             # mode; pressing T again lays it down. Shift+T (tangent) is
             # handled above and untouched.
             self.set_tool("select" if self._tool == "trim" else "trim")
-        elif k == Qt.Key_Return and self._tool == "line":
+        elif k == Qt.Key_Return and self._tool in CHAIN_TOOLS:
+            # M177 R1 (L24): Enter ENDS THE DRAW COMMAND. The law that
+            # once guarded the line alone now keeps every chain verb -
+            # rect/circle/arc/ellipse/slot/poly return to select too.
             self._line_start = None
             self.set_tool("select")
         elif k == Qt.Key_Return:
