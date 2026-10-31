@@ -24,7 +24,7 @@ from ..core.document import Document
 from ..core.geometry import Solid
 from .camera import Camera, fit_frame, perspective, view_orient
 from .renderer import SceneRenderer
-from . import theme
+from . import marquee, theme
 from .viewcube import (DRAG_TH, NavWidget, ViewCube, auto_size,
                        nearest_zone, zone_look)
 from .wheel import HOLD_MS, MarkingWheel
@@ -335,8 +335,8 @@ class Viewport(QWidget):
         p.drawImage(0, 0, qimg)
         if self._box_drag and self._box is not None:
             pen_c, br_c = self.rubber_style(self._box_is_window())
-            p.setPen(QPen(pen_c, 1, Qt.DashLine))
-            p.setBrush(br_c)
+            p.setPen(pen_c)                     # M184: the dress rides
+            p.setBrush(br_c)                    #  the mouth, not here
             p.drawRect(QRect(self._box[0], self._box[1]).normalized())
         draw_triad(p, self._cam, self.width(), self.height(), self._r.palette)
         if self.show_datums:
@@ -408,12 +408,12 @@ class Viewport(QWidget):
     @staticmethod
     def rubber_style(window: bool):
         """Fusion's two rubber voices: left→right WINDOW (blue, must
-        contain) vs right→left CROSSING (green, just touches)."""
-        if window:
-            c = theme.DARK["accent_soft"]
-        else:
-            c = theme.DARK["success"]
-        return QColor(c), QColor(theme.rgba(c, 24))
+        contain) vs right→left CROSSING (green, just touches).  M184:
+        the DRESS (solid vs dashed, 25% fill) rides the ONE marquee
+        mouth - both canvases answer to the same law."""
+        c = theme.DARK["accent_soft"] if window else theme.DARK["success"]
+        style, fill = marquee.marquee_paint(not window, c)
+        return QPen(QColor(c), 1, style), fill
 
     def _box_is_window(self) -> bool:
         return self._box is not None and \

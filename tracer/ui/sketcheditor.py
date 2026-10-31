@@ -30,7 +30,7 @@ from ..core.sketch.model import (_dim_tag, SketchModel, math_dist,
 from ..core.sketch.profile import regions
 from ..core.sketch.solver import _eligible, find_removable
 from ..core import snaps
-from . import cmdpanel, dimedit, theme
+from . import cmdpanel, dimedit, marquee, theme
 from .cmddialog import Shell
 from .commands import SKETCH_KEYS
 
@@ -465,10 +465,11 @@ class SketchCanvas(QWidget):
         if self._band is None:
             return
         crossing = self._band[1].x() < self._band[0].x()   # M173 R2: the
-        col = (QColor(theme.SKETCH["marquee_x"]) if crossing
-               else ACCENT)                                #  band WEARS
-        p.setPen(QPen(col, 1.0, Qt.DotLine))               #  its meaning
-        p.setBrush(QColor(col.red(), col.green(), col.blue(), 28))
+        hexc = theme.SKETCH["marquee_x"] if crossing \
+            else theme.SKETCH["under"]                     #  band WEARS
+        style, fill = marquee.marquee_paint(crossing, hexc)  #  M184: the
+        p.setPen(QPen(QColor(hexc), 1.0, style))           #  ONE dress
+        p.setBrush(fill)                                    #  mouth
         p.drawRect(QRectF(self._band[0], self._band[1]).normalized())
         p.setBrush(Qt.NoBrush)
 
