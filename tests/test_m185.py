@@ -187,7 +187,8 @@ import pytest                                                        # noqa
 @pytest.fixture
 def mw(qapp):
     QSettings().remove("sketch/pickbox")            # POLLUTION LAW
-    from tracer.ui.mainwindow import MainWindow
+    QSettings().remove("pick/radius")               #  R3: the viewport's
+    from tracer.ui.mainwindow import MainWindow     #   knob too
     from tracer.ui.renderer import SceneRenderer
     try:
         r = SceneRenderer()
@@ -205,6 +206,7 @@ def mw(qapp):
     w.close()
     w.deleteLater()
     QSettings().remove("sketch/pickbox")
+    QSettings().remove("pick/radius")
     for _ in range(3):
         qapp.processEvents()
 
@@ -274,3 +276,160 @@ def test_the_chrome_never_moves_the_canvas_center(mw, qapp):
         p = cv.w2s(wx, wy)
         assert p.x() == int(p.x()) and p.y() == int(p.y()), \
             "w2s must survive toPoint() unharmed at ANY target"
+
+
+# ---- R3: THE BOX SHOWS ITS TAKE - THE SAME LAW IN THREE DIMENSIONS ---------
+# M184 R2 gave the sketch band a live voice; the viewport's rubber band
+# dragged BLIND (hover cleared while the box lived, nothing glowed until
+# release). The same two laws port: (1) the commit splits off a PURE
+# MOUTH (_box_hits) that the preview and the release ask together, so
+# the wash and the set can never drift; (2) LAW-45's zero silences this
+# preview too - "PICKBOX = 0 -> selection PREVIEWING is not available"
+# speaks with one voice on both canvases, while the box's own COMMIT
+# (containment, not a target radius) lives on.
+# The witness is the renderer's OWN highlight column (m160's precedent):
+# hover = 0.5, selection = 1.0 - the ghost must wear the COMMIT's value.
+
+
+def _plate_vp(mw, qapp):
+    mw.new_document()
+    mw.doc.add_plate("plate", 20, 20, 5)      # a box: 6 face groups
+    mw.recompute()
+    for _ in range(4):
+        qapp.processEvents()
+    return mw.viewport
+
+
+def _band_move(vp, pt, qapp):
+    p = QPointF(float(pt[0]), float(pt[1]))
+    g = QPointF(vp.mapToGlobal(QPoint(int(pt[0]), int(pt[1]))))
+    QApplication.sendEvent(
+        vp, QMouseEvent(QEvent.Type.MouseMove, p, g,
+                        Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+    for _ in range(3):
+        qapp.processEvents()
+
+
+def _box_drag(vp, a, b, qapp, mid=None):
+    """press on EMPTY, one move, WITNESS with the band alive, release."""
+    QTest.mousePress(vp, Qt.LeftButton, Qt.NoModifier, QPoint(*a))
+    for _ in range(2):
+        qapp.processEvents()
+    _band_move(vp, b, qapp)
+    w = mid(vp) if mid else None
+    QTest.mouseRelease(vp, Qt.LeftButton, Qt.NoModifier, QPoint(*b))
+    for _ in range(3):
+        qapp.processEvents()
+    return w
+
+
+def _wash(vp):
+    return float(vp._r._solid_data[:, 12].max())
+
+
+def test_the_live_box_shows_its_take(mw, qapp):
+    vp = _plate_vp(mw, qapp)
+    emits = []
+    vp.selection_changed.connect(lambda n: emits.append(n))
+
+    def witness(c):
+        return dict(prev=list(c._box_prev), sel=list(c._sel),
+                    band=c._box is not None, wash=_wash(c),
+                    shouted=len(emits))
+    w = _box_drag(vp, (5, 5), (vp.width() - 6, vp.height() - 6), qapp,
+                  mid=witness)
+    n = len(vp._tm.faces)
+    assert w["band"] and len(w["prev"]) == n, \
+        "the live box already answers: every face inside is TAKEN"
+    assert w["sel"] == [], "preview is PREVIEW - the set commits at release"
+    assert w["wash"] == pytest.approx(1.0), \
+        "the take wears the COMMIT's value (1.0), not the hover's 0.5"
+    assert w["shouted"] == 0, "the preview never shouts: signals are commit's"
+    assert set(vp._sel) == set(w["prev"]) and vp._box_prev == [], \
+        "release commits the VERY answer the preview showed, ghost dies"
+
+
+def test_the_mouth_holds_the_direction_law(mw, qapp):
+    vp = _plate_vp(mw, qapp)
+    vp._cam.set_view("front")
+    vp.refresh(fit=True)
+    for _ in range(4):
+        qapp.processEvents()
+    lo, hi = vp.window().doc.result.bounding_box
+    mid = (lo[1] + hi[1]) / 2
+    z0, rz = lo[2], (hi - lo)[2]
+    top = vp._cam.project([(lo + hi)[0] / 2, mid, z0 + rz * 0.35],
+                          vp.width(), vp.height())
+    bot = vp._cam.project([(lo + hi)[0] / 2, mid, z0 + rz * 0.65],
+                          vp.width(), vp.height())
+    xr = vp._cam.project([hi[0] + 30, mid, (lo + hi)[2] / 2],
+                         vp.width(), vp.height())
+    xl = vp._cam.project([lo[0] - 30, mid, (lo + hi)[2] / 2],
+                         vp.width(), vp.height())
+    cross = (QPoint(int(xr[0]), int(top[1])), QPoint(int(xl[0]), int(bot[1])))
+    win_ = (QPoint(int(xl[0]), int(top[1])), QPoint(int(xr[0]), int(bot[1])))
+    hits = vp._box_hits(*cross)
+    assert 0 < len(hits) < len(vp._tm.faces), \
+        "CROSSING takes the four touchers - not the whole model"
+    assert vp._box_hits(*win_) == [], \
+        "WINDOW same box: no face lands FULLY inside - takes nothing"
+    vp._select_box(*cross)
+    assert set(vp._sel) == set(hits), \
+        "commit IS the mouth's answer - preview and set can never drift"
+    keep = hits[0]
+    vp._sel = [keep]
+    vp._select_box(*win_, add=True)          # adds nothing, loses nothing
+    assert vp._sel == [keep], "the add grammar survived the split"
+
+
+def test_the_zero_mutes_the_live_take_not_the_commit(mw, qapp):
+    vp = _plate_vp(mw, qapp)
+    vp.set_pick_radius(0)
+
+    def witness(c):
+        return dict(prev=len(c._box_prev), band=c._box is not None,
+                    wash=_wash(c))
+    w = _box_drag(vp, (5, 5), (vp.width() - 6, vp.height() - 6), qapp,
+                  mid=witness)
+    assert w["band"], "the band itself still opens and paints"
+    assert w["prev"] == 0 and w["wash"] < 0.5, \
+        "LAW-45's zero: PREVIEWING is not available - no ghost, no wash"
+    assert vp._sel, \
+        "the BOX commit lives - containment is not a target radius"
+
+
+def test_the_zero_evicts_a_live_ghost_now(mw, qapp):
+    vp = _plate_vp(mw, qapp)
+    a, b = (5, 5), (vp.width() - 6, vp.height() - 6)
+    QTest.mousePress(vp, Qt.LeftButton, Qt.NoModifier, QPoint(*a))
+    _band_move(vp, b, qapp)
+    assert vp._box_prev, "the ghost is alive mid-drag (default knob 3)"
+    vp.set_pick_radius(0)                    # the knob turns UNDER way
+    assert vp._box_prev == [] and _wash(vp) < 0.5, \
+        "the zero evicts the stale wash NOW, not on the next move"
+    QTest.mouseRelease(vp, Qt.LeftButton, Qt.NoModifier, QPoint(*b))
+    for _ in range(3):
+        qapp.processEvents()
+    assert vp._sel, "and the release still commits"
+
+
+def test_a_rebuild_buries_the_ghost(mw, qapp):
+    vp = _plate_vp(mw, qapp)
+    a, b = (5, 5), (vp.width() - 6, vp.height() - 6)
+    QTest.mousePress(vp, Qt.LeftButton, Qt.NoModifier, QPoint(*a))
+    _band_move(vp, b, qapp)
+    assert vp._box_prev
+    vp.refresh()                             # mesh rebuild = old ids lie
+    assert vp._box_prev == [] and _wash(vp) < 0.5, \
+        "a stale face id must never keep glowing (M160's law, R3 clone)"
+    QTest.mouseRelease(vp, Qt.LeftButton, Qt.NoModifier, QPoint(*b))
+    for _ in range(3):
+        qapp.processEvents()
+
+
+def test_the_mouth_silently_denies_a_world_without_mesh(mw):
+    vp = mw.viewport
+    vp._tm = None                            # the world before a mesh
+    assert vp._box_hits(QPoint(0, 0), QPoint(10, 10)) == []
+    vp._select_box(QPoint(0, 0), QPoint(10, 10))
+    assert vp._sel == [], "no mesh, no mouth, NO crash and no state lie"

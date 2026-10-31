@@ -148,6 +148,9 @@ class Viewport(QWidget):
         self._pp_drag = False
         self._box: list | None = None      # rubber-band select [p0, p1]
         self._box_drag = False
+        self._box_prev: list[int] = []     # M185 R3: what the LIVE box
+        #                                  #  currently TAKES (preview
+        #                                  #  wears the commit's wash)
         self._mv = None                    # Move gesture state (M53)
         self._rot = None                   # Rotate gesture state (M55)
         self._zoom_win = None              # Zoom-window arming (M62)
@@ -238,6 +241,8 @@ class Viewport(QWidget):
         self._body_rng = rng               # mesh generation
         self._pp, self._pp_drag = None, False
         self._box, self._box_drag = None, False
+        self._box_prev = []                # M185 R3: a rebuilt mesh makes
+        #                                  #  old face ids LIE - ghost dies
         self._mv = None                    # Move gesture state (M53)
         self._rot = None                   # Rotate gesture state (M55)
         self._zoom_win = None              # Zoom-window arming (M62)
@@ -840,6 +845,17 @@ class Viewport(QWidget):
             self._box[1] = ev.position().toPoint()
             if (self._box[1] - self._box[0]).manhattanLength() > 4:
                 self._box_drag = True
+            # M185 R3 [LAW-49 "otherwise highlighted"]: while the box
+            # lives, what it currently TAKES asks the SAME mouth the
+            # release commits through - and wears the commit's own wash
+            # at the _apply_hi choke point. LAW-45's zero: PICKBOX 0
+            # means selection PREVIEWING is not available.
+            if self._box_drag:
+                prev = (self._box_hits(self._box[0], self._box[1])
+                        if self._pick_r > 0 else [])
+                if prev != self._box_prev:
+                    self._box_prev = prev
+                    self._apply_hi()         # repaint with the new take
             self.update()
             return
         if Qt.MiddleButton in self._buttons:
@@ -953,6 +969,9 @@ class Viewport(QWidget):
         elif ev.button() == Qt.LeftButton:
             self._pp, self._pp_drag = None, False
             self._box, self._box_drag = None, False
+            if self._box_prev:                   # M185 R3: no finished
+                self._box_prev = []              #  press cycle keeps an
+                self._apply_hi()                 #   orphan ghost alive
         if ev.button() == Qt.RightButton:
             self._kill_rmb_hold()
             # A tap that never bloomed a wheel = the plain context menu
@@ -1077,6 +1096,9 @@ class Viewport(QWidget):
             if self._hover:
                 self._hover = None               # the preview dies with
                 self._apply_hi()                 #   the zero pickbox
+            if self._box_prev:                   # M185 R3: the live box
+                self._box_prev = []              #  ghost evicts with it
+                self._apply_hi()
             self._refresh_readout()              # chip follows, never stale
         return self._pick_r
 
@@ -1108,6 +1130,11 @@ class Viewport(QWidget):
         sel = self._sel
         if self._body_hi:
             sel = sorted(set(sel) | set(self._body_hi))
+        if self._box_prev:
+            # M185 R3: the LIVE box take wears the SELECTION value (the
+            # commit's own face, worn early) - visual only: self._sel
+            # stays exactly the committed set (same law as _body_hi).
+            sel = sorted(set(sel) | set(self._box_prev))
         # M160 (FD2-L4): a browser row UNDER THE MOUSE washes through the
         # HOVER value — the same glow a face gets under the cursor. Also
         # visual-only: the picked set never hears about it.
@@ -1166,17 +1193,17 @@ class Viewport(QWidget):
         self._refresh_readout()
         self.selection_changed.emit(len(self.selected_groups()))
 
-    def _select_box(self, p0, p1, add: bool = False):
-        """Fusion's rubber-band gestures: drag left→right is a WINDOW
-        (faces whose triangles all land inside), right→left is CROSSING
-        (faces whose silhouette the box touches).  Whole logical faces
-        (coplanar groups); replaces the selection.  v1 selects by 2D
-        containment — hidden faces behind the hit count too."""
-        if self._sectioned():
-            return                         # M135: no face identity to
-        #                                  # box-select on a cut mesh
-        if self._tm is None:
-            return
+    def _box_hits(self, p0, p1) -> list[int]:
+        """THE rubber band's one PURE mouth (M185 R3): box endpoints in,
+        the faces it currently TAKES out. The live preview during the
+        drag and the commit at release ask the SAME answer, so the wash
+        and the set can never drift (M184 R2's law, ported to 3D).
+        Fusion's gestures: drag left→right is a WINDOW (a face's
+        triangles ALL land inside), right→left is CROSSING (the box
+        touches the triangle's silhouette).  Whole logical faces
+        (coplanar groups); 2D containment — hidden faces behind count."""
+        if self._sectioned() or self._tm is None:
+            return []
         x0, x1 = sorted((float(p0.x()), float(p1.x())))
         y0, y1 = sorted((float(p0.y()), float(p1.y())))
         window = float(p1.x()) >= float(p0.x())
@@ -1199,13 +1226,30 @@ class Viewport(QWidget):
             pick = ((tx.min(axis=1) <= x1) & (tx.max(axis=1) >= x0)
                     & (ty.min(axis=1) <= y1) & (ty.max(axis=1) >= y0))
             pick &= fin[tri].all(axis=1)
-        if not add:
-            self._sel = []
+        taken: list[int] = []
         if self._gid is not None and pick.any():
             for g in np.unique(self._gid[pick]):
-                self._sel.extend(f for f in
-                                 np.flatnonzero(self._gid == g).tolist()
-                                 if f not in self._sel)
+                taken.extend(f for f in
+                             np.flatnonzero(self._gid == g).tolist()
+                             if f not in taken)
+        return taken
+
+    def _select_box(self, p0, p1, add: bool = False):
+        """Commit the gesture: ask the ONE mouth (_box_hits) and land
+        its answer on the selection - the live preview was already
+        wearing EXACTLY this face (M185 R3), so nothing can disagree."""
+        if self._sectioned():
+            return                         # M135: no face identity to
+        #                                  # box-select on a cut mesh
+        if self._tm is None:
+            return
+        taken = self._box_hits(p0, p1)
+        if not add:
+            self._sel = []
+        self._sel.extend(f for f in taken if f not in self._sel)
+        self._box_prev = []                # the ghost dies at the
+        #                                  #  commit - what glows NOW
+        #                                  #  is the set itself
         self._hover = None
         self._apply_hi()
         self.selection_changed.emit(len(self.selected_groups()))
