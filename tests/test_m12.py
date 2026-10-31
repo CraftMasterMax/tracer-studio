@@ -159,6 +159,10 @@ def test_revolve_reedit_keeps_type(win, qapp):
     # stretch the profile: add a second rect higher (v to 8)
     QTest.keyPress(win.sketch, Qt.Key_Escape)      # select mode
     _drag_rect(win.sketch, 11, 0, 13, 8)
+    # M177 R1 (L24): Enter now ENDS THE RECT COMMAND first - the
+    # Finish-Sketch key belongs to a NEUTRAL hand, so the flow is
+    # ENTER, ENTER (end the verb, then finish). Fusion's own grammar.
+    QTest.keyPress(win.sketch, Qt.Key_Return)    # end the rect command
     QTest.keyPress(win.sketch, Qt.Key_Return)    # plain finish -> UPDATE
     qapp.processEvents()
     assert win.doc.features[0].sid == sid
