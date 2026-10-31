@@ -190,6 +190,9 @@ class SketchCanvas(QWidget):
         self._snap_obj = None                    # M120: typed Snap (glyph)
         self._placed_free = True                 # L25: _place_point verdict
         self._no_snap = False                    # M120: Alt suppresses snaps
+        self._brake = False                      # M186 R2 [LAW-57]: Ctrl at
+        #                                  #  the drawing hand parks GRID
+        #                                  #  snap + auto-constraints
         self._snap_grid = bool(QSettings().value("sketch/grid_snap",
                                                  False, type=bool))
         # M185 R1 [LAW-45]: ONE knob - the selection target radius in
@@ -405,7 +408,11 @@ class SketchCanvas(QWidget):
         for r in getattr(self.model, "refs", []):       # M82: projected
             for x, y in np.asarray(r["pts"], float):    # edges magnetize
                 extra.append((float(x), float(y), "reference"))
-        if self._snap_grid:
+        if self._snap_grid and not self._brake:
+            # M186 R2 [LAW-57, KB verbatim]: Ctrl is the INFERENCE BRAKE
+            # - "avoid them by holding the CTRL key" and staff wording
+            # ties GRID SNAPPING into the same brake. The object magnet
+            # is Alt's business (M120) and stays strong under Ctrl.
             s = self._grid_step()
             extra.append((round(wp[0] / s) * s, round(wp[1] / s) * s,
                           "grid"))
@@ -669,6 +676,7 @@ class SketchCanvas(QWidget):
         self._sel = copies                      # the copy is the pick now
     def mousePressEvent(self, ev: QMouseEvent):
         self._no_snap = bool(ev.modifiers() & Qt.AltModifier)
+        self._brake = bool(ev.modifiers() & Qt.ControlModifier)
         if (ev.button() == Qt.LeftButton
                 and self._pending is not None):        # M90: new stroke
             self._pending = None                       # drops the type-in
@@ -1023,6 +1031,12 @@ class SketchCanvas(QWidget):
     def _auto_constraints(self, ln: Line, end_q: QPointF):
         """Fusion's drawing feel: release near-horizontal -> it IS
         horizontal (snapped), and the constraint is recorded."""
+        if self._brake:
+            return                           # M186 R2 [LAW-57]: the
+        #                                  #  inference brake - Ctrl held
+        #                                  #  as the stroke ends keeps
+        #                                  #  every auto-constraint in
+        #                                  #  its pocket, line AS DRAWN
         a, b = self.w2s(ln.a.x, ln.a.y), self.w2s(ln.b.x, ln.b.y)
         dx, dy = abs(b.x() - a.x()), abs(b.y() - a.y())
         if max(dx, dy) < 4:
@@ -1039,6 +1053,7 @@ class SketchCanvas(QWidget):
     def mouseMoveEvent(self, ev: QMouseEvent):
         q = ev.position()
         self._no_snap = bool(ev.modifiers() & Qt.AltModifier)
+        self._brake = bool(ev.modifiers() & Qt.ControlModifier)
         self._cursor = self._world(q)
         self.update()                    # keep the readout live
         if self._pan_from is not None:

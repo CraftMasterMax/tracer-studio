@@ -76,6 +76,22 @@ def test_the_all_float_path_counts_sizes_too():
 
 # ---- the canvas answers per-entity ------------------------------------------
 
+_LIVE: list = []
+
+
+@pytest.fixture(autouse=True)
+def _close_live():
+    """ROUTING LAW (test_m164's lesson): every SHOWed canvas must CLOSE
+    with its test - offscreen windows share the pointer, and a survivor
+    steals the next test's moves."""
+    yield
+    while _LIVE:
+        w = _LIVE.pop()
+        w.close()
+        w.deleteLater()
+    QApplication.processEvents()
+
+
 def _editor(qapp):
     from tracer.core.sketch.model import SketchModel
     from tracer.ui.sketcheditor import SketchCanvas
@@ -85,7 +101,8 @@ def _editor(qapp):
     cv.show()
     for _ in range(3):
         qapp.processEvents()
-    return cv
+    _LIVE.append(cv)                       # ROUTING LAW (test_m164):
+    return cv                             #  leaked windows steal moves
 
 
 def _two_lines(qapp):
@@ -195,3 +212,168 @@ def test_the_canvas_inks_the_mixed_state(qapp):
         "the free line is STILL blue beside it"
     assert _ink_near(arr, mid2, WHITE) < 2, \
         "and it is NOT yet white - the vendor's mixed canvas, in pixels"
+
+
+# ---- R2: THE INFERENCE BRAKE [LAW-57, documented] ---------------------------
+# "While there is no option to turn off or disable the creation of
+# automatic sketch constraints, you may avoid them by holding the CTRL
+# key" - and staff wording ties grid snapping into the same brake.
+# Tracer already ships the OTHER brakes: Alt silences the whole magnet
+# (M120) and Shift is the ortho hand (M173) - the vendor's Shift slot
+# is taken by OUR law, so the clone lands where the vendor's TEXT and
+# our free key agree: CTRL, held at the moment of drawing, parks the
+# GRID candidate and the H/V auto-constraint inference. The endpoint
+# magnet is a DIFFERENT brake's business (Alt) and stays strong.
+
+from PySide6.QtCore import QEvent, QPointF, QPoint, Qt, QSettings     # noqa
+from PySide6.QtGui import QMouseEvent                                 # noqa
+from PySide6.QtTest import QTest                                      # noqa
+from PySide6.QtWidgets import QApplication                            # noqa
+from tracer.core.sketch.constraints import Horizontal                 # noqa
+
+
+@pytest.fixture
+def ed(qapp):
+    QSettings().remove("sketch/grid_snap")        # POLLUTION LAW
+    from tracer.core.sketch.model import SketchModel
+    from tracer.ui.sketcheditor import SketchCanvas
+    e = SketchCanvas()
+    e.set_model(SketchModel())
+    e.resize(600, 400)
+    e.show()
+    for _ in range(3):
+        qapp.processEvents()
+    yield e
+    e.close()                              # ROUTING LAW: close what you
+    e.deleteLater()                        #  show, or later QtTests lie
+    QSettings().remove("sketch/grid_snap")
+
+
+def _sq2(ed, x, y):
+    s = ed.w2s(x, y)
+    return QPointF(s.x(), s.y())
+
+
+def _mmove(ed, x, y, mods):
+    p = _sq2(ed, x, y)
+    g = QPointF(ed.mapToGlobal(p.toPoint()))
+    QApplication.sendEvent(
+        ed, QMouseEvent(QEvent.Type.MouseMove, p, g,
+                        Qt.LeftButton, Qt.LeftButton, mods))
+    for _ in range(2):
+        QApplication.processEvents()
+
+
+def _draw_line(ed, qapp, start, end, mods):
+    """House draw grammar (M176): the line CHAINS by clicks - click the
+    start, MOVE (the cursor is the endpoint source), click the end.
+    `mods` rides the END stroke: that is where inference decides."""
+    ed.set_tool("line")
+    _mmove(ed, start[0], start[1], Qt.NoModifier)
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier,
+                     _sq2(ed, *start).toPoint())
+    QApplication.processEvents()
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier,
+                       _sq2(ed, *start).toPoint())
+    for _ in range(2):
+        QApplication.processEvents()
+    p1 = _sq2(ed, *end)
+    g1 = QPointF(ed.mapToGlobal(p1.toPoint()))
+    QApplication.sendEvent(
+        ed, QMouseEvent(QEvent.Type.MouseMove, p1, g1,
+                        Qt.NoButton, Qt.NoButton, mods))
+    for _ in range(2):
+        QApplication.processEvents()
+    QApplication.sendEvent(
+        ed, QMouseEvent(QEvent.Type.MouseButtonPress, p1, g1,
+                        Qt.LeftButton, Qt.LeftButton, mods))
+    for _ in range(2):
+        QApplication.processEvents()
+    QApplication.sendEvent(
+        ed, QMouseEvent(QEvent.Type.MouseButtonRelease, p1, g1,
+                        Qt.LeftButton, Qt.NoButton, mods))
+    for _ in range(3):
+        QApplication.processEvents()
+
+
+def _inferred(ed):
+    return [c for c in ed.model.sketch.constraints
+            if getattr(c, "src", "") == "inferred"]
+
+
+def test_the_brake_parks_the_grid(ed, qapp):
+    ed.set_grid_snap(True)
+    t = ed._snap_target(_sq2(ed, 10.1, 9.9))
+    assert t is not None and ed._snap_obj.kind == "grid", \
+        "the grid station is offered as you draw"
+    ed._brake = True
+    assert ed._snap_target(_sq2(ed, 10.1, 9.9)) is None, \
+        "Ctrl: the grid candidate is PARKED (staff wording, verbatim)"
+    assert ed._snap_obj is None, "no candidate, no glyph"
+
+
+def test_the_brake_leaves_the_endpoint_magnet_strong(ed, qapp):
+    a = ed.model.sketch.point(10, 10)
+    ed._brake = True
+    assert ed._snap_target(_sq2(ed, 10.1, 9.9)) is a, \
+        "the object magnet is Alt's business (M120) - Ctrl does not " \
+        "silence the whole magnet"
+
+
+def test_alt_still_silences_everything_under_the_brake(ed, qapp):
+    ed.model.sketch.point(10, 10)
+    ed._brake = True
+    ed._no_snap = True
+    try:
+        assert ed._snap_target(_sq2(ed, 10.0, 10.0)) is None
+    finally:
+        ed._no_snap = False
+        ed._brake = False
+
+
+def test_ctrl_at_release_sends_the_inference_home(ed, qapp):
+    ed.set_grid_snap(False)                 # exact endpoints, no magnet
+    _draw_line(ed, qapp, (10, 10), (60, 10.35), Qt.ControlModifier)
+    ln = ed.model.sketch.lines[0]
+    assert _inferred(ed) == [], \
+        "'you may avoid them by holding the CTRL key' - the H/V " \
+        "auto-constraint stays in its pocket"
+    assert ln.b.y == pytest.approx(10.35, abs=0.05), \
+        "and the line stays AS DRAWN - no silent flattening"
+
+
+def test_the_inference_lives_without_the_brake(ed, qapp):
+    ed.set_grid_snap(False)
+    _draw_line(ed, qapp, (10, 10), (60, 10.35), Qt.NoModifier)
+    inf = _inferred(ed)
+    assert any(isinstance(c, Horizontal) for c in inf), \
+        "the same stroke WITHOUT Ctrl still infers horizontal"
+    ln = ed.model.sketch.lines[0]
+    assert ln.b.y == pytest.approx(ln.a.y, abs=1e-6), \
+        "snapped, recorded - the M120-era law untouched"
+
+
+def test_the_brake_is_sampled_live_off_the_move(ed, qapp):
+    ed.set_tool("line")
+    p0 = _sq2(ed, 10, 10)
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, p0.toPoint())
+    _mmove(ed, 40, 30, Qt.ControlModifier)
+    assert ed._brake is True, "Ctrl pressed MID-stroke is seen at once"
+    _mmove(ed, 45, 32, Qt.NoModifier)
+    assert ed._brake is False, "released mid-stroke, inference returns"
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier,
+                       _sq2(ed, 45, 32).toPoint())
+
+
+def test_select_time_ctrl_never_met_the_brake(ed, qapp):
+    sk = ed.model.sketch
+    l1 = sk.line(sk.point(0, 0), sk.point(40, 0))
+    l2 = sk.line(sk.point(0, 10), sk.point(40, 10))
+    ed.set_tool("select")
+    QTest.mouseClick(ed, Qt.LeftButton, Qt.ControlModifier,
+                     _sq2(ed, 20, 0).toPoint())
+    QTest.mouseClick(ed, Qt.LeftButton, Qt.ControlModifier,
+                     _sq2(ed, 20, 10).toPoint())
+    assert l1 in ed._sel and l2 in ed._sel, \
+        "Ctrl at REST still adds to selection - the brake lives ONLY " \
+        "in the drawing hand"
