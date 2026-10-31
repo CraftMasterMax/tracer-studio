@@ -195,6 +195,7 @@ class SketchCanvas(QWidget):
         self._dim_hits: list = []
         self._constraint_hits: list = []     # M164 R2: (rect, constraint)
         self._hover_c = None                 # constraint under the cursor
+        self._hover_e = None                 # M184 R3: geometry under it
         self._dim_edit = None                # M165 R1: open chip editor
         self._last_dim = None                # M165 R1: rung-3 seed
         self._show_dof = False            # M119: degrees-of-freedom overlay
@@ -312,6 +313,7 @@ class SketchCanvas(QWidget):
         self._snap_hint = None
         self._snap_obj = None                    # M120: stale magnet glyph
         self._hover_c = None                     # M164 R2: stale ring dies
+        self._hover_e = None                     # M184 R3: the geometry
         self.setCursor(Qt.ArrowCursor if tool == "select"
                        else Qt.CrossCursor)    # Fusion's drafting cursor
         self.update()
@@ -617,6 +619,9 @@ class SketchCanvas(QWidget):
         if self.model is None:
             return
         q = ev.position()
+        if self._hover_e is not None:              # M184 R3: the HAND
+            self._hover_e = None                   #  kills the preselect
+            self.update()
         if ev.button() in (Qt.MiddleButton, Qt.RightButton):
             if (ev.button() == Qt.RightButton
                     and self._dim_place is not None):  # M178 R2 (FD5-
@@ -1121,8 +1126,12 @@ class SketchCanvas(QWidget):
             else:                              # M164 R2: idle select hover
                 hit = self._hover_hit(q)
                 new = hit[1] if hit else None
-                if new is not self._hover_c:   # identity, never __eq__:
+                ent = self._hit(q)             # M184 R3 [LAW-50]: the
+                newe = ent[1] if ent else None #  geometry UNDER THE
+                                               #  CURSOR preselects
+                if new is not self._hover_c or newe is not self._hover_e:
                     self._hover_c = new        # twin constraints compare equal
+                    self._hover_e = newe       #  identity rules here too
                     self.setCursor(Qt.PointingHandCursor if new is not None
                                    else Qt.ArrowCursor)
                     self.update()              # ONE repaint per hover change
@@ -1145,6 +1154,9 @@ class SketchCanvas(QWidget):
                            else Qt.CrossCursor)    # same law as set_tool
         if self._trim_hover is not None:             # M168 R3: the piece
             self._trim_hover = None                  #  preview dies too
+        if self._hover_e is not None:            # M184 R3 [LAW-50]: the
+            self._hover_e = None                 #  preselect voice goes
+            self.update()                        #  silent with the cursor
         self._trim_last = None                       # M169 R3: a Leave ends
         self._trim_stroke = False                    #  the stroke where the
         self._trim_done = set()                      #   pointer left the room
@@ -3458,6 +3470,27 @@ class SketchCanvas(QWidget):
                 p.drawLine(a, b)
         p.restore()
 
+    def _draw_glow(self, p: QPainter, entities, pen: QPen):
+        """ONE per-kind glow body (M184 R3): hover, band-take and
+        committed selection are the SAME draw wearing different faces."""
+        p.setPen(pen)
+        for e in entities:
+            if isinstance(e, Line):
+                p.drawLine(self.w2s(e.a.x, e.a.y), self.w2s(e.b.x, e.b.y))
+            elif isinstance(e, Circle):
+                cen = self.w2s(e.c.x, e.c.y)
+                p.drawEllipse(cen, e.r * self._scale, e.r * self._scale)
+            elif isinstance(e, Ellipse):
+                cen = self.w2s(e.c.x, e.c.y)
+                p.drawEllipse(cen, e.rx * self._scale, e.ry * self._scale)
+            elif isinstance(e, Arc):
+                smp = e.sample(64)
+                q_prev = self.w2s(float(smp[0][0]), float(smp[0][1]))
+                for xy in smp[1:]:
+                    qn = self.w2s(float(xy[0]), float(xy[1]))
+                    p.drawLine(q_prev, qn)
+                    q_prev = qn
+
     def _draw_entities(self, p: QPainter):
         sk = self.model.sketch
         r = self._last_result
@@ -3487,35 +3520,27 @@ class SketchCanvas(QWidget):
                      else solid_pen)
             cen = self.w2s(e.c.x, e.c.y)
             p.drawEllipse(cen, e.rx * self._scale, e.ry * self._scale)
+        # M184 R3 [LAW-50 EnablePreselection]: the FIRST voice - the
+        # entity UNDER THE CURSOR wears the canvas hover face (FD2-L1).
+        # Drawn BEFORE take/commit so a committed member keeps the
+        # final word: base -> hover -> taken -> selected.
+        if self._hover_e is not None:
+            self._draw_glow(p, [self._hover_e], QPen(HOVER, 2.2))
         # selected - and M184 R2: what the LIVE band currently TAKES
         # rides the SAME glow (LAW-49: "displayed as dashed or
         # OTHERWISE HIGHLIGHTED"). The preview is not a new color law -
         # it is the commit's face, worn early; the ghost list draws
         # FIRST so a truly selected member keeps the final word.
-        p.setPen(QPen(SEL, 2.4))
-        for e in list(self._band_prev) + list(self._sel):
-            if isinstance(e, Line):
-                p.drawLine(self.w2s(e.a.x, e.a.y), self.w2s(e.b.x, e.b.y))
-            elif isinstance(e, Circle):
-                cen = self.w2s(e.c.x, e.c.y)
-                p.drawEllipse(cen, e.r * self._scale, e.r * self._scale)
-            elif isinstance(e, Ellipse):
-                cen = self.w2s(e.c.x, e.c.y)
-                p.drawEllipse(cen, e.rx * self._scale, e.ry * self._scale)
-            elif isinstance(e, Arc):
-                smp = e.sample(64)
-                q_prev = self.w2s(float(smp[0][0]), float(smp[0][1]))
-                for xy in smp[1:]:
-                    qn = self.w2s(float(xy[0]), float(xy[1]))
-                    p.drawLine(q_prev, qn)
-                    q_prev = qn
+        self._draw_glow(p, list(self._band_prev) + list(self._sel),
+                        QPen(SEL, 2.4))
         # points
         for pt, _ in self._all_points():
             pos = self.w2s(pt.x, pt.y)
             selected = pt in self._sel or pt in self._band_prev
-            p.setPen(QPen(SEL if selected else DIM, 1.2))
-            p.setBrush(SEL if selected else BG)
-            s = 3.8 if selected else 2.6
+            hov = pt is self._hover_e           # M184 R3: identity law
+            p.setPen(QPen(SEL if selected else (HOVER if hov else DIM), 1.2))
+            p.setBrush(SEL if selected else (HOVER if hov else BG))
+            s = 3.8 if selected else (3.2 if hov else 2.6)
             p.drawRect(QRectF(pos.x() - s, pos.y() - s, 2 * s, 2 * s))
         p.setBrush(Qt.NoBrush)
         sn = self._snap_obj                        # M120: typed magnet glyph

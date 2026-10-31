@@ -298,3 +298,111 @@ def test_the_take_is_frame_cyan(ed, qapp):
     print("cyan taken", c1, "cyan untouched", c2)
     assert c1 >= 30, "the TAKEN line glows SEL cyan WHILE THE BAND LIVES"
     assert c2 <= 8, "the UNTOUCHED line keeps its base ink"
+
+
+# ---- R3: THE FIRST VOICE (LAW-50: HighlightColor = PRESELECT) --------------
+# FreeCAD ships SelectionColor (0,171,255) AND HighlightColor (10,200,255)
+# as TWO faces under an EnablePreselection toggle. Tracer's trio: base ->
+# HOVER (#9cc4ff, FD2-L1) under the cursor -> band take -> committed.
+# Hover never touches the model: it is pure feel.
+
+from PySide6.QtCore import QEvent as _QE                            # noqa
+
+
+def _bare_move(ed, xy, qapp):
+    p = QPointF(float(xy[0]), float(xy[1]))
+    QApplication.sendEvent(
+        ed, QMouseEvent(QEvent.Type.MouseMove, p, p, p,
+                        Qt.NoButton, Qt.NoButton, Qt.NoModifier))
+    for _ in range(3):
+        qapp.processEvents()
+
+
+def test_hover_preselects_the_geometry_under_the_cursor(ed, qapp):
+    l1, l2 = _two_lines(ed)
+    _bare_move(ed, (_scr(-12.5, 2).x(), _scr(-12.5, 2).y()), qapp)
+    assert ed._hover_e is l1, "the cursor preselects what it rides (LAW-50)"
+    _bare_move(ed, (_scr(-50, 30).x(), _scr(-50, 30).y()), qapp)
+    assert ed._hover_e is None, "off the geometry the voice falls silent"
+
+
+def test_press_kills_the_hover(ed, qapp):
+    l1, _ = _two_lines(ed)
+    _bare_move(ed, (_scr(-12.5, 2).x(), _scr(-12.5, 2).y()), qapp)
+    assert ed._hover_e is l1
+    QTest.mousePress(ed, Qt.LeftButton, Qt.NoModifier, _scr(-12.5, 2))
+    for _ in range(3):
+        qapp.processEvents()
+    assert ed._hover_e is None, "the HAND takes over - no preselect mid-grab"
+    QTest.mouseRelease(ed, Qt.LeftButton, Qt.NoModifier, _scr(-12.5, 2))
+
+
+def test_hover_dies_with_the_tool(ed, qapp):
+    l1, _ = _two_lines(ed)
+    _bare_move(ed, (_scr(-12.5, 2).x(), _scr(-12.5, 2).y()), qapp)
+    assert ed._hover_e is l1
+    ed.set_tool("line")
+    assert ed._hover_e is None, "no orphan glow across tools (set_tool law)"
+
+
+def test_cursor_leaves_no_ghost(ed, qapp):
+    l1, _ = _two_lines(ed)
+    _bare_move(ed, (_scr(-12.5, 2).x(), _scr(-12.5, 2).y()), qapp)
+    assert ed._hover_e is l1
+    QApplication.sendEvent(ed, _QE(QEvent.Type.Leave))
+    for _ in range(3):
+        qapp.processEvents()
+    assert ed._hover_e is None, "cursor gone, voice gone (M164 no-ghost law)"
+
+
+def test_hover_burns_the_hover_face(ed, qapp):
+    import numpy
+    l1, l2 = _two_lines(ed)
+    _bare_move(ed, (_scr(-12.5, 2).x(), _scr(-12.5, 2).y()), qapp)
+    qimg = ed.grab().toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+    F = numpy.frombuffer(bytes(qimg.bits()), numpy.uint8).reshape(
+        qimg.height(), qimg.width(), 4)[:, :, :3].copy()
+
+    def hover_ink(img, y0, y1):                     # THE hover law:
+        best = 0                                    #  #9cc4ff is the ONLY
+        for y in range(y0, y1):                     #   color with R>130
+            px = img[y, 100:500].astype(int)        #   AND B>200 here
+            best = max(best, int(((px[:, 0] > 130) & (px[:, 2] > 200)).sum()))
+        return best
+    h1 = hover_ink(F, 189, 196)                     # hovered l1
+    h2 = hover_ink(F, 205, 212)                     # silent l2
+    print("hover ink", h1, "silent row", h2)
+    assert h1 >= 100, "the hovered line wears the canvas hover face"
+    assert h2 <= 40, "the un-hovered line keeps its base ink"
+    assert ed._sel == [], "hover is FEEL: nothing is selected"
+
+
+def test_two_voices_at_once(ed, qapp):
+    import numpy
+    l1, l2 = _two_lines(ed)
+    _drag_live(ed, (-30, 4), (30, 1), lambda c: None, qapp)  # commit l1
+    assert l1 in ed._sel and l2 not in ed._sel
+    _bare_move(ed, (_scr(-12.5, -2).x(), _scr(-12.5, -2).y()), qapp)
+    qimg = ed.grab().toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+    F = numpy.frombuffer(bytes(qimg.bits()), numpy.uint8).reshape(
+        qimg.height(), qimg.width(), 4)[:, :, :3].copy()
+    cyan = max(int((((F[y, 100:500].astype(int))[:, 2]
+                     - (F[y, 100:500].astype(int))[:, 0]) > 120).sum())
+               for y in range(189, 196))
+    hov = max(int((((F[y, 100:500].astype(int))[:, 0] > 130)
+                   & ((F[y, 100:500].astype(int))[:, 2] > 200)).sum())
+              for y in range(205, 212))
+    assert cyan >= 100 and hov >= 100, \
+        "committed cyan AND hovered #9cc4ff burn on the SAME frame"
+
+
+def test_hover_touches_no_model_bytes(ed, qapp):
+    l1, l2 = _two_lines(ed)
+    m = ed.model
+    snap = (len(m.sketch.lines), len(m.sketch.points), len(ed._hist))
+    for xy in ((-12.5, 2), (0.0, 2.0), (12.5, 2), (-50.0, 30.0)):
+        s = _scr(*xy)
+        _bare_move(ed, (s.x(), s.y()), qapp)
+    assert (len(m.sketch.lines), len(m.sketch.points), len(ed._hist)) == snap
+    assert (l1.a.x, l1.a.y, l1.b.x, l1.b.y) == (-20.0, 2.0, 20.0, 2.0), \
+        "hover moves NOTHING - it only lights"
