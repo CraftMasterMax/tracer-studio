@@ -593,6 +593,22 @@ class SketchCanvas(QWidget):
             return
         q = ev.position()
         if ev.button() in (Qt.MiddleButton, Qt.RightButton):
+            if (ev.button() == Qt.RightButton
+                    and self._dim_place is not None):  # M178 R2 (FD5-
+                c = self._dim_place                    #  L35): right-
+                self._dim_place = None                 #  click BEFORE
+                pos = self._dim_anchor_screen(c)       #  placing: the
+                if pos is not None:                    #  newborn LANDS
+                    qm = ev.position()                 #  HERE - the
+                    c.label_off = ((qm.x() - pos.x()) / self._scale,   #
+                                   -(qm.y() - pos.y()) / self._scale)  #
+                c.driven = True                        #  ghost's OWN
+                self._solve()                          #  formula - and
+                self.update()                          #  arrives
+                return                                 #  DRIVEN from
+                #                                       birth: it
+                #                                       REPORTS, so the
+                #                                       editor STAYS SHUT
             if ev.button() == Qt.RightButton and self._tool == "select":
                 self._context_menu(ev)
                 return

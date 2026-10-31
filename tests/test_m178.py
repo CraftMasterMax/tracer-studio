@@ -16,8 +16,8 @@ PINS THE READING IT HOLDS - there is no resurrection of an old number
 is the VOTE: from the flip on, geometry that strays is pulled back.
 
 The creation-time mouth (right-click a NEWBORN before it is placed,
-L35's exact gesture) is rung 2; the inertness details (dbl-click on a
-driven, angle dims) are rung 3.
+L35's exact gesture) landed as rung 2; the inertness details
+(dbl-click on a driven, angle-dim quoting) are rung 3.
 """
 import math
 
@@ -148,3 +148,58 @@ def test_the_driven_chip_wears_parentheses(ed):
     assert ed._dim_text(d) == "5.00"
     d.driven = True
     assert ed._dim_text(d) == "(5.00)"
+
+
+# ---- RUNG 2: RIGHT-CLICK THE NEWBORN - DRIVEN FROM BIRTH (FD5-L35) -------
+# L35's EXACT creation mouth: "right-click BEFORE placing = Driven dim".
+# The hover menu cannot ride place mode (it is a select-mode door), so the
+# gesture IS the law: a right press while the ghost follows the cursor
+# LANDS the dim at the cursor, driven from birth - and the birth editor
+# STAYS SHUT, because a reader has no number to command.
+
+
+def _right(ed, x, y):
+    p = ed.w2s(x, y).toPoint()
+    QTest.mousePress(ed, Qt.RightButton, pos=p)
+    QTest.mouseRelease(ed, Qt.RightButton, pos=p)
+    QApplication.instance().processEvents()
+
+
+def test_right_press_before_placing_lands_it_driven(ed, qapp):
+    m = ed.model
+    ln = m.add_line(m.point(0.0, 0.0), m.point(8.0, 0.0))
+    ed._sel = [ln]
+    ed.act_dim()                               # newborn follows cursor
+    assert ed._dim_place is not None
+    _right(ed, 4.0, -6.0)                      # right-click BEFORE placing
+    assert ed._dim_place is None               #  it LANDS HERE...
+    dims = [c for c in m.sketch.constraints if isinstance(c, Distance)]
+    assert len(dims) == 1 and dims[0].driven   #   ...DRIVEN from birth
+    assert ed._dim_edit is None                #    editor STAYS SHUT
+
+
+def test_a_birth_driven_dim_never_owns_the_geometry(ed):
+    m = ed.model
+    ln = m.add_line(m.point(0.0, 0.0), m.point(8.0, 0.0))
+    ed._sel = [ln]
+    ed.act_dim()
+    _right(ed, 4.0, -6.0)
+    d = [c for c in m.sketch.constraints if isinstance(c, Distance)][0]
+    assert d.value == pytest.approx(8.0)       # quoted at birth
+    ln.b.x = 20.0
+    m.solve()
+    assert ln.b.x == pytest.approx(20.0)       # nobody yanked it back
+    assert d.value == pytest.approx(20.0)      # the quote FOLLOWED
+
+
+def test_the_left_press_still_lands_it_driving_unchanged(ed, qapp):
+    m = ed.model
+    ln = m.add_line(m.point(0.0, 0.0), m.point(8.0, 0.0))
+    ed._sel = [ln]
+    ed.act_dim()
+    QTest.mouseClick(ed, Qt.LeftButton)        # control: the ORDINARY
+    QApplication.instance().processEvents()    #  claim is UNTOUCHED
+    d = [c for c in m.sketch.constraints if isinstance(c, Distance)][0]
+    assert not d.driven                        # driving as ever...
+    assert ed._dim_edit is not None            #  ...editor opens as ever
+    ed._close_dim_editor()
