@@ -2065,6 +2065,18 @@ class SketchCanvas(QWidget):
                 if self._pending is None and self._tool in CHAIN_TOOLS:
                     self.set_tool("select")
                 return
+            if k == Qt.Key_Tab:                      # M177 R2 (L24): Tab
+                if self._num_buf:                    #  is Enter's COMMIT-
+                    self._commit_typed()             #  AND-CONTINUE twin -
+                self.update()                        #  the number files,
+                return                               #  the command STAYS
+                #  ARMED (a staged rect stays mid-walk; even the FINAL
+                #  commit keeps the tool - that is the whole contrast
+                #  with Enter). Swallowing Tab while a lock lives also
+                #  saves the canvas from FOCUS TRAVERSALS mid-gesture:
+                #  before this branch Tab was unclaimed and could hand
+                #  the whole editor the boot. FD5-L23's length+angle
+                #  field-cycling is the [observed] sibling - deferred.
             if k in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
                 self._scroll_key(ev)               # M171 R1: view keys
                 return                             #  neither eat digits

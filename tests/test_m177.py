@@ -20,8 +20,14 @@ exit grammar: ENTER = commit AND end. Two mouths wore it wrong:
   sketch under select-mode Enter still walks into finish()'s "close
   your profile" warning.
 
-Tab, the commit-AND-CONTINUE twin (L24's other clause), is rung 2;
-L25's free-point chain exception is rung 3.
+Tab, the commit-AND-CONTINUE twin, landed as rung 2: over a live lock
+Tab FILES the number and the command SURVIVES - a staged rect stays
+mid-walk, even the final commit keeps the tool (the whole contrast
+with Enter), and swallowing Tab while a lock lives saves the canvas
+from focus traversals mid-gesture (Tab was unclaimed before: the
+editor could hand itself the boot). FD5-L23's length+angle field
+cycling is the [observed] sibling - deferred. L25's free-point chain
+exception is rung 3.
 """
 import pytest
 
@@ -31,7 +37,7 @@ from PySide6.QtCore import QPoint, Qt                              # noqa
 from PySide6.QtTest import QTest                                   # noqa
 from PySide6.QtWidgets import QApplication                         # noqa
 
-from tracer.core.sketch.constraints import Distance                # noqa
+from tracer.core.sketch.constraints import Distance, Radius        # noqa
 from tracer.core.sketch.model import SketchModel                   # noqa
 from tracer.ui.sketcheditor import SketchCanvas                    # noqa
 
@@ -155,3 +161,83 @@ def test_a_rect_walks_both_numbers_and_the_last_enter_ends(ed, qapp):
     assert len(dims) == 2
     assert ed._pending is None
     assert ed._tool == "select"
+
+
+# ---- RUNG 2: TAB, the commit-AND-CONTINUE twin (FD5-L24) ------------------
+
+def _type(ed, text):
+    QTest.keyClicks(ed, text)                      # digits into the chip
+
+
+def test_tab_files_the_number_and_the_command_lives(ed, qapp):
+    ed.set_tool("line")
+    _click(ed, 0, 0)
+    _click(ed, 10, 0)
+    _type(ed, "7")
+    _key(ed, Qt.Key_Tab)                           # COMMIT...
+    dims = _dims(ed)
+    assert len(dims) == 1 and dims[0].value == pytest.approx(7.0)
+    assert ed._pending is None and ed._num_buf == ""   # lock filed...
+    assert ed._tool == "line"                      #  ...command LIVES
+    assert ed._line_start is not None              #   chain still armed
+
+
+def test_tab_then_click_keeps_the_tool_armed_with_the_typed_value(ed, qapp):
+    # L24's OWN words: "Tab then click = keep the tool armed with the
+    # typed value." The chain walks on off the FILED segment.
+    m = ed.model
+    ed.set_tool("line")
+    _click(ed, 0, 0)
+    _click(ed, 10, 0)
+    _type(ed, "7")
+    _key(ed, Qt.Key_Tab)                           # file the 7
+    _click(ed, 7, 5)                               # then CLICK: chain on
+    assert len(m.sketch.lines) == 2
+    assert m.sketch.lines[1].a is m.sketch.lines[0].b   # shared anchor
+    assert ed._tool == "line"                      #  still commanding
+    assert ed._pending is not None                 #  fresh lock live
+
+
+def test_tab_files_a_rect_width_and_stays_for_the_height(ed, qapp):
+    m = ed.model
+    ed.set_tool("rect")
+    _click(ed, 0, 0)
+    _click(ed, 6, 4)
+    _type(ed, "10")
+    _key(ed, Qt.Key_Tab)                           # width files, STAYS
+    dims = _dims(ed)
+    assert len(dims) == 1 and dims[0].value == pytest.approx(10.0)
+    assert ed._tool == "rect"                      #   rect commanding
+    assert ed._pending is not None                 #  height lock live
+    _type(ed, "5")
+    _key(ed, Qt.Key_Tab)                           # EVEN THE FINAL Tab
+    dims = _dims(ed)                               #  does not end: that
+    assert len(dims) == 2                          #  is Enter's law,
+    assert ed._pending is None                     #   not Tab's
+    assert ed._tool == "rect"
+
+
+def test_tab_on_an_empty_lock_is_a_lock_preserving_no_op(ed, qapp):
+    ed.set_tool("line")
+    _click(ed, 0, 0)
+    _click(ed, 10, 0)                              # lock armed, empty
+    _key(ed, Qt.Key_Tab)
+    assert ed._pending is not None                 # lock SURVIVES...
+    assert _dims(ed) == []                         #  nothing filed...
+    assert ed._tool == "line"                      #   nothing ended
+    _type(ed, "4")                                 # the mouth STILL
+    assert ed._num_buf == "4"                      #  owns its digits
+
+
+def test_tab_honors_a_circle_diameter_and_stays_armed(ed, qapp):
+    m = ed.model
+    ed.set_tool("circle")
+    _click(ed, 0, 0)
+    _click(ed, 5, 0)
+    _type(ed, "6")
+    _key(ed, Qt.Key_Tab)
+    rds = [c for c in m.sketch.constraints if isinstance(c, Radius)]
+    assert len(rds) == 1 and rds[0].value == pytest.approx(3.0)
+    assert m.sketch.circles[0].r == pytest.approx(3.0, rel=1e-6)
+    assert ed._pending is None
+    assert ed._tool == "circle"                    # continue, not exit
