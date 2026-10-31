@@ -122,6 +122,30 @@ class PointOnLine(Constraint):
 
 
 @dataclass
+class LineDistance(Constraint):
+    """M187: the SIGNED perpendicular gap from a point to a line - the
+    offset bind's keeper (LAW-59: an offset copy holds its distance to
+    the parent, and deleting the dimension unlocks it). PointOnLine is
+    the zero case of this family: the same cross form, minus the
+    demanded gap. Sign follows the line's a->b direction (left is
+    positive), so a child loop wound like its parent keeps a
+    consistent +/- per edge.
+    """
+    p: Point
+    line: Line
+    value: float
+
+    def entities(self): return [self.p, self.line]
+
+    def residual(self, pos):
+        d = _unit(np.array([self.line.b.x - self.line.a.x,
+                            self.line.b.y - self.line.a.y]))
+        v = np.array([self.p.x - self.line.a.x, self.p.y - self.line.a.y])
+        return (float(d[0] * v[1] - d[1] * v[0]) - self.value) \
+            / _LEN_SCALE
+
+
+@dataclass
 class Parallel(Constraint):
     l1: Line
     l2: Line

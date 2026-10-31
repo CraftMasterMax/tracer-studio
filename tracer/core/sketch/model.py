@@ -15,10 +15,10 @@ from .entities import (Point, Line, Circle, Arc, Ellipse, curve_radius,
                        curve_center)
 from .constraints import (Angle, AngleBetween, ArcMiddle, Coincident,
                           Collinear, Concentric, Distance, Equal, Fixed,
-                          Horizontal, Midpoint, Perpendicular,
-                          PointOnCircle, PointOnLine, Parallel, Radius,
-                          Symmetry, Tangent, Vertical, make_tangent,
-                          speaks_dia)
+                          Horizontal, LineDistance, Midpoint,
+                          Perpendicular, PointOnCircle, PointOnLine,
+                          Parallel, Radius, Symmetry, Tangent, Vertical,
+                          make_tangent, speaks_dia)
 from .solver import Sketch, SolveResult
 
 # Sketch planes: (u_axis, v_axis) in world coords; extrude normal = u x v.
@@ -784,6 +784,10 @@ def model_to_dict(m: SketchModel) -> dict:
         elif isinstance(c, PointOnLine):
             cons.append({"t": "on", "p": _add_pt(pts, idx, c.p),
                          "line": m.sketch.lines.index(c.line)})
+        elif isinstance(c, LineDistance):
+            cons.append({"t": "ld", "p": _add_pt(pts, idx, c.p),
+                         "line": m.sketch.lines.index(c.line),
+                         "v": c.value})
         elif isinstance(c, PointOnCircle):
             cons.append({"t": "oc", "p": _add_pt(pts, idx, c.p),
                          "e": _ent_ref(m, c.curve)})
@@ -928,6 +932,9 @@ def model_from_dict(d: dict) -> SketchModel:
             m.constrain(Coincident(pts[c["p"]], pts[c["q"]]))
         elif t == "on":
             m.constrain(PointOnLine(pts[c["p"]], m.sketch.lines[c["line"]]))
+        elif t == "ld":
+            m.constrain(LineDistance(pts[c["p"]],
+                                     m.sketch.lines[c["line"]], c["v"]))
         elif t == "oc":
             m.constrain(PointOnCircle(pts[c["p"]], _ent_at(m, c["e"])))
         elif t == "//":
