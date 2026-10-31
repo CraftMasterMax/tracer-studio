@@ -29,8 +29,16 @@ SLIDE along the fixed legs. The probe also CORRECTED the card: the
 "radius too large -> refuse" guard lives only in the hand's type-in
 (corner_rmax), never in the dim path, and a big radius on a constrained
 corner re-trims cleanly anyway - so "too-large refuses" was false; R2
-asserts only the true resize-and-stay-tangent law. Rung 3 is the M178
-driven grammar composing on a fillet dim.
+asserts only the true resize-and-stay-tangent law. Rung 3 (PROBED first)
+is the M178 driven grammar composing on a fillet dim - and it needed NO
+product change: _dim_text already stacks the parentheses on a Radius
+("(R 3.00)"), the single driven-guard already keeps the fillet's dim inert
+at the editor door, and because the fillet radius is an ordinary driving
+Radius, making it DRIVEN lets the corner walk and the chip RE-QUOTES the
+drifted arc radius - a reader, reporting, never commanding - and flipping
+it back PINS the reading it holds (no resurrected number). 3 composition
+gates (file 10); this is a regression guarantee that a fillet dim is not
+secretly special-cased away from the driven machinery.
 """
 import math                                                    # noqa
 
@@ -199,3 +207,52 @@ def test_editing_the_radius_shrinks_the_fillet_too(ed, qapp):
     assert (arc.a.x, arc.a.y) == pytest.approx((-4.0, -4.0), abs=0.02)
     assert (arc.b.x, arc.b.y) == pytest.approx((-6.0, -2.0), abs=0.02)
     assert curve_radius(arc) == pytest.approx(2.0, abs=1e-3)   # tangency law
+
+
+# ---- RUNG 3: the fillet dim OBEYS the M178 driven grammar (composition) ----
+
+def _plain_fillet(ed, r=3.0):
+    m = ed.model
+    _P, l1, l2 = _right_angle(m)
+    ed._corner_arm("fillet", l1, l2)
+    ed._corner[4] = r
+    ed._corner_file()
+    ed._close_dim_editor()
+    arc, rr = _fillet_radius(ed)
+    return l1, arc, rr
+
+
+def test_a_driven_fillet_radius_wears_parentheses_and_is_inert(ed, qapp):
+    _l1, _arc, rr = _plain_fillet(ed)
+    ed.act_driven(rr)                                  # make it a READER
+    assert rr.driven
+    assert ed._dim_text(rr) == "(R 3.00)"              # parens stack on a
+    #   RADIUS too - _dim_text is the ONE wording mouth (M178 R1), it does
+    #   not care the dim was minted by a fillet rather than placed by hand
+    ed._open_dim_editor(rr)                            # M178's single guard:
+    assert ed._dim_edit is None                        #  a reader opens naught
+
+
+def test_a_driven_fillet_radius_quotes_the_walk(ed, qapp):
+    l1, arc, rr = _plain_fillet(ed)
+    ed.act_driven(rr)                                  # READER
+    l1.b.x, l1.b.y = 10.0, 6.0                         # walk a leg (free)
+    ed.model.solve()
+    r_now = curve_radius(arc)
+    assert r_now < 2.9                                 # the fillet moved OFF 3
+    assert rr.value == pytest.approx(r_now, abs=1e-3)  #  the reader REPORTS
+    assert ed._dim_text(rr) == f"(R {r_now:.2f})"      #   the drifted number
+
+
+def test_reconverting_a_driven_fillet_pins_its_reading(ed, qapp):
+    l1, arc, rr = _plain_fillet(ed)
+    ed.act_driven(rr)                                  # reader...
+    l1.b.x, l1.b.y = 10.0, 6.0
+    ed.model.solve()                                   #  ...quotes the walk
+    held = rr.value                                    # the reading it holds
+    ed.act_driven(rr)                                  # back to DRIVING
+    assert rr.value == pytest.approx(held, abs=1e-3)   #  PINS it - no
+    l1.b.x, l1.b.y = 12.0, 2.0                         #   resurrected number
+    ed.model.solve()                                   #   (the M178 truth)
+    assert rr.value == pytest.approx(held, abs=1e-3)
+    assert curve_radius(arc) == pytest.approx(held, abs=0.05)  # a ruler holds
