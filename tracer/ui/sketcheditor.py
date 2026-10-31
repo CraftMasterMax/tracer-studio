@@ -121,6 +121,20 @@ def _seg_hits_box(p1, p2, lo, hi) -> bool:
     return any(_segs_cross(p1, p2, c[i], c[(i + 1) % 4]) for i in range(4))
 
 
+def _corner_default(leg: float) -> float:
+    """M186 R4 [LAW-58 documented]: \"The initial fillet preview
+    displays a radius value that is PROPORTIONAL TO THE SMALLER of the
+    selected objects.\" Quarter the shorter leg and LET IT GROW - the
+    old cap at 5 mm made a 12 mm corner and a 1 m corner both open at
+    R5, a constant wearing a proportional name. The floor keeps
+    microscopic corners visible; the kernel's own rmax (callers clamp)
+    keeps skinny corners inside the steel. ONE mouth: the dialog and
+    the F-ghost open with the same number because it is one answer
+    read once.
+    """
+    return max(0.5, round(leg / 4.0, 1))
+
+
 class SketchCanvas(QWidget):
     profiles_ready = Signal(list, str, bool)   # profiles, name, revolve?
     pick_radius_changed = Signal(int)          # M185 LAW-45: THE PICKBOX
@@ -1792,7 +1806,7 @@ class SketchCanvas(QWidget):
         others = [p for p in (l1.a, l1.b) if p is not shared] + \
                  [p for p in (l2.a, l2.b) if p is not shared]
         leg = min(math.dist((shared.x, shared.y), (p.x, p.y)) for p in others)
-        default = max(0.5, round(min(5.0, leg / 4.0), 1))
+        default = _corner_default(leg)                        # LAW-58
         v, ok = Shell.getDouble(self, title, label, default, 0.01,
                                        max(0.02, leg / 2.0 - 0.01), 2)
         if not ok:
@@ -2083,7 +2097,7 @@ class SketchCanvas(QWidget):
             return False
         _P, _o1, _o2, _u1, _u2, len1, len2, theta = g
         leg = min(len1, len2)
-        default = max(0.5, round(min(5.0, leg / 4.0), 1))   # the dialog's
+        default = _corner_default(leg)                         # LAW-58
         rmax = math.tan(theta / 2.0) * (leg / 2.0 - 0.02)   #  own default
         self._corner = [kind, l1, l2, _P, min(default, rmax)]
         self._corner_pull = False

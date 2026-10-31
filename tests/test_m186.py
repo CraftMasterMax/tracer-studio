@@ -555,3 +555,99 @@ def test_a_pin_survives_the_save_as_the_value_it_demanded():
     r = back.solve()
     assert not r.converged or r.conflicting, \
         "and the solve-from-payload now FEELS the fight"
+
+
+# ---- R4: THE FIRST RADIUS SCALES WITH THE CORNER [LAW-58 documented] --------
+# "The initial fillet preview displays a radius value that is
+# PROPORTIONAL TO THE SMALLER of the selected objects." M172's hand
+# quartered the shorter leg and then CAPPED it at 5 mm - a 12 mm corner
+# and a 1 m corner both opened at R5: a constant wearing a
+# proportional name. Quarter the leg and let it grow; the floor keeps
+# microscopic corners visible; the kernel's own rmax keeps skinny
+# corners inside the steel. ONE mouth - the dialog and the F-ghost
+# open with the same number because it is the same answer read once.
+
+import math                                                          # noqa
+from tracer.ui.sketcheditor import _corner_default                   # noqa
+
+
+def test_the_first_radius_scales_with_the_corner():
+    assert _corner_default(8.0) == pytest.approx(2.0)     # M172's own
+    assert _corner_default(12.0) == pytest.approx(3.0)    #  corner is
+    assert _corner_default(20.0) == pytest.approx(5.0)    #  unchanged
+    assert _corner_default(80.0) == pytest.approx(20.0)   # where the
+    assert _corner_default(400.0) == pytest.approx(100.0)  # cap died
+    assert _corner_default(1.0) == pytest.approx(0.5)     # floor: ink
+    assert _corner_default(80.0) > _corner_default(40.0), \
+        "a bigger corner MUST open bigger - no flat 5 mm lie"
+
+
+def test_the_armed_ghost_opens_proportional(qapp):
+    from tracer.ui.sketcheditor import SketchCanvas
+    c = SketchCanvas()
+    c.set_model(SketchModel())
+    c.resize(600, 400)
+    m = c.model
+    a = m.point(-80.0, 0.0)
+    P = m.point(0.0, 0.0)
+    b = m.point(0.0, -80.0)
+    l1 = m.add_line(a, P)
+    l2 = m.add_line(P, b)
+    assert c._corner_arm("fillet", l1, l2)
+    assert c._corner[4] == pytest.approx(20.0), \
+        "legs of 80 open the ghost at 80/4, not at a capped 5"
+    c.deleteLater()
+
+
+def test_steel_still_clamps_the_skinny_corner(qapp):
+    from tracer.ui.sketcheditor import SketchCanvas
+    c = SketchCanvas()
+    c.set_model(SketchModel())
+    c.resize(600, 400)
+    m = c.model
+    P = m.point(0.0, 0.0)
+    t = math.radians(10.0)
+    a = m.point(80.0 * math.cos(t), 80.0 * math.sin(t))
+    b = m.point(80.0 * math.cos(t), -80.0 * math.sin(t))
+    l1 = m.add_line(P, a)
+    l2 = m.add_line(P, b)
+    assert c._corner_arm("fillet", l1, l2)
+    rmax = math.tan(t) * (80.0 / 2.0 - 0.02)      # the kernel's own max
+    assert c._corner[4] == pytest.approx(rmax, abs=1e-9), \
+        "the proportional ask bows to the geometry: r never outruns" \
+        " the legs"
+    assert c._corner[4] < 20.0
+    c.deleteLater()
+
+
+def test_the_dialog_opens_at_the_same_proportional_number(qapp,
+                                                          monkeypatch):
+    from tracer.ui import sketcheditor as sc
+    c = sc.SketchCanvas()
+    c.set_model(SketchModel())
+    c.resize(600, 400)
+    m = c.model
+    a = m.point(-40.0, 0.0)
+    P = m.point(0.0, 0.0)
+    b = m.point(0.0, -40.0)
+    l1 = m.add_line(a, P)
+    l2 = m.add_line(P, b)
+    c._sel = [l1, l2]
+    seen = {}
+
+    def fake_get_double(parent, title, label, default, mn, mx, dec):
+        seen["default"] = default
+        return default, True                      # the user just ENTERS
+
+    monkeypatch.setattr(sc.Shell, "getDouble", staticmethod(
+        fake_get_double))
+    c.act_fillet()
+    assert seen.get("default") == pytest.approx(10.0), \
+        "the dialog's first number IS the proportional answer"
+    arcs = m.sketch.arcs
+    rad = [c for c in m.sketch.constraints
+           if isinstance(c, Radius)]
+    assert len(arcs) == 1 and len(rad) == 1 and \
+        rad[0].value == pytest.approx(10.0), \
+        "and ENTER files exactly the number the ghost showed"
+    c.deleteLater()
