@@ -6,7 +6,9 @@ keeps pace: line, circle, arc and rectangle creation leave a "pending
 type-in" armed for a few keystrokes; digits buffer into a small chip on
 the canvas (Fusion's little white box), Enter mints the same Distance/
 Radius constraint act_dim would (including its remove_last habit, so
-re-typing never stacks), Esc or any other action abandons it.
+re-typing never stacks). Any OTHER action key abandons the buffer; Esc
+HONORS it - the typed length persists and only the lock goes out
+(M176 R3 restripe, FD5-L27).
 
 Rectangles take TWO numbers, like Fusion: width Enter height Enter,
 landing on the auto-H/V bottom and side edges the rect tool mints.
@@ -150,14 +152,20 @@ def test_arc_radius_typed(sketch, qapp):
     assert len(cons) == 1 and cons[0].value == pytest.approx(9.0)
 
 
-def test_escape_abandons_the_type_in(sketch, qapp):
+def test_escape_honors_the_typed_value_drops_only_the_lock(sketch, qapp):
+    # M176 R3 (FD5-L27) RESTIPED this law: once M90's coarse "Esc abandons"
+    # met Fusion's documented truth, Esc near a lock turned out to HONOR
+    # the number - the typed length PERSISTS (commit = Enter's own solver
+    # act) and only the lock icon goes out. The command-survival cascade
+    # is gated where the chain lives: tests/test_m176.py.
     _draw_line(sketch, qapp)
     _type(sketch, qapp, "7", enter=False)
     QTest.keyClick(sketch, Qt.Key_Escape)
     qapp.processEvents()
     assert sketch._pending is None and sketch._num_buf == ""
-    assert not [c for c in sketch.model.sketch.constraints
-                if isinstance(c, Distance)]
+    cons = [c for c in sketch.model.sketch.constraints
+            if isinstance(c, Distance)]
+    assert len(cons) == 1 and cons[0].value == pytest.approx(7.0)
 
 
 def test_other_keys_abandon_then_act(sketch, qapp):

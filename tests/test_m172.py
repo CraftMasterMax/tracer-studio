@@ -283,9 +283,11 @@ def test_the_corner_mouth_is_a_separate_mouth(ed):
     QTest.keyClick(ed, Qt.Key_5)                   # mouth: the digit
     assert ed._num_buf == "5"                      #  belongs to M90...
     assert ed._corner_buf == ""                    #   corner hook slept
-    _key(ed, Qt.Key_Escape)                        # Esc lets go of BOTH
-    assert ed._pending is None and ed._num_buf == ""
-    assert ed._corner is None
+    _key(ed, Qt.Key_Escape)                        # M176 R3's EXPLICIT
+    assert ed._pending is None and ed._num_buf == ""  #  cascade: Esc(1)
+    assert ed._corner is not None                  #  honors the number &
+    _key(ed, Qt.Key_Escape)                        #  drops the lock;
+    assert ed._corner is None                      #  Esc(2) washes all
 
 
 # ---- RUNG 2: G FLATS THE SAME HAND (chamfer) -----------------------------

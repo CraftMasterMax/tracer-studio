@@ -2058,6 +2058,18 @@ class SketchCanvas(QWidget):
             if k in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
                 self._scroll_key(ev)               # M171 R1: view keys
                 return                             #  neither eat digits
+            if k == Qt.Key_Escape:                 # M176 R3 (L27): Esc NEAR
+                if self._num_buf:                  #  the LOCK HONORS the
+                    self._commit_typed()           #  number - the typed
+                self._pending = None               #  length PERSISTS (the
+                self._pending_stage = 0            #  very solver act Enter
+                self._num_buf = ""                 #  performs)...
+                self.update()
+                return                             #  ...and ONLY the lock
+                                                   #   icon goes out. The
+                                                   #   COMMAND survives:
+                                                   #   the next Esc ends it
+                                                   #   (L26's cascade, below)
             self._pending = None                    # any other key lets go
             self._num_buf = ""                      # ...and is still heard
         if k in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
