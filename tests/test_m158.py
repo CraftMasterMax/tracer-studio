@@ -439,7 +439,7 @@ def test_k3_the_fold_door_opens_and_prints_the_law(qapp, monkeypatch):
     """Tools ▸ Add Fold end-to-end: the dialog answers the table,
     the fold lands in the stream, the status line carries the SPLIT
     and the word UNCHANGED — the law on the user's tongue. The
-    refusal route keeps the stream untouched behind a warning."""
+    refusal route keeps the stream untouched and speaks inline."""
     from tracer.ui import cmddialog
     from tracer.ui.renderer import SceneRenderer
     from tracer.ui.mainwindow import MainWindow
@@ -479,8 +479,9 @@ def test_k3_the_fold_door_opens_and_prints_the_law(qapp, monkeypatch):
     assert "UNCHANGED" in msg and "18.052 + 18.052" in msg
     st = w.doc.sheet_states()["Sheet"]
     assert st["flat"]["flat_length"] == FLAT_PRE           # byte
-    # the refusal route: the kernel's mouth reaches the box, the
-    # stream stays exactly as it was
+    # M189 R2 CITE-THE-MOVE (LAW-61): the refusal route stepped DOWN
+    # from the box to the status line - the kernel's mouth now speaks
+    # where the eye is; the stream still stays exactly as it was.
     answers.update(pos=50.0)
     boxes = []
     import tracer.ui.mainwindow as mw
@@ -488,7 +489,9 @@ def test_k3_the_fold_door_opens_and_prints_the_law(qapp, monkeypatch):
                         classmethod(lambda cls, *a, **k:
                                     boxes.append(a[2])))
     w.action_add_fold()
-    assert len(boxes) == 1 and "does not fit" in boxes[0]
+    qapp.processEvents()
+    assert boxes == [] and "refused" in w.status.currentMessage().lower()
+    assert "does not fit" in w.status.currentMessage()
     assert len([x for x in w.doc.features
                 if isinstance(x, FoldFeature)]) == 1
     w._unsaved = False
