@@ -330,14 +330,17 @@ def test_datum_registration_and_identifier_guard_first(
                         {"letter": "A"})
     win._register_datum("plane", "XY", "plane XY")
     assert [d["letter"] for d in win.doc.datums] == ["A"]
-    seen = []
+    # M189 R1 CITE-THE-MOVE (LAW-61): the double-booked letter is
+    # RECOVERABLE INPUT - it stepped DOWN from the modal to the status
+    # line. The guard-first law is unchanged: the collision still
+    # refuses and A stays the one plane it was.
     monkeypatch.setattr(cmddialog, "ask", lambda *a, **k:
                         {"letter": "A"})               # collide
-    from PySide6.QtWidgets import QMessageBox
-    monkeypatch.setattr(QMessageBox, "warning", classmethod(
-        lambda cls, *a, **k: seen.append(str(a[2]))))
     win._register_datum("axis", "X", "work axis X")
-    assert seen and "already names" in seen[-1]
+    qapp.processEvents()
+    assert "already names" in win.status.currentMessage()
+    assert [d["letter"] for d in win.doc.datums] == ["A"]
+    assert [d["kind"] for d in win.doc.datums] == ["plane"]
     # now placement works
     monkeypatch.setattr(
         cmddialog, "ask", lambda *a, **k: {
