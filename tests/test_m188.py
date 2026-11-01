@@ -262,3 +262,84 @@ def test_resting_at_the_fault_never_storms_the_modal(win, monkeypatch):
     a.pitch = 6.0
     b.pitch = 6.0
     win._apply_rollback(None)                  # tidy: heal fully
+
+# ---- R3: WHAT'S WRONG? - the explanation is RE-ASKABLE (LAW-65) --------------
+# "right-click What's Wrong? diagnostic" (SolidWorks so_messages, fd8
+# LAW-65). R2 made the bar WALK; rung 3 lets the fault EXPLAIN itself:
+# the gear's "What's Wrong?" QUOTES the kernel's own refusal (state +
+# cause + next action - LAW-67: mechanistic, directive, <=2 sentences)
+# as often as the maker asks. The first-voice modal stays the ambush;
+# the inspector is the door you knock on. Passive: asking runs nothing.
+
+import re                                                        # noqa: E402
+
+
+def _sentences(text):
+    return re.split(r"(?<=[.!?])\s+(?=[A-Z])", text.strip())
+
+
+def test_the_gear_offers_whats_wrong_only_with_an_answer(win, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    monkeypatch.setattr(QMessageBox, "warning",
+                        staticmethod(lambda *a, **k: None))
+    acts = _gear_actions(win)
+    assert "What's Wrong?" in acts, \
+        "the diagnostic door is NAMED, vendor-style"
+    assert acts["What's Wrong?"].isEnabled() is False, \
+        "a clean model has nothing wrong to explain - the door is shut"
+    d, a, b = _two_faults(win)
+    win.recompute()
+    assert _gear_actions(win)["What's Wrong?"].isEnabled(), \
+        "with a fault queued, the explanation is askable"
+    a.pitch = 6.0
+    b.pitch = 6.0
+    _gear_actions(win)["Roll To End"].trigger()
+    assert _gear_actions(win)["What's Wrong?"].isEnabled() is False, \
+        "the door CLOSES with the wound - healed means nothing to ask"
+
+
+def test_the_inspection_quotes_the_kernel_and_names_the_next_step(
+        win, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    monkeypatch.setattr(QMessageBox, "warning",
+                        staticmethod(lambda *a, **k: None))
+    told = []
+    monkeypatch.setattr(QMessageBox, "information",
+                        staticmethod(lambda parent, title, text, *a, **k:
+                                     told.append((title, text))))
+    d, a, b = _two_faults(win)
+    win.recompute()
+    _gear_actions(win)["What's Wrong?"].trigger()
+    assert len(told) == 1
+    title, text = told[0]
+    assert "What's Wrong" in title
+    assert "CoilA" in text, "the STATE names the guilty feature"
+    assert a.error in text, "the CAUSE is the kernel's OWN words, quoted"
+    assert "Roll To End" in text, \
+        "and the NEXT ACTION names the very verb rung 2 minted"
+    assert len(_sentences(text)) <= 2, \
+        "LAW-67: state+cause+next action in <=2 sentences, no joke"
+
+
+def test_reasking_at_rest_never_touches_the_build(win, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    seen = []
+    monkeypatch.setattr(QMessageBox, "warning",
+                        staticmethod(lambda *a, **k: seen.append(1)))
+    told = []
+    monkeypatch.setattr(QMessageBox, "information",
+                        staticmethod(lambda parent, title, text, *a, **k:
+                                     told.append(text)))
+    d, a, b = _two_faults(win)
+    ia = d.features.index(a)
+    win.recompute()
+    assert d.rollback_to == ia and len(seen) == 1
+    before = list(L.entries())
+    scar = a.error
+    _gear_actions(win)["What's Wrong?"].trigger()
+    _gear_actions(win)["What's Wrong?"].trigger()
+    assert len(told) == 2, "the answer may be asked TWICE - a door, not an ambush"
+    assert len(seen) == 1, "inspecting never re-summons the first-voice modal"
+    assert d.rollback_to == ia and a.error == scar, \
+        "inspection is PASSIVE: the band, the scar and the build stand still"
+    assert list(L.entries()) == before, "and asking never pollutes the log"

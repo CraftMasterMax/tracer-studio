@@ -1170,8 +1170,10 @@ class MainWindow(QMainWindow):
         End" sends it home and the healed band RUNS, riding to the next
         error. Each verb is enabled only when it can do something: at
         the end, End has nothing to end; with no features, Previous has
-        nowhere to step. M161 LAW-3 owns the settings entry above, and
-        LAW-12's destructive sibling below stays confirm-guarded."""
+        nowhere to step. M188 R3 (LAW-65) adds the diagnostic door —
+        "What's Wrong?" answers only while a fault is queued. M161
+        LAW-3 owns the settings entry above, and LAW-12's destructive
+        sibling below stays confirm-guarded."""
         menu = QMenu(self)
         act = menu.addAction("Hide all inactive features")
         act.setCheckable(True)
@@ -1192,6 +1194,12 @@ class MainWindow(QMainWindow):
                        "and rides to the next error"
                        if rb is not None else "")
         end.triggered.connect(lambda: self._apply_rollback(None))
+        ff = self.doc.failed_feature if self.doc is not None else None
+        wrong = menu.addAction("What's Wrong?")
+        wrong.setEnabled(ff is not None)
+        wrong.setToolTip("Quote the kernel's own refusal for the "
+                         "queued fault" if ff is not None else "")
+        wrong.triggered.connect(self._whats_wrong)
         menu.addSeparator()
         dng = menu.addAction("Delete All Features After Marker")
         dng.setEnabled(rb is not None and rb < total)
@@ -1208,6 +1216,29 @@ class MainWindow(QMainWindow):
         if cur is None:
             cur = len(self.doc.features)
         self._apply_rollback(max(0, cur - 1))
+
+    def _whats_wrong(self):
+        """M188 R3 (LAW-65): the gear's diagnostic door — the vendor's
+        own name. LAW-67 owns the copy: state + cause + next action,
+        at most two sentences, mechanistic and directive. The CAUSE is
+        not paraphrased — the kernel already speaks it, so this QUOTES
+        the scar verbatim and names the rung-2 verb as the next step.
+        The door may be knocked as often as the maker likes: NOTHING
+        RUNS — no recompute, no modal, no log line."""
+        if self.doc is None:
+            return
+        ff = self.doc.failed_feature
+        if ff is None:
+            return
+        pos, name = ff
+        feat = (self.doc.features[pos]
+                if pos < len(self.doc.features) else None)
+        cause = getattr(feat, "error", None) or "the kernel refused it"
+        QMessageBox.information(
+            self, "What's Wrong?",
+            f"{name} failed to rebuild: {cause}. Fix {name}, then "
+            "Roll To End in the timeline gear — the band runs the "
+            "repair and rides to the next error.")
 
     def _delete_after_marker(self):
         """M161 LAW-12: the destructive sibling of the marker — a
