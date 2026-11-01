@@ -31,6 +31,8 @@ OP_COLOR = {"union": theme.DARK["accent"], "subtract": theme.DARK["danger"],
 
 class TimelineBar(QWidget):
     feature_clicked = Signal(object)        # Feature
+    badge_clicked = Signal(object)          # M188 R5 LAW-63: the red
+    #   DOT on a chip is a DOOR, not a dead badge
     feature_activated = Signal(object)      # double-click = edit
     feature_menu = Signal(object, object)   # Feature, global QPoint
     feature_delete = Signal(object)         # Delete key on selected chip
@@ -429,6 +431,22 @@ class TimelineBar(QWidget):
         if self._home.contains(pos):
             self.home_clicked.emit()
             return
+        # M188 R5 [LAW-63]: the badge DOT is a BUTTON - "never a dead
+        # badge". It rides ABOVE the chip body box, so the zone is
+        # tested first; clicking it SELECTS (the LAW-15 wash composes)
+        # and opens the explanation for THAT feature. Only chips that
+        # actually wear the red dot answer here - a clean chip's dot
+        # zone is just padding, and the marker is never touched.
+        if ev.button() == Qt.MouseButton.LeftButton:
+            for x, w, g in self._chips:
+                if (abs(pos.x() - (x + w - 7)) <= 5.0 and pos.y() <= 6.0
+                        and getattr(g, "error", None)):
+                    self._sel = self.doc.features.index(g)
+                    self.setFocus()
+                    self.feature_clicked.emit(g)
+                    self.update()
+                    self.badge_clicked.emit(g)
+                    return
         f = self._feature_at(pos)
         if f is not None:
             if ev.button() == Qt.RightButton:

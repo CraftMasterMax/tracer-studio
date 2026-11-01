@@ -439,3 +439,110 @@ def test_the_gear_toggles_the_choice(win):
         "unchecked = Stop and Repair, the law's default"
     acts["Continue rebuilding after errors"].toggle()
     assert win.continue_on_error is True, "the toggle flips the posture"
+
+# ---- R5: THE BADGE IS A BUTTON (LAW-63) ----------------------------------------
+# "Clicking any entity in that list ADVANCES YOU DIRECTLY to that
+# feature... Never a dead badge." (3dswym/Mechanicitec, fd8 LAW-63).
+# The chip BODY keeps selecting in silence (LAW-15 wash); the RED DOT
+# is a DOOR: click it and the R3 explanation opens FOR THAT FEATURE -
+# select and explain COMPOSE in one click. A badge click never
+# touches the marker, and a clean chip has no door to open.
+
+
+def _dot_x(win, f):
+    """The badge dot's live geometry: chips are QRectF(x, 7, 30, h),
+    the dot centers at (x + 23, 0) - READ from bar._chips, never
+    guessed. grab() forces the paint that fills _chips (the chips are
+    PAINT state, not model state)."""
+    bar = win.timeline.bar
+    bar.grab()
+    return next(x for x, w, g in bar._chips if g is f)
+
+
+def _click(bar, x, y):
+    from PySide6.QtCore import QPoint, Qt                      # noqa
+    from PySide6.QtTest import QTest                           # noqa
+    QTest.mouseClick(bar, Qt.MouseButton.LeftButton,
+                     Qt.KeyboardModifier.NoModifier,
+                     QPoint(int(round(x)), int(round(y))))
+
+
+def test_the_badge_dot_click_opens_the_explanation(win, qapp, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    monkeypatch.setattr(QMessageBox, "warning",
+                        staticmethod(lambda *a, **k: None))
+    told = []
+    monkeypatch.setattr(QMessageBox, "information",
+                        staticmethod(lambda parent, title, text, *a, **k:
+                                     told.append(text)))
+    d, a, b = _two_faults(win)
+    win.recompute()
+    bar = win.timeline.bar
+    _click(bar, _dot_x(win, a) + 23.0, 3.0)
+    qapp.processEvents()
+    assert len(told) == 1, "the DOT is a door - clicking it explains"
+    assert "CoilA" in told[0] and a.error in told[0], \
+        "and the answer is THAT feature, the kernel's words quoted"
+    assert bar._sel == d.features.index(a), \
+        "the click still SELECTS (LAW-15 wash) - button and selection "\
+        "compose"
+
+
+def test_the_chip_body_still_selects_in_silence(win, qapp, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    monkeypatch.setattr(QMessageBox, "warning",
+                        staticmethod(lambda *a, **k: None))
+    told = []
+    monkeypatch.setattr(QMessageBox, "information",
+                        staticmethod(lambda parent, title, text, *a, **k:
+                                     told.append(text)))
+    d, a, b = _two_faults(win)
+    win.recompute()
+    bar = win.timeline.bar
+    _click(bar, _dot_x(win, a) + 15.0, 20.0)
+    qapp.processEvents()
+    assert told == [], "the BODY keeps the OLD law - select, never explain"
+    assert bar._sel == d.features.index(a)
+
+
+def test_a_badge_click_never_moves_the_marker(win, qapp, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    from PySide6.QtCore import QPoint, Qt                      # noqa
+    from PySide6.QtTest import QTest                           # noqa
+    monkeypatch.setattr(QMessageBox, "warning",
+                        staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(QMessageBox, "information",
+                        staticmethod(lambda *a, **k: None))
+    d, a, b = _two_faults(win)
+    win.recompute()
+    rb = d.rollback_to
+    bar = win.timeline.bar
+    p = QPoint(_dot_x(win, a) + 23, 3)
+    QTest.mousePress(bar, Qt.MouseButton.LeftButton,
+                     Qt.KeyboardModifier.NoModifier, p)
+    QTest.mouseRelease(bar, Qt.MouseButton.LeftButton,
+                       Qt.KeyboardModifier.NoModifier, p)
+    qapp.processEvents()
+    assert d.rollback_to == rb, \
+        "the badge is a door, not a handle - the band never moved"
+    assert not bar._drag_marker, "the drag arm was never even entered"
+
+
+def test_a_clean_chip_dot_is_quiet(win, qapp, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    from tracer.core.document import PrimitiveFeature as _P
+    monkeypatch.setattr(QMessageBox, "warning",
+                        staticmethod(lambda *a, **k: None))
+    told = []
+    monkeypatch.setattr(QMessageBox, "information",
+                        staticmethod(lambda parent, title, text, *a, **k:
+                                     told.append(text)))
+    plate = win.doc.add(_P(name="Quiet", kind="box", op="union",
+                           dims={"dx": 2.0, "dy": 2.0, "dz": 2.0}))
+    win.recompute()
+    bar = win.timeline.bar
+    _click(bar, _dot_x(win, plate) + 23.0, 8.0)
+    qapp.processEvents()
+    assert told == [], "no badge, no door - the dot only exists when "\
+        "the chip wears one"
+    assert bar._sel == win.doc.features.index(plate), "the click still selects"

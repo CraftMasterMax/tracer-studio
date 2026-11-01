@@ -187,6 +187,7 @@ class MainWindow(QMainWindow):
         # MENU here, at the strip's right edge.
         self.timeline.bar.feature_clicked.connect(self._timeline_wash)
         self.timeline.bar.gear_clicked.connect(self._timeline_gear)
+        self.timeline.bar.badge_clicked.connect(self._explain_feature)
         self.viewport.face_picked.connect(self._start_sketch_on_face)
         self.viewport.face_rejected.connect(
             lambda why: self.status.showMessage(why, 5000))
@@ -1234,25 +1235,34 @@ class MainWindow(QMainWindow):
 
     def _whats_wrong(self):
         """M188 R3 (LAW-65): the gear's diagnostic door — the vendor's
-        own name. LAW-67 owns the copy: state + cause + next action,
-        at most two sentences, mechanistic and directive. The CAUSE is
-        not paraphrased — the kernel already speaks it, so this QUOTES
-        the scar verbatim and names the rung-2 verb as the next step.
-        The door may be knocked as often as the maker likes: NOTHING
-        RUNS — no recompute, no modal, no log line."""
+        own name, aimed at the QUEUE HEAD. Passive by law: asking runs
+        nothing."""
         if self.doc is None:
             return
         ff = self.doc.failed_feature
         if ff is None:
             return
-        pos, name = ff
-        feat = (self.doc.features[pos]
-                if pos < len(self.doc.features) else None)
-        cause = getattr(feat, "error", None) or "the kernel refused it"
+        if ff[0] < len(self.doc.features):
+            self._explain_feature(self.doc.features[ff[0]])
+
+    def _explain_feature(self, feat):
+        """M188 R5 (LAW-63): the SHARED explanation voice - the gear
+        door aims it at the queue head, a chip's red BADGE DOT aims it
+        at THAT feature ("never a dead badge": the icon is a button).
+        LAW-67 owns the copy: state + cause + next action, at most two
+        sentences, mechanistic and directive. The CAUSE is not
+        paraphrased — the kernel already speaks it, so this QUOTES the
+        scar verbatim and names the rung-2 verb as the next step.
+        Nothing runs: no recompute, no modal, no log line."""
+        if self.doc is None or feat is None:
+            return
+        cause = getattr(feat, "error", None)
+        if not cause:
+            return                      # no scar, no story
         QMessageBox.information(
             self, "What's Wrong?",
-            f"{name} failed to rebuild: {cause}. Fix {name}, then "
-            "Roll To End in the timeline gear — the band runs the "
+            f"{feat.name} failed to rebuild: {cause}. Fix {feat.name}, "
+            "then Roll To End in the timeline gear — the band runs the "
             "repair and rides to the next error.")
 
     def _delete_after_marker(self):
