@@ -2914,6 +2914,11 @@ class Document:
             self._in_feature = (pos, f)
             if self.rollback_to is not None and pos >= self.rollback_to:
                 continue                      # M88: past the rubber band
+            if pos in getattr(self, "_skip", ()):
+                # M188 R4 [LAW-65]: the CONTINUE driver's caught faults
+                # ride out of this pass by skip-set — the retry rebuilds
+                # what it can. A skipped feature never RAN.
+                continue
             if f.suppressed:
                 continue
             key = getattr(f, "body", None) or "Body 1"
@@ -3232,6 +3237,8 @@ class Document:
         for _i, f in enumerate(self.features):
             if _cut is not None and _i >= _cut:
                 continue                      # skipped: scar rides on
+            if _i in getattr(self, "_skip", ()):
+                continue                      # R4: skipped = never ran
             if getattr(f, "error", None):
                 f.error = None
         if not any(getattr(f, "error", None) for f in self.features):
@@ -3276,7 +3283,9 @@ class Document:
             # never a wound sitting BEHIND the marker, untested.
             if _cut is not None and _i >= _cut:
                 continue
-            f.error = None
+            if _i in getattr(self, "_skip", ()):
+                continue                      # R4: a caught-and-skipped
+            f.error = None                    #      scar must survive
         if info is None:
             self.failed_feature = None
             return None

@@ -93,6 +93,12 @@ def _density_labels(order):
 
 
 class MainWindow(QMainWindow):
+    # M188 R4 [LAW-65]: the rebuild posture. DEFAULT False = "Stop and
+    # Repair" — the R1-R3 law (fail -> bar parks before the fault, one
+    # modal). The gear's toggle chooses "Continue (Ignore Error)".
+    # Session posture, never serialized.
+    continue_on_error = False
+
     # Density labels DERIVED from core.materials (single source of
     # truth — the materials report flagged the old hand-typed list for
     # drifting: it invented Stainless 8.00 / Nylon 1.14 / Titanium 4.50
@@ -1181,6 +1187,15 @@ class MainWindow(QMainWindow):
         act.toggled.connect(lambda on: (
             setattr(self.timeline.bar, "hide_inactive", on),
             self.timeline.bar.update()))
+        # M188 R4 [LAW-65]: the stop/continue CHOICE lives in the same
+        # settings group - System Options, Tracer-sized. Named like the
+        # vendor names it; the doc-default (unchecked) is Stop and
+        # Repair, R1-R3's law.
+        cont = menu.addAction("Continue rebuilding after errors")
+        cont.setCheckable(True)
+        cont.setChecked(self.continue_on_error)
+        cont.toggled.connect(
+            lambda on: setattr(self, "continue_on_error", bool(on)))
         rb = self.doc.rollback_to if self.doc is not None else None
         total = len(self.doc.features) if self.doc is not None else 0
         menu.addSeparator()
@@ -6426,6 +6441,13 @@ class MainWindow(QMainWindow):
         self._open_path(path)
 
     def recompute(self):
+        if self.continue_on_error:
+            # M188 R4 [LAW-65]: "SOLIDWORKS can either continue
+            # rebuilding (ignoring the error) or stop so you can
+            # repair." Stop-and-repair is R1-R3's law and the DEFAULT;
+            # the gear's toggle chooses the other half.
+            self._recompute_continue()
+            return
         was_bad = getattr(self.doc, "failed_feature", None) is not None
         try:
             self.doc.recompute()
@@ -6456,6 +6478,14 @@ class MainWindow(QMainWindow):
                     "before it; roll forward to test the fix", 6000)
             QMessageBox.warning(self, "Recompute failed", str(e))
             return
+        self._after_clean_pass(was_bad)
+
+    def _after_clean_pass(self, was_bad):
+        """M188 R4 extraction (behavior-preserving): the refresh tail
+        a SUCCESSFUL pass runs — views follow the doc, badges follow
+        the scars, recovery is news only when every scar healed. The
+        continue driver shares this exact tail: same honesty, no
+        second copy to drift."""
         # Keep every view following self.doc, even if a host code swapped
         # the document in directly (scripts, embedding). The viewport gets
         # attach() — refresh without re-fitting the camera.
@@ -6495,6 +6525,46 @@ class MainWindow(QMainWindow):
             if getattr(self.doc, "failed_feature", None) is None:
                 logservice.info("recompute clean again", source="kernel")
             self.timeline.bar.update()  # badges follow the pass either way
+
+    def _recompute_continue(self):
+        """M188 R4 [LAW-65] "Continue (Ignore Error)": the rebuild
+        driver RETRIES PAST EACH CAUGHT FAULT — every fault stamps its
+        scar (via record_failure, whose wipes now also spare the
+        skipped: a skip is not a heal, and a catch is not either),
+        takes its slot out of the band, and the pass rebuilds what it
+        can. Outcome: best-effort body, EVERY fault scarred, errors
+        still a QUEUE (the pointer aims at the FIRST scar, not the
+        last catch). No modal ambush — LAW-61(b)'s tier speaks: a
+        non-modal COUNT in the log and on the status line. The bar is
+        NOT parked: this pass ran everything it could."""
+        was_bad = getattr(self.doc, "failed_feature", None) is not None
+        self.doc._skip = set()
+        while True:
+            try:
+                self.doc.recompute()
+                break
+            except Exception as e:
+                where = self.doc.record_failure(str(e))
+                logservice.error(str(e), source="kernel",
+                                 feature=where[1] if where else None,
+                                 pos=where[0] if where else None)
+                if where is None or where[0] in self.doc._skip:
+                    break               # pathological: same catch twice
+                self.doc._skip.add(where[0])
+        n = len(self.doc._skip)
+        self.doc._skip = set()
+        self.doc.failed_feature = next(
+            ((i, f.name) for i, f in enumerate(self.doc.features)
+             if getattr(f, "error", None)), None)
+        self._after_clean_pass(was_bad)
+        if n:
+            logservice.warn(
+                f"rebuild continued past {n} failed feature"
+                + ("" if n == 1 else "s"), source="kernel")
+            self.status.showMessage(
+                f"Rebuild continued past {n} failed feature"
+                + ("" if n == 1 else "s")
+                + " — the gear asks What's Wrong?", 6000)
 
     def _toggle_message_log(self):
         self._log_menu.toggle()       # menu check IS the truth

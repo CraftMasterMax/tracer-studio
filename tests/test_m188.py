@@ -343,3 +343,99 @@ def test_reasking_at_rest_never_touches_the_build(win, monkeypatch):
     assert d.rollback_to == ia and a.error == scar, \
         "inspection is PASSIVE: the band, the scar and the build stand still"
     assert list(L.entries()) == before, "and asking never pollutes the log"
+
+# ---- R4: STOP AND REPAIR vs CONTINUE (IGNORE ERROR) - LAW-65 full stop -------
+# "SOLIDWORKS can either continue rebuilding (ignoring the error) or
+# stop so you can repair" (mechanitec; SW so_messages). R1-R3 cloned
+# the STOP half; rung 4 makes it a CHOICE. Continue mode drives the
+# rebuild by retry-past-the-fault: every caught fault stamps its scar
+# and skips out of the retry, so the pass builds what it CAN - all
+# faults scarred, NO modal ambush, a non-modal COUNT speaks (LAW-61(b)
+# tier), and errors remain a QUEUE: the pointer aims at the FIRST
+# scar. The bar is NOT parked: this pass ran everything it could.
+
+
+def _toasts():
+    return [e for e in L.entries()
+            if e.severity == "WARN" and "fail" in e.text.lower()]
+
+
+def test_stop_and_repair_is_the_default(win, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    seen = []
+    monkeypatch.setattr(QMessageBox, "warning",
+                        staticmethod(lambda *a, **k: seen.append(1)))
+    assert win.continue_on_error is False, \
+        "the vendor default is Stop and Repair - the R1-R3 law stands"
+    d, a, b = _two_faults(win)
+    ia = d.features.index(a)
+    win.recompute()
+    assert d.rollback_to == ia and len(seen) == 1, \
+        "default mode still parks the bar and summons once"
+
+
+def test_continue_mode_builds_through_every_fault(win, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    from tracer.core.document import PrimitiveFeature as _P
+    seen = []
+    monkeypatch.setattr(QMessageBox, "warning",
+                        staticmethod(lambda *a, **k: seen.append(1)))
+    win.continue_on_error = True
+    d, a, b = _two_faults(win)
+    tail = d.add(_P(name="Boss", kind="box", op="union",
+                    dims={"dx": 3.0, "dy": 3.0, "dz": 2.0}))
+    win.recompute()
+    assert len(seen) == 0, "Continue mode mounts NO ambush - it IGNORES"
+    assert getattr(a, "error", None) and getattr(b, "error", None), \
+        "every fault still wears its scar - ignored is not forgiven"
+    assert d.failed_feature[1] == "CoilA", \
+        "errors remain a QUEUE: the pointer aims at the FIRST, not the "\
+        "last catch"
+    assert d.rollback_to is None, \
+        "continue ran all it could - the bar is NOT parked by law"
+    assert d._result is not None and getattr(tail, "error", None) is None, \
+        "and the honest tail BUILT: Boss stands on the plate"
+    toast = _toasts()
+    assert len(toast) == 1 and "2" in toast[0].text, \
+        "LAW-61(b): ONE non-modal COUNT speaks the partial failure"
+    assert "2" in win.status.currentMessage(), \
+        "and the status line echoes the count - no modal, never deaf"
+
+
+def test_the_continue_walk_clears_the_queue_one_at_a_time(win, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    seen = []
+    monkeypatch.setattr(QMessageBox, "warning",
+                        staticmethod(lambda *a, **k: seen.append(1)))
+    win.continue_on_error = True
+    d, a, b = _two_faults(win)
+    win.recompute()
+    assert d.failed_feature[1] == "CoilA"
+    a.pitch = 6.0
+    win.recompute()                            # the healed one RUNS
+    assert getattr(a, "error", None) is None, \
+        "ran clean - the scar retires (the R1 wipe law rides on)"
+    assert d.failed_feature[1] == "CoilB", \
+        "the queue advances to the ONE remaining fault"
+    toast = _toasts()
+    assert len(toast) == 2 and "1" in toast[-1].text \
+        and "2" in toast[0].text, \
+        "the count spoke twice and the second said 1 - it COUNTS, not "\
+        "chants"
+    assert len(seen) == 0, "still never a modal across the whole walk"
+    b.pitch = 6.0
+    win.recompute()
+    assert d.failed_feature is None
+    assert any("clean again" in e.text for e in L.entries()), \
+        "the last fix RAN and only then is recovery news (R1 law, "\
+        "shared tail)"
+
+
+def test_the_gear_toggles_the_choice(win):
+    acts = _gear_actions(win)
+    assert "Continue rebuilding after errors" in acts, \
+        "the CHOICE is NAMED and checkable at the same gear"
+    assert acts["Continue rebuilding after errors"].isChecked() is False, \
+        "unchecked = Stop and Repair, the law's default"
+    acts["Continue rebuilding after errors"].toggle()
+    assert win.continue_on_error is True, "the toggle flips the posture"
