@@ -340,7 +340,10 @@ def test_rename_feature_defuses_the_landmine_with_the_count():
 def test_rename_feature_refusal_undoes_cleanly_at_the_ui_seam(qapp,
                                                               win,
                                                               monkeypatch):
-    from PySide6.QtWidgets import QMessageBox
+    # M189 R1 CITE-THE-MOVE (LAW-61): the taken-name refusal stepped
+    # DOWN from the modal to the status line (tier (a): recoverable
+    # input). What this seam test owns - the refusal mutates nothing
+    # and the capture unwinds - is gated exactly as before.
     from tracer.ui.cmddialog import Shell
     d = win.doc
     pad = d.add(PrimitiveFeature(name="plate", kind="box",
@@ -350,14 +353,11 @@ def test_rename_feature_refusal_undoes_cleanly_at_the_ui_seam(qapp,
     win.recompute()
     monkeypatch.setattr(Shell, "getText", staticmethod(
         lambda p, t, l, text="": ("stud", True)))
-    seen = []
-    monkeypatch.setattr(QMessageBox, "warning", classmethod(
-        lambda cls, *a, **k: seen.append(a[2])))
     depth = len(win._undo)
     win._rename_feature(pad)
     qapp.processEvents()
     assert pad.name == "plate"                     # refused
-    assert any("already taken" in s for s in seen)
+    assert "already taken" in win.status.currentMessage()
     assert len(win._undo) == depth                 # capture popped
 
 

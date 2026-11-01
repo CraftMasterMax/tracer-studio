@@ -2595,7 +2595,10 @@ class MainWindow(QMainWindow):
             d = self.doc.datum_register(str(v["letter"]), kind, ref)
         except params.ParamError as e:
             self._undo.pop()
-            QMessageBox.warning(self, "Register datum", str(e))
+            # M189 R1 [LAW-61]: a double-booked letter is RECOVERABLE
+            # INPUT - the kernel's cure ("one letter, one datum")
+            # rides the status line instead of an app-modal pop.
+            self.status.showMessage(f"Datum not registered: {e}", 6000)
             return
         self._unsaved = True
         self.status.showMessage(
@@ -3019,7 +3022,11 @@ class MainWindow(QMainWindow):
         except Exception as e:                     # name taken
             self._undo.pop()                       # refusal mutates
             self._redo.clear()                     #   nothing
-            QMessageBox.warning(self, "Rename", str(e))
+            # M189 R1 [LAW-61]: tier (a) - a taken name is RECOVERABLE
+            # INPUT, not data loss. The kernel sentence rides the
+            # status line, where the eye already is; the refusal and
+            # the unwound capture are unchanged.
+            self.status.showMessage(f"Rename refused: {e}", 6000)
             return
         self.doc.dirty = True
         self.recompute()
@@ -3049,7 +3056,9 @@ class MainWindow(QMainWindow):
         except Exception as e:                     # ParamError: name taken
             self._undo.pop()                       # refusal mutates nothing
             self._redo.clear()
-            QMessageBox.warning(self, "Rename", str(e))
+            # M189 R1 [LAW-61]: same tier case as the feature rename -
+            # the datum collision speaks on the status line.
+            self.status.showMessage(f"Rename refused: {e}", 6000)
             return
         self.doc.dirty = True
         self.recompute()
@@ -4485,7 +4494,10 @@ class MainWindow(QMainWindow):
                 t=float(v["t"]), width=float(v["width"]),
                 leg=float(v["leg"]), material=str(v["material"]))
         except (sheetmetal.SheetMetalError, ValueError) as e:
-            QMessageBox.warning(self, "New Sheet", str(e))
+            # M189 R1 [LAW-61]: an illegal sheet parameter is INPUT -
+            # tier (a). The kernel's sentence speaks on the status
+            # line; the panel simply gets another honest try.
+            self.status.showMessage(f"Sheet not created: {e}", 6000)
             return
         self.recompute()
         self.rail.tree.reload()

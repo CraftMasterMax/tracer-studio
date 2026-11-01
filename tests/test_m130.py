@@ -165,20 +165,21 @@ def test_datum_rename_prompt_announces_the_ripple(win, qapp, monkeypatch):
     assert win.doc.datum_references("SpinLine") == []   # …relink and all
 
 
-def test_datum_rename_refusal_warns_and_changes_nothing(win, qapp,
-                                                        monkeypatch):
+def test_datum_rename_refusal_speaks_inline_and_changes_nothing(win, qapp,
+                                                                monkeypatch):
+    # M189 R1 CITE-THE-MOVE (LAW-61): a datum-name collision is
+    # RECOVERABLE INPUT - the refusal stepped DOWN from the modal to
+    # the status line. The refusal law itself is unchanged: nothing
+    # moves, the capture unwinds, the kernel's words survive.
     from tracer.ui.cmddialog import Shell
-    import tracer.ui.mainwindow as mw
     old_ax, old_pl = _datum_win(win, qapp)
     monkeypatch.setattr(Shell, "getText",
                         staticmethod(lambda p, t, l, text="":
                                      (old_ax, True)))   # collide on purpose
-    warned = []
-    monkeypatch.setattr(mw.QMessageBox, "warning",
-                        staticmethod(lambda *a, **k: warned.append(a[2])))
     depth = len(win._undo)
     win._rename_datum("work axis", old_pl)
-    assert warned and "already taken" in warned[0]
+    qapp.processEvents()
+    assert "already taken" in win.status.currentMessage()
     assert win.doc.datum_references(old_pl) == ["mir"]   # nothing moved
     assert len(win._undo) == depth            # the refused capture unwound
 
