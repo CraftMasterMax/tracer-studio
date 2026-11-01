@@ -225,7 +225,11 @@ def test_action_sweep_re_uses_the_same_feature(win, qapp):
     assert len(sweeps) == 1
 
 
-def test_action_sweep_warns_when_the_recipe_is_wrong(win, qapp, monkeypatch):
+def test_action_sweep_refuses_when_the_recipe_is_wrong(win, qapp,
+                                                       monkeypatch):
+    # M189 R2 CITE-THE-MOVE (LAW-61): the empty-sketch rejection is
+    # recoverable INPUT - it stepped DOWN from the modal to the status
+    # line, kernel cure ("circle") and all.
     from PySide6.QtWidgets import QMessageBox
     seen = []
     monkeypatch.setattr(QMessageBox, "warning",
@@ -234,7 +238,10 @@ def test_action_sweep_warns_when_the_recipe_is_wrong(win, qapp, monkeypatch):
     win.action_new_sketch()
     qapp.processEvents()
     win.action_sweep()                                # empty sketch
-    assert seen and "circle" in seen[-1]
+    qapp.processEvents()
+    assert seen == []                                 # no ambush
+    assert "refused" in win.status.currentMessage().lower()
+    assert "circle" in win.status.currentMessage().lower()
 
 
 def test_sweep_survives_save_open_roundtrip(win, qapp, tmp_path):

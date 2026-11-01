@@ -140,15 +140,20 @@ def test_action_split_flip_keeps_the_upper_half(win, qapp, monkeypatch):
 
 def test_action_split_validates_before_touching_history(win, qapp,
                                                         monkeypatch):
+    # M189 R2 CITE-THE-MOVE (LAW-61): the dry-run rejection stepped
+    # DOWN from the modal to the status line. What this gate owns -
+    # validate BEFORE touching history - is asserted harder now: no
+    # modal at all, the kernel sentence inline, no feature, no volume.
     _block(win, qapp)
     # plane 20 mm BELOW the block, removing upward: nothing would survive
     script_cmd(monkeypatch, {"plane": "XY", "dist": -20.0, "flip": False})
-    seen = []
+    hits = []
     monkeypatch.setattr(QMessageBox, "warning",
-                        staticmethod(lambda *a, **k: seen.append(a[2])))
+                        staticmethod(lambda *a, **k: hits.append(a[2])))
     win.action_split_body()
     qapp.processEvents()
-    assert seen                                          # warned...
+    assert hits == []                                    # silent tier (a)
+    assert "refused" in win.status.currentMessage().lower()
     assert not [f for f in win.doc.features
                 if isinstance(f, SplitFeature)]          # ...no feature
     assert win.doc.result.volume == pytest.approx(32000, rel=1e-3)

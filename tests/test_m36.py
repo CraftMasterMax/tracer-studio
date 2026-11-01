@@ -200,7 +200,13 @@ def test_action_loft_refuses_coplanar_without_adding(win, qapp, monkeypatch):
     monkeypatch.setattr("tracer.ui.loft.LoftDialog.ask",
                         staticmethod(lambda parent, cands: (m1.sid, m2.sid)))
     win.action_loft()
-    assert warned and "different planes" in warned[-1]
+    qapp.processEvents()
+    # M189 R2 CITE-THE-MOVE (LAW-61): coplanar profiles are fixable
+    # INPUT (the cure - offset the second sketch - ships with the
+    # sentence). Tier (a) now; the no-feature law is asserted hard.
+    assert warned == []                                # no ambush
+    msg = win.status.currentMessage()
+    assert "refused" in msg.lower() and "different planes" in msg
     assert not any(isinstance(f, LoftFeature) for f in win.doc.features)
 
 

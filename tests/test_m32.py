@@ -210,8 +210,14 @@ def test_action_shell_refuses_impossible_wall_without_adding(
     monkeypatch.setattr("tracer.ui.cmddialog.Shell.getDouble",
                         staticmethod(lambda *a, **k: (6.0, True)))
     win.action_shell()
-    assert warned and not any(isinstance(f, ShellFeature)
-                              for f in win.doc.features)
+    qapp.processEvents()
+    # M189 R2 CITE-THE-MOVE (LAW-61): the impossible wall is a dry-run
+    # INPUT rejection - stepped DOWN to the status line. The refusal
+    # law this gate owns (no feature added) is asserted unchanged.
+    assert warned == []                                # no ambush
+    assert "refused" in win.status.currentMessage().lower()
+    assert not any(isinstance(f, ShellFeature)
+                   for f in win.doc.features)
 
 
 def test_action_shell_twice_is_refused(win, qapp, monkeypatch):

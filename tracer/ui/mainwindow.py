@@ -4216,7 +4216,10 @@ class MainWindow(QMainWindow):
         try:                            # validate before touching history
             shell_open(self.doc.result, float(t), openings)
         except ValueError as e:
-            QMessageBox.warning(self, "Shell", str(e))
+            # M189 R2 [LAW-61(a)]: a dry-run rejection that touched no
+            # history is RECOVERABLE INPUT - the kernel sentence rides
+            # the established status family, not a modal.
+            self.status.showMessage(f"Shell refused: {e}", 6000)
             return
         self._capture()
         self.doc.add(ShellFeature(name="Shell", thickness=float(t),
@@ -4256,7 +4259,8 @@ class MainWindow(QMainWindow):
         try:                            # validate before touching history
             split_solid(self.doc.result, origin, nrm, flip)
         except ValueError as e:
-            QMessageBox.warning(self, "Split Body", str(e))
+            # M189 R2 [LAW-61(a)]: dry-run rejection, history untouched.
+            self.status.showMessage(f"Split refused: {e}", 6000)
             return
         self._capture()
         self.doc.add(SplitFeature(name=f"Split {plane}",
@@ -4420,7 +4424,9 @@ class MainWindow(QMainWindow):
         try:
             u = sheetmetal.unfold_flat(solid, K=float(v["K"]))
         except ValueError as e:        # SheetMetalError IS a ValueError
-            QMessageBox.warning(self, "Flat Pattern", str(e))
+            # M189 R2 [LAW-61(a)]: the preview dry-run refused input -
+            # nothing exists yet to lose.
+            self.status.showMessage(f"Flat pattern refused: {e}", 6000)
             return
         lines = [f"Bend {i + 1}: theta={b['angle']:.1f}  "
                  f"ri={b['ri']:.2f}  ro={b['ro']:.2f}  "
@@ -4451,7 +4457,12 @@ class MainWindow(QMainWindow):
             try:
                 b, feat = self.doc.add_flat_pattern(body, K=float(v["K"]))
             except (sheetmetal.SheetMetalError, KeyError) as e:
-                QMessageBox.warning(self, "Flat Pattern", str(e))
+                # M189 R2 [LAW-61(a)]: the sentence drops to tier (a),
+                # AND the refused capture unwinds - a refusal may not
+                # leave an undo step that undoes nothing (R1's law).
+                self._undo.pop()
+                self._redo.clear()
+                self.status.showMessage(f"Flat pattern refused: {e}", 6000)
                 return
             self.recompute()
             self.rail.tree.reload()
@@ -4592,7 +4603,12 @@ class MainWindow(QMainWindow):
                 witness=0.0 if pick["side"] == "start"
                 else float(hf.leg))
         except (sheetmetal.SheetMetalError, ValueError) as err:
-            QMessageBox.warning(self, "Add Flange", str(err))
+            # M189 R2 [LAW-61(a)]: a refused flange parameter is INPUT;
+            # the refusal mutates nothing (guard-first kernel) and the
+            # capture unwinds.
+            self._undo.pop()
+            self._redo.clear()
+            self.status.showMessage(f"Flange refused: {err}", 6000)
             return
         self.recompute()
         self.rail.tree.reload()
@@ -4675,7 +4691,11 @@ class MainWindow(QMainWindow):
                 k_factor=float(v["k"]) if v["pin"] else None,
                 wkind=wk, held=host.uid)
         except (sheetmetal.SheetMetalError, ValueError) as err:
-            QMessageBox.warning(self, "Add Fold", str(err))
+            # M189 R2 [LAW-61(a)]: refused input, guard-first kernel -
+            # tier (a) voice, capture unwound.
+            self._undo.pop()
+            self._redo.clear()
+            self.status.showMessage(f"Fold refused: {err}", 6000)
             return
         self.recompute()
         self.rail.tree.reload()
@@ -4729,7 +4749,13 @@ class MainWindow(QMainWindow):
         try:
             self.doc.add_joint(str(base), str(mover))
         except ValueError as e:      # ParamError IS a ValueError
-            QMessageBox.warning(self, "Joint", str(e))
+            # M189 R2 [LAW-61(a)]: a refused joint is INPUT - tier (a)
+            # voice; and the capture this command took BEFORE the
+            # guard-first add_joint unwinds (it used to LEAK a step
+            # that undid nothing).
+            self._undo.pop()
+            self._redo.clear()
+            self.status.showMessage(f"Joint refused: {e}", 6000)
             return
         if not v.get("ground", True):
             self.doc.ground_body(str(base), False)
@@ -5358,10 +5384,11 @@ class MainWindow(QMainWindow):
             return
         carry, mate = str(v["carry"]), str(v["mate"])
         if kind != "rest" and carry == mate:
-            QMessageBox.warning(
-                self, "Interlock",
-                "This member mates TWO bodies — pick different ones "
-                "(Body ▸ New Body first).")
+            # M189 R2 [LAW-61(a)]: a pick error is INPUT - the cure
+            # speaks where the eye is, not from a modal chair.
+            self.status.showMessage(
+                "Interlock refused: this member mates TWO bodies — "
+                "pick different ones (Body ▸ New Body first)", 6000)
             return
         params = {fd["key"]: float(g[fd["key"]]) * f for fd in geom}
         from ..core import interlock
@@ -5369,7 +5396,9 @@ class MainWindow(QMainWindow):
             interlock.tools(kind, clearance=float(v["clearance"]) * f,
                             **params)
         except ValueError as e:
-            QMessageBox.warning(self, "Interlock", str(e))
+            # M189 R2 [LAW-61(a)]: dry-run rejection, before the undo
+            # capture even - tier (a) by the ladder's own logic.
+            self.status.showMessage(f"Interlock refused: {e}", 6000)
             return
         self._capture()
         feats = self.doc.add_interlock(
@@ -5585,7 +5614,8 @@ class MainWindow(QMainWindow):
         try:
             pts, closed = path_chain(m)
         except ValueError as e:
-            QMessageBox.warning(self, "Sweep", str(e))
+            # M189 R2 [LAW-61(a)]: an unbuildable path is INPUT.
+            self.status.showMessage(f"Sweep refused: {e}", 6000)
             return
         r = float([c for c in m.sketch.circles
                    if not c.construction][0].r)
@@ -5632,7 +5662,8 @@ class MainWindow(QMainWindow):
         try:
             chains = open_chains(m)
         except ValueError as e:
-            QMessageBox.warning(self, "Thicken", str(e))
+            # M189 R2 [LAW-61(a)]: no open profile to thicken is INPUT.
+            self.status.showMessage(f"Thicken refused: {e}", 6000)
             return
         from . import cmddialog
         v = cmddialog.ask(self, "Thicken", [
@@ -5757,10 +5788,12 @@ class MainWindow(QMainWindow):
         try:                            # validate before touching history
             LoftFeature(name="loft", sections=secs, closed=closed).build()
         except ValueError as e:
-            QMessageBox.warning(
-                self, "Loft",
-                str(e) + " — the two profiles must sit on different planes "
-                         "(sketch-on-face gives the second one an offset).")
+            # M189 R2 [LAW-61(a)]: validate before touching history -
+            # the refusal (kernel words + the offset cure) drops to a.
+            self.status.showMessage(
+                f"Loft refused: {e} — the two profiles must sit on "
+                "different planes (sketch-on-face gives the second "
+                "one an offset)", 6000)
             return
         self._capture()
         if closed:

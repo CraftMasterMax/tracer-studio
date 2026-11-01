@@ -190,8 +190,14 @@ def test_action_thicken_refuses_closed_sketches_honestly(
                         staticmethod(lambda *a, **k: seen.update(
                             msg=str(a[2] if len(a) > 2 else ""))))
     win.action_thicken()
-    assert seen and not any(isinstance(f, ThickenFeature)
-                            for f in win.doc.features)
+    qapp.processEvents()
+    # M189 R2 CITE-THE-MOVE (LAW-61): "refuses honestly" now means
+    # tier (a) - the closed-sketch rejection speaks the status line,
+    # kernel words intact; the refusal law (no feature) is unchanged.
+    assert not seen                                    # no ambush
+    assert "refused" in win.status.currentMessage().lower()
+    assert not any(isinstance(f, ThickenFeature)
+                   for f in win.doc.features)
 
 
 def test_re_run_updates_in_place_and_undo_undoes(win, qapp, monkeypatch):
