@@ -1159,11 +1159,19 @@ class MainWindow(QMainWindow):
 
     def _timeline_gear(self, pos):
         """M161 LAW-3: the Options button at the strip's RIGHT opens
-        the timeline settings. The probe records three entries; two of
-        them (Component Color Swatch, Direct Modeling Mode) need doors
-        this product has not built — they are BANKED BY NAME. What
-        exists here is the law's own 'hide all inactive' plus LAW-12's
-        destructive sibling, confirm-guarded."""
+        the timeline settings — built by _build_gear_menu (the door and
+        its contents are one honest source), shown at the click."""
+        self._build_gear_menu().exec(pos)
+
+    def _build_gear_menu(self):
+        """M188 R2 (LAW-64): the gear menu as a REAL QMenu, so the
+        repair WALK gets its named verbs — the vendor's own words:
+        "Roll to Previous" steps the marker back one feature, "Roll To
+        End" sends it home and the healed band RUNS, riding to the next
+        error. Each verb is enabled only when it can do something: at
+        the end, End has nothing to end; with no features, Previous has
+        nowhere to step. M161 LAW-3 owns the settings entry above, and
+        LAW-12's destructive sibling below stays confirm-guarded."""
         menu = QMenu(self)
         act = menu.addAction("Hide all inactive features")
         act.setCheckable(True)
@@ -1172,12 +1180,34 @@ class MainWindow(QMainWindow):
             setattr(self.timeline.bar, "hide_inactive", on),
             self.timeline.bar.update()))
         rb = self.doc.rollback_to if self.doc is not None else None
+        total = len(self.doc.features) if self.doc is not None else 0
+        menu.addSeparator()
+        prev = menu.addAction("Roll to Previous")
+        prev.setEnabled(total > 0)
+        prev.setToolTip("Step the rollback marker back one feature")
+        prev.triggered.connect(self._roll_to_previous)
+        end = menu.addAction("Roll To End")
+        end.setEnabled(rb is not None)
+        end.setToolTip("Show the whole history: the healed band runs "
+                       "and rides to the next error"
+                       if rb is not None else "")
+        end.triggered.connect(lambda: self._apply_rollback(None))
         menu.addSeparator()
         dng = menu.addAction("Delete All Features After Marker")
-        dng.setEnabled(rb is not None and rb < len(
-            self.doc.features if self.doc is not None else []))
+        dng.setEnabled(rb is not None and rb < total)
         dng.triggered.connect(self._delete_after_marker)
-        menu.exec(pos)
+        return menu
+
+    def _roll_to_previous(self):
+        """LAW-64 verb one: the marker steps ONE slot back. From the
+        end it lifts the last feature out of the live band; at the
+        front it stays — the marker never runs off the front."""
+        if self.doc is None or not self.doc.features:
+            return
+        cur = self.doc.rollback_to
+        if cur is None:
+            cur = len(self.doc.features)
+        self._apply_rollback(max(0, cur - 1))
 
     def _delete_after_marker(self):
         """M161 LAW-12: the destructive sibling of the marker — a

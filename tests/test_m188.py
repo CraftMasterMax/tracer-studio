@@ -162,3 +162,103 @@ def test_a_clean_pass_never_moves_the_band(win, qapp):
         "a pass with no fault is NOT an opinion about the view - the " \
         "band only moves to find errors, never on its own"
     win._apply_rollback(None)
+
+
+# ---- R2: THE WALK - "as you fix one error, roll forward to the next" ---------
+# LAW-64 names its doors: "Roll to Previous / Roll To End named
+# commands". The marker today answers only drags; now the timeline
+# gear speaks both verbs, and the pair of faults below walks the
+# repair exactly as the sentence reads: fault -> the bar lands at it
+# -> fix -> Roll To End -> the bar RODE to the next error -> fix ->
+# Roll To End -> clean, and the marker goes home.
+
+def _two_faults(win):
+    """Plate + two coils, both broken the m127-proven way (section
+    over pitch). Faults are staged at TWO distinct slots."""
+    d = win.doc
+    d.add(PrimitiveFeature(name="Plate", kind="box", op="union",
+                           dims={"dx": 20.0, "dy": 20.0, "dz": 4.0}))
+    a = d.add_coil("CoilA", axis="Z", base=(0.0, 0.0, 4.0),
+                   diameter=8.0, pitch=1.0, turns=3.0, size=4.0)
+    b = d.add_coil("CoilB", axis="Z", base=(0.0, 0.0, 4.0),
+                   diameter=9.0, pitch=1.0, turns=3.0, size=4.0)
+    return d, a, b
+
+
+def _gear_actions(win):
+    return {x.text(): x for x in win._build_gear_menu().actions()
+            if x.text()}
+
+
+def test_the_gear_names_both_rollback_verbs(win):
+    acts = _gear_actions(win)
+    assert "Roll to Previous" in acts and "Roll To End" in acts, \
+        "the commands are NAMED, like the vendor names them"
+    assert acts["Roll To End"].isEnabled() is False, \
+        "at the end, Roll To End has nothing to end"
+    win.doc.rollback_to = 1
+    assert _gear_actions(win)["Roll To End"].isEnabled(), \
+        "with the marker parked, ending it is exactly the door"
+    win.doc.rollback_to = None
+
+
+def test_roll_to_previous_steps_the_marker_one_slot(win):
+    from tracer.core.document import PrimitiveFeature as _P
+    for i in range(3):
+        win.doc.add(_P(name=f"WP{i}", kind="box", op="union",
+                       dims={"dx": 2.0, "dy": 2.0, "dz": 2.0}))
+    win.recompute()
+    total = len(win.doc.features)
+    win._roll_to_previous()                    # from the END: one back
+    assert win.doc.rollback_to == total - 1
+    win._roll_to_previous()
+    assert win.doc.rollback_to == total - 2
+    win.doc.rollback_to = 0                    # at the front: it stays
+    win._roll_to_previous()
+    assert win.doc.rollback_to == 0, "the marker never runs off the front"
+    win._apply_rollback(None)
+
+
+def test_the_repair_walk_rides_one_fault_to_the_next(win, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    seen = []
+    monkeypatch.setattr(QMessageBox, "warning",
+                        staticmethod(lambda *a, **k: seen.append(1)))
+    d, a, b = _two_faults(win)
+    ia, ib = d.features.index(a), d.features.index(b)
+    win.recompute()                            # CoilA faults first
+    assert d.rollback_to == ia and d.failed_feature[1] == "CoilA" \
+        and len(seen) == 1, "the bar landed at the FIRST error"
+    a.pitch = 6.0                              # the first fix
+    _gear_actions(win)["Roll To End"].trigger()
+    qapp_ev = None                             # (menu verbs recompute)
+    assert d.rollback_to == ib and d.failed_feature[1] == "CoilB" \
+        and len(seen) == 2, \
+        "as you fix one error, roll forward TO THE NEXT - the bar rode"
+    assert getattr(a, "error", None) is None, \
+        "CoilA RAN clean on the way - its scar healed honestly"
+    b.pitch = 6.0                              # the last fix
+    _gear_actions(win)["Roll To End"].trigger()
+    assert d.rollback_to is None and d.failed_feature is None \
+        and len(seen) == 2, "clean at last: the marker goes home"
+    news = [e for e in L.entries() if "clean again" in e.text]
+    assert len(news) == 1, "recovery became news EXACTLY once"
+
+
+def test_resting_at_the_fault_never_storms_the_modal(win, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    seen = []
+    monkeypatch.setattr(QMessageBox, "warning",
+                        staticmethod(lambda *a, **k: seen.append(1)))
+    d, a, b = _two_faults(win)
+    ia = d.features.index(a)
+    win.recompute()
+    assert d.rollback_to == ia and len(seen) == 1
+    win.recompute()                            # the maker pokes again:
+    win.recompute()                            #  the fault is skipped -
+    assert len(seen) == 1 and d.rollback_to == ia, \
+        "resting at the marker is a PASSIVE posture - the fault is " \
+        "skipped, the scar stays, no repeated modal"
+    a.pitch = 6.0
+    b.pitch = 6.0
+    win._apply_rollback(None)                  # tidy: heal fully
