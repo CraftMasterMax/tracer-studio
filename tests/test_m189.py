@@ -339,3 +339,84 @@ def test_the_six_remaining_stragglers_all_speak_inline(win, qapp,
         assert key in win.status.currentMessage().lower(), \
             f"{act} must speak the status line, got " \
             f"{win.status.currentMessage()!r}"
+
+
+# ---- R4: THE GENTLER VERB STEPS DOWN TOO (LAW-61 tier (a)) ----------------------
+# Twenty-five notices wore the FRIENDLY verb and still stole focus:
+# thirteen preconditions ("Nothing to print/measure/export/pattern/
+# scale/mirror", "No body to fillet"), the recipe guidances (Thread's
+# four pick/fit voices, Hole, Shell's face + already-shelled, Sweep,
+# Thicken, Loft's dialog twin and pick error, Pattern-on-Path, the
+# Interference pair prompt and its clean verdict) and the empty-model
+# guards of Text and the extents tool. All speak the status line now,
+# same words (law 17). RESERVED, honestly: the What's-Wrong broken-
+# model voice (a fault deserves interruption), the extents DATA report
+# (multi-line tables are not sentences) and the two STEP capability
+# notices (an environmental road-not-taken with install instructions).
+
+def _silence_both(monkeypatch, hits):
+    from PySide6.QtWidgets import QMessageBox
+    for verb in ("warning", "information"):
+        monkeypatch.setattr(QMessageBox, verb, classmethod(
+            lambda cls, *a, **k: hits.append(a[2] if len(a) > 2 else "")))
+
+
+def test_the_information_verb_is_reserved_for_reports():
+    import pathlib
+    import tracer.ui as ui
+    root = pathlib.Path(ui.__file__).parent
+    spoken = []
+    for p in sorted(root.rglob("*.py")):
+        spoken += re.findall(
+            r'QMessageBox\.information\(\s*(?:self|parent|cls),\s*'
+            r'f?"([^"]*)"', p.read_text(encoding="utf-8"))
+    assert set(spoken) <= {"What's Wrong?", "Show Extents",
+                           "STEP import", "STEP export"}, \
+        f"guidance popped back into a dialog: {sorted(set(spoken))}"
+
+
+def test_empty_document_report_tools_speak_inline(win, qapp, monkeypatch):
+    win.new_document()
+    qapp.processEvents()
+    hits = []
+    _silence_both(monkeypatch, hits)
+    for act, key in (("action_3d_print", "nothing to print"),
+                     ("action_export", "nothing to export"),
+                     ("action_export_step", "nothing to export"),
+                     ("action_mass_properties", "nothing to measure"),
+                     ("action_interference", "two bodies minimum")):
+        getattr(win, act)()
+        qapp.processEvents()
+        assert hits == [], f"{act} ambushed an empty model"
+        assert key in win.status.currentMessage().lower(), \
+            f"{act}: {win.status.currentMessage()!r}"
+
+
+def test_scale_mirror_and_fillet_speak_inline(win, qapp, monkeypatch):
+    win.new_document()
+    qapp.processEvents()
+    hits = []
+    _silence_both(monkeypatch, hits)
+    for call, key in ((win.action_scale, "nothing to scale"),
+                      (win.action_mirror, "nothing to mirror"),
+                      (lambda: win._body_fillet(False),
+                       "no body to fillet")):
+        call()
+        qapp.processEvents()
+        assert hits == []
+        assert key in win.status.currentMessage().lower(), \
+            f"{key}: {win.status.currentMessage()!r}"
+
+
+def test_thread_pick_guidance_speaks_where_the_eye_is(win, qapp,
+                                                      monkeypatch):
+    from tracer.core.document import PrimitiveFeature as _P
+    win.doc.add(_P(name="boss", kind="box", op="union",
+                   dims={"dx": 10.0, "dy": 10.0, "dz": 30.0}))
+    win.recompute()
+    hits = []
+    _silence_both(monkeypatch, hits)
+    win.action_thread()                      # no face picked at all
+    qapp.processEvents()
+    assert hits == [], "a pick prompt is guidance - tier (a)"
+    assert "cylindrical" in win.status.currentMessage().lower()

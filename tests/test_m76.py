@@ -185,7 +185,11 @@ def test_blank_text_warns_and_adds_nothing(win, qapp, monkeypatch):
                         staticmethod(lambda *a, **k: seen.append(a[2])))
     script_cmd(monkeypatch, _emboss_fields(text="   "))
     win.action_text()
-    assert seen and "text" in seen[-1].lower()
+    qapp.processEvents()
+    # M189 R4 CITE-THE-MOVE (LAW-61): the blank-text refusal stepped DOWN
+    # to the status line; the refusal law (no feature) is unchanged.
+    assert seen == []                            # no ambush
+    assert "text" in win.status.currentMessage().lower()
     assert not [f for f in win.doc.features
                 if isinstance(f, ExtrudeFeature)]
 

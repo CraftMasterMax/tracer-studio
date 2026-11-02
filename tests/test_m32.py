@@ -183,7 +183,11 @@ def test_action_shell_needs_a_solid_and_a_face(win, qapp, monkeypatch):
     monkeypatch.setattr(win.viewport, "selected_face", lambda: None)
     seen.clear()
     win.action_shell()                       # no face picked
-    assert any("face" in s.lower() for s in seen)
+    qapp.processEvents()
+    # M189 R4 CITE-THE-MOVE (LAW-61): the face-pick guidance stepped
+    # DOWN too - the whole Shell voice is status bar now, R4's law.
+    assert seen == []                          # no ambush
+    assert "face to remove" in win.status.currentMessage().lower()
     assert not any(isinstance(f, ShellFeature) for f in win.doc.features)
 
 

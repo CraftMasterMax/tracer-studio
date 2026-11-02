@@ -212,7 +212,11 @@ def test_flat_face_is_refused_before_the_dialog(win, qapp, monkeypatch,
     monkeypatch.setattr(cmddialog, "ask", boom)
     win.action_thread()
     qapp.processEvents()
-    assert silent_boxes == ["information"]
+    # M189 R4 CITE-THE-MOVE (LAW-61): the flat-face refusal stepped DOWN
+    # from the information pop to the status line - the no-dialog law
+    # this gate owns is asserted HARDER now (zero boxes, any verb).
+    assert silent_boxes == []
+    assert "cylinder" in win.status.currentMessage().lower()
     assert not [f for f in win.doc.features
                 if isinstance(f, ThreadFeature)]
 

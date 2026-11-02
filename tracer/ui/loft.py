@@ -101,12 +101,12 @@ class LoftDialog(QDialog):
     @staticmethod
     def ask(parent, candidates) -> dict | None:
         if len(candidates) < 2:
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.information(
-                parent, "Loft",
-                "A loft blends two sketches — or more. Draw a closed "
-                "profile in two different sketches — sketching on a face "
-                "gives the second one its offset for free.")
+            # M189 R4 [LAW-61(a)]: the two-sketch cure rides the status
+            # line (the window owns the parent - speak through it).
+            parent.statusBar().showMessage(
+                "A loft blends two sketches - or more. Draw a closed "
+                "profile in two different sketches - sketching on a face "
+                "gives the second one its offset for free", 6000)
             return None
         dlg = LoftDialog(parent, candidates)
         if dlg.exec() != QDialog.Accepted:

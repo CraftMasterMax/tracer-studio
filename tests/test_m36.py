@@ -185,7 +185,12 @@ def test_action_loft_refuses_same_sketch_twice(win, qapp, monkeypatch):
     monkeypatch.setattr("tracer.ui.loft.LoftDialog.ask",
                         staticmethod(lambda parent, cands: (m1.sid, m1.sid)))
     win.action_loft()
-    assert seen and "DIFFERENT" in seen[-1]
+    qapp.processEvents()
+    # M189 R4 CITE-THE-MOVE (LAW-61): the same-sketch pick error stepped
+    # DOWN to the status line, joining the R2 "Loft refused:" family.
+    assert seen == []                            # no ambush
+    msg = win.status.currentMessage().lower()
+    assert "refused" in msg and "different" in msg
     assert not any(isinstance(f, LoftFeature) for f in win.doc.features)
 
 
@@ -221,7 +226,11 @@ def test_loft_needs_two_sketches_dialog(win, qapp, monkeypatch):
     assert len(cands) == 1
     from tracer.ui.loft import LoftDialog
     assert LoftDialog.ask(win, [(s, l) for s, l, _ in cands]) is None
-    assert seen and "two sketches" in seen[-1]
+    qapp.processEvents()
+    # M189 R4 CITE-THE-MOVE (LAW-61): the dialog's two-sketch cure now
+    # rides the window's status line instead of a pop.
+    assert seen == []                            # no ambush
+    assert "two sketches" in win.status.currentMessage().lower()
 
 
 def test_editing_a_source_sketch_resyncs_the_loft(win, qapp, monkeypatch):

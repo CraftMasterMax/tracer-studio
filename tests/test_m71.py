@@ -187,4 +187,10 @@ def test_cancel_and_empty_are_quiet(win, qapp, monkeypatch):
     monkeypatch.setattr(QMessageBox, "information",
                         staticmethod(lambda *a, **k: warn.append(a)))
     win.action_mass_properties()
-    assert warn and "Nothing to measure" in warn[0][2]
+    qapp.processEvents()
+    # M189 R4 CITE-THE-MOVE (LAW-61): the empty-model precondition wore
+    # the information verb; it stepped DOWN with the warning-verb twins
+    # - same sentence, status line, zero dialogs.
+    assert warn == []                            # no ambush
+    assert "nothing to measure" in \
+        win.status.currentMessage().lower()

@@ -137,7 +137,13 @@ def test_repeated_sid_is_refused(win, qapp, monkeypatch):
     monkeypatch.setattr(QMessageBox, "information",
                         staticmethod(lambda *a, **k: seen.append(a[2])))
     win.action_loft()
-    assert seen and "DIFFERENT" in seen[-1]
+    qapp.processEvents()
+    # M189 R4 CITE-THE-MOVE (LAW-61): the repeated-sid pick error joined
+    # the inline "Loft refused:" family - the REFUSAL law is asserted
+    # harder now (no dialog at all).
+    assert seen == []                            # no ambush
+    msg = win.status.currentMessage().lower()
+    assert "refused" in msg and "different" in msg
     assert not [f for f in win.doc.features
                 if isinstance(f, LoftFeature)]
 

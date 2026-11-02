@@ -3269,10 +3269,11 @@ class MainWindow(QMainWindow):
             return
         groups = self.viewport.selected_groups()
         if len(groups) != 1:
-            QMessageBox.information(
-                self, "Thread",
-                "Click exactly ONE cylindrical face to thread — "
-                "flat faces cannot be threaded.")
+            # M189 R4 [LAW-61(a)]: guidance is INPUT - same words, tier
+            # (a) voice; the information verb was never earned either.
+            self.status.showMessage("Click exactly ONE cylindrical face "
+                                    "to thread — flat faces cannot be "
+                                    "threaded", 5000)
             return
         tm = self.viewport._tm
         seed = int(sorted(groups[0])[0])
@@ -3281,10 +3282,10 @@ class MainWindow(QMainWindow):
         nrm = np.repeat(np.asarray(tm.face_normals, float)[tris], 3, axis=0)
         fit = fit_cylinder(pts, nrm)
         if fit is None:
-            QMessageBox.information(
-                self, "Thread",
-                "That face is not a cylinder — Thread needs the curved "
-                "face of a boss or pin.")
+            # M189 R4 [LAW-61(a)]: the flat-face pick is fixable INPUT.
+            self.status.showMessage("That face is not a cylinder — Thread "
+                                    "needs the curved face of a boss or "
+                                    "pin", 5000)
             return
         dia = 2.0 * fit["radius"]
         sizes = list(ISO_COARSE)
@@ -3300,14 +3301,17 @@ class MainWindow(QMainWindow):
         pitch = ISO_COARSE[size][0]
         length = fit["zmax"] - fit["zmin"]
         if length <= 1.2 * pitch:
-            QMessageBox.information(
-                self, "Thread", f"That face is only {length:g} mm tall — "
-                                f"too short for an {size} thread.")
+            # M189 R4 [LAW-61(a)]: a too-short boss is a MEASURED input
+            # refusal - numbers ride the status line like R2's kernels.
+            self.status.showMessage(f"That face is only {length:g} mm "
+                                    f"tall — too short for an {size} "
+                                    "thread", 5000)
             return
         if fit["radius"] - 0.5 * pitch <= 0.1:
-            QMessageBox.information(
-                self, "Thread", f"Ø {dia:g} is too thin for {size}: the "
-                                "thread would cut away the core.")
+            # M189 R4 [LAW-61(a)]: ditto the too-thin core.
+            self.status.showMessage(f"Ø {dia:g} is too thin for {size}: "
+                                    "the thread would cut away the core",
+                                    5000)
             return
         axis = np.asarray(fit["axis"], float)
         start = np.asarray(fit["point"], float) + axis * fit["zmin"]
@@ -4061,10 +4065,11 @@ class MainWindow(QMainWindow):
         circles = [c for c in m.sketch.circles if not c.construction] \
             if m is not None else []
         if not circles:
-            QMessageBox.information(
-                self, "Hole",
-                "Draw circles first — each circle becomes one drilled hole. "
-                "Sketch on a face (double-click), add the circles, run Hole.")
+            # M189 R4 [LAW-61(a)]: the recipe cure speaks where the eye is.
+            self.status.showMessage("Draw circles first — each circle "
+                                    "becomes one drilled hole. Sketch on a "
+                                    "face (double-click), add the circles, "
+                                    "run Hole", 6000)
             return
         if not self.doc.features or self.doc.result is None:
             QMessageBox.warning(
@@ -4197,15 +4202,15 @@ class MainWindow(QMainWindow):
                                     "or import a solid first", 5000)
             return
         if any(isinstance(f, ShellFeature) for f in self.doc.features):
-            QMessageBox.information(self, "Shell",
-                                    "This body is already shelled.")
+            # M189 R4 [LAW-61(a)]: a state notice is not a modal event.
+            self.status.showMessage("This body is already shelled", 4000)
             return
         face = self.viewport.selected_face()
         if face is None:
-            QMessageBox.information(
-                self, "Shell",
-                "Click the face to REMOVE first — the body hollows with "
-                "that face open, exactly like Fusion's Shell.")
+            # M189 R4 [LAW-61(a)]: the face-pick guidance steps down.
+            self.status.showMessage("Click the face to REMOVE first — the "
+                                    "body hollows with that face open, "
+                                    "exactly like Fusion's Shell", 6000)
             return
         t, ok = Shell.getDouble(self, "Shell",
                                        "Wall thickness (mm):", 2.0,
@@ -4303,9 +4308,10 @@ class MainWindow(QMainWindow):
         the bed (dropped onto z=0 by default).  Kernel-built parts are
         watertight by construction — the report says so honestly."""
         if self.doc is None or self.doc.result is None:
-            QMessageBox.information(self, "3D Print",
-                                    "Nothing to print yet — model "
-                                    "something first.")
+            # M189 R4 [LAW-61(a)]: a precondition wearing the information
+            # verb - R3's law, wrong modal verb.
+            self.status.showMessage("Nothing to print yet — model "
+                                    "something first", 5000)
             return
         s = QSettings()
         last = str(s.value("materials/density", "PLA (1.24)"))
@@ -4777,18 +4783,19 @@ class MainWindow(QMainWindow):
         clash then forgets it; ours re-solves on every recompute, so
         move a part and the red map of the new collision follows."""
         if self.doc is None or len(self.doc.body_list()) < 2:
-            QMessageBox.information(
-                self, "Interference",
-                "Two bodies minimum — this audit is about where parts "
-                "CLASH. Model a pair (Body ▸ New Body) first.")
+            # M189 R4 [LAW-61(a)]: the pair-needed precondition steps down.
+            self.status.showMessage("Two bodies minimum — this audit is "
+                                    "about where parts CLASH. Model a pair "
+                                    "(Body ▸ New Body) first", 6000)
             return
         from ..core import interference
         hits = interference.audit_doc(self.doc)
         if not hits:
-            QMessageBox.information(
-                self, "Interference",
-                "Nothing clashes — no two bodies share a volume. "
-                "(Touching faces do not count.)")
+            # M189 R4 [LAW-61(a)]: a clean RESULT is a report line, not
+            # a dialog - the clash table below already ends in status.
+            self.status.showMessage("Nothing clashes — no two bodies "
+                                    "share a volume (touching faces do "
+                                    "not count)", 5000)
             return
         lines = [f"{h['a']}  ∩  {h['b']}   —   {h['volume']:,.1f} mm³"
                  for h in hits]
@@ -4836,9 +4843,9 @@ class MainWindow(QMainWindow):
         the panel's readout row — the numbers arrive while the combo is
         still in your hand, and no modal ever opens."""
         if self.doc is None or self.doc.result is None:
-            QMessageBox.information(self, "Mass Properties",
-                                    "Nothing to measure yet — add a "
-                                    "feature first.")
+            # M189 R4 [LAW-61(a)]: precondition in information clothing.
+            self.status.showMessage("Nothing to measure yet — add a "
+                                    "feature first", 5000)
             return
         s = QSettings()
         last = str(s.value("materials/density", "PLA (1.24)"))
@@ -4900,8 +4907,11 @@ class MainWindow(QMainWindow):
         document's units — Fusion has no overall-extents readout at
         all [—V]; SolidWorks does. Beat, not clone."""
         if self.doc is None or self.doc.result is None:
-            QMessageBox.information(self, "Nothing to measure",
-                                    "Add a feature first.")
+            # M189 R4 [LAW-61(a)]: the empty-model GUARD steps down (the
+            # multi-line extents REPORT keeps its dialog - it is data,
+            # not a sentence).
+            self.status.showMessage("Nothing to measure — add a feature "
+                                    "first", 5000)
             return
         ext = solid_extents(self.doc.result)
         u = self.doc.units if self.doc.units in units.LABEL else "mm"
@@ -5453,9 +5463,9 @@ class MainWindow(QMainWindow):
         txt = str(v["text"])
         regs = glyph_regions(txt, float(v["height"]) * f)
         if not regs:
-            QMessageBox.information(self, "Text",
-                                    "Nothing to draw — type some text "
-                                    "first (spaces alone won't do).")
+            # M189 R4 [LAW-61(a)]: empty text is INPUT before history.
+            self.status.showMessage("Nothing to draw — type some text "
+                                    "first (spaces alone won't do)", 5000)
             return
         self._capture()
         op = ("subtract" if str(v["op"]).startswith("Engrave")
@@ -5608,10 +5618,12 @@ class MainWindow(QMainWindow):
             return
         m = self.sketch.model
         if m is None:
-            QMessageBox.information(
-                self, "Sweep",
-                "Sweep runs from a sketch: draw ONE circle (the profile) "
-                "plus a connected chain of lines and/or arcs (the path).")
+            # M189 R4 [LAW-61(a)]: the recipe guidance steps down with
+            # the same cure words; the R2 kernel refusal rides beside it.
+            self.status.showMessage("Sweep runs from a sketch: draw ONE "
+                                    "circle (the profile) plus a "
+                                    "connected chain of lines and/or arcs "
+                                    "(the path)", 6000)
             return
         from ..core.sweep import path_chain
         try:
@@ -5655,11 +5667,11 @@ class MainWindow(QMainWindow):
             return
         m = self.sketch.model
         if m is None:
-            QMessageBox.information(
-                self, "Thicken",
-                "Thicken runs from a sketch: draw open lines and/or arcs "
-                "— the path to wall in. Closed profiles are Extrude's "
-                "job.")
+            # M189 R4 [LAW-61(a)]: recipe guidance - tier (a) voice.
+            self.status.showMessage("Thicken runs from a sketch: draw "
+                                    "open lines and/or arcs — the path to "
+                                    "wall in. Closed profiles are "
+                                    "Extrude's job", 6000)
             return
         from ..core.thicken import open_chains
         try:
@@ -5782,8 +5794,9 @@ class MainWindow(QMainWindow):
         else:                                  # bare tuple (no ring)
             sids, closed = tuple(ans), False
         if len(sids) < 2 or len(set(sids)) != len(sids):
-            QMessageBox.information(
-                self, "Loft", "Blend two or more DIFFERENT sketches.")
+            # M189 R4 [LAW-61(a)]: a pick error is INPUT - tier (a).
+            self.status.showMessage("Loft refused: blend two or more "
+                                    "DIFFERENT sketches", 5000)
             return
         by_sid = {s: sec for s, _label, sec in cands}
         secs = [dict(by_sid[s]) for s in sids]
@@ -6838,8 +6851,9 @@ class MainWindow(QMainWindow):
 
     def action_export(self, ext: str = ".stl"):
         if self.doc is None or self.doc.result is None:
-            QMessageBox.information(self, "Nothing to export",
-                                    "Add a feature first.")
+            # M189 R4 [LAW-61(a)]: precondition in information clothing.
+            self.status.showMessage("Nothing to export — add a feature "
+                                    "first", 5000)
             return
         name = (self.doc.title or "model").replace(" ", "-")
         path, _ = QFileDialog.getSaveFileName(
@@ -6900,16 +6914,17 @@ class MainWindow(QMainWindow):
             return
         m = self.sketch.model
         if m is None:
-            QMessageBox.information(
-                self, "Pattern on Path",
-                "Run this from a sketch: draw a connected OPEN chain of "
-                "lines/arcs, starting it at the feature you want to "
-                "repeat.")
+            # M189 R4 [LAW-61(a)]: recipe guidance steps down.
+            self.status.showMessage("Pattern on Path runs from a sketch: "
+                                    "draw a connected OPEN chain of "
+                                    "lines/arcs, starting it at the "
+                                    "feature you want to repeat", 6000)
             return
         cands = self._pattern_candidates()
         if not cands:
-            QMessageBox.information(self, "Pattern on Path",
-                                    "Create a feature to pattern first.")
+            # M189 R4 [LAW-61(a)]: precondition in information clothing.
+            self.status.showMessage("Nothing to pattern — create a "
+                                    "feature first", 5000)
             return
         from ..core.sweep import path_chain
         try:
@@ -6949,8 +6964,10 @@ class MainWindow(QMainWindow):
             return
         cands = self._pattern_candidates()
         if not cands:
-            QMessageBox.information(self, "Nothing to pattern",
-                                    "Create a feature first.")
+            # M189 R4 [LAW-61(a)]: precondition in information clothing
+            # (three twins in this file + the scale/mirror/no-body kin).
+            self.status.showMessage("Nothing to pattern — create a "
+                                    "feature first", 5000)
             return
         names = [f.name for f in cands]
         axes = ["+Z (through center)"] + ["X (origin)", "Y (origin)",
@@ -6994,8 +7011,10 @@ class MainWindow(QMainWindow):
             return
         cands = self._pattern_candidates()
         if not cands:
-            QMessageBox.information(self, "Nothing to pattern",
-                                    "Create a feature first.")
+            # M189 R4 [LAW-61(a)]: precondition in information clothing
+            # (three twins in this file + the scale/mirror/no-body kin).
+            self.status.showMessage("Nothing to pattern — create a "
+                                    "feature first", 5000)
             return
         names = [f.name for f in cands]
         v = cmddialog.ask(self, "Linear Pattern", [
@@ -7077,8 +7096,10 @@ class MainWindow(QMainWindow):
             return
         cands = self._pattern_candidates()
         if not cands:
-            QMessageBox.information(self, "Nothing to pattern",
-                                    "Create a feature first.")
+            # M189 R4 [LAW-61(a)]: precondition in information clothing
+            # (three twins in this file + the scale/mirror/no-body kin).
+            self.status.showMessage("Nothing to pattern — create a "
+                                    "feature first", 5000)
             return
         names = [f.name for f in cands]
         dirs = ["X", "Y", "Z"] + [a["name"] for a in self.doc.axes]
@@ -7143,8 +7164,9 @@ class MainWindow(QMainWindow):
             return
         cands = self._pattern_candidates()
         if not cands:
-            QMessageBox.information(self, "Nothing to scale",
-                                    "Create a feature first.")
+            # M189 R4 [LAW-61(a)]: precondition in information clothing.
+            self.status.showMessage("Nothing to scale — create a feature "
+                                    "first", 5000)
             return
         names = [f.name for f in cands]
         v = cmddialog.ask(self, "Scale", [
@@ -7245,8 +7267,9 @@ class MainWindow(QMainWindow):
             return
         cands = self._pattern_candidates()
         if not cands:
-            QMessageBox.information(self, "Nothing to mirror",
-                                    "Create a feature first.")
+            # M189 R4 [LAW-61(a)]: precondition in information clothing.
+            self.status.showMessage("Nothing to mirror — create a feature "
+                                    "first", 5000)
             return
         names = [f.name for f in cands]
         planes = ["YZ", "XZ", "XY"] + [p["name"] for p in self.doc.planes]
@@ -7315,8 +7338,9 @@ class MainWindow(QMainWindow):
         without OCCT."""
         kind = "Chamfer" if chamfer else "Fillet"
         if self.doc is None or self.doc.result is None:
-            QMessageBox.information(self, f"No body to {kind.lower()}",
-                                    "Create a feature first.")
+            # M189 R4 [LAW-61(a)]: precondition in information clothing.
+            self.status.showMessage(f"No body to {kind.lower()} — create "
+                                    "a feature first", 5000)
             return
         size, ok = Shell.getDouble(
             self, f"{kind} body edges",
@@ -7521,8 +7545,9 @@ class MainWindow(QMainWindow):
     def action_export_step(self):
         """Boundary-rep STEP export through the OpenCascade bridge."""
         if self.doc is None or self.doc.result is None:
-            QMessageBox.information(self, "Nothing to export",
-                                    "Add a feature first.")
+            # M189 R4 [LAW-61(a)]: ditto the STEP twin.
+            self.status.showMessage("Nothing to export — add a feature "
+                                    "first", 5000)
             return
         if not step.available():
             QMessageBox.information(
