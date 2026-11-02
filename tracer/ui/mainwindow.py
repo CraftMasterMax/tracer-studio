@@ -1253,12 +1253,24 @@ class MainWindow(QMainWindow):
         sentences, mechanistic and directive. The CAUSE is not
         paraphrased — the kernel already speaks it, so this QUOTES the
         scar verbatim and names the rung-2 verb as the next step.
-        Nothing runs: no recompute, no modal, no log line."""
+        Nothing REBUILDS: no recompute, no log line. Since M190 R1 the
+        door MOVES: the tree and timeline land on the culprit first
+        (LAW-63 - an error report that does not navigate is a poster)."""
         if self.doc is None or feat is None:
             return
         cause = getattr(feat, "error", None)
         if not cause:
             return                      # no scar, no story
+        # M190 R1 [LAW-63]: the explanation IS a door. The class does
+        # not merely talk about errors - "clicking any entity in that
+        # list ADVANCES YOU DIRECTLY to that feature in the tree". So
+        # the click lands on the culprit BEFORE the voice speaks: the
+        # tree row lights, scrolls centre and flashes (M162's reveal),
+        # the timeline chip selects (M118's Message-Log idiom). When
+        # the reader dismisses the sentence, the guilty row is under
+        # their cursor already.
+        self.rail.tree.reveal_feature(feat)
+        self.timeline.bar.select_feature(feat)
         QMessageBox.information(
             self, "What's Wrong?",
             f"{feat.name} failed to rebuild: {cause}. Fix {feat.name}, "
