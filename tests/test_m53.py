@@ -213,7 +213,7 @@ def test_ctrl_drag_copies(win, qapp):
     assert "copied" in win.status.currentMessage()
 
 
-def test_move_warning_without_body(win, qapp):
+def test_move_no_longer_summons_a_modal_without_body(win, qapp):
     from PySide6.QtWidgets import QMessageBox
     win.new_document()
     seen = []
@@ -223,4 +223,10 @@ def test_move_warning_without_body(win, qapp):
         win.action_move_body()
     finally:
         QMessageBox.warning = orig
-    assert seen and "Nothing to move" in seen[0]
+    qapp.processEvents()
+    # M189 R3 CITE-THE-MOVE (LAW-61): the empty-model precondition
+    # stepped DOWN from the modal to the status line - the SAME
+    # sentence the majority of tools already murmur, tier (a) now.
+    assert seen == []                          # no ambush
+    msg = win.status.currentMessage().lower()
+    assert "nothing to move" in msg and "extrude" in msg

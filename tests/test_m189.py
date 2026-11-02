@@ -286,3 +286,56 @@ def test_sweep_empty_recipe_refuses_inline(win, qapp, monkeypatch):
     msg = win.status.currentMessage().lower()
     assert "refused" in msg and "circle" in msg, \
         "the kernel's own cure (draw the path) rides the status line"
+
+
+# ---- R3: THE PRECONDITIONS STEP DOWN TOO (LAW-61 tier (a)) ---------------------
+# Seven tools still popped a MODAL for "Nothing to X yet" - a state
+# with nothing refused, nothing at risk and a one-clause cure. The
+# MAJORITY of the shop (Repeat, Adjust, Draw, Publish, Project, Print,
+# Measure, Undo/Redo) already murmurs exactly this class of sentence
+# in the status bar; the stragglers join them, SAME sentence, one
+# tier lower. The drafting dialogs (ISO 286, GD&T, Pattern on Path)
+# are a different rung; the data-loss guards keep their modals by
+# R1's own law.
+
+def test_no_precondition_summons_a_modal_anymore():
+    src = _mw_source()
+    retired = re.findall(
+        r'QMessageBox\.warning\(\s*self,\s*"[A-Za-z ]+",\s*\n?\s*'
+        r'"Nothing to[^\n]*', src)
+    assert retired == [], \
+        f"preconditions still in tier-(c) chairs: {retired}"
+
+
+def test_empty_document_move_speaks_the_status_line(win, qapp,
+                                                    monkeypatch):
+    win.new_document()                       # nothing built at all
+    qapp.processEvents()
+    hits = []
+    _silence_modal(monkeypatch, hits)
+    win.action_move_body()
+    qapp.processEvents()
+    assert hits == [], "an empty model is INPUT state - tier (a)"
+    msg = win.status.currentMessage().lower()
+    assert "nothing to move" in msg and "extrude" in msg, \
+        "the same sentence the majority already murmur"
+
+
+def test_the_six_remaining_stragglers_all_speak_inline(win, qapp,
+                                                       monkeypatch):
+    win.new_document()
+    qapp.processEvents()
+    hits = []
+    _silence_modal(monkeypatch, hits)
+    for act, key in (("action_shell", "nothing to shell"),
+                     ("action_split_body", "nothing to split"),
+                     ("action_thread", "nothing to thread"),
+                     ("action_appearance", "nothing to paint"),
+                     ("action_rotate_body", "nothing to rotate"),
+                     ("action_combine", "nothing to combine")):
+        getattr(win, act)()
+        qapp.processEvents()
+        assert hits == [], f"{act} ambushed an empty model"
+        assert key in win.status.currentMessage().lower(), \
+            f"{act} must speak the status line, got " \
+            f"{win.status.currentMessage()!r}"

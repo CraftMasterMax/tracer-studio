@@ -173,7 +173,12 @@ def test_action_shell_needs_a_solid_and_a_face(win, qapp, monkeypatch):
                         staticmethod(lambda *a, **k: seen.append(a[2])))
     win.new_document()
     win.action_shell()                       # no solid yet
-    assert any("extrude" in s.lower() or "solid" in s.lower() for s in seen)
+    qapp.processEvents()
+    # M189 R3 CITE-THE-MOVE (LAW-61): the empty-model half stepped
+    # DOWN to the status line; the no-face-picked half is GUIDANCE
+    # (an information pop) and keeps its voice until its own rung.
+    assert seen == [] and "nothing to shell" in \
+        win.status.currentMessage().lower()
     _box(win, qapp)
     monkeypatch.setattr(win.viewport, "selected_face", lambda: None)
     seen.clear()

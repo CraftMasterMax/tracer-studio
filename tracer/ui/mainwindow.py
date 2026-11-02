@@ -3263,9 +3263,9 @@ class MainWindow(QMainWindow):
         give it real bolt threads — a helical ridge cut to the minor."""
         from ..core.thread import fit_cylinder
         if self.doc is None or self.doc.result is None:
-            QMessageBox.warning(self, "Thread",
-                                "Nothing to thread yet — extrude or "
-                                "import a solid first.")
+            # M189 R3 [LAW-61(a)]: precondition -> tier (a) voice.
+            self.status.showMessage("Nothing to thread yet — extrude "
+                                    "or import a solid first", 5000)
             return
         groups = self.viewport.selected_groups()
         if len(groups) != 1:
@@ -4190,9 +4190,11 @@ class MainWindow(QMainWindow):
         """Fusion Shell: hollow the body to thin walls, removing one face
         to open it — enclosures, cases, boxes."""
         if self.doc is None or self.doc.result is None:
-            QMessageBox.warning(self, "Shell",
-                                "Nothing to shell yet — extrude or import "
-                                "a solid first.")
+            # M189 R3 [LAW-61(a)]: a precondition is INPUT - the same
+            # sentence the majority (Draw, Publish, Project...)
+            # already murmur in the status bar, lower voice.
+            self.status.showMessage("Nothing to shell yet — extrude "
+                                    "or import a solid first", 5000)
             return
         if any(isinstance(f, ShellFeature) for f in self.doc.features):
             QMessageBox.information(self, "Shell",
@@ -4233,9 +4235,9 @@ class MainWindow(QMainWindow):
         the maker's 'cut away one half'.  The offset measures from the
         body's centre along the plane normal, so 0 splits it in two."""
         if self.doc is None or self.doc.result is None:
-            QMessageBox.warning(self, "Split Body",
-                                "Nothing to split yet — extrude or "
-                                "import a solid first.")
+            # M189 R3 [LAW-61(a)]: precondition -> tier (a) voice.
+            self.status.showMessage("Nothing to split yet — extrude "
+                                    "or import a solid first", 5000)
             return
         from ..core.split import PLANES, split_solid
         lo, hi = self.doc.result.bounding_box
@@ -5047,9 +5049,9 @@ class MainWindow(QMainWindow):
         RENDERER (never the document), Abort re-syncs paint from the
         doc's truth."""
         if self.doc is None or self.doc.result is None:
-            QMessageBox.warning(self, "Appearance",
-                                "Nothing to paint yet — extrude or "
-                                "import a solid first.")
+            # M189 R3 [LAW-61(a)]: precondition -> tier (a) voice.
+            self.status.showMessage("Nothing to paint yet — extrude "
+                                    "or import a solid first", 5000)
             return
         from ..core.appearance import MATERIALS, appearance
         cur = (self.doc.appearance or {}).get("name", "(none)")
@@ -5133,9 +5135,9 @@ class MainWindow(QMainWindow):
         axis exactly as fast as the mouse, release commits the move as
         a parametric feature.  Esc or an empty click cancels."""
         if self.doc is None or self.doc.result is None:
-            QMessageBox.warning(self, "Move",
-                                "Nothing to move yet — extrude or "
-                                "import a solid first.")
+            # M189 R3 [LAW-61(a)]: precondition -> tier (a) voice.
+            self.status.showMessage("Nothing to move yet — extrude "
+                                    "or import a solid first", 5000)
             return
         blocker = self._move_blocker_msg()
         if blocker:
@@ -5191,9 +5193,9 @@ class MainWindow(QMainWindow):
         the body — drag one and the solid spins about that axis, live;
         release commits a parametric rotate feature."""
         if self.doc is None or self.doc.result is None:
-            QMessageBox.warning(self, "Rotate",
-                                "Nothing to rotate yet — extrude or "
-                                "import a solid first.")
+            # M189 R3 [LAW-61(a)]: precondition -> tier (a) voice.
+            self.status.showMessage("Nothing to rotate yet — extrude "
+                                    "or import a solid first", 5000)
             return
         blocker = self._move_blocker_msg()
         if blocker:
@@ -5479,9 +5481,10 @@ class MainWindow(QMainWindow):
         a placed primitive tool — bosses, gussets and trims without a
         single sketch line."""
         if self.doc is None or self.doc.result is None:
-            QMessageBox.warning(self, "Combine",
-                                "Nothing to combine into yet — extrude "
-                                "or import a solid first.")
+            # M189 R3 [LAW-61(a)]: precondition -> tier (a) voice.
+            self.status.showMessage("Nothing to combine into yet — "
+                                    "extrude or import a solid first",
+                                    5000)
             return
         lo = np.asarray(self.doc.result.bounding_box[0], float)
         hi = np.asarray(self.doc.result.bounding_box[1], float)

@@ -176,7 +176,7 @@ def test_empty_click_cancels_rotate(win, qapp):
     assert "cancelled" in win.status.currentMessage()
 
 
-def test_rotate_warning_without_body(win, qapp):
+def test_rotate_no_longer_summons_a_modal_without_body(win, qapp):
     win.new_document()
     seen = []
     orig = QMessageBox.warning
@@ -185,4 +185,9 @@ def test_rotate_warning_without_body(win, qapp):
         win.action_rotate_body()
     finally:
         QMessageBox.warning = orig
-    assert seen and "Nothing to rotate" in seen[0]
+    qapp.processEvents()
+    # M189 R3 CITE-THE-MOVE (LAW-61): precondition stepped DOWN with
+    # the law - status line, same sentence, zero modals.
+    assert seen == []                          # no ambush
+    msg = win.status.currentMessage().lower()
+    assert "nothing to rotate" in msg and "extrude" in msg
