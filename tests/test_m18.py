@@ -184,7 +184,9 @@ def test_fillet_cancel_and_failure_paths(win, qapp, monkeypatch):
     win._body_fillet(chamfer=False)
     assert not any(isinstance(f, BodyFilletFeature)
                    for f in win.doc.features)
-    # absurd radius -> warning box, feature rolled back
+    # absurd radius -> refusal speaks the status line, feature rolled
+    # back (M189 R5 CITE-THE-MOVE: the "Fillet failed" box stepped DOWN;
+    # the rollback law below is asserted unchanged)
     from PySide6.QtWidgets import QMessageBox
     warned = []
     monkeypatch.setattr(QMessageBox, "warning",
@@ -192,7 +194,9 @@ def test_fillet_cancel_and_failure_paths(win, qapp, monkeypatch):
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (500.0, True)))
     win._body_fillet(chamfer=False)
-    assert warned == ["Fillet failed"]
+    qapp.processEvents()
+    assert warned == []                            # no ambush
+    assert "fillet refused" in win.status.currentMessage().lower()
     assert not any(isinstance(f, BodyFilletFeature)
                    for f in win.doc.features)
     assert win.doc.result.volume == pytest.approx(30 * 30 * 6)

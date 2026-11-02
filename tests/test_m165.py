@@ -762,12 +762,12 @@ def _plate_and_mirror(win, monkeypatch):
 
 def _plate_and_fillet(win, monkeypatch, radius=2.0):
     """Plate + ONE whole-body fillet through the menu door. Returns
-    (last_feature, warned_texts). The QMessageBox guard is law: on a
-    bridge-less runner the door WARNS (QMessageBox.exec - a native loop
-    no SIGALRM can wake: ubuntu CI attempts 40821971441/40824705735,
-    20 min silent THROUGH a 300 s budget) and rolls the feature back.
-    'Fillet failed' is CAPTURED (an honest platform refusal); any other
-    modal raises - a door that would ask the user asks the LOG instead."""
+    (last_feature, refusal_texts). M189 R5: the refusal voice moved
+    from the 'Fillet failed' box to the STATUS LINE (the box is
+    retired law - a modal raised here now means regression, so the
+    guard raises outright, headless-safe as ever). On a bridge-less
+    runner the door still rolls the feature back itself; the kernel's
+    honest sentence rides the window's status bar."""
     from tracer.core.document import PrimitiveFeature
     from tracer.ui.cmddialog import Shell
     from PySide6.QtWidgets import QMessageBox
@@ -776,9 +776,6 @@ def _plate_and_fillet(win, monkeypatch, radius=2.0):
     warned: list[str] = []
 
     def _modal(_parent, title, text, *a, **k):
-        if title == "Fillet failed":
-            warned.append(str(text))
-            return 0                      # the door rolls back itself
         raise AssertionError(f"headless modal attempted: {title}")
     for _m in ("warning", "information", "question", "critical"):
         monkeypatch.setattr(QMessageBox, _m, staticmethod(_modal))
@@ -790,6 +787,9 @@ def _plate_and_fillet(win, monkeypatch, radius=2.0):
     win.act_fillet.trigger()
     for _ in range(40):
         qapp2.processEvents()
+    msg = win.status.currentMessage()
+    if "fillet refused" in msg.lower():        # the tier-(a) voice
+        warned.append(msg)
     return win.doc.features[-1], warned
 
 

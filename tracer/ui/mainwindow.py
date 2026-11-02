@@ -2317,7 +2317,10 @@ class MainWindow(QMainWindow):
                 text = iso_fits.callout(nom, cls)
             except ValueError as e:
                 self._undo.pop()             # rejected: no edit happened
-                QMessageBox.warning(self, "ISO 286", str(e))
+                # M189 R5 [LAW-61(a)]: the callout grammar refused a
+                # typed class - INPUT; kernel words join the
+                # "<Noun> refused:" family.
+                self.status.showMessage(f"Fit refused: {e}", 6000)
                 return
             d["fit"] = cls
             d["fit_nom"] = round(nom, 3)
@@ -2403,9 +2406,12 @@ class MainWindow(QMainWindow):
         self._capture()
         if bool(v["basic"]) and d.get("fit"):
             self._undo.pop()
-            QMessageBox.warning(
-                self, "GD&T", "a boxed BASIC dimension takes its "
-                "tolerance from the frame \u2014 strip the fit class")
+            # M189 R5 [LAW-61(a)]: a refused combo of typed choices -
+            # undo already unwound; the sentence drops to tier (a).
+            self.status.showMessage("Frame refused: a boxed BASIC "
+                                    "dimension takes its tolerance from "
+                                    "the frame — strip the fit class",
+                                    6000)
             return
         if label == "\u2014 none \u2014":
             d.pop("gdt", None)                         # strip, as a
@@ -2426,8 +2432,10 @@ class MainWindow(QMainWindow):
             uid = dict(self._gdt_targets()).get(ans_t, None)
             if ans_t != "\u2014 none \u2014" and uid is None:
                 self._undo.pop()
-                QMessageBox.warning(self, "GD&T",
-                                    "that target feature is gone")
+                # M189 R5 [LAW-61(a)]: a vanished pick is INPUT - the
+                # sentence keeps its words, drops its voice.
+                self.status.showMessage("Frame refused: that target "
+                                        "feature is gone", 6000)
                 return
             if uid is not None:
                 entry["target"] = {"uid": uid, "role": "axis"}
@@ -2445,15 +2453,20 @@ class MainWindow(QMainWindow):
                     {d["letter"] for d in self.doc.datums})
             except (ValueError, params.ParamError) as e:
                 self._undo.pop()             # rejected: no edit happened
-                QMessageBox.warning(self, "GD&T", str(e))
+                # M189 R5 [LAW-61(a)]: the frame grammar refused typed
+                # INPUT - kernel words, tier (a) voice.
+                self.status.showMessage(f"Frame refused: {e}", 6000)
                 return
             frames = list(d.get("gdt") or [])
             i = 1 if v.get("stack") else 0
             if i == 1 and not frames:
                 self._undo.pop()
-                QMessageBox.warning(
-                    self, "GD&T", "a stack hangs off a FIRST frame "
-                    "- annotate the first before stacking")
+                # M189 R5 [LAW-61(a)]: the stack order rule is INPUT
+                # advice with the undo already unwound - tier (a).
+                self.status.showMessage("Frame refused: a stack hangs "
+                                        "off a FIRST frame - annotate "
+                                        "the first before stacking",
+                                        6000)
                 return
             if len(frames) < i + 1:
                 frames = frames + [entry]
@@ -4002,11 +4015,15 @@ class MainWindow(QMainWindow):
             for outer, _holes in profiles:
                 o = np.asarray(outer)
                 if o[:, 0].min() < -1e-6 < o[:, 0].max():
-                    QMessageBox.warning(
-                        self, "Revolve",
-                        "A profile crosses the sketch's vertical axis (the "
-                        "u=0 line through the origin) — Fusion revolves "
-                        "profiles about it, so keep each one on a side.")
+                    # M189 R5 [LAW-61(a)]: a dry-run profile check BEFORE
+                    # any dialog or capture - tier (a) by the ladder's own
+                    # logic (the wrapped shape hid from R2's grep: the
+                    # whole-set gate caught it, law 18).
+                    self.status.showMessage(
+                        "Revolve refused: a profile crosses the sketch's "
+                        "vertical axis (the u=0 line through the origin) "
+                        "- Fusion revolves profiles about it, so keep "
+                        "each one on a side", 6000)
                     return
             angle, ok = Shell.getDouble(
                 self, "Revolve", "Angle (degrees):", 360.0, 1.0, 360.0, 1)
@@ -4072,9 +4089,10 @@ class MainWindow(QMainWindow):
                                     "run Hole", 6000)
             return
         if not self.doc.features or self.doc.result is None:
-            QMessageBox.warning(
-                self, "Hole",
-                "A hole cuts into an existing solid — extrude a body first.")
+            # M189 R5 [LAW-61(a)]: a precondition that hid in a wrapped
+            # call from R3's grep - same law, now same voice.
+            self.status.showMessage("Nothing to hole yet — extrude a "
+                                    "body first", 5000)
             return
         opts = HoleDialog.ask(self, [2 * c.r for c in circles])
         if opts is None:
@@ -6930,13 +6948,17 @@ class MainWindow(QMainWindow):
         try:
             pts, closed = path_chain(m, need_circle=False)
         except ValueError as e:
-            QMessageBox.warning(self, "Pattern on Path", str(e))
+            # M189 R5 [LAW-61(a)]: a dry-run path rejection is INPUT -
+            # the R2 family voice, kernel words intact.
+            self.status.showMessage(f"Pattern on Path refused: {e}",
+                                    6000)
             return
         if closed or len(pts) < 2:
-            QMessageBox.warning(
-                self, "Pattern on Path",
-                "The path must be an OPEN chain of lines/arcs — v1 "
-                "does not loop.")
+            # M189 R5 [LAW-61(a)]: ditto the open-chain shape rule (the
+            # v1 law rides the sentence, not the window).
+            self.status.showMessage(
+                "Pattern on Path refused: the path must be an OPEN "
+                "chain of lines/arcs - v1 does not loop", 6000)
             return
         names = [f.name for f in cands]
         v = cmddialog.ask(self, "Pattern on Path", [
@@ -7361,10 +7383,16 @@ class MainWindow(QMainWindow):
             self.doc.features.remove(f)
             self.doc.dirty = True
             self.recompute()
-            QMessageBox.warning(
-                self, f"{kind} failed",
-                f"{e}\n\nTry a smaller size — each fillet must fit between "
-                f"the faces around its edge.")
+            # M189 R5 [LAW-61(a)+R2 capture law]: a too-big radius is
+            # fixable INPUT and the rollback already restored the doc -
+            # so the refusal unwinds its undo step too (a refusal may
+            # not leave a step that undoes nothing), and the kernel's
+            # cure ("try a smaller size") rides the status line.
+            self._undo.pop()
+            self._redo.clear()
+            self.status.showMessage(
+                f"{kind} refused: {e} — try a smaller size; each fillet "
+                "must fit between the faces around its edge", 6000)
             return
         self.viewport.refresh(fit=True)
         self.rail.tree.reload()
@@ -7394,10 +7422,14 @@ class MainWindow(QMainWindow):
         except Exception as e:
             feature.radius = old          # cache still holds the good bake
             self.doc.dirty = True
-            QMessageBox.warning(
-                self, f"{kind} failed",
-                f"{e}\n\nKept {kind.lower()} at {old:g} mm. Try a smaller "
-                f"size.")
+            # M189 R5 [LAW-61(a)+R2 capture law]: the ADJUST twin of the
+            # refused resize - rollback restores the doc, so the undo
+            # step unwinds too and the kernel cure speaks inline.
+            self._undo.pop()
+            self._redo.clear()
+            self.status.showMessage(
+                f"{kind} refused: {e} — kept {kind.lower()} at {old:g} "
+                "mm; try a smaller size", 6000)
             self.recompute()
             return
         self.recompute()
@@ -7686,8 +7718,12 @@ class _AttachmentsDialog(QDialog):
         try:
             fn(*a)
         except params.ParamError as e:
-            QMessageBox.warning(self, "Tracer", str(e))   # the kernel's
-            return                                         # own sentence
+            # M189 R5 [LAW-61(a)]: the guard-first attach verbs raise
+            # BEFORE touching the doc - a refused relink/break is
+            # INPUT, and the kernel's own sentence drops to the
+            # window's status line (the dock has no mouth of its own).
+            self._win.status.showMessage(f"Change refused: {e}", 6000)
+            return
         self._win.recompute()
         self._reload()
 

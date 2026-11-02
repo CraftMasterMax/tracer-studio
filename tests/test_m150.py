@@ -304,8 +304,13 @@ def test_illegal_new_grammar_pops_undo_and_names_the_law(
             "basic": False})
     before = json.dumps(_fill(win), sort_keys=True)
     win._annotate_gdt("top", 0)
+    qapp.processEvents()
     assert json.dumps(_fill(win), sort_keys=True) == before
-    assert seen and "TRUE angle" in seen[-1]
+    # M189 R5 CITE-THE-MOVE (LAW-61): the grammar refusal stepped DOWN
+    # to the status line - the popped-undo law this gate owns is now
+    # asserted beside ZERO dialogs.
+    assert seen == []                          # no ambush
+    assert "TRUE angle" in win.status.currentMessage()
     # stacking without a first frame refuses by name
     seen.clear()
     _fill(win).pop("gdt", None)
@@ -316,8 +321,10 @@ def test_illegal_new_grammar_pops_undo_and_names_the_law(
             "target": "\u2014 none \u2014", "stack": True,
             "basic": False})
     win._annotate_gdt("top", 0)
-    assert "gdt" not in _fill(win) and seen and "FIRST frame" in \
-        seen[-1]
+    qapp.processEvents()
+    # M189 R5 CITE-THE-MOVE (LAW-61): same demotion for the stack rule.
+    assert "gdt" not in _fill(win) and seen == []
+    assert "FIRST frame" in win.status.currentMessage()
 
 
 def test_datum_registration_and_identifier_guard_first(

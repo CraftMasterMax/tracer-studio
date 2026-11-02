@@ -247,7 +247,10 @@ def test_fillet_cmd_without_occt_or_rims_rolls_back(win, qapp, monkeypatch):
     win.doc.recompute()
     win._body_fillet(chamfer=False)
     qapp.processEvents()
-    assert warned == ["Fillet failed"]
+    # M189 R5 CITE-THE-MOVE: the refusal box stepped DOWN to the status
+    # line; the no-feature and volume laws below stand unchanged.
+    assert warned == []                            # no ambush
+    assert "fillet refused" in win.status.currentMessage().lower()
     assert not any(isinstance(f2, BodyFilletFeature)
                    for f2 in win.doc.features)
     assert win.doc.result.volume == pytest.approx(30 * 30 * 6)

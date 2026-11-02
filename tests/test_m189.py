@@ -420,3 +420,86 @@ def test_thread_pick_guidance_speaks_where_the_eye_is(win, qapp,
     qapp.processEvents()
     assert hits == [], "a pick prompt is guidance - tier (a)"
     assert "cylindrical" in win.status.currentMessage().lower()
+
+
+# ---- R5: THE DRAFTING DIALOGS STEP DOWN (LAW-61 tier (a)) -----------------------
+# The callout tools refuse a typed class or an unbuildable frame - all
+# of them raise from a guard-first kernel AFTER unwinding the undo the
+# dialog took, so nothing is at risk. Their sentences join the same
+# status family; the four data-loss guards (Version unreadable,
+# Recovery failed, Recompute failed, Export failed) are the only
+# QMessageBox.warning left in the whole window, exactly as R1 ruled.
+
+def test_only_the_data_loss_guards_still_summon_a_warning():
+    src = _mw_source()
+    kept = set(re.findall(r'QMessageBox\.warning\(\s*self,\s*f?"([^"]*)"',
+                          src))
+    # R1's law: modal ONLY for data loss. The marker sweep is a
+    # Yes/No destructive CONFIRMATION, not a refusal voice. This gate
+    # caught five wrapped refusals R2/R3's single-line greps missed
+    # (law 18: enumerate the whole set, never pattern-mine it).
+    assert kept == {"Version unreadable", "Recovery failed",
+                    "Recompute failed", "Export failed",
+                    "Delete All Features After Marker"}, \
+        f"non-guard warnings came back: {sorted(kept)}"
+
+
+def test_the_bridge_refusal_speaks_through_the_window(win, qapp,
+                                                     monkeypatch):
+    # Manage Lost Attachments' verbs run through the kernel bridge;
+    # the dialog has no status bar of its own, so the sentence lands
+    # on the WINDOW's status line.
+    from tracer.core.document import PrimitiveFeature as _P
+    from tracer.ui.mainwindow import _AttachmentsDialog
+    win.new_document()
+    win.doc.add(_P(name="Pad", kind="box", op="union",
+                   dims={"dx": 60.0, "dy": 40.0, "dz": 10.0}))
+    win.recompute()
+    qapp.processEvents()
+    hits = []
+    _silence_both(monkeypatch, hits)
+    dlg = _AttachmentsDialog(win)
+    dlg._act(win.doc.break_sketch, "Pad")     # a box has no sketch host
+    qapp.processEvents()
+    assert hits == [], "a guard-first refusal is INPUT - tier (a)"
+    msg = win.status.currentMessage()
+    assert "Change refused" in msg and "Pad" in msg
+
+
+def test_the_closed_path_refusal_speaks_inline(win, qapp, monkeypatch):
+    from tracer.core.document import PrimitiveFeature as _P
+    from tracer.ui import cmddialog
+    win.new_document()
+    win.doc.add(_P(name="Pad", kind="box", op="union",
+                   dims={"dx": 40.0, "dy": 20.0, "dz": 10.0}))
+    win.recompute()
+    win.action_new_sketch()
+    qapp.processEvents()
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    def _click(cv, x, y):
+        sp = cv.w2s(x, y).toPoint()
+        QTest.mousePress(cv, Qt.MouseButton.LeftButton,
+                         Qt.KeyboardModifier.NoModifier, sp)
+        qapp.processEvents()
+        QTest.mouseRelease(cv, Qt.MouseButton.LeftButton,
+                           Qt.KeyboardModifier.NoModifier, sp)
+        qapp.processEvents()
+
+    cv = win.sketch
+    cv.set_grid_snap(False)
+    cv.set_tool("rect")
+    _click(cv, 0, 0)
+    _click(cv, 20, 10)
+    qapp.processEvents()
+    hits = []
+    _silence_both(monkeypatch, hits)
+    monkeypatch.setattr(
+        cmddialog, "ask",
+        lambda *a, **k: {"count": 3, "spacing": 6.0})
+    win.action_path_pattern()
+    qapp.processEvents()
+    assert hits == [], "a closed chain is fixable INPUT"
+    assert "OPEN" in win.status.currentMessage(), \
+        win.status.currentMessage()

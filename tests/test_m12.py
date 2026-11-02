@@ -187,7 +187,8 @@ def test_set_angle_updates_solid(win, qapp, monkeypatch):
         math.pi * 75 * 4 / 4, rel=2e-2)
 
 
-def test_crossing_profile_warns_and_aborts(win, qapp, monkeypatch):
+def test_crossing_profile_refuses_inline_and_aborts(win, qapp,
+                                                    monkeypatch):
     from PySide6.QtWidgets import QMessageBox
     warned = []
     monkeypatch.setattr(QMessageBox, "warning",
@@ -197,7 +198,11 @@ def test_crossing_profile_warns_and_aborts(win, qapp, monkeypatch):
     _drag_rect(win.sketch, -5, 0, 5, 4)            # straddles v-axis
     QTest.keyPress(win.sketch, Qt.Key_R, Qt.ShiftModifier)
     qapp.processEvents()
-    assert len(warned) == 1
+    # M189 R5 CITE-THE-MOVE (LAW-61): the axis-crossing refusal stepped
+    # DOWN to the status line (it hid from R2's grep in a wrapped call);
+    # the abort laws below stand unchanged.
+    assert len(warned) == 0                        # no ambush
+    assert "revolve refused" in win.status.currentMessage().lower()
     assert len(win.doc.features) == 0              # nothing created
     assert win.stack.currentWidget() is win._sketch_page  # still editing
 

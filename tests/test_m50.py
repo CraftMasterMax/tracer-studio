@@ -169,7 +169,10 @@ def test_closed_loop_is_refused(win, qapp, monkeypatch):
                         staticmethod(lambda *a, **k: seen.append(a[2])))
     win.action_path_pattern()
     qapp.processEvents()
-    assert seen and "OPEN" in seen[-1]
+    # M189 R5 CITE-THE-MOVE (LAW-61): the open-chain law now speaks the
+    # status line; the refusal law (no feature) stands unchanged.
+    assert seen == []                              # no ambush
+    assert "OPEN" in win.status.currentMessage()
     assert not [f for f in win.doc.features
                 if isinstance(f, PathPatternFeature)]
 
