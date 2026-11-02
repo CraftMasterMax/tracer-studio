@@ -6683,6 +6683,10 @@ class MainWindow(QMainWindow):
         if self.doc is None or not 0 <= pos < len(self.doc.features):
             return
         f = self.doc.features[pos]
+        # M190 R3 [LAW-63]: THE LIST is the log, and the class law ends
+        # "...ADVANCES YOU DIRECTLY TO THAT FEATURE IN THE TREE" - the
+        # chip select (M118) was half the door; the row lands too.
+        self.rail.tree.reveal_feature(f)
         self.timeline.bar.select_feature(f)
         msg = f"{f.name}"
         if getattr(f, "error", None):

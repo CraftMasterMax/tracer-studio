@@ -202,3 +202,50 @@ def test_error_outranks_warn_on_the_same_row(win, qapp, monkeypatch):
     assert _row(win, ("feature", 0)).foreground(0).color().name() \
         == DARK["warn"]
     assert win.rail.tree._faults[("feature", 0)] == "warn"
+
+
+# ---- R3: THE LIST LANDS IN THE TREE, THE ROWS SPEAK ON HOVER ----------------------
+# LAW-63's list is the Message Log (M118 minted it) - but its door
+# only selected the chip, never the row, and no row ever explained
+# itself to a hovering pointer. The class law ends "...ADVANCES YOU
+# DIRECTLY to that feature IN THE TREE"; hover explains. A clean row
+# carries no tooltip: the badge never lies, either way.
+
+def test_the_log_door_lands_on_the_row_too(win, qapp, monkeypatch):
+    _silent_recompute_told(monkeypatch)
+    d, plate, a, b = _two_faults(win)
+    ia = d.features.index(a)
+    win._goto_logged_feature(ia)             # m118's seam, the log row
+    qapp.processEvents()
+    assert _tree_target(win) == ("feature", ia), \
+        "the list advances to the feature IN THE TREE"
+    assert win.timeline.bar._sel == ia, "the M118 chip half stands intact"
+    assert "CoilA" in win.status.currentMessage()
+
+
+def test_broken_and_warned_rows_explain_on_hover(win, qapp,
+                                                 monkeypatch):
+    _silent_recompute_told(monkeypatch)
+    d, plate, a, b = _two_faults(win)
+    d.attachment_warnings = ["Plate \u2014 host gone"]
+    win.rail.tree.reload()
+    qapp.processEvents()
+    ia = d.features.index(a)
+    tip = _row(win, ("feature", ia)).toolTip(0)
+    assert "CoilA" in tip and "failed to rebuild" in tip \
+        and "What's Wrong" in tip, tip
+    assert a.error in tip, "the kernel's scar is QUOTED, never paraphrased"
+    assert _row(win, ("feature", 0)).toolTip(0) == "Plate \u2014 host gone"
+
+
+def test_a_clean_row_carries_no_tooltip_and_speaks_no_lie(win, qapp,
+                                                          monkeypatch):
+    _silent_recompute_told(monkeypatch)
+    from tracer.core.document import PrimitiveFeature
+    win.new_document()
+    win.doc.add(PrimitiveFeature(name="Sole", kind="box", op="union",
+                                 dims={"dx": 10.0, "dy": 10.0, "dz": 2.0}))
+    win.recompute()
+    win.rail.tree.reload()
+    qapp.processEvents()
+    assert _row(win, ("feature", 0)).toolTip(0) == ""

@@ -108,7 +108,7 @@ class MessageLog(QWidget):
         shown = rows[-VIEW_CAP:] if len(rows) > VIEW_CAP else rows
         self._hint.setText(
             f"showing latest {VIEW_CAP} of {len(rows)}" if shown is not rows
-            else "double-click an entry to select its feature")
+            else "double-click an entry to land on its feature")
         at_bottom = (self._table.verticalScrollBar().value()
                      >= self._table.verticalScrollBar().maximum() - 2)
         self._table.setRowCount(len(shown))

@@ -425,11 +425,14 @@ class FeatureTree(QTreeWidget):
         # chip's corner glyph; red still outranks amber.
         badges = self.datum_badges(self._doc)
         warn_names = set()
+        warn_lines: dict = {}              # M190 R3 [LAW-63]: hover quotes
         for line in getattr(self._doc, "attachment_warnings", []) or []:
-            if " — " in line:
+            if " — " in line:             #   the kernel's own sentence
                 warn_names.add(line.split(" — ")[0])
+                warn_lines.setdefault(line.split(" — ")[0], line)
             if "'s datum" in line:
                 warn_names.add(line.split("'s datum")[0])
+                warn_lines.setdefault(line.split("'s datum")[0], line)
 
         def _badge(ref):
             letters = badges.get(ref)
@@ -555,6 +558,14 @@ class FeatureTree(QTreeWidget):
                 item.setForeground(0, QColor(DARK["danger"]))
             elif f.name in warn_names:        # M152 rung D: the amber
                 item.setForeground(0, QColor(DARK["warn"]))
+            # M190 R3 [LAW-63]: HOVER EXPLAINS - the row quotes the
+            # kernel (state, cause, next verb; LAW-67's two sentences).
+            # A clean row carries no tooltip: the badge never lies.
+            if scar:
+                item.setToolTip(0, f"{f.name} failed to rebuild: {scar}. "
+                                   "Right-click it for What's Wrong?")
+            elif f.name in warn_names:
+                item.setToolTip(0, warn_lines.get(f.name, ""))
             parent = body_nodes.get(getattr(f, "body", None) or default)
             if parent is None:                      # orphaned by hand-edit
                 parent = body_nodes[default]
