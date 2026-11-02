@@ -174,7 +174,11 @@ def test_rejected_class_changes_nothing(win, qapp, monkeypatch):
     monkeypatch.setattr(QMessageBox, "warning",
                         staticmethod(lambda *a, **k: warned.append(a[2])))
     win._annotate_fit("top", 0)
-    assert asked["n"] == 1 and warned
+    qapp.processEvents()
+    # M189 R5 CITE-THE-MOVE (LAW-61): the refused class speaks the
+    # status line ("Fit refused: ..."); the no-change laws stand.
+    assert asked["n"] == 1 and warned == []      # no ambush
+    assert "fit refused" in win.status.currentMessage().lower()
     assert "fit" not in d
     assert cv.sheet()["dims"][0] is d
 

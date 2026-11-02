@@ -323,7 +323,7 @@ def test_annotate_gdt_stores_and_the_button_joins_the_exclusion(
     win._gdt_btn.setChecked(False)
 
 
-def test_annotate_gdt_refuses_illegal_with_a_named_warning(
+def test_annotate_gdt_refuses_illegal_and_names_the_law_inline(
         win, qapp, monkeypatch):
     from tracer.ui import cmddialog
     from tracer.ui.mainwindow import QMessageBox
@@ -335,8 +335,13 @@ def test_annotate_gdt_refuses_illegal_with_a_named_warning(
     monkeypatch.setattr(QMessageBox, "warning",
                         staticmethod(lambda *a, **k: shots.append(a[2])))
     win._annotate_gdt("top", 0)
+    qapp.processEvents()
     assert "gdt" not in _fill(win)               # refused cleanly
-    assert shots and "flatness" in shots[0].lower()   # names the law
+    # M189 R5 CITE-THE-MOVE (LAW-61): the named law now speaks the
+    # status line - refusal asserted HARDER (zero dialogs).
+    assert shots == []                           # no ambush
+    msg = win.status.currentMessage().lower()
+    assert "refused" in msg and "flatness" in msg   # names the law
 
 
 def test_annotate_gdt_none_pops_like_a_fit_strip(win, qapp,
