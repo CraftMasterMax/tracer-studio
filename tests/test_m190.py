@@ -123,3 +123,82 @@ def test_the_gear_door_advances_to_the_queue_head(win, qapp,
     assert _tree_target(win) == ("feature", d.features.index(a)), \
         "the gear aims at the queue head - and LANDS on its row"
     assert len(told) == 1 and "CoilA" in told[0][1]
+
+
+# ---- R2: THE TREE SPEAKS THE FAULT LANGUAGE (LAW-62) -----------------------------
+# The chip has worn the red corner since M118 and the amber sibling
+# since M152 - the TREE row stayed silent (no red text, no marker, no
+# root rollup). The class paints both families at BOTH places and
+# rules "if both error AND warning, the ERROR ICON is displayed": the
+# row turns red, the root wears the rollup, and red outranks amber so
+# the rollup never flickers while any red is home.
+
+from tracer.ui.theme import DARK                                     # noqa: E402
+
+
+def _row(win, role):
+    def walk(it):
+        for i in range(it.childCount()):
+            ch = it.child(i)
+            if ch.data(0, Qt.UserRole) == role:
+                return ch
+            got = walk(ch)
+            if got is not None:
+                return got
+        return None
+    return walk(win.rail.tree.invisibleRootItem())
+
+
+def test_a_broken_feature_row_turns_red(win, qapp, monkeypatch):
+    _silent_recompute_told(monkeypatch)          # patch BEFORE the wound
+    d, plate, a, b = _two_faults(win)
+    win.rail.tree.reload()
+    qapp.processEvents()
+    ia = d.features.index(a)
+    assert _row(win, ("feature", ia)).foreground(0).color().name() \
+        == DARK["danger"], "the class's failing-feature TEXT IS RED"
+    assert _row(win, ("feature", 0)).foreground(0).color().name() \
+        != DARK["danger"], "the row that baked clean wears no lie"
+    assert win.rail.tree._faults[("feature", ia)] == "error"
+
+
+def test_the_root_rollup_outranks_and_never_flickers(win, qapp,
+                                                     monkeypatch):
+    _silent_recompute_told(monkeypatch)
+    d, plate, a, b = _two_faults(win)
+    d.attachment_warnings = ["Plate \u2014 host gone"]   # both families home
+    win.rail.tree.reload()
+    qapp.processEvents()
+    assert win.rail.tree._fault_state == "error", \
+        "both error AND warning - the ERROR voice is displayed"
+    a.error = None
+    b.error = None                         # repair the coils, keep the warn
+    win.rail.tree.reload()
+    qapp.processEvents()
+    assert win.rail.tree._fault_state == "warn", \
+        "with the reds gone the amber rollup stands - never flickers off"
+    assert _row(win, ("feature", 0)).foreground(0).color().name() \
+        == DARK["warn"], "the amber row (M152) rides beside the rollup"
+    d.attachment_warnings = []
+    win.rail.tree.reload()
+    qapp.processEvents()
+    assert win.rail.tree._fault_state is None, "a clean doc wears no badge"
+    assert win.rail.tree._faults == {}
+
+
+def test_error_outranks_warn_on_the_same_row(win, qapp, monkeypatch):
+    _silent_recompute_told(monkeypatch)
+    d, plate, a, b = _two_faults(win)
+    ia = d.features.index(a)
+    d.attachment_warnings = ["CoilA \u2014 host gone",
+                             "Plate \u2014 host gone"]
+    win.rail.tree.reload()
+    qapp.processEvents()
+    # CoilA: scarred AND warned -> red wins the row and the fault map.
+    assert _row(win, ("feature", ia)).foreground(0).color().name() \
+        == DARK["danger"]
+    assert win.rail.tree._faults[("feature", ia)] == "error"
+    # Plate: warned only -> amber keeps its voice (M152 unchanged).
+    assert _row(win, ("feature", 0)).foreground(0).color().name() \
+        == DARK["warn"]
+    assert win.rail.tree._faults[("feature", 0)] == "warn"

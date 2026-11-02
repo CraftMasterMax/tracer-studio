@@ -111,6 +111,19 @@ class BrowserDelegate(QStyledItemDelegate):
             p.setBrush(QColor(DARK["accent"]))
             p.drawEllipse(QPointF(float(opt.rect.right() - 8),
                                   float(opt.rect.center().y())), 3.5, 3.5)
+        # M190 R2 [LAW-62]: the fault corner. A broken row wears the
+        # chip's RED, a warning wears its AMBER sibling, and the ROOT
+        # wears the rollup (red outranks) - the same dot the timeline
+        # chip paints in its corner, so one culprit looks one thing in
+        # both halves of the shop.
+        fault = (tree._fault_state if role and role[0] == "root"
+                 else tree._faults.get(role))
+        if fault:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(DARK["danger"] if fault == "error"
+                              else DARK["warn"]))
+            p.drawEllipse(QPointF(float(opt.rect.right() - 8),
+                                  float(opt.rect.center().y())), 3.5, 3.5)
         if it is not None and it is tree._flash:   # LAW-5.1 flash
             pen = QPen(QColor(DARK["line_hi"]))
             pen.setStyle(Qt.PenStyle.DashLine)
@@ -185,6 +198,11 @@ class FeatureTree(QTreeWidget):
         self._under: list = []               # LAW-5.2 ancestry role tuples
         self._flash = None                   # LAW-5.1 row being flashed
         self._renaming = None                # LAW-2.3 inline editor owner
+        # M190 R2 [LAW-62]: the fault voices the delegate paints —
+        # role -> "error"|"warn" per row, and the ROOT rollup (error
+        # outranks warn, so the rollup never lies when both are home).
+        self._faults: dict = {}
+        self._fault_state = None
         self.setItemDelegate(BrowserDelegate(self))
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         #   (the ONLY edit door is editItem() from the name double-click)
@@ -378,7 +396,8 @@ class FeatureTree(QTreeWidget):
 
     def reload(self):
         self.clear()
-        if not self._doc:
+        self._faults = {}                      # M190 R2: the map is rebuilt
+        if not self._doc:                      #   with the rows, every time
             return
         # M130: the ladder's cheap familiarity — duplicate feature names
         # ride the browser as "Name (1)", "Name (2)" in first-appearance
@@ -399,8 +418,11 @@ class FeatureTree(QTreeWidget):
         root.addChild(origin)
         # rung D (M152): the letters the registry wears, and the names
         # whose attachment state is speaking (warn fg — amber is the
-        # sibling of M118's red, and red still outranks it: an error
-        # badge means the row is already the log's business).
+        # sibling of M118's red). M190 R2 CITE-THE-MOVE: this comment
+        # once excused the row from wearing red ("already the log's
+        # business") — LAW-62 rules otherwise: the failing feature's
+        # TEXT IS RED IN THE TREE TOO, and the delegate adds the
+        # chip's corner glyph; red still outranks amber.
         badges = self.datum_badges(self._doc)
         warn_names = set()
         for line in getattr(self._doc, "attachment_warnings", []) or []:
@@ -517,9 +539,21 @@ class FeatureTree(QTreeWidget):
             #                                 the hole family binds uid
             item = QTreeWidgetItem([label])
             item.setData(0, Qt.UserRole, ("feature", i))
+            # M190 R2 [LAW-62]: two fault voices, error outranks warn —
+            # the SAME hues the chip corner wears (M118 red, M152 amber).
+            # The TEXT chain keeps suppressed-wins (a dead feature is
+            # dimmed); the DOT map rides regardless, exactly like the
+            # timeline chip whose body dims but whose corner stays red.
+            scar = getattr(f, "error", None)
+            if scar:
+                self._faults[("feature", i)] = "error"
+            elif f.name in warn_names:
+                self._faults[("feature", i)] = "warn"
             if f.suppressed:
                 item.setForeground(0, QColor(DARK["fg_faint"]))
-            elif f.name in warn_names:      # M152 rung D: the amber
+            elif scar:                        # M190 R2: red TEXT, class law
+                item.setForeground(0, QColor(DARK["danger"]))
+            elif f.name in warn_names:        # M152 rung D: the amber
                 item.setForeground(0, QColor(DARK["warn"]))
             parent = body_nodes.get(getattr(f, "body", None) or default)
             if parent is None:                      # orphaned by hand-edit
@@ -583,6 +617,17 @@ class FeatureTree(QTreeWidget):
                 it.setData(0, Qt.UserRole, ("sheet", i))
                 sh.addChild(it)
             sh.setExpanded(True)
+        # M190 R2 [LAW-62]: the ROOT rollup — "if both error AND
+        # warning, the ERROR ICON is displayed". One glance at the
+        # document row says whether the model hurts, before a single
+        # folder opens; the precedence makes the rollup never flicker
+        # to amber while any red is home.
+        if any(v == "error" for v in self._faults.values()):
+            self._fault_state = "error"
+        elif self._faults:
+            self._fault_state = "warn"
+        else:
+            self._fault_state = None
         root.setExpanded(True)
         self.setCurrentItem(None)
 
