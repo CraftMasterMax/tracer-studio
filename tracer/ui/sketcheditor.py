@@ -26,6 +26,7 @@ from ..core.sketch.constraints import (Angle, AngleBetween, Collinear,
                                        make_tangent, snapped, speaks_dia)
 from ..core.sketch.entities import (Arc, Circle, Ellipse, Line, Point,
                                      curve_center, curve_radius)
+from ..core.sketch import endpoints                 # M191 R1: the dot law
 from ..core.sketch.model import (_dim_tag, SketchModel, math_dist,
                                  model_from_dict, model_to_dict)
 from ..core.sketch.profile import regions
@@ -636,6 +637,35 @@ class SketchCanvas(QWidget):
                         and int(size.get(ent.id, 2)) == 0)
             return False
         return all(self._dof_of(p) == 0 for p in pts)
+
+    # ---- M191 R1 [endpoint truth, LAW: the white dot] ----------------------
+    # GUID-685B9D79: an endpoint NOT welded to other geometry wears a
+    # white dot; a welded one shows none. ONE mouth serves paint, the
+    # menu and the verb. Anchoring is the honest reading of "constrained
+    # to other geometry": a shared Point (identity IS coincidence here),
+    # a coincidence RECORD, or rest from the solver's witness (M186 R1's
+    # _ent_locked law — a fully-defined corner is at rest, no dot). No
+    # converged witness: fail OPEN to loose, the M167 law.
+    def _point_welded(self, pt) -> bool:
+        if endpoints.is_welded(self.model.sketch, pt):
+            return True
+        res = getattr(self, "_last_result", None)
+        return bool(res is not None and res.converged
+                    and getattr(res, "point_dof", None)
+                    and self._dof_of(pt) == 0)
+
+    def _weld_map(self) -> dict:
+        # The paint-path law: a raising mouth mid-paint leaves the
+        # widget's QPainter alive and poisons the NEXT test's teardown
+        # (a real segfault, "cannot destroy paint device being painted").
+        # Any surprise fails OPEN to dots (M167), never to a broken frame.
+        try:
+            out = {}
+            for pt, _ in self._all_points():
+                out[id(pt)] = self._point_welded(pt)
+            return out
+        except Exception:
+            return {}
 
     def _grab_points(self, ent) -> list:
         """M167 R1: the points a body drag translates. A line carries
@@ -1943,6 +1973,14 @@ class SketchCanvas(QWidget):
                 menu.addAction("Trim / extend to corner", self.act_trim)
             menu.addSeparator()
             menu.addAction("Mirror about first line", self.act_mirror)
+        elif len(sel) == 1 and isinstance(sel[0], Point) \
+                and self._point_welded(sel[0]):
+            # M191 R1 [endpoint truth]: the vendor's OWN verb, at the
+            # welded dot - "select the point then right-click and
+            # select Delete Coincident". A loose (dotted) point gets
+            # nothing: the menu never lies about a weld that isn't.
+            menu.addAction("Delete Coincident",
+                           lambda p=sel[0]: self.act_delete_coincident(p))
         elif not sel and self.model and (self.model.sketch.lines
                                          or self.model.sketch.circles):
             menu.addAction("Offset outline\u2026 (U)", self.act_offset)
@@ -2889,6 +2927,21 @@ class SketchCanvas(QWidget):
         self._solve()
         self.update()
 
+    def act_delete_coincident(self, pt):
+        """M191 R1 [endpoint truth]: ONE weld falls per click - the
+        record path first (paper names its pair), then the identity
+        split (endpoints.py, the same mouth the dot reads). History,
+        re-solve, repaint; the freed endpoint's white dot ARRIVES with
+        the click, which is the receipt the law is real."""
+        if not any(p is pt for p, _ in self._all_points()):
+            return                              # stale: zero trace
+        self._push_hist()
+        if not endpoints.uncouple_first(self.model.sketch, pt):
+            self._hist.pop()                    # nothing fell: no undo
+            return                              #   debt taken back
+        self._solve()
+        self.update()
+
     def _weld_gap(self, par):
         """M187 R4 [LAW-59]: the LineDistance a parallel weld shares
         its pair with - ONE mouth (paint == menu == act) answering
@@ -3705,12 +3758,15 @@ class SketchCanvas(QWidget):
         self._draw_glow(p, list(self._band_prev) + list(self._sel),
                         QPen(SEL, 2.4))
         # points
-        for pt, _ in self._all_points():
-            pos = self.w2s(pt.x, pt.y)
+        welded = self._weld_map()           # M191 R1 [endpoint truth]:
+        for pt, _ in self._all_points():    #   "end points ... NOT
+            pos = self.w2s(pt.x, pt.y)      #   constrained to other
             selected = pt in self._sel or pt in self._band_prev
-            hov = pt is self._hover_e           # M184 R3: identity law
+            hov = pt is self._hover_e       #   geometry wear WHITE DOTS"
             p.setPen(QPen(SEL if selected else (HOVER if hov else DIM), 1.2))
-            p.setBrush(SEL if selected else (HOVER if hov else BG))
+            free = not welded.get(id(pt), False)   # welded: no dot; the
+            p.setBrush(SEL if selected else (HOVER if hov
+                                             else (FG if free else BG)))
             s = 3.8 if selected else (3.2 if hov else 2.6)
             p.drawRect(QRectF(pos.x() - s, pos.y() - s, 2 * s, 2 * s))
         p.setBrush(Qt.NoBrush)
