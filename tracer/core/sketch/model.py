@@ -138,6 +138,16 @@ class SketchModel:
         #   frame stays the frozen copy (M125 law); the letter is
         #   looked up through the registry, one registry one truth.
         self.dim_exprs: dict = {}    # M89: constraint idx -> {e, t}
+        # M191 R3 [per-sketch display truth, palette GUID-4183A4B7 +
+        # the API's isProjectedGeometryShown/areConstraintsShown]: the
+        # vendor stores WHAT THE SKETCH SHOWS on the sketch itself, IN
+        # THE FILE - not as a global view switch. Three flags, one per
+        # paint layer the editor owns (projected refs / dimension text
+        # / constraint glyphs); all default True (every file written
+        # before this rung shows everything, exactly as it always did).
+        # DISPLAY ONLY: the magnet still catches a hidden projected
+        # edge - hiding is an eye, not a law of the land.
+        self.vis: dict = {"refs": True, "dims": True, "constraints": True}
         self.sid = id(self)          # association key while in memory
 
     # ---- entity factory --------------------------------------------------
@@ -915,7 +925,8 @@ def model_to_dict(m: SketchModel) -> dict:
     d["host"] = str(m.host)                 # M152: datum-host witness
     d["dim_exprs"] = {str(int(k)): dict(rec)
                       for k, rec in m.dim_exprs.items()}   # M89 fx
-    return d
+    d["vis"] = dict(m.vis)             # M191 R3: the sketch carries its
+    return d                           #   own display flags (in the file)
 
 
 def _ent_ref(m, e) -> list:
@@ -1040,4 +1051,7 @@ def model_from_dict(d: dict) -> SketchModel:
             dm = e.get("dia")               #      IS this file)
             if dm is not None:
                 obj.dia = bool(dm)
+    for k, v in (d.get("vis") or {}).items():   # M191 R3: the sketch's
+        if k in m.vis:                          #   own display flags come
+            m.vis[k] = bool(v)                  #   back FROM THE FILE
     return m                                             #  IS this file)

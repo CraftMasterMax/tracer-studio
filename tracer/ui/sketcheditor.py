@@ -285,6 +285,8 @@ class SketchCanvas(QWidget):
         # keep THIS model's identity: sid links features to their sketch
         self.model.sketch = tmp.sketch
         self.model.refs = tmp.refs              # projected edges undo too
+        self.model.vis = tmp.vis                # M191 R3: the display
+        #                                       #   flags ride history too
         self.model.dim_exprs = tmp.dim_exprs    # M89 fx bindings undo too
         self._pending = None                    # M90: type-ins don't survive
         self._num_buf = ""                      # a history jump
@@ -651,6 +653,23 @@ class SketchCanvas(QWidget):
     # mouth serves paint, the menu and the verb.
     def _point_welded(self, pt) -> bool:
         return endpoints.is_welded(self.model.sketch, pt)
+
+    # ---- M191 R3 [per-sketch display truth] ------------------------------------
+    # The vendor stores what a sketch SHOWS on the sketch, in the FILE
+    # (isProjectedGeometryShown / areConstraintsShown, palette
+    # GUID-4183A4B7) - not a global view switch. model.vis is that
+    # state (model.py); these are its read + the ONE write mouth, so a
+    # menu toggle, an undo and a file-load all speak through it. Absent
+    # (a pre-M191 sketch, or a bare canvas mid-test) => show all: the
+    # three paint layers behave exactly as they always did.
+    def _show(self, layer: str) -> bool:
+        return bool(getattr(self.model, "vis", {}).get(layer, True))
+
+    def set_show_layer(self, layer: str, on: bool):
+        if layer not in self.model.vis:
+            return
+        self.model.vis[layer] = bool(on)
+        self.update()
 
     def _weld_map(self) -> dict:
         # The paint-path law: a raising mouth mid-paint leaves the
@@ -1983,6 +2002,19 @@ class SketchCanvas(QWidget):
                                          or self.model.sketch.circles):
             menu.addAction("Offset outline\u2026 (U)", self.act_offset)
             menu.addSeparator()
+            # M191 R3 [per-sketch display truth]: the vendor's Display
+            # toggles are stored ON THE SKETCH, in the file - so here
+            # they flip model.vis (which commit + Back persist), not a
+            # global view flag. A check is the sketch's OWN answer.
+            for _key, _lbl in (("constraints", "Show constraint symbols"),
+                               ("dims", "Show dimension values"),
+                               ("refs", "Show projected geometry")):
+                _a = menu.addAction(_lbl)
+                _a.setCheckable(True)
+                _a.setChecked(self._show(_key))
+                _a.toggled.connect(
+                    lambda on, k=_key: self.set_show_layer(k, on))
+            menu.addSeparator()
             dof = menu.addAction("Show degrees of freedom")
             dof.setCheckable(True)
             dof.setChecked(self._show_dof)
@@ -3021,7 +3053,9 @@ class SketchCanvas(QWidget):
         return text
 
     def _draw_dimensions(self, p: QPainter):
-        self._dim_hits = []
+        self._dim_hits = []                 # reset FIRST (M191 R3): a
+        if not self._show("dims"):          #   hidden dim keeps no hit
+            return
         sk = self.model.sketch
         p.setFont(self._font)
         fm = p.fontMetrics()
@@ -3675,6 +3709,8 @@ class SketchCanvas(QWidget):
     def _draw_refs(self, p: QPainter):
         """M82: projected model contours — thin dashed violet (Fusion's
         projected-edge purple), never selectable, never solved."""
+        if not self._show("refs"):          # M191 R3: the sketch decides
+            return                          #   whether its refs show
         if not getattr(self.model, "refs", None):
             return
         p.save()
@@ -3802,7 +3838,9 @@ class SketchCanvas(QWidget):
             p.drawEllipse(pos, 7, 7)
 
     def _draw_glyphs(self, p: QPainter):
-        self._constraint_hits = []                 # M164 R2: rebuilt per
+        self._constraint_hits = []             # M164 R2: rebuilt per
+        if not self._show("constraints"):      #   paint (M191 R3): hidden
+            return                             #   glyphs keep no phantom
         font = p.font()                            # paint, like _dim_hits
         p.setFont(self._font)
         sk = self.model.sketch

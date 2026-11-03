@@ -31,7 +31,8 @@ from PySide6.QtWidgets import QApplication                           # noqa
 from tracer.ui import theme                                          # noqa
 
 from tracer.core.sketch import endpoints                             # noqa
-from tracer.core.sketch.constraints import Coincident, Fixed         # noqa
+from tracer.core.sketch.constraints import (Coincident, Distance,     # noqa
+                                            Fixed, Horizontal)
 
 
 def _fix(s, p, x, y):
@@ -262,10 +263,10 @@ def _sketch_at(win, i):
                                dims={"dx": 8.0, "dy": 8.0, "dz": 2.0}))
     boss = d.add(ExtrudeFeature(
         name="Boss", outer=np.array([[0, 0], [10, 0], [10, 5]], float),
-        height=4.0,
-        sketch={"name": "SketchBoss",
+        height=4.0, sid=777000 + i,               # M191 R3: a REAL sid -
+        sketch={"name": "SketchBoss",              #   the display-sync
                 "lines": [], "circles": [], "arcs": [], "points": [],
-                "constraints": [], "dims": []}))
+                "constraints": [], "dims": []}))   #   finds features by it
     d.add(PrimitiveFeature(name="Plate2", kind="box", op="union",
                            dims={"dx": 40.0, "dy": 40.0, "dz": 1.0}))
     win.recompute()
@@ -326,3 +327,165 @@ def test_a_new_document_drops_the_memory(win2, qapp2):
     assert win2._edit_park is None, \
         "the park memory is bound to the doc it parked"
     assert win2.doc.rollback_to is None
+
+
+# ---- R3: THE SKETCH CARRIES ITS OWN EYES [per-sketch display truth] ----------
+# The vendor stores WHAT A SKETCH SHOWS on the sketch itself, in the
+# FILE: the API exposes isProjectedGeometryShown / areConstraintsShown
+# on the Sketch object (palette GUID-4183A4B7: "displayed when the
+# sketch is not active" is a SEPARATE per-sketch set). No parametric
+# clone persists these; a global toolbar switch forgets the moment
+# you leave. Three gates of law here: the flags ROUND-TRIP THE FILE,
+# hiding a layer also retires its HITS (the menu and the clicks never
+# lie about markup the eye cannot see), and Back - the discard door -
+# drops STROKES but keeps the EYES (M162's visibility law, one level
+# down: display is not design, so no history capture either).
+
+def test_display_flags_round_trip_the_file():
+    from tracer.core.sketch.model import SketchModel, model_to_dict, \
+        model_from_dict
+    m = SketchModel()
+    a, b = m.point(0, 0), m.point(40, 0)
+    m.add_line(a, b)
+    assert m.vis == {"refs": True, "dims": True, "constraints": True}, \
+        "a fresh sketch shows everything - the pre-M191 file still does"
+    m.vis["dims"] = False
+    back = model_from_dict(model_to_dict(m))
+    assert back.vis["dims"] is False, "the flag rode the dict (and so \
+the FILE, which is these dicts as JSON)"
+    assert back.vis["refs"] and back.vis["constraints"], "untouched \
+eyes stay open"
+    legacy = model_to_dict(m)
+    legacy.pop("vis")                           # a file from BEFORE the rung
+    assert all(model_from_dict(legacy).vis.values()), \
+        "an old file wakes with every eye open, never a KeyError"
+
+
+def test_hidden_layers_keep_no_phantom_hits(qapp):
+    cv = _editor(qapp)
+    m = cv.model
+    a, b = m.point(-40, 0), m.point(40, 0)
+    ln = m.add_line(a, b)
+    m.sketch.constrain(Distance(a, b, 80.0))
+    m.sketch.constrain(Horizontal(ln))
+    m.refs = [{"pts": [[-50.0, 25.0], [50.0, 25.0]], "closed": False}]
+    cv._solve()
+    _paint(cv)                                  # OFFSCREEN LAW: grab() is
+    #  the synchronous paint - processEvents can skip one, and the hit
+    #  lists are PER-PAINT (M164 R2), so an unforced read sees a stale
+    #  frame (the first run of this gate proved it)
+    assert cv._dim_hits and cv._constraint_hits, \
+        "the visible markup is real on the pixels AND clickable"
+    # the chip's WORDS wear the DEFINED white (FG ink on a bg2 plate -
+    # the DIMC green is the M9x heritage; a census must measure what
+    # the painter actually puts down)
+    dims_px = _ink_near(cv, (0.0, 4.0), QColor(theme.SKETCH["full"]),
+                        half=20)
+    assert dims_px > 20, "the dimension TEXT is on the pixels"
+    refs_px = _ink_near(cv, (0.0, 25.0), QColor(theme.SKETCH["projected"]),
+                        half=20, tol=60)
+    assert refs_px > 15, "the projected dash is on the pixels too"
+    cv.set_show_layer("dims", False)
+    cv.set_show_layer("constraints", False)
+    cv.set_show_layer("refs", False)
+    _paint(cv)
+    assert not cv._dim_hits, "hidden dims keep no click target - the \
+double-click door cannot answer a label the eye cannot see"
+    assert not cv._constraint_hits, "hidden glyphs keep no hover ring \
+either (M164 R2's ring cannot circle a vanished mark)"
+    assert _ink_near(cv, (0.0, 4.0), QColor(theme.SKETCH["full"]),
+                     half=20) < max(6, dims_px // 4), \
+        "the shipped frame LOST the chip's words (pixel census, not a \
+state assertion)"
+    assert _ink_near(cv, (0.0, 25.0), QColor(theme.SKETCH["projected"]),
+                     half=20, tol=60) < 10, "the projected dash went \
+dark too (same tol as the on-census - a fair before/after)"
+
+
+def _paint(cv):
+    """Force one SYNCHRONOUS paint. Offscreen processEvents may skip a
+    repaint entirely, and the hit lists are per-paint state - grab()
+    is the house door (same one _ink_near uses)."""
+    cv.grab()
+
+
+def _ink_near(cv, world, color, half=20, tol=46):
+    """Pixels near a world point within the color family (RGBA-
+    normalized grab - the BGRA trap law). tol widens for THIN dashed
+    ink: the 1.4px projected dash anti-aliases far from its nominal
+    violet (measured (139,108,188) vs (179,132,242) - 54 apart)."""
+    img = cv.grab().toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+    buf = np.frombuffer(img.constBits().tobytes(), np.uint8).reshape(
+        img.height(), img.bytesPerLine() // 4, 4)[:, :img.width(), :3]
+    q = cv.w2s(*world)
+    x0, y0 = int(q.x()), int(q.y())
+    band = buf[max(0, y0 - half):y0 + half,
+               max(0, x0 - half):x0 + half].reshape(-1, 3).astype(int)
+    return int((np.abs(band - np.array(color.getRgb()[:3])).max(axis=1)
+                < tol).sum())
+
+
+def test_the_empty_canvas_offers_the_three_eyes(qapp):
+    cv = _editor(qapp)
+    m = cv.model
+    m.add_line(m.point(-40, 0), m.point(40, 0))
+    cv._solve()
+    cv._sel = []
+    acts = {a.text(): a for a in cv._build_menu().actions() if a.text()}
+    trio = ("Show constraint symbols", "Show dimension values",
+            "Show projected geometry")
+    for t in trio:
+        assert t in acts and acts[t].isCheckable(), f"{t} rides the menu"
+        assert acts[t].isChecked(), "a fresh sketch answers CHECKED"
+    cv.model.vis["dims"] = False
+    acts = {a.text(): a for a in cv._build_menu().actions() if a.text()}
+    assert not acts["Show dimension values"].isChecked(), \
+        "the check mirrors the SKETCH's own answer, not a global state"
+    acts["Show dimension values"].toggle()      # the click itself
+    assert cv.model.vis["dims"] is True, "one click flips the flag"
+
+
+def test_history_carries_the_eyes(qapp):
+    cv = _editor(qapp)
+    m = cv.model
+    m.add_line(m.point(-40, 0), m.point(40, 0))
+    cv._push_hist()
+    cv.set_show_layer("refs", False)
+    assert cv.model.vis["refs"] is False
+    assert cv.undo_op(), "the toggle was one step"
+    assert cv.model.vis["refs"] is True, "undo reopens the eye - the \
+flags ride history like the projected edges beside them (M82's seam)"
+
+
+def test_back_discards_strokes_but_keeps_the_eyes(win2, qapp2):
+    from tracer.core.sketch.model import SketchModel
+    d, boss = _sketch_at(win2, 1)
+    assert boss.sketch.get("vis", {}).get("dims", True) is True, \
+        "a pre-M191 feature dict wakes with every eye open"
+    win2.edit_sketch(boss)
+    qapp2.processEvents()
+    cv = win2.sketch
+    cv.model.add_line(cv.model.point(5.0, 5.0), cv.model.point(15.0, 15.0))
+    cv.set_show_layer("dims", False)            # one honest mouth
+    lines_before = len(boss.sketch["lines"])
+    win2._leave_sketch_page()                   # the DISCARD door
+    qapp2.processEvents()
+    assert boss.sketch["vis"]["dims"] is False, \
+        "the eye persists to the FEATURE (and so to the file) - Back \
+dropped the stroke, not the display"
+    assert len(boss.sketch["lines"]) == lines_before, \
+        "the stroke WAS discarded - display is not design (M162)"
+    assert d.dirty, "a kept eye is a real change: the doc is dirty"
+    from tracer.core.document import Document
+    revived = Document.from_dict(d.to_dict())   # save/load IS these dicts
+    boss2 = next(f for f in revived.features if f.name == "Boss")
+    cv.set_model(SketchModel())                 # the editor's visit is
+    win2._editing_sid = None                    #   over before the rebirth
+    win2.doc = revived
+    win2.edit_sketch(boss2)
+    qapp2.processEvents()
+    assert win2.sketch.model.vis["dims"] is False, \
+        "a REVIVED file reopens with the same eye closed - the vendor's \
+sentence, end to end"
+    assert not cv.model.sketch.lines, "the discarded stroke stayed \
+discarded through the file too"

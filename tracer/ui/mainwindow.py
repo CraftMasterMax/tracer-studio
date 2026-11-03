@@ -549,7 +549,9 @@ class MainWindow(QMainWindow):
         if index == 0:
             if self.stack.currentWidget() is not self.viewport:
                 self._end_sketch_view()         # M191 R2: leaving the
-                self._show_page(self.viewport)  #   page un-parks first
+                self._sync_sketch_display()     #   page un-parks FIRST
+                self._show_page(self.viewport)  #   (its recompute rests
+        #                                       #   dirty - eyes go after)
         elif self.stack.currentWidget() is not self._sketch_page:
             self.action_new_sketch()
 
@@ -940,6 +942,14 @@ class MainWindow(QMainWindow):
             i = (self.doc.features.index(feature)
                  if feature in self.doc.features else -1)
             if rb is not None and 0 <= i and rb <= i:
+                # M191 R2: this roll MOVES the maker's band - capture
+                # their spot into the park memory BEFORE it moves, so
+                # leaving restores where THEY were, not where this
+                # gate parked. (edit_sketch then finds the memory
+                # armed and keeps it.)
+                if not self._edit_park_on:
+                    self._edit_park_on = True
+                    self._edit_park = rb
                 self._apply_rollback(i + 1)
                 self.status.showMessage(
                     f"Rolled to '{feature.name}' to edit it — later "
@@ -993,8 +1003,33 @@ class MainWindow(QMainWindow):
             self._apply_rollback(prev)
 
     def _leave_sketch_page(self):
-        self._end_sketch_view()
-        self._show_page(self.viewport)
+        self._end_sketch_view()       # the un-park may recompute, and
+        self._sync_sketch_display()   #   recompute rests doc.dirty -
+        self._show_page(self.viewport)  # so the EYES sync AFTER, and
+        #                               #   their debt survives to save
+
+    def _sync_sketch_display(self):
+        """M191 R3 [per-sketch display truth]: the display flags are
+        the SKETCH'S OWN EYES, stored in the file (the vendor's API
+        puts isProjectedGeometryShown/areConstraintsShown on the
+        Sketch object, not on the viewer) - so the Back door's discard
+        drops STROKES but keeps them, exactly as M162's visibility
+        rides every rollback untouched. The commit paths need no
+        help: model_to_dict already carries vis into the payload.
+        Deliberately NOT doc-history (eyes are not design, M162): no
+        _capture here."""
+        if self.doc is None or self._editing_sid is None:
+            return
+        vis = dict(getattr(self.sketch.model, "vis", {}) or {})
+        if not vis:
+            return
+        for f in self.doc.features:
+            if getattr(f, "sid", None) == self._editing_sid \
+                    and getattr(f, "sketch", None) is not None:
+                if f.sketch.get("vis") != vis:
+                    f.sketch["vis"] = vis
+                    self.doc.dirty = True
+                return
 
     # ---- repeat last / adjust last (M165 R3) --------------------------------    # The memory is a ring of (key, stack, kind, payload), newest last.
     # Entries are NOT lambdas holding references: they carry strings that
