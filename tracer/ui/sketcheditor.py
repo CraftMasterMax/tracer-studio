@@ -14,8 +14,10 @@ import numpy as np
 from PySide6.QtCore import QEvent, QPointF, QSettings, QRectF, Qt, Signal
 from PySide6.QtGui import (QColor, QFont, QKeyEvent, QMouseEvent, QPainter,
                            QPainterPath, QPen, QPolygonF, QWheelEvent)
-from PySide6.QtWidgets import (QApplication, QCheckBox, QFrame, QLabel,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QFrame,
+                               QHBoxLayout, QLabel, QListWidget,
+                               QListWidgetItem, QPushButton, QSizePolicy,
+                               QToolButton, QVBoxLayout, QWidget)
 
 from ..core.sketch.constraints import (Angle, AngleBetween, Collinear,
                                        Concentric, Distance, Equal, Fixed,
@@ -259,6 +261,12 @@ class SketchCanvas(QWidget):
         self._dim_edit = None                # M165 R1: open chip editor
         self._last_dim = None                # M165 R1: rung-3 seed
         self._show_dof = False            # M119: degrees-of-freedom overlay
+        self._hide_fc = False             # M192 R2 [SKT-FIND-UNDER-
+        #   CONSTRAINED]: the finder's FOCUS eye - while Find Under-
+        #   Constrained is active, "hide fully constrained geometry to
+        #   focus on sketch entities that still need constraints".
+        #   TRANSIENT by law: the vendor ties it to the running command,
+        #   so it never rides model.vis, the file or the undo ring.
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMinimumSize(320, 240)
         f = QFont()
@@ -712,6 +720,99 @@ class SketchCanvas(QWidget):
         # M192 R1: the ONE mouth. Every door (canvas menu, Sketch
         # Palette, future panels) flips HERE and EVERY door hears it.
         self.vis_changed.emit(layer, bool(on))
+        self.update()
+
+    # ---- M192 R2: Find Under-Constrained [SKT-FIND-UNDERCONSTRAINED] --------
+    # "Select an item in the list to highlight that geometry and zoom to
+    # it on the canvas... (Optional) Click X on a row to delete that
+    # under-constrained sketch entity. X is not available for sketch
+    # points... (Optional) Hide fully constrained geometry to focus on
+    # sketch entities that still need constraints." The palette OWNS the
+    # list; the canvas answers three doors - focus, remove, the focus
+    # eye - and the WHO-IS-FREE question is asked of the SAME witness
+    # the paint wears (LAW-55's _ent_locked): a row can never list an
+    # entity the canvas reads as defined.
+    def _fc_hidden(self, ent) -> bool:
+        """The focus eye: fully defined geometry steps aside WHILE the
+        finder works. House decision (docs SILENT on what else dims):
+        entity strokes and their dots only - dimensions, glyphs and
+        projected refs keep their ink, the maker still reads the laws
+        the remaining freedom answers to."""
+        return bool(self._hide_fc) and self.model is not None \
+            and self._ent_locked(ent)
+
+    def set_hide_fully_constrained(self, on: bool):
+        self._hide_fc = bool(on)
+        self.update()
+
+    def finder_rows(self) -> list:
+        """(label, entity) per under-constrained entity, in canvas
+        order: lines, circles, arcs, ellipses, points. A non-converged
+        solve lists NOTHING (fail-open paints blue, but a row inviting
+        "go constrain THIS" on a solver that never answered would be a
+        lie about knowledge, not about geometry)."""
+        res = getattr(self, "_last_result", None)
+        if self.model is None or res is None or not res.converged:
+            return []
+        sk = self.model.sketch
+        out = []
+        for i, l in enumerate(sk.lines, 1):
+            if not self._ent_locked(l):
+                out.append((("Construction line " if l.construction
+                             else "Line ") + str(i), l))
+        for i, c in enumerate(sk.circles, 1):
+            if not self._ent_locked(c):
+                out.append((("Construction circle "
+                             if getattr(c, "construction", False)
+                             else "Circle ") + str(i), c))
+        for i, a in enumerate(sk.arcs, 1):
+            if not self._ent_locked(a):
+                out.append((("Construction arc " if getattr(a, "construction", False)
+                             else "Arc ") + str(i), a))
+        for i, e in enumerate(sk.ellipses, 1):
+            if not self._ent_locked(e):
+                out.append(("Ellipse " + str(i), e))
+        for i, p in enumerate(sk.points, 1):
+            if not self._ent_locked(p):
+                out.append(("Point " + str(i), p))
+        return out
+
+    def focus_entity(self, ent):
+        """The row's answer: HIGHLIGHT the geometry (it joins the
+        selection - the SAME blue glow every selected member wears, no
+        private highlight dialect) and ZOOM TO IT (the fit law, one
+        entity wide, capped so a zero-size point cannot punch through
+        the world)."""
+        self._sel = [ent]
+        pts = self._ent_bbox_points(ent)
+        if pts:
+            p = np.array(pts, float)
+            lo, hi = p.min(0), p.max(0)
+            span = np.maximum(hi - lo, np.array([8.0, 8.0])) * 1.5
+            self._scale = min(min(self.width() / span[0],
+                                  self.height() / span[1]), 24.0)
+            self._center = (lo + hi) / 2
+        self.update()
+
+    def _ent_bbox_points(self, ent):
+        if isinstance(ent, Line):
+            return [(ent.a.x, ent.a.y), (ent.b.x, ent.b.y)]
+        if isinstance(ent, Circle):
+            return [(ent.c.x - ent.r, ent.c.y - ent.r),
+                    (ent.c.x + ent.r, ent.c.y + ent.r)]
+        if isinstance(ent, (Arc, Ellipse)):
+            return [(float(s[0]), float(s[1])) for s in ent.sample(24)]
+        if isinstance(ent, Point):
+            return [(ent.x, ent.y)]
+        return []
+
+    def remove_entity(self, ent):
+        """The row's X: delete THAT entity through the history door -
+        the same mouth act_delete answers to, from one row."""
+        self._push_hist()
+        self.model.delete_entity(ent)
+        self._sel = [e for e in self._sel if e is not ent]
+        self._solve()
         self.update()
 
     def _weld_map(self) -> dict:
@@ -3896,12 +3997,16 @@ class SketchCanvas(QWidget):
         cl_pen = QPen(CONSTR, 1.2, Qt.CustomDashLine)
         cl_pen.setDashPattern([9, 3, 2, 3])
         for l in sk.lines:
+            if self._fc_hidden(l):            # M192 R2: the focus eye -
+                continue                      #  DEFINED geometry steps
             if getattr(l, "centerline", False):
                 p.setPen(cl_pen)
             else:
                 p.setPen(constr_pen if l.construction else solid_for(l))
             p.drawLine(self.w2s(l.a.x, l.a.y), self.w2s(l.b.x, l.b.y))
         for ar in sk.arcs:
+            if self._fc_hidden(ar):           #   aside while the finder
+                continue                          #  works
             p.setPen(constr_pen if ar.construction else solid_for(ar))
             smp = ar.sample(64)
             q_prev = self.w2s(float(smp[0][0]), float(smp[0][1]))
@@ -3911,12 +4016,16 @@ class SketchCanvas(QWidget):
                 q_prev = qn
         p.setPen(QPen(ACCENT, 1.7))   # neutral default (fail-open)
         for c in sk.circles:
+            if self._fc_hidden(c):            # M192 R2: focus eye
+                continue
             p.setPen(constr_pen if getattr(c, "construction", False)
                      else solid_for(c))
             cen = self.w2s(c.c.x, c.c.y)
             r = c.r * self._scale
             p.drawEllipse(cen, r, r)
         for e in sk.ellipses:
+            if self._fc_hidden(e):            # M192 R2: focus eye
+                continue
             p.setPen(constr_pen if getattr(e, "construction", False)
                      else solid_for(e))
             cen = self.w2s(e.c.x, e.c.y)
@@ -3941,9 +4050,11 @@ class SketchCanvas(QWidget):
         if self._show("points"):
             welded = self._weld_map()       # M191 R1 [endpoint truth]:
             for pt, _ in self._all_points():  # "end points ... NOT
-                pos = self.w2s(pt.x, pt.y)    #  constrained to other
+                if self._fc_hidden(pt):       #  constrained to other
+                    continue                  #   geometry wear WHITE
+                pos = self.w2s(pt.x, pt.y)    #   DOTS". M192 R2: a
                 selected = pt in self._sel or pt in self._band_prev
-                hov = pt is self._hover_e     #  geometry wear WHITE DOTS"
+                hov = pt is self._hover_e     #  tamed point steps aside
                 p.setPen(QPen(SEL if selected else (HOVER if hov
                                                     else DIM), 1.2))
                 free = not welded.get(id(pt), False)  # welded: no dot;
@@ -4488,11 +4599,116 @@ class SketchPalette(QWidget):
                 lambda on, k=key: self._cv.set_show_layer(k, on))
             self.boxes[key] = cb
             lay.addWidget(cb)
-        lay.addStretch(1)
+        # ---- M192 R2: Find Under-Constrained [SKT-FIND-UNDERCONSTRAINED] ----
+        # "Click Find Under-Constrained. A list of under-constrained sketch
+        # entities displays in the palette... select a sketch entity: the
+        # geometry highlights on the canvas and the view zooms to it...
+        # Click X on a row to delete that under-constrained sketch entity.
+        # X is not available for sketch points... Hide fully constrained
+        # geometry to focus... Click Compute Sketch. Fusion analyzes all
+        # geometry in the sketch and updates the constraint status for
+        # each sketch entity." THREE honest notes: the WHO-IS-FREE oracle
+        # is the SAME witness the paint wears (_ent_locked, LAW-55); the
+        # highlight is the SAME selection glow (no private dialect); and
+        # the focus eye is TRANSIENT - the vendor ties it to the running
+        # command, so it never rides model.vis, the file or the ring.
+        rule2 = QFrame()
+        rule2.setFrameShape(QFrame.HLine)
+        rule2.setObjectName("paletteRule2")
+        lay.addWidget(rule2)
+        self.find_btn = QPushButton("Find Under-Constrained")
+        self.find_btn.setObjectName("paletteFind")
+        self.find_btn.setCheckable(True)
+        self.find_btn.toggled.connect(self._on_find)
+        lay.addWidget(self.find_btn)
+        self.hide_fc = QCheckBox("Hide fully constrained")
+        self.hide_fc.setObjectName("paletteHideFullyConstrained")
+        self.hide_fc.setToolTip("Hide fully constrained geometry to "
+                                "focus on sketch entities that still "
+                                "need constraints or dimensions.")
+        self.hide_fc.toggled.connect(self._cv.set_hide_fully_constrained)
+        self.hide_fc.setVisible(False)
+        lay.addWidget(self.hide_fc)
+        self.rows = QListWidget()
+        self.rows.setObjectName("paletteFindRows")
+        self.rows.setVisible(False)
+        self.rows.itemSelectionChanged.connect(self._on_row)
+        lay.addWidget(self.rows, 1)
+        self.compute_btn = QPushButton("Compute Sketch")
+        self.compute_btn.setObjectName("paletteCompute")
+        self.compute_btn.setToolTip("Analyze all geometry in the sketch "
+                                    "and update the constraint status "
+                                    "for each sketch entity.")
+        self.compute_btn.setVisible(False)
+        self.compute_btn.clicked.connect(self._on_compute)
+        lay.addWidget(self.compute_btn)
+        self._spacer = QWidget()          # the resting stretch: the list
+        self._spacer.setSizePolicy(QSizePolicy.Expanding,
+                                   QSizePolicy.Expanding)
+        self._spacer.setVisible(True)
+        lay.addWidget(self._spacer)
         canvas.vis_changed.connect(self._on_vis)
         canvas.state_changed.connect(self._on_state)
         canvas.model_changed.connect(self.sync)
         self.setFixedWidth(196)
+
+    # ---- the finder's doors --------------------------------------------------
+    def _on_find(self, on: bool):
+        for w in (self.hide_fc, self.rows, self.compute_btn):
+            w.setVisible(bool(on))
+        self._spacer.setVisible(not on)
+        if on:
+            self._rebuild_rows()
+        else:
+            self.hide_fc.setChecked(False)      # the eye belongs to the
+            #   command: walking away closes it (transient by law)
+
+    def _rebuild_rows(self):
+        if not self.find_btn.isChecked():
+            return
+        keep = self._cv._sel[0] if len(self._cv._sel) == 1 else None
+        self.rows.blockSignals(True)
+        self.rows.clear()
+        sel_row = -1
+        for i, (label, ent) in enumerate(self._cv.finder_rows()):
+            it = QListWidgetItem(self.rows)
+            row = QWidget()
+            h = QHBoxLayout(row)
+            h.setContentsMargins(6, 1, 1, 1)
+            h.addWidget(QLabel(label), 1)
+            if not isinstance(ent, Point):      # "X is not available
+                x = QToolButton()               #  for sketch points"
+                x.setText("\u2715")
+                x.setAutoRaise(True)
+                x.setToolTip("Delete this under-constrained sketch "
+                             "entity.")
+                x.clicked.connect(
+                    lambda _=False, e=ent: self._cv.remove_entity(e))
+                h.addWidget(x)
+            it.setSizeHint(row.sizeHint())
+            self.rows.setItemWidget(it, row)
+            it.setData(Qt.UserRole, ent)
+            if ent is keep:
+                sel_row = i
+        self.rows.blockSignals(False)
+        if 0 <= sel_row < self.rows.count():
+            self.rows.setCurrentRow(sel_row)    # the maker's pick
+            #   SURVIVES the live refresh - "the list ... update as
+            #   you work", and the selection rides along
+
+    def _on_row(self):
+        it = self.rows.currentItem()
+        if it is not None:
+            ent = it.data(Qt.UserRole)
+            if ent is not None:
+                self._cv.focus_entity(ent)
+
+    def _on_compute(self):
+        self._cv._solve()                       # the vendor's "Fusion
+        #   analyzes all geometry ... and updates the constraint status":
+        #   one solve re-derives every witness, and the state_changed it
+        #   emits rebuilds this list and refreshes the head - ONE flow,
+        #   no private analysis, no stale row.
 
     # ---- the two sentences the canvas speaks ------------------------------
     def _on_vis(self, key: str, on: bool):
@@ -4513,6 +4729,10 @@ class SketchPalette(QWidget):
             self.status.setText("Status: Constrained")
         else:
             self.status.setText("Status: Under-Constrained")
+        # M192 R2: "the list and sketch status update as you work" -
+        # every solve speaks here, so the rows refresh on the SAME
+        # voice the head uses. No timers, no polling.
+        self._rebuild_rows()
 
     def sync(self):
         """Re-read the WHOLE panel after a model swap: the boxes answer
@@ -4524,4 +4744,8 @@ class SketchPalette(QWidget):
                 cb.blockSignals(True)
                 cb.setChecked(want)
                 cb.blockSignals(False)
+        # the finder's TRANSIENT eye belongs to the COMMAND, not the
+        # sketch: it keeps its word across a swap (the command is still
+        # running) and re-applies to the new canvas read.
+        self._cv.set_hide_fully_constrained(self.hide_fc.isChecked())
         self._on_state(self._cv._last_result)

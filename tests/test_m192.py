@@ -66,6 +66,10 @@ def _stage(qapp):
     cv.resize(600, 400)
     pal = SketchPalette(cv)
     cv.show()
+    pal.show()              # M192 R2 lesson: the palette needs its OWN
+    #   show(): a widget that never SAW the screen reports EVERY child
+    #   invisible no matter what setVisible decides - the finder's rows
+    #   answer isVisible() only from a shown panel.
     for _ in range(3):
         qapp.processEvents()
     _LIVE.append(cv)
@@ -440,3 +444,265 @@ def test_a_legacy_file_wakes_all_eyes_open(win2, qapp2, monkeypatch):
     assert pal.boxes["points"].isChecked() and \
         pal.boxes["profile"].isChecked()
     assert not pal.boxes["dims"].isChecked()
+
+
+# ================= R2: FIND UNDER-CONSTRAINED [SKT-FIND-UNDERCONSTRAINED] ======
+# "Click Find Under-Constrained. A list of under-constrained sketch
+# entities displays in the palette. In the list, select a sketch entity.
+# The geometry highlights on the canvas and the view zooms to it.
+# (Optional) Click X on a row in the list to delete that under-
+# constrained sketch entity. X is not available for sketch points.
+# (Optional) Hide fully constrained geometry... While Find Under-
+# Constrained is active, add constraints or dimensions... The list and
+# sketch status update... Click Compute Sketch." Three fidelity laws we
+# honour: the WHO-IS-FREE oracle is the SAME witness the paint wears
+# (_ent_locked); the highlight is the SAME selection glow; the focus
+# eye is TRANSIENT - command-bound, never file-borne.
+
+from PySide6.QtCore import Qt                                        # noqa
+from PySide6.QtWidgets import QToolButton                            # noqa
+
+
+def _row_ents(pal):
+    return [pal.rows.item(i).data(Qt.UserRole)
+            for i in range(pal.rows.count())]
+
+
+def _fix_pt(cv, p):
+    from tracer.core.sketch.constraints import Fixed
+    cv.model.constrain(Fixed(p, x=p.x), Fixed(p, y=p.y))
+
+
+def _r2_scene(qapp):
+    """A pinned (DEFINED) line beside a FREE line with one lone point."""
+    cv, pal = _stage(qapp)
+    m = cv.model
+    tamed = m.add_line(m.point(-10.0, 8.0), m.point(10.0, 8.0))
+    for p_ in (tamed.a, tamed.b):
+        _fix_pt(cv, p_)
+    free = m.add_line(m.point(-4.0, -6.0), m.point(4.0, -6.0))
+    lone = m.point(9.0, -6.0)
+    cv._solve()
+    for _ in range(3):
+        qapp.processEvents()
+    return cv, pal, m, tamed, free, lone
+
+
+def test_the_finder_lists_exactly_the_free_entities(qapp):
+    cv, pal, m, tamed, free, lone = _r2_scene(qapp)
+    rows = cv.finder_rows()
+    labels = [lbl for lbl, _ in rows]
+    ents = [e for _, e in rows]
+    assert free in ents and lone in ents, \
+        "the free line and the lone point answer the list"
+    assert tamed not in ents, "DEFINED geometry is NOT under-constrained "  \
+        "- the list reads the SAME witness the paint wears (LAW-55): no "   \
+        "row can contradict the canvas"
+    assert labels == ["Line 2", "Point 3", "Point 4", "Point 5"], \
+        "the vendor's list speaks in entity names - and the numbering "  \
+        "is the MODEL's truth: every point lives in the sketch's point "\
+        "table (tamed endpoints are Points 1-2 and drop; the free line "\
+        "carries 3-4, the lone point is 5 - an endpoint with no law on "\
+        "it IS free geometry, and the finder says so)"
+
+
+def test_the_rows_only_dance_when_the_finder_is_open(qapp):
+    cv, pal, m, tamed, free, lone = _r2_scene(qapp)
+    assert not pal.rows.isVisible(), "the list is the COMMAND's, not a "  \
+        "permanent crowd in the panel"
+    pal.find_btn.setChecked(True)
+    for _ in range(3):
+        qapp.processEvents()
+    assert pal.rows.isVisible() and pal.hide_fc.isVisible() \
+        and pal.compute_btn.isVisible()
+    assert pal.rows.count() == len(cv.finder_rows())
+
+
+def test_selecting_a_row_highlights_and_zooms(qapp):
+    cv, pal, m, tamed, free, lone = _r2_scene(qapp)
+    pal.find_btn.setChecked(True)
+    for _ in range(3):
+        qapp.processEvents()
+    ents = _row_ents(pal)
+    pal.rows.setCurrentRow(ents.index(free))
+    for _ in range(3):
+        qapp.processEvents()
+    assert cv._sel == [free], "the row's highlight is the SELECTION glow "  \
+        "- one highlight dialect on this canvas"
+    assert tuple(cv._center) == pytest.approx((0.0, -6.0)), \
+        "the view ZOOMS TO IT: the line's midpoint owns the centre"
+    assert cv._scale > 4.0 and cv._scale <= 24.0, "zoomed in, capped in"
+
+
+def test_the_row_X_deletes_that_entity(qapp):
+    cv, pal, m, tamed, free, lone = _r2_scene(qapp)
+    pal.find_btn.setChecked(True)
+    for _ in range(3):
+        qapp.processEvents()
+    i = _row_ents(pal).index(free)
+    row_w = pal.rows.itemWidget(pal.rows.item(i))
+    xs = row_w.findChildren(QToolButton)
+    assert len(xs) == 1, "one row, one X"
+    xs[0].click()
+    for _ in range(3):
+        qapp.processEvents()
+    assert free not in m.sketch.lines, "X deletes THAT under-constrained "  \
+        "entity - through the history door (undoable, like Del)"
+    assert free not in _row_ents(pal), "and the row LEAVES with it: the "   \
+        "list updates as you work"
+
+
+def test_point_rows_carry_no_X(qapp):
+    cv, pal, m, tamed, free, lone = _r2_scene(qapp)
+    pal.find_btn.setChecked(True)
+    for _ in range(3):
+        qapp.processEvents()
+    i = _row_ents(pal).index(lone)
+    row_w = pal.rows.itemWidget(pal.rows.item(i))
+    assert not row_w.findChildren(QToolButton), \
+        "X is not available for sketch points - the vendor's rule, ours"
+
+
+def test_the_list_and_head_update_as_you_work(qapp):
+    cv, pal, m, tamed, free, lone = _r2_scene(qapp)
+    pal.find_btn.setChecked(True)
+    for _ in range(3):
+        qapp.processEvents()
+    n0 = pal.rows.count()
+    _fix_pt(cv, free.a)
+    _fix_pt(cv, free.b)
+    cv.model.delete_entity(lone)          # the lone point leaves too
+    cv._solve()
+    for _ in range(3):
+        qapp.processEvents()
+    assert pal.rows.count() < n0, "every solve refreshes the list - the "  \
+        "vendor's sentence, our wiring (state_changed feeds it, no timer)"
+    assert pal.rows.count() == 0 and \
+        pal.status.text() == "Status: Constrained", \
+        "the last freedom tamed: EMPTY list, Constrained head - the "      \
+        "command ends where the law begins"
+
+
+def test_the_selected_row_survives_the_live_refresh(qapp):
+    cv, pal, m, tamed, free, lone = _r2_scene(qapp)
+    pal.find_btn.setChecked(True)
+    for _ in range(3):
+        qapp.processEvents()
+    pal.rows.setCurrentRow(_row_ents(pal).index(free))
+    cv.remove_entity(lone)                # any other edit re-solves...
+    for _ in range(3):
+        qapp.processEvents()
+    it = pal.rows.currentItem()
+    assert it is not None and it.data(Qt.UserRole) is free, \
+        "the maker's picked row rides the refresh - the list may rebuild, "  \
+        "but the command keeps their selection"
+
+
+def test_the_focus_eye_steps_defined_geometry_aside(qapp):
+    cv, pal, m, tamed, free, lone = _r2_scene(qapp)
+    pal.find_btn.setChecked(True)          # NO row click here: clicking
+    for _ in range(3):                     #   one ZOOMS (its own gate),
+        qapp.processEvents()               #   and a zoomed-away line is
+    before = _grab(cv)                     #   no witness about the eye
+    sx = before.shape[1] / cv.width()      # DPR-proof: map the canvas's
+    sy = before.shape[0] / cv.height()     #   own answer into grab px
+
+    def white(cell, y0, y1, x0, x1):
+        b = cell[y0:y1, x0:x1].astype(int)
+        return int(((b > 190).all(axis=2)).sum())
+
+    def blue(cell, y0, y1, x0, x1):
+        b = cell[y0:y1, x0:x1].astype(int)
+        return int(((b[:, :, 2] - b[:, :, 0]) > 40).sum())
+
+    def band(ent):
+        """the entity's stroke, in GRAB px: the canvas itself (w2s)
+        says where the paint lands - no hardcoded world->pixel math.
+        The inset is PROPORTIONAL (a fixed px trim devours a short
+        line at fit scale: 8 world units here are only 32 px)."""
+        pa = cv.w2s(ent.a.x, ent.a.y)
+        pb = cv.w2s(ent.b.x, ent.b.y)
+        x0, x1 = sorted((int(pa.x() * sx), int(pb.x() * sx)))
+        inset = max(2, (x1 - x0) // 10)
+        y = int((pa.y() + pb.y()) / 2 * sy)
+        return y - 6, y + 7, x0 + inset, x1 - inset
+
+    ty0, ty1, tx0, tx1 = band(tamed)
+    fy0, fy1, fx0, fx1 = band(free)
+    w0 = white(before, ty0, ty1, tx0, tx1)
+    b0 = blue(before, fy0, fy1, fx0, fx1)
+    pal.hide_fc.setChecked(True)
+    for _ in range(3):
+        qapp.processEvents()
+    after = _grab(cv)
+    w1 = white(after, ty0, ty1, tx0, tx1)
+    b1 = blue(after, fy0, fy1, fx0, fx1)
+    assert w0 > 20 and w1 < w0 // 3, \
+        "hide fully constrained: the DEFINED line LIFTS off the canvas "    \
+        f"({w0} -> {w1} white px) - the focus the vendor sells"
+    assert b0 > 20 and b1 > 20, "the FREE line's blue keeps its ink - "    \
+        "the eye steps the tamed aside, it never blinds the rest"
+    assert m.vis == {"refs": True, "dims": True, "constraints": True,
+                     "points": True, "profile": True}, \
+        "the focus eye is TRANSIENT (command-bound): the FILE's eyes "      \
+        "are untouched - it never rides model.vis"
+
+
+def test_the_eye_releases_when_the_command_closes(qapp):
+    cv, pal, m, tamed, free, lone = _r2_scene(qapp)
+    pal.find_btn.setChecked(True)
+    pal.hide_fc.setChecked(True)
+    assert cv._hide_fc is True
+    pal.find_btn.setChecked(False)
+    for _ in range(3):
+        qapp.processEvents()
+    assert not pal.rows.isVisible() and not pal.hide_fc.isChecked() \
+        and cv._hide_fc is False, \
+        "walking away from the command closes its eye - transient means "  \
+        "transient"
+
+
+def test_compute_sketch_re_derives_the_whole_sheet(qapp):
+    cv, pal, m, tamed, free, lone = _r2_scene(qapp)
+    pal.find_btn.setChecked(True)
+    for _ in range(3):
+        qapp.processEvents()
+    n0 = pal.rows.count()
+    sneak = m.add_line(m.point(-2.0, -12.0), m.point(2.0, -12.0))
+    # NO solve: the palette holds the stale read until asked
+    assert sneak not in _row_ents(pal), "stale by construction (the "       \
+        "probe's own honesty)"
+    pal.compute_btn.click()
+    for _ in range(3):
+        qapp.processEvents()
+    assert sneak in _row_ents(pal) and pal.rows.count() > n0, \
+        "Compute Sketch: 'Fusion analyzes all geometry in the sketch and "  \
+        "updates the constraint status for each sketch entity' - our "      \
+        "answer is the ONE solve every other door already rides"
+
+
+def test_the_finder_lives_in_the_real_page(win2, qapp2):
+    win2.new_document()
+    win2._edit_park_on = False
+    win2._edit_park = None
+    win2.action_new_sketch("XY")
+    qapp2.processEvents()
+    cv = win2.sketch
+    pal = win2._sketch_palette
+    cv._snap_grid = False
+    m = cv.model
+    free = m.add_line(m.point(-4.0, 0.0), m.point(4.0, 0.0))
+    cv._solve()
+    qapp2.processEvents()
+    pal.find_btn.setChecked(True)
+    qapp2.processEvents()
+    assert free in _row_ents(pal)
+    pal.rows.setCurrentRow(_row_ents(pal).index(free))
+    qapp2.processEvents()
+    assert cv._sel == [free], "in the REAL window the row commands the "   \
+        "SAME canvas the toolbar drives"
+    i = _row_ents(pal).index(free)
+    xs = pal.rows.itemWidget(pal.rows.item(i)).findChildren(QToolButton)
+    xs[0].click()
+    qapp2.processEvents()
+    assert free not in m.sketch.lines and free not in _row_ents(pal)
