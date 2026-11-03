@@ -181,6 +181,10 @@ class FeatureTree(QTreeWidget):
                                             #   the WINDOW owns the kernel
     feature_renamed = Signal(object, str)   # M162/FD3-2.3: inline
                                             #   rename committed
+    rollup_clicked = Signal()               # M190 R4 [LAW-63]: a left
+                                            #   click on the ROOT while
+                                            #   the fault rollup is lit
+                                            #   asks for the error list
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -257,6 +261,14 @@ class FeatureTree(QTreeWidget):
                 # Fusion's bulb law: an eye click TOGGLES — it never
                 # selects, never moves the current row.
                 self.eye_toggled.emit(role)
+                return
+            if role and role[0] == "root" and self._fault_state:
+                # M190 R4 [LAW-63]: the rollup is a BUTTON - the class
+                # "click a part name to reveal a list of errors and
+                # warnings"; the Message Log IS that list. A CLEAN root
+                # emits nothing: the badge never lies, the door never
+                # knocks without a guest.
+                self.rollup_clicked.emit()
                 return
         super().mousePressEvent(ev)
 

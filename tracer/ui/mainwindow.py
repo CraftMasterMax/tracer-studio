@@ -154,6 +154,8 @@ class MainWindow(QMainWindow):
         self.rail.tree.body_menu.connect(self._body_menu)
         self.rail.tree.joint_menu.connect(self._joint_menu)
         self.rail.tree.root_menu.connect(self._root_menu)
+        # M190 R4 [LAW-63]: the rollup dot is a door, not decor.
+        self.rail.tree.rollup_clicked.connect(self._reveal_fault_list)
         self.rail.tree.feature_delete.connect(self._delete_feature)
         self.rail.tree.feature_rename.connect(self._rename_feature)
         self.viewport.zoom_selection.connect(self._zoom_to_selection)
@@ -6677,6 +6679,23 @@ class MainWindow(QMainWindow):
             "border: none; color: " + (
                 DARK["danger"] if err else
                 DARK["warn"] if warn else DARK["fg_faint"]))
+
+    def _reveal_fault_list(self):
+        """M190 R4 [LAW-63]: "Click a part name to reveal a list of
+        errors and warnings. Clicking any entity in that list ADVANCES
+        YOU DIRECTLY to that feature in the tree." The rollup dot is
+        that part-name click: it reveals the Message Log AND lands on
+        the queue head - list, door and walk in one gesture. Emits only
+        while a fault is home (the tree's own gate)."""
+        if not self._log_menu.isChecked():
+            self._log_menu.toggle()
+        ff = self.doc.failed_feature if self.doc is not None else None
+        if ff is not None:
+            self._goto_logged_feature(ff[0])
+        else:
+            self.status.showMessage(
+                "Message Log open — the amber warnings are listed "
+                "there", 4000)
 
     def _goto_logged_feature(self, pos: int):
         """M118 BEAT: the log row Fusion could never click."""

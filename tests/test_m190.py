@@ -249,3 +249,46 @@ def test_a_clean_row_carries_no_tooltip_and_speaks_no_lie(win, qapp,
     win.rail.tree.reload()
     qapp.processEvents()
     assert _row(win, ("feature", 0)).toolTip(0) == ""
+
+
+# ---- R4: THE ROLLUP DOT IS A BUTTON ------------------------------------------------
+# "Click a part name to reveal a list of errors and warnings" - the
+# lit root row is that click: the Message Log opens AND the queue
+# head lands (R3's walk). A clean root emits nothing: no door knocks
+# without a guest.
+
+def _press_root(win, qapp):
+    from PySide6.QtTest import QTest
+    tree = win.rail.tree
+    rect = tree.visualRect(tree.indexFromItem(tree.topLevelItem(0)))
+    QTest.mousePress(tree.viewport(), Qt.MouseButton.LeftButton,
+                     Qt.KeyboardModifier.NoModifier,
+                     tree.viewport().mapFrom(tree, rect.center()))
+    qapp.processEvents()
+
+
+def test_the_rollup_reveals_the_list_and_lands_on_the_head(win, qapp,
+                                                           monkeypatch):
+    _silent_recompute_told(monkeypatch)
+    d, plate, a, b = _two_faults(win)
+    qapp.processEvents()
+    assert not win._log_menu.isChecked()       # the list starts closed
+    _press_root(win, qapp)
+    assert win._log_menu.isChecked(), "the rollup REVEALS the list"
+    assert _tree_target(win) == ("feature", d.features.index(a)), \
+        "...and the queue head is landed on in one gesture"
+    assert win.timeline.bar._sel == d.features.index(a)
+
+
+def test_a_clean_root_clicks_quietly_no_door_no_lie(win, qapp,
+                                                    monkeypatch):
+    _silent_recompute_told(monkeypatch)
+    from tracer.core.document import PrimitiveFeature
+    win.new_document()
+    win.doc.add(PrimitiveFeature(name="Sole", kind="box", op="union",
+                                 dims={"dx": 10.0, "dy": 10.0, "dz": 2.0}))
+    win.recompute()
+    qapp.processEvents()
+    assert win.rail.tree._fault_state is None
+    _press_root(win, qapp)
+    assert not win._log_menu.isChecked(), "no fault - no door"
