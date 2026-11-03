@@ -12,6 +12,10 @@ Resolution: semantic kinds (everything but on-entity) win as a class —
 inside the class, nearest wins, and ties break by kind:
     endpoint > intersection > midpoint > quadrant > center >
     reference > origin > on-entity (the last-resort fallback)
+A PREFERRED kind (candidates/best `prefer=`, M191 R4: the vendor's
+"Sketch Coincident Constraint at Midpoint | Shift", GUID-F0491540)
+sorts ahead of the whole field while it is held: the intent key lets
+the summoned target win even a nearer rival.
 """
 from __future__ import annotations
 
@@ -262,7 +266,8 @@ def _on_entity(sk, x, y, out):
         out.append(Snap(px, py, "onentity", entity=e))
 
 
-def candidates(sk, x: float, y: float, tol: float, extra=(), skip=None):
+def candidates(sk, x: float, y: float, tol: float, extra=(), skip=None,
+               prefer=None):
     """All snaps within `tol` WORLD units of (x, y), nearest first.
     extra: (px, py, kind) tuples for origin/references/grid — minted.
     skip: a Point that must not magnetize (the drag's own endpoint)."""
@@ -303,12 +308,19 @@ def candidates(sk, x: float, y: float, tol: float, extra=(), skip=None):
         if key not in seen:
             seen.add(key)
             uniq.append(s)
-    uniq.sort(key=lambda s: (round(s.dist * 1e9), PRIORITY[s.kind]))
+    # M191 R4 [LAW: Shift summons the midpoint, GUID-F0491540]: when a
+    # kind is PREFERRED (Shift held) it sorts to the FRONT of the
+    # tolerance, ahead of even a nearer candidate - "hold Shift near a
+    # line's middle and the coincidence you GET is the midpoint, though
+    # an endpoint sits closer". No preference: byte-identical to the
+    # old (dist, kind) order (the leading key is a constant).
+    uniq.sort(key=lambda s: (0 if prefer and s.kind == prefer else 1,
+                             round(s.dist * 1e9), PRIORITY[s.kind]))
     return uniq
 
 
-def best(sk, x, y, tol, extra=(), skip=None):
-    hits = candidates(sk, x, y, tol, extra=extra, skip=skip)
+def best(sk, x, y, tol, extra=(), skip=None, prefer=None):
+    hits = candidates(sk, x, y, tol, extra=extra, skip=skip, prefer=prefer)
     return hits[0] if hits else None
 
 

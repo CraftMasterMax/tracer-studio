@@ -15,17 +15,25 @@ doctrine):
       (_place_point: "identity IS coincidence"), so a shared Point
       is welded by having TWO OR MORE SEGMENT ROLES; and
   (2) RECORDS - an autolink or a typed constraint files a
-      Coincident / PointOnLine / PointOnCircle against the Point.
+      Coincident / PointOnLine / PointOnCircle / Midpoint against
+      the Point.
 A point welded by EITHER dialect hides its dot. The verb frees the
 point from ONE weld (the record path deletes the record; the
 identity path splits one role off the shared object).
 """
 from __future__ import annotations
 
-from .constraints import Coincident, PointOnLine, PointOnCircle
+from .constraints import (Coincident, Midpoint, PointOnLine,
+                          PointOnCircle)
 from .entities import Point
 
-RECORDS = (Coincident, PointOnLine, PointOnCircle)
+# M191 R4: the vendor's OWN name is the law here - their shortcut page
+# calls the midpoint weld "Sketch Coincident Constraint at Midpoint"
+# (GUID-F0491540). A Midpoint record pins the point to be coincident
+# WITH the line's middle: paper coincidence, so it hides the dot, and
+# "Delete Coincident" is its repair verb (uncouple_first drops records
+# generically - no new code needed).
+RECORDS = (Coincident, PointOnLine, PointOnCircle, Midpoint)
 
 
 def point_roles(sketch) -> dict:

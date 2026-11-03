@@ -26,13 +26,16 @@ import pytest
 pytest.importorskip("PySide6")
 
 import numpy as np                                                   # noqa
-from PySide6.QtGui import QColor, QImage                             # noqa
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt                # noqa
+from PySide6.QtGui import QColor, QImage, QMouseEvent                 # noqa
+from PySide6.QtTest import QTest                                      # noqa
 from PySide6.QtWidgets import QApplication                           # noqa
 from tracer.ui import theme                                          # noqa
 
 from tracer.core.sketch import endpoints                             # noqa
 from tracer.core.sketch.constraints import (Coincident, Distance,     # noqa
-                                            Fixed, Horizontal)
+                                            Fixed, Horizontal,
+                                            Midpoint)
 
 
 def _fix(s, p, x, y):
@@ -489,3 +492,122 @@ dropped the stroke, not the display"
 sentence, end to end"
     assert not cv.model.sketch.lines, "the discarded stroke stayed \
 discarded through the file too"
+
+
+# ---- R4: SHIFT SUMMONS THE MIDPOINT [GUID-F0491540] --------------------------
+# The vendor's shortcut page ("Sketch Coincident Constraint at Midpoint |
+# Shift") hands Shift a second voice: the INVERSE of Ctrl's brake (M186
+# R2 suppresses inference; Shift CRIES FOR one). Hold Shift while a new
+# endpoint lands and the MIDPOINT coincidence is summoned ahead of even
+# a nearer magnet - and the fresh weld outranks M173's ortho leash, the
+# same "a stated constraint beats a suggestion" law one level up: an
+# ortho re-mint here would orphan the just-filed Midpoint record on a
+# point no line owns.
+# Scene math (scale 4, centre (0,0), magnet 9 px = 2.25 world):
+#   base line (-2,20)-(2,24): midpoint (0,22); cursor (1.25,23.0) sits
+#   1.25 from the ENDPOINT and 1.60 from the MIDPOINT - nearer the
+#   endpoint, both inside the magnet. Shift is the ONLY thing that can
+#   flip that race.
+
+def _scr4(x, y):
+    return QPoint(int(round(300 + 4.0 * x)), int(round(200 - 4.0 * y)))
+
+
+def _summon_scene(cv):
+    cv._snap_grid = False          # m173's law: no grid candidate may
+    m = cv.model                   #   enter the endpoint/midpoint race
+    a, b = m.point(-2.0, 20.0), m.point(2.0, 24.0)
+    ln = m.add_line(a, b)
+    return m, ln, b
+
+
+def test_the_key_promotes_the_midpoint_over_a_nearer_rival():
+    from tracer.core import snaps
+    from tracer.core.sketch.model import SketchModel
+    m = SketchModel()
+    a, b = m.point(-2, 20), m.point(2, 24)
+    ln = m.add_line(a, b)
+    plain = snaps.best(m.sketch, 1.25, 23.0, 2.25)
+    assert plain.kind == "endpoint" and plain.pt is b
+    summon = snaps.best(m.sketch, 1.25, 23.0, 2.25, prefer="midpoint")
+    assert summon.kind == "midpoint" and summon.entity is ln
+    assert summon.pt is None, "a line-mid is no stored Point: the mint "  \
+        "+ autolink path is the one that files the Midpoint"
+    assert snaps.candidates(m.sketch, 1.25, 23.0, 2.25,
+                            prefer="midpoint")[0].kind == "midpoint"
+    assert snaps.best(m.sketch, 1.25, 23.0, 2.25,
+                      prefer="bogus").kind == "endpoint", \
+        "a preference for a kind NOT in the tolerance changes nothing"
+
+
+def test_shift_summons_the_midpoint_weld(qapp):
+    cv = _editor(qapp)
+    m, ln, b = _summon_scene(cv)
+    cv.set_tool("line")
+    QTest.mousePress(cv, Qt.LeftButton, Qt.NoModifier, _scr4(-8, 18))
+    QTest.mouseRelease(cv, Qt.LeftButton, Qt.NoModifier, _scr4(-8, 18))
+    QTest.mousePress(cv, Qt.LeftButton, Qt.ShiftModifier, _scr4(1.25, 23.0))
+    QTest.mouseRelease(cv, Qt.LeftButton, Qt.ShiftModifier, _scr4(1.25, 23.0))
+    assert len(m.sketch.lines) == 2
+    new = m.sketch.lines[1]
+    assert (new.b.x, new.b.y) == (0.0, 22.0), \
+        "the end landed EXACTLY on the midpoint - summoned, not grazed"
+    assert new.b is not b, "the midpoint minted its own Point"
+    rec = [c for c in m.sketch.constraints if isinstance(c, Midpoint)]
+    assert len(rec) == 1 and rec[0].p is new.b and rec[0].line is ln
+    assert rec[0].src == "snap", "paper autolink - free and live (M120)"
+    assert endpoints.is_welded(m.sketch, new.b), \
+        "the R1 rhyme: the coincidence you summoned closes its own dot"
+    assert new.b.y != 18.0 and cv._line_start is None, \
+        "the ortho leash would have bent this end to (-8,18)'s line - "  \
+        "the fresh WELD outranked it (guard) and the chain ended (L25)"
+
+
+def test_without_the_key_the_nearer_endpoint_wins_identity(qapp):
+    cv = _editor(qapp)
+    m, ln, b = _summon_scene(cv)
+    cv.set_tool("line")
+    QTest.mousePress(cv, Qt.LeftButton, Qt.NoModifier, _scr4(-8, 18))
+    QTest.mouseRelease(cv, Qt.LeftButton, Qt.NoModifier, _scr4(-8, 18))
+    QTest.mousePress(cv, Qt.LeftButton, Qt.NoModifier, _scr4(1.25, 23.0))
+    QTest.mouseRelease(cv, Qt.LeftButton, Qt.NoModifier, _scr4(1.25, 23.0))
+    assert len(m.sketch.lines) == 2
+    assert m.sketch.lines[1].b is b, "plain magnet: nearest endpoint, "  \
+        "identity reuse - the OLD truth unchanged by the rung"
+    assert not any(isinstance(c, Midpoint) for c in m.sketch.constraints), \
+        "no Midpoint record without the key: the summon IS the key"
+
+
+def _mmove(cv, x, y, mods=Qt.NoModifier):
+    p = QPointF(300.0 + 4.0 * x, 200.0 - 4.0 * y)
+    QApplication.sendEvent(
+        cv, QMouseEvent(QEvent.Type.MouseMove, p, p, p,
+                        Qt.NoButton, Qt.NoButton, mods))
+
+
+def test_the_hover_glyph_promotes_with_the_key(qapp):
+    cv = _editor(qapp)
+    _summon_scene(cv)
+    cv.set_tool("line")
+    _mmove(cv, 1.25, 23.0)
+    assert cv._snap_obj is not None and cv._snap_obj.kind == "endpoint"
+    _mmove(cv, 1.25, 23.0, Qt.ShiftModifier)      # real modifier state
+    assert cv._snap_obj.kind == "midpoint", \
+        "the promise is on the GLYPH before the click: Shift shows the \
+midpoint it WILL weld, though the endpoint sits closer"
+
+
+def test_the_key_still_orthos_when_no_midpoint_answers(qapp):
+    cv = _editor(qapp)
+    _summon_scene(cv)                              # midpoint far at (0,22)
+    cv.set_tool("line")
+    QTest.mousePress(cv, Qt.LeftButton, Qt.NoModifier, _scr4(-8, -6))
+    QTest.mouseRelease(cv, Qt.LeftButton, Qt.NoModifier, _scr4(-8, -6))
+    QTest.mousePress(cv, Qt.LeftButton, Qt.ShiftModifier, _scr4(2.0, -5.25))
+    QTest.mouseRelease(cv, Qt.LeftButton, Qt.ShiftModifier, _scr4(2.0, -5.25))
+    new = cv.model.sketch.lines[1]
+    assert (new.b.x, new.b.y) == (2.0, -6.0), \
+        "M173's voice is intact: no midpoint answering, Shift is the \
+plain ortho leash - the guard is inert"
+    assert not any(isinstance(c, Midpoint) for c in
+                   cv.model.sketch.constraints)

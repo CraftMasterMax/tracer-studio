@@ -206,6 +206,13 @@ class SketchCanvas(QWidget):
         self._snap_obj = None                    # M120: typed Snap (glyph)
         self._placed_free = True                 # L25: _place_point verdict
         self._no_snap = False                    # M120: Alt suppresses snaps
+        # M191 R4 [LAW, GUID-F0491540]: "Sketch Coincident Constraint at
+        # Midpoint | Shift" - the INVERSE of Ctrl's brake (M186 R2, which
+        # SUPPRESSES inference). Held during placement, Shift PROMOTES the
+        # midpoint magnet over a nearer endpoint (snaps.prefer). It rides
+        # PLACEMENT only: a held-Shift DRAG stays M173's ortho leash (that
+        # path turns the magnet off before ever asking it).
+        self._summon_mid = False
         self._brake = False                      # M186 R2 [LAW-57]: Ctrl at
         #                                  #  the drawing hand parks GRID
         #                                  #  snap + auto-constraints
@@ -435,7 +442,8 @@ class SketchCanvas(QWidget):
             extra.append((round(wp[0] / s) * s, round(wp[1] / s) * s,
                           "grid"))
         sn = snaps.best(self.model.sketch, wp[0], wp[1], tol, extra=extra,
-                        skip=skip)
+                        skip=skip,
+                        prefer="midpoint" if self._summon_mid else None)
         self._snap_obj = sn
         if sn is None:
             return None
@@ -739,6 +747,7 @@ class SketchCanvas(QWidget):
     def mousePressEvent(self, ev: QMouseEvent):
         self._no_snap = bool(ev.modifiers() & Qt.AltModifier)
         self._brake = bool(ev.modifiers() & Qt.ControlModifier)
+        self._summon_mid = bool(ev.modifiers() & Qt.ShiftModifier)
         if (ev.button() == Qt.LeftButton
                 and self._pending is not None):        # M90: new stroke
             self._pending = None                       # drops the type-in
@@ -884,7 +893,17 @@ class SketchCanvas(QWidget):
                     self._line_reset()               # M180 R2/R3: cells too
                 else:
                     self._push_hist()
-                    if ev.modifiers() & Qt.ShiftModifier:      # M173
+                    # M191 R4 [LAW, GUID-F0491540 "Coincident Constraint
+                    # at Midpoint"]: when this very click WELDED a midpoint
+                    # (the magnet's answer is the coincidence Shift
+                    # summoned), the ortho leash must NOT bend it — pulling
+                    # the end off the midpoint would orphan the fresh
+                    # Midpoint record on a point no line owns. The leash
+                    # bends FREE ends only (M173's law, sharpened): a weld
+                    # outranks even a stated constraint.
+                    _summoned = (self._snap_obj is not None
+                                 and self._snap_obj.kind == "midpoint")
+                    if ev.modifiers() & Qt.ShiftModifier and not _summoned:  # M173
                         sx, sy = self._line_start.x, self._line_start.y
                         dx, dy = p.x - sx, p.y - sy            #  R3: a
                         if abs(dx) >= abs(dy) and dy != 0.0:   #  SECOND
@@ -1116,6 +1135,7 @@ class SketchCanvas(QWidget):
         q = ev.position()
         self._no_snap = bool(ev.modifiers() & Qt.AltModifier)
         self._brake = bool(ev.modifiers() & Qt.ControlModifier)
+        self._summon_mid = bool(ev.modifiers() & Qt.ShiftModifier)
         self._cursor = self._world(q)
         self.update()                    # keep the readout live
         if self._pan_from is not None:
