@@ -639,20 +639,18 @@ class SketchCanvas(QWidget):
         return all(self._dof_of(p) == 0 for p in pts)
 
     # ---- M191 R1 [endpoint truth, LAW: the white dot] ----------------------
-    # GUID-685B9D79: an endpoint NOT welded to other geometry wears a
-    # white dot; a welded one shows none. ONE mouth serves paint, the
-    # menu and the verb. Anchoring is the honest reading of "constrained
-    # to other geometry": a shared Point (identity IS coincidence here),
-    # a coincidence RECORD, or rest from the solver's witness (M186 R1's
-    # _ent_locked law — a fully-defined corner is at rest, no dot). No
-    # converged witness: fail OPEN to loose, the M167 law.
+    # GUID-685B9D79, read EXACTLY: "end points ... NOT constrained to
+    # OTHER GEOMETRY wear white dots"; "Point to point coincident
+    # constraints show no dot". OTHER GEOMETRY is the whole qualifier:
+    # a point pinned to the number plane (Fixed) is welded to NOTHING
+    # and KEEPS its dot - the dot speaks coincidence, not mobility
+    # (rest is M186's ENTITY ink, a different sentence; the first cut
+    # of this mouth read anchoring in and the film's pixel census
+    # caught the lie). Welded = shared by 2+ segment roles (identity
+    # IS coincidence, M177) or bound by a coincidence RECORD. ONE
+    # mouth serves paint, the menu and the verb.
     def _point_welded(self, pt) -> bool:
-        if endpoints.is_welded(self.model.sketch, pt):
-            return True
-        res = getattr(self, "_last_result", None)
-        return bool(res is not None and res.converged
-                    and getattr(res, "point_dof", None)
-                    and self._dof_of(pt) == 0)
+        return endpoints.is_welded(self.model.sketch, pt)
 
     def _weld_map(self) -> dict:
         # The paint-path law: a raising mouth mid-paint leaves the

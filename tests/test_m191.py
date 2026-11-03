@@ -14,10 +14,12 @@ Our kernel speaks coincidence in two dialects - IDENTITY (a snap
 reuses the Point object: "identity IS coincidence", M177) and RECORDS
 (Coincident / PointOnLine / PointOnCircle constraints) - and the rung
 answers BOTH with ONE mouth (endpoints.py: paint == menu == act).
-Anchoring also reads the solver's witness (a fully-defined corner is
-AT REST, M186 R1's law); no converged witness fails OPEN to the dot
-(M167's law). No hex is copied: the dot wears our reserved DEFINED
-white (SKETCH full), the same ink the defined entities wear.
+"OTHER GEOMETRY" is the whole qualifier: a point pinned to the number
+plane keeps its dot (the dot speaks coincidence, not mobility), and
+a fully-dimensioned corner that touches nothing else keeps it too -
+the vendor's page hides the dot at COINCIDENT ends and nowhere else.
+No hex is copied: the dot wears our reserved DEFINED white (SKETCH
+full), the same ink the defined entities wear.
 """
 import pytest
 
@@ -93,9 +95,12 @@ def test_identity_welds_and_records_weld_qapp_free(qapp):
 
 # ---- the canvas answers, and the pixels SHIP it ---------------------------------
 
-def _fg_band(cv, pt, half=14):
+def _fg_band(cv, pt, half=8):
     """Pixels around a point, in the DEFINED-white family (the dot's
-    ink). RGBA-normalized grab (the BGRA trap, M190 R2 law)."""
+    ink). TIGHT window: the DEFINED STEEL also wears this white, so a
+    wide band measures the line, not the dot; inside 6 px a loose
+    end's FILL dominates and a welded corner is hollow. RGBA-normalized
+    grab (the BGRA trap, M190 R2 law)."""
     img = cv.grab().toImage().convertToFormat(QImage.Format.Format_RGBA8888)
     buf = np.frombuffer(img.constBits().tobytes(), np.uint8).reshape(
         img.height(), img.bytesPerLine() // 4, 4)[:, :img.width(), :3]
@@ -115,13 +120,13 @@ def test_a_loose_end_ships_the_white_dot(qapp):
     c = m.point(60, 30)
     m.add_line(a, b)
     m.add_line(b, c)
-    _fix(m.sketch, a, -60, -30)           # a: anchored, but NOT welded
-    cv._solve()
+    _fix(m.sketch, a, -60, -30)           # a: anchored, but welded to
+    cv._solve()                            #   NOTHING (other geometry
     assert cv._point_welded(b) is True, "identity weld hides the dot"
-    assert cv._point_welded(a) is True, "at rest hides the dot (M186 law)"
+    assert cv._point_welded(a) is False, "a Fixed pin is not OTHER GEOMETRY"
     assert cv._point_welded(c) is False, "the loose end wears the dot"
     qapp.processEvents()
-    assert _fg_band(cv, c) > 10, "the shipped film frame HOLDS the dot"
+    assert _fg_band(cv, c) >= 12, "the shipped film frame HOLDS the dot"
     assert _fg_band(cv, b) < _fg_band(cv, c), \
         "the welded corner does not fake one (no blue ink there either)"
 
