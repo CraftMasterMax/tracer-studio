@@ -172,9 +172,16 @@ def test_the_driven_chip_wears_parentheses(ed):
 
 
 def _right(ed, x, y):
+    """M178 R2's landing, delivered through M192 R4's marking menu: the
+    bare right-click NOW OPENS the documented menu (a real QMenu popup
+    cannot be exec'd in tests - M164's law), and its 'Driven' item IS
+    the old hard-coded landing. Triggering the item at this world point
+    keeps the rung's law under test verbatim: LANDS HERE, DRIVEN."""
+    from PySide6.QtCore import QPointF
     p = ed.w2s(x, y).toPoint()
-    QTest.mousePress(ed, Qt.RightButton, pos=p)
-    QTest.mouseRelease(ed, Qt.RightButton, pos=p)
+    menu = ed._build_dim_marking_menu(QPointF(p))
+    acts = {a.text(): a for a in menu.actions() if a.text()}
+    acts["Driven"].trigger()
     QApplication.instance().processEvents()
 
 

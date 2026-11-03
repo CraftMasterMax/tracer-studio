@@ -896,21 +896,17 @@ class SketchCanvas(QWidget):
             self.update()
         if ev.button() in (Qt.MiddleButton, Qt.RightButton):
             if (ev.button() == Qt.RightButton
-                    and self._dim_place is not None):  # M178 R2 (FD5-
-                c = self._dim_place                    #  L35): right-
-                self._dim_place = None                 #  click BEFORE
-                pos = self._dim_anchor_screen(c)       #  placing: the
-                if pos is not None:                    #  newborn LANDS
-                    qm = ev.position()                 #  HERE - the
-                    c.label_off = ((qm.x() - pos.x()) / self._scale,   #
-                                   -(qm.y() - pos.y()) / self._scale)  #
-                c.driven = True                        #  ghost's OWN
-                self._solve()                          #  formula - and
-                self.update()                          #  arrives
-                return                                 #  DRIVEN from
-                #                                       birth: it
-                #                                       REPORTS, so the
-                #                                       editor STAYS SHUT
+                    and self._dim_place is not None):  # M192 R4 [SKT-
+                self._dim_marking_menu(ev)             #  CREATE-
+                return                                 #  DIMENSIONS]:
+                #      right-click BEFORE placing opens the MARKING
+                #      MENU - "right-click to access contextual options
+                #      for it: Radius or Diameter; Driven or Driving;
+                #      Pick Circle/Arc Center or Pick Circle/Arc
+                #      Tangent". M178 R2's land-as-driven survives as
+                #      the menu's 'Driven' item: the law moved from the
+                #      bare mouse to the documented menu, its words
+                #      honored verbatim.
             if ev.button() == Qt.RightButton and self._tool == "select":
                 self._context_menu(ev)
                 return
@@ -3130,6 +3126,79 @@ class SketchCanvas(QWidget):
         c.driven = not getattr(c, "driven", False)
         self._solve()
         self.update()
+
+    # ---- M192 R4: the newborn's MARKING MENU [SKT-CREATE-DIMENSIONS] ---------
+    # "Before you place a dimension in the canvas, right-click to access
+    # contextual options for it. Examples: Radius or Diameter; Driven or
+    # Driving; Pick Circle/Arc Center or Pick Circle/Arc Tangent." The
+    # menu is CONTEXTUAL: a radial newborn hears the voice pair and the
+    # anchor pair; every newborn answers Driven/Driving. Each item
+    # PLACES the ghost in the chosen dialect (M175's left-click law: a
+    # placed driving newborn opens the chip editor; M178's law: a driven
+    # birth re-solves and the editor STAYS SHUT). Dismissing the menu
+    # places NOTHING - the command stays active, the ghost keeps
+    # following the cursor. Builder split from exec (M164's law): the
+    # action table is testable without an uninterceptable popup.
+    def _build_dim_marking_menu(self, q):
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        c = self._dim_place
+        if c is None:
+            return menu
+        radial = isinstance(c, Radius)
+        if radial:
+            menu.addAction("Radius",
+                           lambda: self._mark_place(c, q, voice="r"))
+            menu.addAction("Diameter",
+                           lambda: self._mark_place(c, q, voice="d"))
+            menu.addSeparator()
+        menu.addAction("Driven",
+                       lambda: self._mark_place(c, q, dialect=True))
+        menu.addAction("Driving",
+                       lambda: self._mark_place(c, q, dialect=False))
+        if radial:
+            menu.addSeparator()
+            menu.addAction("Pick Circle/Arc Center",
+                           lambda: self._mark_place(c, q, anchor="center"))
+            menu.addAction("Pick Circle/Arc Tangent",
+                           lambda: self._mark_place(c, q, anchor="tangent"))
+        return menu
+
+    def _dim_marking_menu(self, ev):
+        menu = self._build_dim_marking_menu(ev.position())
+        menu.exec(ev.globalPosition().toPoint())
+        self.update()
+
+    def _mark_place(self, c, q, voice=None, dialect=None, anchor=None):
+        """One item, one placement - the marking menu's answer. The
+        voice is act_dia's OWN flag (dialect, never magnitude: the
+        stored value stays a radius, the solver sleeps); the anchor pair
+        chooses the chip's seat (Center = (0,0) on the anchor, Tangent =
+        the cursor seat - M178's landing law, M175's near-snap
+        included). Driving placement opens the editor exactly where the
+        left press would have."""
+        if self._dim_place is not c:
+            return                            # stale: zero trace (m164)
+        self._dim_place = None
+        if voice is not None:
+            c.dia = (voice == "d")
+        if dialect is not None:
+            c.driven = bool(dialect)
+        if anchor == "center":
+            c.label_off = (0.0, 0.0)
+        else:
+            pos = self._dim_anchor_screen(c)
+            if pos is not None:
+                lo = ((q.x() - pos.x()) / self._scale,
+                      -(q.y() - pos.y()) / self._scale)
+                if max(abs(lo[0]), abs(lo[1])) * self._scale < 2.0:
+                    lo = (0.0, 0.0)           # M175's near snap
+                c.label_off = lo
+        if getattr(c, "driven", False):
+            self._solve()                     # the ghost's OWN formula:
+            self.update()                     #   it REPORTS, the editor
+        else:                                 #   stays SHUT (M178)
+            self._open_dim_editor(c)          # driving: M175's own door
 
     def act_remove_constraint(self, c):
         """Badge right-click: straight through the finder's door -

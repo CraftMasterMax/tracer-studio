@@ -706,3 +706,205 @@ def test_the_finder_lives_in_the_real_page(win2, qapp2):
     xs[0].click()
     qapp2.processEvents()
     assert free not in m.sketch.lines and free not in _row_ents(pal)
+
+
+# ================= R4: THE NEWBORN'S MARKING MENU [SKT-CREATE-DIMENSIONS] ======
+# "Before you place a dimension in the canvas, right-click to access
+# contextual options for it. Examples: Radius or Diameter; Driven or
+# Driving; Pick Circle/Arc Center or Pick Circle/Arc Tangent." The menu
+# is CONTEXTUAL (the radial newborn hears all three pairs; a linear one
+# answers Driven/Driving), every item PLACES through one mouth, and
+# dismissing it places NOTHING - the command stays active. M178 R2's
+# land-as-driven survives as the 'Driven' item: the law moved from the
+# bare mouse to the documented menu (its own helper in test_m178 now
+# triggers the item - the ONE legitimate door-evolution).
+
+from PySide6.QtCore import QPointF                                   # noqa
+
+
+def _mark_acts(cv):
+    return [a.text() for a in
+            cv._build_dim_marking_menu(QPointF(10, 10)).actions()
+            if a.text()]
+
+
+def _fire(cv, text, x, y):
+    p = cv.w2s(x, y).toPoint()
+    menu = cv._build_dim_marking_menu(QPointF(p))
+    acts = {a.text(): a for a in menu.actions() if a.text()}
+    acts[text].trigger()
+
+
+def _linear_newborn(cv, m):
+    ln = m.add_line(m.point(0.0, 0.0), m.point(8.0, 0.0))
+    cv._sel = [ln]
+    cv._solve()
+    cv.act_dim()
+    return cv._dim_place
+
+
+def _radial_newborn(cv, m):
+    c = m.add_circle(m.point(20.0, 10.0), 5.0)
+    cv._sel = [c]
+    cv._solve()
+    cv.act_dim()
+    return cv._dim_place, c
+
+
+def test_a_linear_newborn_hears_driven_or_driving(qapp):
+    cv, pal = _stage(qapp)
+    d = _linear_newborn(cv, cv.model)
+    assert d is not None
+    assert _mark_acts(cv) == ["Driven", "Driving"], \
+        "the vendor's pair, in the vendor's order - a linear ghost has "\
+        "no radius to rename and no circle centre to pick"
+
+
+def test_a_radial_newborn_hears_the_full_marking_menu(qapp):
+    from tracer.core.sketch.model import speaks_dia
+    cv, pal = _stage(qapp)
+    r, _c = _radial_newborn(cv, cv.model)
+    assert _mark_acts(cv) == ["Radius", "Diameter", "Driven", "Driving",
+                              "Pick Circle/Arc Center",
+                              "Pick Circle/Arc Tangent"], \
+        "all three documented pairs for the radial ghost"
+    assert speaks_dia(r) and r.value == pytest.approx(5.0), \
+        "'Circles create diameter dimensions' - the birth already speaks "\
+        "diameter while the stored value stays the radius (M98's law)"
+
+
+def test_the_driven_item_is_the_old_landing(qapp):
+    cv, pal = _stage(qapp)
+    d = _linear_newborn(cv, cv.model)
+    _fire(cv, "Driven", 4.0, -6.0)
+    for _ in range(3):
+        qapp.processEvents()
+    assert cv._dim_place is None and d.driven, \
+        "M178 R2's law VERBATIM, now through the documented item: the "\
+        "newborn lands where the menu was called, DRIVEN from birth"
+    assert cv._dim_edit is None, "a READER cannot be commanded - the "\
+        "editor stays SHUT (M178 R3's law rides the item)"
+
+
+def test_the_driving_item_places_like_the_left_press(qapp):
+    cv, pal = _stage(qapp)
+    d = _linear_newborn(cv, cv.model)
+    _fire(cv, "Driving", 4.0, 6.0)
+    for _ in range(3):
+        qapp.processEvents()
+    assert cv._dim_place is None and not d.driven, "driving dialect"
+    assert cv._dim_edit is not None, "and M175's own door: a placed "\
+        "driving newborn opens the value field exactly as a left click "\
+        "would - one placement law, not a private one"
+    cv._close_dim_editor()
+
+
+def test_the_voice_items_change_dialect_never_magnitude(qapp):
+    cv, pal = _stage(qapp)
+    r, _c = _radial_newborn(cv, cv.model)
+    _fire(cv, "Radius", 20.0, 2.0)
+    for _ in range(3):
+        qapp.processEvents()
+    assert r.dia is False and r.value == pytest.approx(5.0), \
+        "'Radius or Diameter' is act_dia's OWN flag - dialect, never "\
+        "magnitude (M174 R3): the stored radius does not stir"
+    cv._close_dim_editor()
+    r2, _c2 = _radial_newborn(cv, cv.model)
+    _fire(cv, "Diameter", 26.0, 16.0)
+    assert r2.dia is True and r2.value == pytest.approx(5.0)
+    cv._close_dim_editor()
+
+
+def test_the_anchor_pair_seats_the_chip(qapp):
+    cv, pal = _stage(qapp)
+    r, _c = _radial_newborn(cv, cv.model)
+    _fire(cv, "Pick Circle/Arc Center", 26.0, 16.0)
+    assert r.label_off == (0.0, 0.0), "PICK CENTER: the chip seats at "\
+        "the anchor - the documented seat choice, not a random snap"
+    cv._close_dim_editor()
+    r2, _c2 = _radial_newborn(cv, cv.model)
+    _fire(cv, "Pick Circle/Arc Tangent", 26.0, 16.0)
+    assert max(abs(r2.label_off[0]), abs(r2.label_off[1])) > 1.0, \
+        "PICK TANGENT: the chip seats where the hand called the menu "\
+        "(M178's cursor seat, M175's near-snap included)"
+    cv._close_dim_editor()
+
+
+def test_dismissing_the_menu_places_nothing(qapp):
+    cv, pal = _stage(qapp)
+    d = _linear_newborn(cv, cv.model)
+    cv._build_dim_marking_menu(QPointF(10, 10))   # building changes
+    for _ in range(3):                           #   NOTHING
+        qapp.processEvents()
+    assert cv._dim_place is d, "the ghost survives a dismissed menu - "\
+        "the command stays active, the newborn keeps following the "\
+        "cursor (the vendor's options are CONTEXTUAL, not a placement)"
+    cv._cancel_dim_place()
+
+
+def test_the_menu_needs_a_newborn(qapp):
+    cv, pal = _stage(qapp)
+    assert _mark_acts(cv) == [], "no ghost, no options - the menu is "\
+        "the newborn's voice, not a general canvas menu"
+
+
+def test_a_stale_item_is_silent(qapp):
+    cv, pal = _stage(qapp)
+    from PySide6.QtWidgets import QMenu
+    d = _linear_newborn(cv, cv.model)
+    p = cv.w2s(4.0, -6.0).toPoint()
+    menu = cv._build_dim_marking_menu(QPointF(p))
+    acts = {a.text(): a for a in menu.actions() if a.text()}
+    acts["Driven"].trigger()                     # d placed, driven
+    e = _linear_newborn(cv, cv.model)            # a NEW ghost is alive
+    acts["Driving"].trigger()                    # the OLD item fires
+    for _ in range(3):
+        qapp.processEvents()
+    assert cv._dim_place is e and cv._dim_edit is None, \
+        "a stale menu item commands NOTHING (m164's law): the live "\
+        "ghost and the editor are untouched"
+    cv._cancel_dim_place()
+
+
+def test_a_marking_driven_birth_reports_the_walking_geometry(qapp):
+    cv, pal = _stage(qapp)
+    m = cv.model
+    ln = m.add_line(m.point(0.0, 0.0), m.point(8.0, 0.0))
+    cv._sel = [ln]
+    cv._solve()
+    cv.act_dim()
+    _fire(cv, "Driven", 4.0, -6.0)
+    assert cv._dim_place is None
+    d = [c for c in m.sketch.constraints
+         if getattr(c, "driven", False) and c.p is ln.a][-1]
+    ln.b.x = 20.0
+    m.solve()
+    assert ln.b.x == pytest.approx(20.0), "the reader never yanks the "\
+        "geometry back"
+    assert d.value == pytest.approx(20.0), "and the quote FOLLOWED - "\
+        "through the marking menu or the bare mouse, the driven dialect "\
+        "is the SAME law (M178): one mouth, one truth"
+
+
+def test_the_marking_menu_lives_on_the_real_page(win2, qapp2):
+    from tracer.core.sketch.constraints import Distance
+    win2.new_document()
+    win2._edit_park_on = False
+    win2._edit_park = None
+    win2.action_new_sketch("XY")
+    qapp2.processEvents()
+    cv = win2.sketch
+    cv._snap_grid = False
+    m = cv.model
+    ln = m.add_line(m.point(-4.0, 0.0), m.point(4.0, 0.0))
+    cv._sel = [ln]
+    cv._solve()
+    cv.act_dim()
+    assert [a.text() for a in cv._build_dim_marking_menu(
+        QPointF(5, 5)).actions() if a.text()] == ["Driven", "Driving"], \
+        "in the REAL window the newborn answers the SAME documented "\
+        "menu the standalone stage plays"
+    cv._cancel_dim_place()
+    qapp2.processEvents()
+    assert not [c for c in m.sketch.constraints
+                if isinstance(c, Distance)], "and the unbirth is clean"
