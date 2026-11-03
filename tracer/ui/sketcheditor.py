@@ -30,7 +30,8 @@ from ..core.sketch.constraints import (Angle, AngleBetween, Collinear,
                                        make_tangent, snapped, speaks_dia,
                                        spans_dia)
 from ..core.sketch.entities import (Arc, Circle, Ellipse, Line, Point,
-                                     curve_center, curve_radius)
+                                     curve_center, curve_radius,
+                                     tangent_arc_mid, tangent_arc_sample)
 from ..core.sketch import endpoints                 # M191 R1: the dot law
 from ..core.sketch.model import (_dim_tag, SketchModel, math_dist,
                                  model_from_dict, model_to_dict)
@@ -221,6 +222,15 @@ class SketchCanvas(QWidget):
         self._line_typed = ""                  # M180 R2: the pre-mint cell
         self._line_angle = ""                  # M180 R3: its angle twin
         self._line_cell = "len"                #  Tab toggles WHICH one
+        self._line_dir: tuple | None = None    # M193 R1 [SKT-CREATE-LINES]:
+        #                    the UNIT TANGENT leaving the free end (the
+        #                    direction a tangent arc must continue).  None
+        #                    before the first segment - nothing to be
+        #                    tangent to yet; re-nulled on every fresh chain.
+        self._arc_drag: Point | None = None    #  a press ON the free end
+        self._arc_drag_pushed = False          #   that TRAVELLED becomes
+        self._arc_drag_to = None               #   a tangent-arc drag
+        self._arc_drag_px0 = None              #  press screen pos (travel)
         self._rect_typed_w = ""                # M182 R2: the rect's TWO
         self._rect_typed_h = ""                #  pre-mint cells (staff law:
         self._rect_cell = "w"                  #   Tab toggles the focus)
@@ -294,6 +304,7 @@ class SketchCanvas(QWidget):
         self._line_start = None
         self._line_reset()                     # M180 R2/R3: cells die with
         #                                       the  model they were typed into
+        self._tangent_reset()                  # M193 R1:  so does the tangent
         self._shape_reset()                    # M182 R2:  same for the
         #                                       shape  cells
         self._rect_corner = None
@@ -360,6 +371,7 @@ class SketchCanvas(QWidget):
         self._line_start = None                #   survive a history jump
         self._line_reset()                     # M180 R2/R3:  neither do the
         #                                       half-typed  pre-mint cell
+        self._tangent_reset()                  # M193 R1: nor an armed drag
         self._shape_reset()                    # M182 R2:  nor the shape's
         self._rect_corner = None
         self._arc_pts = []
@@ -380,6 +392,7 @@ class SketchCanvas(QWidget):
             self._line_start = None
             self._line_reset()                 # M180 R2/R3: a swapped tool
         #                    never inherits a half-typed cell
+            self._tangent_reset()              # M193 R1:  nor an arc drag
         self._rect_corner = None
         self._shape_reset()                    # M182 R2: nor its cells
         self._arc_pts = []
@@ -1064,10 +1077,28 @@ class SketchCanvas(QWidget):
             p = self._place_point(q)              # point/origin/grid magnet
             if self._line_start is None:
                 self._line_start = p
+                self._line_dir = None              #  a FRESH chain has no
+                #                                     previous segment; the
+                #                                     tangent is None until
+                #                                     the first leg commits
             else:
                 if p is self._line_start:
-                    self._line_start = None          # close chain
-                    self._line_reset()               # M180 R2/R3: cells too
+                    # M193 R1 [SKT-CREATE-LINES, verbatim]: "pause over an
+                    # end point, then click and DRAG to create an arc
+                    # segment tangent to the previous line segment."  A
+                    # press ON the free end ARMS a tangent drag - but only
+                    # when a previous leg exists to be tangent to.  A plain
+                    # CLICK (no travel) still closes the chain at release,
+                    # byte-for-byte M176/M177's law; the release decides.
+                    if self._line_dir is not None:
+                        self._arc_drag = self._line_start
+                        self._arc_drag_pushed = False
+                        self._arc_drag_to = None
+                        self._arc_drag_px0 = QPointF(q)
+                    else:
+                        self._line_start = None        # close chain
+                        self._line_reset()             # M180 R2/R3: cells
+                    #  no tangent to bend against - it IS a back-click
                 else:
                     self._push_hist()
                     # M191 R4 [LAW, GUID-F0491540 "Coincident Constraint
@@ -1120,6 +1151,13 @@ class SketchCanvas(QWidget):
                         self.model.constrain(make_angle(ln, ta % 360.0))  #  birth
                     self._solve()
                     self._line_start = p
+                    # M193 R1: the LEG just committed IS the tangent a
+                    # later drag-from-this-end must bend against. Read it
+                    # AFTER the solve - the leash may have moved p.
+                    dl0 = math.hypot(p.x - ln.a.x, p.y - ln.a.y)
+                    self._line_dir = ((p.x - ln.a.x) / dl0,
+                                      (p.y - ln.a.y) / dl0) \
+                        if dl0 > 1e-9 else None
                     self._pending = ("line", ln)      # M90: type a length
                     self._pending_stage = 0
                     self._num_buf = ""
@@ -1129,10 +1167,11 @@ class SketchCanvas(QWidget):
                     #  PLACED it; Enter now files it (M177's grammar)
                     if not self._placed_free:         # L25 (M177 R3):
                         self._line_start = None       #  the chain ENDS
-                        #  on EXISTING geometry - the TOOL lives and
-                        #  RE-ARMS: the next click is a fresh start.
-                        #  A free end keeps chaining (Fusion's exact
-                        #  free-point exception, inverted).
+                        self._tangent_reset()         # M193 R1: the tangent
+                        #  on EXISTING geometry - the TOOL lives and     dies
+                        #  RE-ARMS: the next click is a fresh start.     with
+                        #  A free end keeps chaining (Fusion's exact     it -
+                        #  free-point exception, inverted).              L25.
             self.update()
         elif self._tool == "rect":
             # Fusion parity: supports BOTH corner-drag and click-move-click,
@@ -1315,6 +1354,19 @@ class SketchCanvas(QWidget):
         self._summon_mid = bool(ev.modifiers() & Qt.ShiftModifier)
         self._cursor = self._world(q)
         self.update()                    # keep the readout live
+        if self._arc_drag is not None:            # M193 R1: the tangent-arc
+            #  DRAG. A press rode the free end; now the held pointer draws
+            #  the arc. Past a click's travel it is a DRAG (the band becomes
+            #  a real tangent-arc preview); a release that never got here
+            #  stays the ordinary close-the-chain click.
+            if (abs(q.x() - self._arc_drag_px0.x())                #  screen
+                    + abs(q.y() - self._arc_drag_px0.y())) > 4.0:   #  travel
+                self._arc_drag_pushed = True
+            self._arc_drag_to = self._world(q)                     #  live aim
+            self._snap_hint = self._snap_target(q)                 #  the end
+            #   still magnets (drag it onto geometry and the arc welds there)
+            self.update()
+            return
         if self._pan_from is not None:
             d = (q - self._pan_from)
             self._pan_travel += abs(d.x()) + abs(d.y())   # M173 R1:
@@ -1666,6 +1718,56 @@ class SketchCanvas(QWidget):
         self._drag_pt_start = None              #  M173 R3: leash state
         self._dim_drag = None                   #  M174 R1: label grips
         self._drag = None                       #  ANY grab, tool or no tool
+        if self._arc_drag is not None:                  # M193 R1: the press
+            start = self._arc_drag                      #  rode the free end;
+            self._arc_drag = None                       #   decide now.
+            self._arc_drag_to = None                    #
+            if not self._arc_drag_pushed:                #  NEVER travelled:
+                self._line_start = None                  #  the OLD close-
+                self._line_reset()                       #  the-chain click,
+                self._tangent_reset()                    #  byte-for-byte.
+                self.update()                            #
+                return
+            end = self._place_point(ev.position())        #  the far end
+            #   magnets like any click (snap onto geometry -> a weld there)
+            if end is start or (end.x - start.x) ** 2 + (end.y - start.y) ** 2 \
+                    < 1e-18:                             #  a drag that came
+                self._line_start = None                  #   back home closes
+                self._line_reset()                       #   the chain too
+                self._tangent_reset()                    #
+                self.update()
+                return
+            res = tangent_arc_mid((start.x, start.y), self._line_dir,
+                                  (end.x, end.y))
+            self._push_hist()
+            if res is None:                              #  dead-straight
+                ln = self.model.add_line(start, end)     #   along t: the
+                self._auto_constraints(ln, ev.position())  #  drag is a LEG
+                self._line_start = end                   #   (chained), the
+                self._line_dir = None                    #   tangent law
+                tl0 = math.hypot(end.x - start.x, end.y - start.y)  #  survives
+                if tl0 > 1e-9:                           #   as a leg along t
+                    self._line_dir = ((end.x - start.x) / tl0,
+                                      (end.y - start.y) / tl0)
+                self._pending = ("line", ln)             #  the chip grammar
+                self._pending_stage = 0                  #   of a press-leg,
+                self._num_buf = ""                       #    verbatim
+            else:
+                (mx, my), (ux, uy) = res                 #  the tangent arc:
+                bulge = self.model.point(mx, my)         #   start, mid ON
+                self.model.sketch.arc(start, bulge, end)  #  the curve, end
+                self._line_start = end                   #   The chain walks
+                self._line_dir = (ux, uy)                #    on TANGENT:
+                #   the arc's exit tangent IS the next bend's rule.  No     #
+                self._pending = None                     #  chip yet: radius
+                #                                       typing  is R3's pen
+            self._solve()
+            if not self._placed_free:                    #  L25 (M177 R3):
+                self._line_start = None                  #   onto EXISTING
+                self._line_reset()                       #   geometry ENDS
+                self._tangent_reset()                    #   the chain
+            self.update()
+            return
         if self._tool == "trim":                 # M168 R3: the armed entity
             if self._trim_stroke:                # M169 R3: a stroke ends at
                 self._trim_arm = None            #  the release - the aim is
@@ -3588,6 +3690,7 @@ class SketchCanvas(QWidget):
         self._line_start = None
         self._line_reset()                     # M180 R2/R3: finish washes
         #                                       the  cell with the arming
+        self._tangent_reset()                  # M193 R1: and the chain tail
         self._rect_corner = None
         self._shape_reset()                    # M182 R2: and the shape cells
         self._poly = []
@@ -3988,6 +4091,7 @@ class SketchCanvas(QWidget):
             self._solve()
         self._line_reset()
         self._line_start = None                # placed: the drag is OVER
+        self._tangent_reset()                  # M193 R1:  so is the tail
         self._pending = ("line", ln)
         self._pending_stage = 0
         self._num_buf = f"{d:g}"
@@ -3999,6 +4103,16 @@ class SketchCanvas(QWidget):
         self._line_typed = ""
         self._line_angle = ""
         self._line_cell = "len"
+
+    def _tangent_reset(self):
+        """M193 R1 [LAW]: the tangent-arc drag is a GUEST of the chain
+        anchor - the armed press, the live aim and the chain's tangent all
+        die wherever the free end dies. The cells' wash law again."""
+        self._line_dir = None
+        self._arc_drag = None
+        self._arc_drag_pushed = False
+        self._arc_drag_to = None
+        self._arc_drag_px0 = None
 
     def _line_cells(self):
         """(typed length, typed angle deg) - None where the cell is blank
@@ -4722,10 +4836,30 @@ class SketchCanvas(QWidget):
             cur = self.mapFromGlobal(self.cursor().pos())
             wp = self._world(QPointF(cur))
             p.setPen(QPen(ACCENT, 1.2, Qt.DashLine))
-            p.drawLine(self.w2s(self._line_start.x, self._line_start.y),
-                       self.w2s(*wp))
-            for key, txt, dy in (("len", self._line_live_text(), -22),
-                                 ("ang", self._line_live_angle(), 4)):
+            arc_preview = (self._arc_drag is not None        # M193 R1: the
+                           and self._arc_drag_pushed         #  held DRAG
+                           and self._arc_drag_to is not None  # previews the
+                           and self._line_dir is not None)    #  TANGENT ARC
+            if arc_preview:                                  #  it commits -
+                poly = tangent_arc_sample(                   #  dashed, and
+                    (self._arc_drag.x, self._arc_drag.y),    #   the honest
+                    self._line_dir, tuple(self._arc_drag_to))  # curve, not
+                if poly is not None:                         #  a measured
+                    prev = self.w2s(*poly[0])                #  band: the
+                    for xy in poly[1:]:                      #   cells hush
+                        qn = self.w2s(*xy)
+                        p.drawLine(prev, qn)
+                        prev = qn
+                else:
+                    p.drawLine(self.w2s(self._line_start.x,
+                                        self._line_start.y), self.w2s(*wp))
+                    arc_preview = False            # dead-straight aim: the
+            if not arc_preview:                    #  band AND its readings
+                p.drawLine(self.w2s(self._line_start.x,
+                                    self._line_start.y), self.w2s(*wp))
+            for key, txt, dy in (() if arc_preview else
+                                 (("len", self._line_live_text(), -22),
+                                  ("ang", self._line_live_angle(), 4))):
                 if not txt:
                     continue
                 if key == "ang" and not self._line_angle:

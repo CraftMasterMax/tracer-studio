@@ -220,6 +220,72 @@ def _circumcenter(p1, p2, p3):
     return (ux, uy)
 
 
+def _tangent_circle(s, t, e):
+    """Solve the unique circle that starts at s heading along unit t and
+    passes through e.  Centre on the normal to t at s; |C - e| = |C - s|
+    fixes it.  Returns (cx, cy, sweep) - sweep signed CCW from s to e - or
+    None when s==e or the drag is (near-)straight along t.  The normal is
+    chosen on e's side so the arc BULGES toward the drag: which side the
+    cursor lands on is which way the arc bends (the vendor's flip)."""
+    sx, sy = s
+    vx, vy = e[0] - sx, e[1] - sy
+    chord2 = vx * vx + vy * vy
+    if chord2 < 1e-18:
+        return None
+    tl = math.hypot(t[0], t[1])
+    if tl < 1e-12:
+        return None
+    tx, ty = t[0] / tl, t[1] / tl
+    nx, ny = -ty, tx                       # unit normal to the entry tangent
+    along = vx * nx + vy * ny              # signed off-tangent reach of e
+    if abs(along) < 1e-9 * math.sqrt(chord2):   # straight along t -> no arc
+        return None
+    if along < 0:                          # bend toward e: flip the normal
+        nx, ny, along = -nx, -ny, -along
+    rho = chord2 / (2.0 * along)           # > 0: centre on e's side
+    cx, cy = sx + rho * nx, sy + rho * ny
+    ux, uy = sx - cx, sy - cy              # radius vector at s
+    wx, wy = e[0] - cx, e[1] - cy          # radius vector at e
+    sweep = math.atan2(ux * wy - uy * wx, ux * wx + uy * wy)
+    return cx, cy, sweep
+
+
+def tangent_arc_mid(s, t, e):
+    """M193 R1 [SKT-CREATE-LINES, verbatim]: "pause over an end point,
+    then click and drag to create an arc segment that is TANGENT to the
+    previous line segment."  The arc from s that LEAVES along unit t (so
+    it is C1-continuous with the segment before it) and lands on the drag
+    end e.  Returns (mid, exit_tangent): mid is the point ON the curve at
+    half the signed sweep (the Arc's bulge point) and exit_tangent is the
+    unit tangent AT e - t rotated by the sweep - so a following segment
+    stays tangent (a chain of arcs flows).  None => keep the straight law."""
+    solved = _tangent_circle(s, t, e)
+    if solved is None:
+        return None
+    cx, cy, sweep = solved
+    ux, uy = s[0] - cx, s[1] - cy
+    hs, hc = math.sin(sweep / 2.0), math.cos(sweep / 2.0)
+    mid = (cx + (ux * hc - uy * hs), cy + (ux * hs + uy * hc))
+    es, ec = math.sin(sweep), math.cos(sweep)
+    return mid, (t[0] * ec - t[1] * es, t[0] * es + t[1] * ec)
+
+
+def tangent_arc_sample(s, t, e, n: int = 24):
+    """The swept tangent arc as an (n+1)-point polyline (start ... end) -
+    the DRAG PREVIEW's curve.  None when there is no arc (see the helpers)."""
+    solved = _tangent_circle(s, t, e)
+    if solved is None:
+        return None
+    cx, cy, sweep = solved
+    r = math.hypot(s[0] - cx, s[1] - cy)
+    a0 = math.atan2(s[1] - cy, s[0] - cx)
+    out = []
+    for i in range(n + 1):
+        a = a0 + sweep * (i / n)
+        out.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    return out
+
+
 def _sweep_through(a0, a1, am) -> float:
     """Signed sweep (radians) from a0 to a1; positive = CCW.  Chooses the
     direction whose arc actually passes through the mid angle am."""
