@@ -350,8 +350,10 @@ def test_display_flags_round_trip_the_file():
     m = SketchModel()
     a, b = m.point(0, 0), m.point(40, 0)
     m.add_line(a, b)
-    assert m.vis == {"refs": True, "dims": True, "constraints": True}, \
-        "a fresh sketch shows everything - the pre-M191 file still does"
+    assert all(m.vis[k] for k in ("refs", "dims", "constraints")), \
+        "a fresh sketch shows everything - the pre-M191 file still "   \
+        "does (the trio; M192 R1 grew the palette two more eyes, and "  \
+        "test_m192 owns the full-set law)"
     m.vis["dims"] = False
     back = model_from_dict(model_to_dict(m))
     assert back.vis["dims"] is False, "the flag rode the dict (and so \

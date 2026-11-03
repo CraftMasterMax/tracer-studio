@@ -13,8 +13,9 @@ import math
 import numpy as np
 from PySide6.QtCore import QEvent, QPointF, QSettings, QRectF, Qt, Signal
 from PySide6.QtGui import (QColor, QFont, QKeyEvent, QMouseEvent, QPainter,
-                           QPen, QPolygonF, QWheelEvent)
-from PySide6.QtWidgets import QApplication, QWidget
+                           QPainterPath, QPen, QPolygonF, QWheelEvent)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QFrame, QLabel,
+                               QVBoxLayout, QWidget)
 
 from ..core.sketch.constraints import (Angle, AngleBetween, Collinear,
                                        Concentric, Distance, Equal, Fixed,
@@ -67,6 +68,20 @@ FG = QColor(theme.SKETCH["full"])            # fully constrained = white
 DIM = QColor(theme.CHAR[".500"])
 CONSTR = QColor(theme.SKETCH["construction"])
 DIMC = QColor(theme.SKETCH["dim"])           # dimensions are green
+# M192 R1 [GUID-4183A4B7 - Sketch Palette]: ONE vocabulary for the
+# per-sketch display layers. Every eye the sketch owns answers HERE:
+# (model.vis key, right-click menu label [M191 R3's words, unchanged],
+#  the palette's vendor word). Paint, the canvas menu and the Sketch
+# Palette are three doors on this one list - set_show_layer is the
+# only hand that flips a flag, and it speaks vis_changed so every
+# door stays in step.
+DISPLAY_LAYERS = (
+    ("constraints", "Show constraint symbols", "Show Constraints"),
+    ("dims", "Show dimension values", "Show Dimensions"),
+    ("points", "Show sketch points", "Show Points"),
+    ("profile", "Show profile fill", "Show Profile"),
+    ("refs", "Show projected geometry", "Show Projected Geometry"),
+)
 HUD = QColor(theme.SKETCH["hud"])            # heads-up readouts are blue
 FAINT = QColor(theme.DB[".200"])
 BG = QColor(theme.DB[".250"])
@@ -145,6 +160,14 @@ class SketchCanvas(QWidget):
                                                # solve — the constraint
                                                # voice (M73)
     dim_edited = Signal(object)                # M165 R3: a chip COMMITTED
+    vis_changed = Signal(str, bool)            # M192 R1: ONE door flips a
+    #   display flag (set_show_layer); the menu, the palette and any
+    #   future door ride this sentence and stay in step - no door may
+    #   move an eye without the others hearing.
+    model_changed = Signal()                   # M192 R1: a WHOLE sketch was
+    #   swapped in (set_model is the only door - edit_sketch, new sketch,
+    #   everything). Doors that READ the sketch (the palette) re-sync on
+    #   this; the solve inside set_model already speaks state_changed.
     #   (what ran, not what was attempted) - the window notes the ring
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -226,6 +249,9 @@ class SketchCanvas(QWidget):
                                                    _HIT_PX, type=int)), 0),
                          20)                       # PICKBOX clamps: 0..20
         self._last_result = None
+        self._prof_cache: list | None = None   # M192 R1: the profile-fill
+        #   topology, recomputed lazily; EVERY geometry mutation walks
+        #   through _solve or _push_hist, and both drop this cache.
         self._dim_hits: list = []
         self._constraint_hits: list = []     # M164 R2: (rect, constraint)
         self._hover_c = None                 # constraint under the cursor
@@ -265,10 +291,15 @@ class SketchCanvas(QWidget):
         self._solve()           # state of the loaded sketch, spoken now
         self.fit_view()
         self.update()
+        self.model_changed.emit()   # M192 R1: doors that READ the sketch
+        #   (the Sketch Palette) re-sync their boxes on the swap
 
     # ---- sketch-level undo/redo (entity ops; document ops use main undo) ----
     def _push_hist(self):
         self._hist.append(json.dumps(model_to_dict(self.model)))
+        self._prof_cache = None             # M192 R1: an edit is coming -
+        #   the fill must not paint a stale topology even if the tool
+        #   forgets to solve (belt on the _solve door above)
         if len(self._hist) > 50:
             self._hist.pop(0)
         self._fut.clear()
@@ -678,6 +709,9 @@ class SketchCanvas(QWidget):
         if layer not in self.model.vis:
             return
         self.model.vis[layer] = bool(on)
+        # M192 R1: the ONE mouth. Every door (canvas menu, Sketch
+        # Palette, future panels) flips HERE and EVERY door hears it.
+        self.vis_changed.emit(layer, bool(on))
         self.update()
 
     def _weld_map(self) -> dict:
@@ -2050,9 +2084,10 @@ class SketchCanvas(QWidget):
             # toggles are stored ON THE SKETCH, in the file - so here
             # they flip model.vis (which commit + Back persist), not a
             # global view flag. A check is the sketch's OWN answer.
-            for _key, _lbl in (("constraints", "Show constraint symbols"),
-                               ("dims", "Show dimension values"),
-                               ("refs", "Show projected geometry")):
+            # M192 R1: the loop rides DISPLAY_LAYERS - the two new
+            # eyes (points, profile) arrive HERE for free: paint, this
+            # menu and the Sketch Palette are ONE vocabulary.
+            for _key, _lbl, _pal in DISPLAY_LAYERS:
                 _a = menu.addAction(_lbl)
                 _a.setCheckable(True)
                 _a.setChecked(self._show(_key))
@@ -2690,6 +2725,9 @@ class SketchCanvas(QWidget):
 
     def _solve(self, pins=()):
         self._last_result = self.model.solve(pins=pins)
+        self._prof_cache = None             # M192 R1: the solve MOVED
+        #   geometry - the fill topology must be read fresh next paint
+        #   (cheap: loops+regions run once per solve-paint, not per dot)
         res = self._last_result
         self._redundant = {id(c) for c in getattr(res, "redundant", [])}
         self._conflicting = {id(c) for c in getattr(res, "conflicting", [])}
@@ -2725,6 +2763,9 @@ class SketchCanvas(QWidget):
         p.fillRect(self.rect(), BG)
         self._draw_grid(p)
         if self.model:
+            self._draw_profile(p)           # M192 R1: the closed-region
+            #   FILL rides UNDER everything the maker draws - the bottom
+            #   eye, exactly where Fusion's "Show Profile" lives
             self._draw_refs(p)
             self._draw_entities(p)
             self._draw_dimensions(p)
@@ -3794,6 +3835,50 @@ class SketchCanvas(QWidget):
                     p.drawLine(q_prev, qn)
                     q_prev = qn
 
+    # ---- M192 R1: the PROFILE FILL [GUID-4183A4B7 "Show Profile"] ----------
+    # Fusion's palette eye "Show Profile" shows WHAT AN EXTRUDE WOULD
+    # TAKE: the closed regions of the sketch wear a translucent fill and
+    # HOLES ARE EXCLUDED (even-odd). The honesty law: the fill is read
+    # from to_loops()+regions() - the SAME topology mouth finish()
+    # commits through - so the shaded skin can never promise a profile
+    # the commit would refuse. Cached; every solve (each geometry
+    # mutation walks through it) drops it.
+    def _profile_regions(self):
+        if self._prof_cache is None:
+            try:
+                loops, _warns = self.model.to_loops()
+                self._prof_cache = list(regions(loops))
+            except Exception:               # a wild sketch fails OPEN
+                self._prof_cache = []       #   to "no fill", never a
+        return self._prof_cache             #   broken frame (M167 law)
+
+    def _draw_profile(self, p: QPainter):
+        if not self._show("profile"):
+            return
+        regs = self._profile_regions()
+        if not regs:
+            return
+        fill = QColor(theme.SKETCH["profile"])
+        fill.setAlpha(38)                   # a whisper: the fill INFORMS,
+        p.setPen(Qt.NoPen)                  #   the lines still SPEAK
+        p.setBrush(fill)
+        for r in regs:
+            path = QPainterPath()
+            path.setFillRule(Qt.OddEvenFill)
+            pts = np.asarray(r["points"], float)
+            path.moveTo(self.w2s(float(pts[0][0]), float(pts[0][1])))
+            for xy in pts[1:]:
+                path.lineTo(self.w2s(float(xy[0]), float(xy[1])))
+            path.closeSubpath()
+            for h in r.get("holes", []):    # a hole is a HOLE: the
+                hp = np.asarray(h["points"], float)   #  even-odd rule
+                path.moveTo(self.w2s(float(hp[0][0]), float(hp[0][1])))
+                for xy in hp[1:]:                       #   frees it
+                    path.lineTo(self.w2s(float(xy[0]), float(xy[1])))
+                path.closeSubpath()
+            p.drawPath(path)
+        p.setBrush(Qt.NoBrush)
+
     def _draw_entities(self, p: QPainter):
         sk = self.model.sketch
         # M186 R1 [LAW-55]: EVERY ENTITY TELLS ITS OWN TRUTH - the flip
@@ -3850,18 +3935,24 @@ class SketchCanvas(QWidget):
         self._draw_glow(p, list(self._band_prev) + list(self._sel),
                         QPen(SEL, 2.4))
         # points
-        welded = self._weld_map()           # M191 R1 [endpoint truth]:
-        for pt, _ in self._all_points():    #   "end points ... NOT
-            pos = self.w2s(pt.x, pt.y)      #   constrained to other
-            selected = pt in self._sel or pt in self._band_prev
-            hov = pt is self._hover_e       #   geometry wear WHITE DOTS"
-            p.setPen(QPen(SEL if selected else (HOVER if hov else DIM), 1.2))
-            free = not welded.get(id(pt), False)   # welded: no dot; the
-            p.setBrush(SEL if selected else (HOVER if hov
-                                             else (FG if free else BG)))
-            s = 3.8 if selected else (3.2 if hov else 2.6)
-            p.drawRect(QRectF(pos.x() - s, pos.y() - s, 2 * s, 2 * s))
-        p.setBrush(Qt.NoBrush)
+        # M192 R1 [GUID-4183A4B7]: "Show Points" - the palette's eye
+        # closes this whole layer; the weld law below only decides
+        # WHICH dots show when the eye is open.
+        if self._show("points"):
+            welded = self._weld_map()       # M191 R1 [endpoint truth]:
+            for pt, _ in self._all_points():  # "end points ... NOT
+                pos = self.w2s(pt.x, pt.y)    #  constrained to other
+                selected = pt in self._sel or pt in self._band_prev
+                hov = pt is self._hover_e     #  geometry wear WHITE DOTS"
+                p.setPen(QPen(SEL if selected else (HOVER if hov
+                                                    else DIM), 1.2))
+                free = not welded.get(id(pt), False)  # welded: no dot;
+                p.setBrush(SEL if selected else (HOVER if hov
+                                                 else (FG if free
+                                                       else BG)))
+                s = 3.8 if selected else (3.2 if hov else 2.6)
+                p.drawRect(QRectF(pos.x() - s, pos.y() - s, 2 * s, 2 * s))
+            p.setBrush(Qt.NoBrush)
         sn = self._snap_obj                        # M120: typed magnet glyph
         if sn is not None:
             pos = self.w2s(sn.x, sn.y)
@@ -4338,3 +4429,99 @@ class SketchCanvas(QWidget):
             p.drawText(10, y, text)
             y += 16
         p.setFont(font)
+
+
+# ================================ the Sketch Palette (M192 R1) ================
+# [GUID-4183A4B7] The vendor keeps a standing panel beside the sketch:
+# "The top of the Sketch Palette shows sketch status as Status:
+#  Under-Constrained or Status: Constrained" and a row of display
+# checkboxes - "Show Constraints: Shows or hides sketch constraints."
+# (and the same sentence for Dimensions / Points / Profile / the
+# projected geometries). THREE laws we honour exactly:
+#   * the head's WORDING is the vendor's ("Status: Constrained", not
+#     our toolbar's "Sketch fully constrained" - two voices, one fact);
+#   * every checkbox RIDES model.vis through set_show_layer - the ONE
+#     mouth the canvas menu already uses, so menu and palette can never
+#     disagree (vis_changed keeps both in step);
+#   * the flags are the SKETCH's own (M191 R3): commit, Back and the
+#     file carry them; the palette re-syncs on every model swap.
+# House decision (docs SILENT): an EMPTY sketch gets no verdict - the
+# head reads "Status: -" until the first entity, because neither
+# "Constrained" nor "Under-Constrained" would be a truth about nothing.
+# R2 (Find Under-Constrained) will grow the list into this panel.
+class SketchPalette(QWidget):
+    """The sketch page's side panel: live status head + display eyes."""
+
+    _TIPS = {                      # the vendor's sentence, one per eye
+        "constraints": "Shows or hides sketch constraints.",
+        "dims": "Shows or hides sketch dimensions.",
+        "points": "Shows or hides sketch points.",
+        "profile": "Shows or hides the profile fill.",
+        "refs": "Shows or hides construction and projected geometry.",
+    }
+
+    def __init__(self, canvas: SketchCanvas, parent=None):
+        super().__init__(parent)
+        self._cv = canvas
+        self.setObjectName("sketchPalette")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(10, 8, 10, 8)
+        lay.setSpacing(5)
+        self.status = QLabel("Status: \u2014")
+        self.status.setObjectName("paletteStatus")
+        lay.addWidget(self.status)
+        rule = QFrame()
+        rule.setFrameShape(QFrame.HLine)
+        rule.setObjectName("paletteRule")
+        lay.addWidget(rule)
+        self.boxes: dict = {}
+        for key, _menu_lbl, word in DISPLAY_LAYERS:
+            cb = QCheckBox(word)
+            cb.setObjectName(f"paletteShow_{key}")
+            cb.setToolTip(self._TIPS[key])
+            # the page is built BEFORE any sketch is attached (model is
+            # None until set_model): every sketch owns its flags, and a
+            # model always brings its own answer via model_changed/sync.
+            cb.setChecked(bool(getattr(canvas.model, "vis",
+                                       {}).get(key, True)))
+            cb.toggled.connect(
+                lambda on, k=key: self._cv.set_show_layer(k, on))
+            self.boxes[key] = cb
+            lay.addWidget(cb)
+        lay.addStretch(1)
+        canvas.vis_changed.connect(self._on_vis)
+        canvas.state_changed.connect(self._on_state)
+        canvas.model_changed.connect(self.sync)
+        self.setFixedWidth(196)
+
+    # ---- the two sentences the canvas speaks ------------------------------
+    def _on_vis(self, key: str, on: bool):
+        cb = self.boxes.get(key)
+        if cb is not None and cb.isChecked() != bool(on):
+            cb.blockSignals(True)         # the flip came FROM the canvas
+            cb.setChecked(bool(on))       #   (menu door): answer silently
+            cb.blockSignals(False)
+
+    def _on_state(self, res):
+        sk = getattr(self._cv.model, "sketch", None)
+        empty = sk is None or not (sk.points or sk.lines or sk.circles
+                                   or sk.arcs)
+        if empty or res is None:
+            self.status.setText("Status: \u2014")     # no verdict on naught
+        elif res.dof == 0 and res.converged \
+                and not getattr(res, "conflicting", []):
+            self.status.setText("Status: Constrained")
+        else:
+            self.status.setText("Status: Under-Constrained")
+
+    def sync(self):
+        """Re-read the WHOLE panel after a model swap: the boxes answer
+        the NEW sketch's own vis flags (M191 R3's per-sketch truth)."""
+        vis = getattr(self._cv.model, "vis", {})
+        for key, cb in self.boxes.items():
+            want = bool(vis.get(key, True))
+            if cb.isChecked() != want:
+                cb.blockSignals(True)
+                cb.setChecked(want)
+                cb.blockSignals(False)
+        self._on_state(self._cv._last_result)

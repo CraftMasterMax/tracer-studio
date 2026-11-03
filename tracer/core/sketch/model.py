@@ -155,7 +155,15 @@ class SketchModel:
         # before this rung shows everything, exactly as it always did).
         # DISPLAY ONLY: the magnet still catches a hidden projected
         # edge - hiding is an eye, not a law of the land.
-        self.vis: dict = {"refs": True, "dims": True, "constraints": True}
+        # M192 R1 [GUID-4183A4B7 - the Sketch Palette]: the vendor's
+        # palette offers Show Constraints / Show Dimensions / Show
+        # Points / Show Profile / Show Projected - the same per-sketch
+        # display truth, so the dict grows two honest eyes: POINTS
+        # (the endpoint dots, M191 R1's white-dot law) and PROFILE
+        # (the closed-region FILL the canvas now paints). Every flag
+        # still defaults True: a pre-R1 file shows everything.
+        self.vis: dict = {"refs": True, "dims": True, "constraints":
+                          True, "points": True, "profile": True}
         self.sid = id(self)          # association key while in memory
 
     # ---- entity factory --------------------------------------------------

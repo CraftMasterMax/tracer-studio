@@ -60,7 +60,7 @@ from .renderer import SceneRenderer
 from .panels import LeftRail
 from .ribbon import RibbonBar
 from .shortcuts import TourDialog
-from .sketcheditor import SketchCanvas
+from .sketcheditor import SketchCanvas, SketchPalette
 from .theme import DARK
 from .timeline import TimelineHost
 from .viewport import Viewport
@@ -6231,7 +6231,19 @@ class MainWindow(QMainWindow):
         self.sketch.pick_radius_changed.connect(            #  it converges
             self._pick_spin.setValue)                       #  by design
         lay.addWidget(bar)
-        lay.addWidget(self.sketch, 1)
+        # M192 R1 [GUID-4183A4B7]: the Sketch Palette is born - a fixed
+        # side column beside the canvas (the vendor's panel is docked
+        # furniture too). The canvas keeps the whole stretch; the
+        # palette's 196 px never steal grow-room from the drawing
+        # (M185's integer-halves law: the SPLITTER pages keep their
+        # halves - this is a panel, not a split view).
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        self._sketch_palette = SketchPalette(self.sketch)
+        row.addWidget(self.sketch, 1)
+        row.addWidget(self._sketch_palette)
+        lay.addLayout(row, 1)
         return page
 
     def _wire_sketch_params(self, cv):
