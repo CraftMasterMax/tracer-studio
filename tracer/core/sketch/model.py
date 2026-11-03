@@ -126,6 +126,8 @@ def _dim_tag(c) -> str:
     return ("D" if isinstance(c, Distance) else
             "DIA" if speaks_dia(c) else          # M174 R3: one mouth
             "R" if isinstance(c, Radius) else
+            "LD" if isinstance(c, LineDistance) else    # M192 R7: the
+            "RD" if isinstance(c, RadialDistance) else  #  offset family
             "ang" if isinstance(c, Angle) else
             "angb" if isinstance(c, AngleBetween) else "?")
 
@@ -155,6 +157,43 @@ def dim_speech(sk, c) -> float:
     if isinstance(c, Radius):
         return c.value * (2.0 if speaks_dia(c) else 1.0)
     return abs(c.value)                          # LineDistance | Radial
+
+
+_OFFSET_DIMS = (LineDistance, RadialDistance)
+
+
+def fx_refusable(sk, c, expr):
+    """The vendor's two reference limits [SKT-CREATE-DIMENSIONS],
+    verbatim: 'You cannot reference Driven dimensions in Tangent or
+    Offset dimensions' and 'If a Tangent or Offset dimension is
+    Driven, you cannot reference it in other dimensions.' Our Tangent
+    promise is a CONSTRAINT - no chip, no number, nothing to
+    reference; the OFFSET family is the weld gap and the ring gap.
+    Driven PLAIN dimensions stay referenceable (the Parameters tip
+    says their names are quotable). Returns a reason string or None
+    when the binding is allowed."""
+    import ast
+    try:
+        names = {nd.id for nd in ast.walk(ast.parse(str(expr),
+                                                    mode="eval"))
+                 if isinstance(nd, ast.Name)}
+    except SyntaxError:
+        return None                        # the parser's door handles it
+    tbl = dim_table(sk)
+    for n in sorted(names):
+        if not (len(n) > 1 and n[0] == "d" and n[1:].isdigit()):
+            continue
+        j = int(n[1:])
+        if j >= len(tbl):
+            continue                       # unknown seat: eval's gripe
+        cc = tbl[j]
+        if not getattr(cc, "driven", False):
+            continue
+        if isinstance(cc, _OFFSET_DIMS):
+            return f"{n} is a driven offset - it cannot be referenced"
+        if isinstance(c, _OFFSET_DIMS):
+            return f"an offset cannot read the driven {n}"
+    return None
 
 
 class SketchModel:
@@ -793,6 +832,11 @@ class SketchModel:
                                  "the formula - idle")
                     failed.add(i)
                     return False
+                bad = fx_refusable(self.sketch, cons[i], rec["e"])
+                if bad is not None:              # M192 R7: the vendor's
+                    warns.append(f"fx on dimension {i}: {bad} - idle")
+                    failed.add(i)                #  two reference limits
+                    return False                 #  idle LOUD, value stands
                 for n in sorted(names_in(rec["e"])):
                     j = idx_of_name.get(n)
                     if j is not None and j in self.dim_exprs:
@@ -804,6 +848,13 @@ class SketchModel:
                     v *= float(scale)
                 if rec.get("t") == "DIA":
                     v *= 0.5         # M98: the fx speaks diameter; the
+                if isinstance(cons[i], _OFFSET_DIMS):
+                    # M192 R7 SIGN LAW: the gap's speech is MAGNITUDE
+                    # (the R5/R6 dialect), so a formula commands HOW FAR
+                    # - which SIDE is the constraint's own sign, never
+                    #  a formula's side effect. An inward weld stays
+                    #  inward when its gap is re-written.
+                    v = (1.0 if cons[i].value >= 0 else -1.0) * abs(v)
                 cons[i].value = v    #  constraint stays a radius
                 done.add(i)
                 return True

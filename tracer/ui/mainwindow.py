@@ -1031,6 +1031,29 @@ class MainWindow(QMainWindow):
                     self.doc.dirty = True
                 return
 
+    def _set_sketch_dims(self, feature, on):
+        """M192 R7 [SKT-CREATE-DIMENSIONS, Browser tip]: the row is the
+        FOURTH door on the ONE vis mouth (paint, the canvas right-click
+        and the Sketch Palette eyes own the other three). A sketch OPEN
+        on the canvas flips through the canvas's set_show_layer, so
+        EVERY door hears it (the palette eye follows, the labels leave)
+        and the file debt is paid by the M191 R3 sync. A CLOSED sketch
+        flips its stored dict - that IS its truth while closed, and
+        model_from_dict wakes it faithfully on open. Eyes are not
+        design (M162): no doc-history row, only the dirty bit."""
+        if not isinstance(getattr(feature, "sketch", None), dict):
+            return
+        if (feature.sid is not None and feature.sid == self._editing_sid
+                and self.sketch is not None):
+            self.sketch.set_show_layer("dims", on)
+            self._sync_sketch_display()
+            return
+        vis = feature.sketch.setdefault("vis", {})
+        if bool(vis.get("dims", True)) != bool(on):
+            vis["dims"] = bool(on)
+            if self.doc is not None:
+                self.doc.dirty = True
+
     # ---- repeat last / adjust last (M165 R3) --------------------------------    # The memory is a ring of (key, stack, kind, payload), newest last.
     # Entries are NOT lambdas holding references: they carry strings that
     # RE-RESOLVE at replay, and a dead action/feature/dim is dropped -
@@ -1141,12 +1164,30 @@ class MainWindow(QMainWindow):
 
     # ---- feature management (context menus: timeline + browser) --------------
     def _feature_menu(self, feature, pos):
+        menu = self._feature_menu_build(feature)   # M192 R7: the canvas
+        menu.exec(pos)                             #  _build_menu seam
+
+    def _feature_menu_build(self, feature):
+        """The feature menu BUILT (parent-owned, not exec'd) - the same
+        door the right-click rides, headless-testable: the modal exec
+        belongs to the caller, so gates trigger these actions directly
+        (the M164/m192 canvas-menu pattern)."""
         menu = QMenu(self)
         sketchy = (isinstance(feature, (ExtrudeFeature, RevolveFeature,
                                         HoleFeature))
                    and feature.sketch)
         if sketchy:
             menu.addAction("Edit sketch", lambda: self.edit_sketch(feature))
+            act_dims = menu.addAction("Show Dimensions")   # M192 R7
+            act_dims.setCheckable(True)                    #  [SKT-CREATE-
+            live = (feature.sid is not None                #  DIMENSIONS,
+                    and feature.sid == self._editing_sid)  #  Browser tip:
+            stored = feature.sketch.get("vis") or {}       #  "right-click
+            act_dims.setChecked(bool((self.sketch.model.vis if live
+                                      else stored).get("dims", True)))
+            act_dims.triggered.connect(                    #  a sketch and
+                lambda on, f=feature:                      #   select Show
+                    self._set_sketch_dims(f, bool(on)))    #   Dimensions")
         if isinstance(feature, ExtrudeFeature):
             menu.addAction("Set extrude distance…",
                            lambda: self._set_distance(feature))
@@ -1186,7 +1227,12 @@ class MainWindow(QMainWindow):
             menu.addAction("Change Parameters…",
                            lambda: self.action_change_params(feature))
         menu.addAction("User Parameters…", self.action_user_parameters)
-        from ..core.document import HoleFeature
+        # (M192 R7 FIX: this function used to RE-import HoleFeature here;
+        # a name imported ANYWHERE in a function is local THROUGHOUT it,
+        # so the sketchy check at the top died with UnboundLocalError on
+        # EVERY browser right-click since M150 - hidden because the
+        # modal menu was never EXECuted by a gate (PySide swallows slot
+        # exceptions headless). The Browser menu now walks a real gate.)
         if isinstance(feature, HoleFeature):
             self._datum_menu_rows(menu, "hole-axis", feature.uid,
                                   f"hole {feature.name}")
@@ -1203,7 +1249,7 @@ class MainWindow(QMainWindow):
             menu.addAction("End rollback",
                            lambda: self._apply_rollback(None))
         menu.addAction("Delete feature", lambda: self._delete_feature(feature))
-        menu.exec(pos)
+        return menu
 
     def _is_base_feature(self, feature) -> bool:
         """True if nothing before it adds material — the base cannot Cut."""

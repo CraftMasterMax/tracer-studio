@@ -126,6 +126,15 @@ class ChipField(ExprField):
             if not expr:
                 raise params.ParamError(
                     'fx wants an expression after "="')
+            cv = self.parent()                     # M192 R7: the vendor's
+            if cv is not None \
+                    and getattr(cv, "model", None) is not None:
+                from ..core.sketch.model import fx_refusable
+                bad = fx_refusable(cv.model.sketch,       #  two reference
+                                   self.constraint, expr)  #  limits are
+                if bad is not None:                        #  INVALIDITY
+                    raise params.ParamError(bad)           #  here too:
+            #                                             #  red + retry
             return float(params.eval_expr(expr, vals)) * sc   # fx: doc
         return parse_scalar(t, vals)               #  units, no units
 

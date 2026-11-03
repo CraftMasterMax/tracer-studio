@@ -3742,8 +3742,14 @@ class SketchCanvas(QWidget):
     def _dim_token(self, c):
         """The chip's parameter NAME (M192 R6): d{j} over the length-
         dimension table. An angle has none - M89's lengths-only law:
-        what cannot bind cannot be borrowed either."""
-        from ..core.sketch.model import dim_table
+        what cannot bind cannot be borrowed either. And a DRIVEN
+        OFFSET has none either (M192 R7, verbatim): 'If a Tangent or
+        Offset dimension is Driven, you cannot reference it in other
+        dimensions' - the click borrows nothing; the press falls
+        through as the ordinary click it then is."""
+        from ..core.sketch.model import _OFFSET_DIMS, dim_table
+        if isinstance(c, _OFFSET_DIMS) and getattr(c, "driven", False):
+            return None
         for j, cc in enumerate(dim_table(self.model.sketch)):
             if cc is c:
                 return f"d{j}"
@@ -3809,6 +3815,13 @@ class SketchCanvas(QWidget):
             return True
         expr = t.lstrip("=").strip() if t.startswith("=") else ""
         if expr:
+            from ..core.sketch.model import fx_refusable
+            from ..core.sketch.model import _OFFSET_DIMS
+            bad = fx_refusable(self.model.sketch, c, expr)   # M192 R7:
+            if bad is not None:                              #  the two
+                self._warn(f"Binding refused: {bad}")        #  vendor
+                self.update()                                #  reference
+                return False                                 #  limits
             vals, sc = self._fx_env()            # fx: doc units x scale,
             try:                                 #  the TABLE (d0, d1...)
                 newv = float(eval_expr(expr, vals)) * sc   #  rides too
@@ -3818,6 +3831,11 @@ class SketchCanvas(QWidget):
                 return False                     # the number stays honest
             self._push_hist()                    # strictly AFTER eval
             self.model.dim_exprs[i] = {"e": expr, "t": _dim_tag(c)}
+            if isinstance(c, _OFFSET_DIMS):      # M192 R7 SIGN LAW (the
+                newv = (1.0 if c.value >= 0      #  engine's twin): the
+                        else -1.0) * abs(newv)   #  formula commands how
+                                                 #  FAR, the constraint
+                                                 #  keeps its own side
             c.value = newv * 0.5 if dia else newv        # M98: "=expr" is Ø
         else:
             try:

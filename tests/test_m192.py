@@ -1416,3 +1416,250 @@ def test_the_real_page_borrows_names_too(win2, qapp2):
         "on the REAL window the documented click borrows the name the "  \
         "same way the standalone stage plays it"
     cv._close_dim_editor()
+
+
+# =========== R7: BROWSER SHOW DIMENSIONS + THE REFERENCE LIMITS ==============
+# [SKT-CREATE-DIMENSIONS, Tips, verbatim]: "From the Browser, right-click
+# a sketch and select Show Dimensions so you can easily reference
+# dimensions in another sketch." + the same page's two limits, verbatim:
+# "You cannot reference Driven dimensions in Tangent or Offset
+# dimensions" + "If a Tangent or Offset dimension is Driven, you cannot
+# reference it in other dimensions." Our offset family is the weld gap
+# (LineDistance) and the ring gap (RadialDistance); Tangent is a bare
+# CONSTRAINT - no chip, no number, nothing to reference. The Browser row
+# is the FOURTH door on the ONE vis mouth (paint, the canvas menu and
+# the palette eyes own the other three): an OPEN sketch flips through
+# set_show_layer so every door hears; a CLOSED one flips the stored dict
+# the file already carries (M191 R3) - that IS its truth while closed,
+# woken faithfully on open. Eyes are not design (M162): no history row.
+# The builder seam (_feature_menu_build) copies the canvas _build_menu
+# pattern: the modal exec belongs to the CALLER - and that modality is
+# why no gate ever executed this menu before: since M150 an in-function
+# re-import of HoleFeature shadowed the name throughout, and EVERY
+# browser right-click died UnboundLocalError (PySide swallows slot
+# exceptions headless). The seam makes the invisible fatal.
+
+from tracer.core.document import ExtrudeFeature, PrimitiveFeature      # noqa
+
+
+def _boss_doc(win):
+    """Plate + Boss (a REAL sid-carrying sketched extrude): the M191 R3
+    recipe - the display-sync finds the open sketch BY sid."""
+    win.new_document()
+    win._edit_park_on = False
+    win._edit_park = None
+    d = win.doc
+    d.add(PrimitiveFeature(name="Plate", kind="box", op="union",
+                           dims={"dx": 40.0, "dy": 40.0, "dz": 4.0}))
+    boss = d.add(ExtrudeFeature(
+        name="Boss", outer=np.array([[0, 0], [10, 0], [10, 5]], float),
+        height=4.0, sid=777900,
+        sketch={"name": "SketchBoss", "lines": [], "circles": [],
+                "arcs": [], "points": [], "constraints": [],
+                "dims": []}))
+    win.recompute()
+    qapp2 = QApplication.instance()
+    for _ in range(3):
+        qapp2.processEvents()
+    return d, boss
+
+
+def _door(menu):
+    acts = {a.text(): a for a in menu.actions() if a.text()}
+    return acts.get("Show Dimensions")
+
+
+def test_the_browser_row_wears_the_vendors_word(win2, qapp2):
+    d, boss = _boss_doc(win2)
+    da = _door(win2._feature_menu_build(boss))
+    assert da is not None, \
+        "the Browser tip LITERALLY (right-click a sketch, select Show "  \
+        "Dimensions) - and the menu BUILDS AT ALL: the HoleFeature "     \
+        "shadow-killed it on every right-click since M150; a modal exec " \
+        "hid the death from every gate (PySide swallows slot exceptions)"
+    assert da.isCheckable() and da.isChecked(), \
+        "a checkable door reflecting the sketch's CURRENT truth: a "     \
+        "fresh sketch shows its dimensions"
+
+
+def test_a_closed_sketch_flips_its_stored_eyes(win2, qapp2):
+    d, boss = _boss_doc(win2)
+    _door(win2._feature_menu_build(boss)).trigger()
+    assert boss.sketch["vis"]["dims"] is False, \
+        "a CLOSED sketch has no canvas to command - the stored dict IS " \
+        "its truth while closed (the same key M191 R3 made file-borne)"
+    assert d.dirty, "a look still dirties the FILE: the flag rides it"
+
+
+def test_the_file_wakes_and_the_hidden_chips_keep_no_hit(win2, qapp2):
+    d, boss = _boss_doc(win2)
+    _door(win2._feature_menu_build(boss)).trigger()          # CLOSED
+    win2.edit_sketch(boss)
+    qapp2.processEvents()
+    cv = win2.sketch
+    assert cv.model.vis["dims"] is False, \
+        "model_from_dict WAKES the flag: right-click hide in one "       \
+        "session, quiet chips in the next"
+    cv._snap_grid = False
+    ln = cv.model.add_line(cv.model.point(0.0, 0.0),
+                           cv.model.point(8.0, 0.0))
+    cv._solve()
+    cv._sel = [ln]
+    cv.act_dim()
+    cv._dim_place = None
+    cv._solve()
+    cv.update()
+    for _ in range(4):
+        qapp2.processEvents()
+    assert not cv._dim_hits, \
+        "hidden dims keep NO hit (M191 R3's law re-pinned from the "     \
+        "Browser side: paint == seat, an invisible chip cannot be "      \
+        "clicked by an invisible cursor)"
+    cv.set_show_layer("dims", True)                        # POSITIVE
+    cv.update()                                            #  CONTROL
+    for _ in range(4):
+        qapp2.processEvents()
+    assert len(cv._dim_hits) == 1, \
+        "the OFF state was the story: one flip and the chip returns "    \
+        "to the SAME post"
+
+
+def test_the_open_sketch_flips_through_the_one_mouth(win2, qapp2):
+    from tracer.ui.sketcheditor import SketchPalette
+    d, boss = _boss_doc(win2)
+    win2.edit_sketch(boss)
+    qapp2.processEvents()
+    cv = win2.sketch
+    pal = win2.findChild(SketchPalette)
+    assert pal is not None and pal.boxes["dims"].isChecked()
+    da = _door(win2._feature_menu_build(boss))
+    assert da.isChecked(), \
+        "the row asks the OPEN sketch's canvas first: the live model "   \
+        "is the truth while the sketch is on the page"
+    n_hist = len(cv._hist)
+    da.trigger()
+    for _ in range(3):
+        qapp2.processEvents()
+    assert cv.model.vis["dims"] is False, \
+        "the flip RODE set_show_layer - the ONE mouth, not a private "   \
+        "dict poke"
+    assert boss.sketch["vis"]["dims"] is False, \
+        "and the file debt is paid by the SAME gesture (M191 R3 sync)"
+    assert not pal.boxes["dims"].isChecked(), \
+        "the palette EYE heard a signal it did not start: every door "   \
+        "speaks, every door hears"
+    assert len(cv._hist) == n_hist, \
+        "eyes are not design (M162): the flip costs NO undo row"
+    da.trigger()                               # vendor word TOGGLES
+    for _ in range(3):
+        qapp2.processEvents()
+    assert cv.model.vis["dims"] and boss.sketch["vis"]["dims"] \
+        and pal.boxes["dims"].isChecked(), \
+        "the same item flips BOTH ways (Show / hide): one door, a "      \
+        "switch, not a ratchet"
+
+
+def test_a_driven_offset_earns_no_name(qapp):
+    cv, m, d0, d1, ld, _an = _r6_scene(qapp)
+    assert cv._dim_token(ld) == "d2", \
+        "POSITIVE CONTROL first: a DRIVING weld gap sits in the table"
+    ld.driven = True
+    cv.update()
+    for _ in range(3):
+        qapp.processEvents()
+    assert cv._dim_token(ld) is None, \
+        "verbatim: 'If a Tangent or Offset dimension is Driven, you "    \
+        "cannot reference it in other dimensions' - the click borrows "  \
+        "NOTHING. The SEATS stay (re-seating names on every flag flip "  \
+        "would silently rewrite every existing formula): d0 and d1 "     \
+        "keep their words."
+    assert cv._dim_token(d0) == "d0" and cv._dim_token(d1) == "d1"
+    r = _chip_of(cv, ld)
+    cv._open_dim_editor(d0)
+    cv.window().activateWindow()               # REAL production posture:
+    for _ in range(4):                         #  the farewell is a
+        qapp.processEvents()                    #   FOCUS-OUT law, and
+    #   offscreen a never-activated window means the field never truly
+    #   HAD the app focus to lose (probe: activateWindow is the switch).
+    #   Without it the editor simply stays open - honest, but it tests
+    #   Qt's activation lottery, not the nameless-chip law.
+    assert cv._dim_edit is not None             # the field is open
+    QTest.mousePress(cv, Qt.LeftButton, pos=r.center().toPoint())
+    QTest.mouseRelease(cv, Qt.LeftButton, pos=r.center().toPoint())
+    for _ in range(3):
+        qapp.processEvents()
+    assert cv._dim_edit is None, \
+        "a press on a NAMELESS chip is an ordinary press: the field's "  \
+        "farewell LANDS (unchanged - close quietly); a reference was "   \
+        "impossible, so the boundary stays M165's"
+
+
+def test_an_offset_refusing_a_driven_number_is_loud_everywhere(qapp):
+    cv, m, d0, d1, ld, _an = _r6_scene(qapp)
+    d0.driven = True                       # clause 2: offsets may not
+    before = ld.value                      #  read ANY driven number
+    ok = cv._apply_dim_edit(ld, "=d0")
+    assert ok is False and ld.value == before \
+        and 2 not in m.dim_exprs, \
+        "commit DOOR: refused, no binding, the number stands honest"
+    assert "driven" in cv._warn_text and "offset" in cv._warn_text, \
+        "and the refusal NAMES itself (the idle law: loud, never silent)"
+    ed = dimedit.open(cv, ld)              # the FIELD door: red + retry
+    for _ in range(3):
+        qapp.processEvents()
+    ed.edit.setText("=d0")
+    QTest.keyClick(ed.edit, Qt.Key_Return)
+    for _ in range(3):
+        qapp.processEvents()
+    assert cv._dim_edit is ed and ed._bad and 2 not in m.dim_exprs, \
+        "the illegal reference is INVALID GRAMMAR: red border, field "   \
+        "stays open for a retry (M165's law, no new dialect)"
+    cv._close_dim_editor()
+    d0.driven = False
+    warns = m.apply_dim_params({})         # the ENGINE door (clause 1
+    assert warns == [], "clean sheet, clean silence"
+
+
+def test_the_stale_illegal_binding_idles_loudly_on_rebuild(qapp):
+    cv, m, d0, d1, ld, _an = _r6_scene(qapp)
+    cv._apply_dim_edit(ld, "=d0")          # legal while d0 DRIVES
+    assert 2 in m.dim_exprs
+    d0.driven = True                       # the world moved under it
+    before = ld.value                      #  (toggle d0 later...)
+    warns = m.apply_dim_params({})
+    assert any("driven" in w and "idle" in w for w in warns), \
+        "a binding the vendor would never mint idles WITH a warning at " \
+        "rebuild - the engine never quietly re-mints an illegal promise"
+    assert ld.value == before, "and the number STANDS where it was"
+
+
+def test_the_weld_gap_keeps_its_side_through_the_formula(qapp):
+    cv, m, d0, d1, ld, _an = _r6_scene(qapp)
+    assert ld.value == pytest.approx(-28.0), "the scene's gap is INWARD"
+    ok = cv._apply_dim_edit(ld, "=d0")     # d0 speaks 8.00
+    assert ok and ld.value == pytest.approx(-8.0), \
+        "the formula commands HOW FAR (the chip speaks magnitude) - "    \
+        "which SIDE is the constraint's OWN sign: '=d0' on an inward "   \
+        "gap lands at -8, never flipping the weld across the line"
+    d0.value = 11.0
+    warns = m.apply_dim_params({})
+    assert warns == [] and ld.value == pytest.approx(-11.0), \
+        "and the rebuild engine keeps the SAME law (twin, not drift)"
+    cv._close_dim_editor() if cv._dim_edit else None
+    assert cv._dim_text(ld) == "11.00", "the chip still SPEAKS "     \
+        "magnitude while the store keeps the side (one voice, two jobs)"
+
+
+def test_a_driven_offset_referenced_by_anyone_is_refused(qapp):
+    from tracer.core.sketch.model import fx_refusable
+    cv, m, d0, d1, ld, _an = _r6_scene(qapp)
+    ld.driven = True
+    reason = fx_refusable(m.sketch, d0, "d2 + 1")
+    assert reason is not None and "driven offset" in reason, \
+        "clause 1 bites EVERYWHERE: even a plain dimension may not "     \
+        "quote a driven weld gap - the seat exists, the words do not"
+    ok = cv._apply_dim_edit(d0, "=d2 + 1")
+    assert ok is False and "driven offset" in cv._warn_text, \
+        "the commit door enforces the SAME helper (one law, no "        \
+        "per-mouth dialects)"
+    assert 0 not in m.dim_exprs and d0.value == pytest.approx(8.0)
