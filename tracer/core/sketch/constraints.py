@@ -146,6 +146,29 @@ class LineDistance(Constraint):
 
 
 @dataclass
+class RadialDistance(Constraint):
+    """M192 R5 [SKT-SKETCH-MODIFY-TOOLS, the offset association on
+    CURVES]: the signed RADIAL gap keeper - the child circle keeps its
+    radius a signed distance from the parent's (r_child - r_parent = d,
+    inward offsets speak negative). The ring cousin of LineDistance
+    (M187 R1): the row drops exactly one degree, the numerical
+    Jacobian differentiates through both sizes for free. Born of the
+    lone-circle offset beside a Concentric weld; delete the chip and
+    the distance UNLOCKS - the dangling weld wears the glyph and the
+    right-click restores it where the copy STANDS (LAW-59's exact
+    choreography, moved from edges to rings).
+    """
+    parent: object           # Circle
+    child: object            # Circle
+    value: float
+
+    def entities(self): return [self.parent, self.child]
+
+    def residual(self, pos):
+        return (self.child.r - self.parent.r - self.value) / _LEN_SCALE
+
+
+@dataclass
 class Parallel(Constraint):
     l1: Line
     l2: Line

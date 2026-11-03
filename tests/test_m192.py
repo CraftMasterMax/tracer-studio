@@ -908,3 +908,237 @@ def test_the_marking_menu_lives_on_the_real_page(win2, qapp2):
     qapp2.processEvents()
     assert not [c for c in m.sketch.constraints
                 if isinstance(c, Distance)], "and the unbirth is clean"
+
+
+# ================= R5: THE OFFSET ASSOCIATION ON EVERY CURVE ===================
+# [SKT-SKETCH-MODIFY-TOOLS, verbatim] "When you offset sketch curves, an
+# offset constraint glyph is displayed on the original geometry and the
+# offset geometry... To remove this association, select the offset glyph
+# in the canvas, right-click, then select Delete." M187 gave the STRAIGHT
+# paths this law (parallel weld + gap chip + dangling glyph). The vendor
+# says "sketch curves" - so the lone circle now welds too (fresh centre
+# Point + Concentric + the new RadialDistance row: r_child - r_parent =
+# d), and the kernel path welds every child edge whose parent its own
+# fingerprint can name uniquely. A welded twin sharing the centre POINT
+# would be a FACT, not a PROMISE - and promises are what Delete frees.
+
+from tracer.core.sketch.constraints import (Concentric, Fixed,          # noqa
+                                            LineDistance, Parallel,
+                                            Radius, RadialDistance)     # noqa
+
+
+def _welded(qapp, d=3.0):
+    """One circle, offset - the ring weld born. The paint is FORCED:
+    hit lists are PER-PAINT (M192 R2's law banked in blood) - a bare
+    processEvents may replay yesterday's frame and an empty _dim_hits
+    then reads like a missing chip."""
+    cv, pal = _stage(qapp)
+    m = cv.model
+    c = m.add_circle(m.point(0.0, 0.0), 5.0)
+    cv._solve()
+    made = m.add_offset(d)
+    cv._solve()
+    cv.update()
+    for _ in range(4):
+        qapp.processEvents()
+    return cv, pal, m, c, made[0]
+
+
+def _rows_of(m, cls):
+    return [x for x in m.sketch.constraints if isinstance(x, cls)]
+
+
+def test_the_lone_circle_offset_welds_its_copy(qapp):
+    cv, pal, m, c, nc = _welded(qapp)
+    assert nc.c is not c.c, "the copy is FRESH geometry, not a twin "   \
+        "sharing the centre - identity is not a promise, and promises "  \
+        "are what the vendor's Delete frees"
+    assert nc.r == pytest.approx(8.0)
+    assert _rows_of(m, Concentric) and _rows_of(m, RadialDistance), \
+        "the association is minted AS LAWS: concentricity + the signed "\
+        "ring gap (SKT-SKETCH-MODIFY-TOOLS: the glyph means a law)"
+    res = cv._last_result
+    assert res.converged and res.dof == 3, \
+        "the weld drops EXACTLY the three degrees a free twin would "\
+        "have (centre x/y, radius): the copy keeps nothing free of its "\
+        "parent, and the ring pair floats as one"
+
+
+def test_the_ring_gap_speaks_a_chip(qapp):
+    cv, pal, m, c, nc = _welded(qapp)
+    rd = _rows_of(m, RadialDistance)[0]
+    hits = [cc for _rect, cc in cv._dim_hits if cc is rd]
+    assert hits, "the gap wears a chip like any dimension - the witness "\
+        "tick and the seat live on the +x ray between the rings"
+    assert cv._dim_text(rd) == "3.00", "the chip speaks MAGNITUDE (the "\
+        "sign says inward/outward, the number says how far: M187 R3's "\
+        "law moved to rings)"
+    cv2, _p2 = _stage(qapp)
+    mm = cv2.model
+    cc2 = mm.add_circle(mm.point(0.0, 0.0), 5.0)
+    cv2._solve()
+    mm.add_offset(-1.5)
+    cv2._solve()
+    inward = _rows_of(mm, RadialDistance)[0]
+    assert inward.value == pytest.approx(-1.5) and \
+        cv2._dim_text(inward) == "1.50", "an INWARD offset speaks "\
+        "negative law, positive number - the copy ring inside, honest"
+
+
+def test_the_chipped_pair_shows_the_chip_and_never_the_glyph(qapp):
+    cv, pal, m, c, nc = _welded(qapp)
+    conc = _rows_of(m, Concentric)[0]
+    rd = _rows_of(m, RadialDistance)[0]
+    assert any(cc is rd for _r, cc in cv._dim_hits), \
+        "POSITIVE CONTROL first: the chip is on THIS frame's hit list "  \
+        "- a negative on a stale frame would pass vacuously"
+    assert not any(cc is conc for _r, cc in cv._constraint_hits), \
+        "one voice per promise: the chipped pair shows the number, "     \
+        "never a colliding glyph (M187 R4's law, ring-faithful)"
+
+
+def test_the_welded_ring_reads_defined_when_the_parent_is_tamed(qapp):
+    cv, pal, m, c, nc = _welded(qapp)
+    m.constrain(Fixed(c.c, x=0.0), Fixed(c.c, y=0.0), Radius(c, 5.0))
+    cv._solve()
+    for _ in range(3):
+        qapp.processEvents()
+    assert cv._ent_locked(c) and cv._ent_locked(nc), \
+        "LAW-55 rides the weld: tame the parent and the child ring "\
+        "reads DEFINED - concentricity and the gap feed the SAME "\
+        "witness the paint and the finder wear"
+    assert cv.finder_rows() == [], "nothing free, no rows - the "\
+        "association carries the truth through every door"
+
+
+def test_dragging_the_parent_pulls_the_child_ring(qapp):
+    cv, pal, m, c, nc = _welded(qapp)
+    c.c.x = 6.0
+    c.c.y = 2.0
+    cv._solve(pins=[c.c])                # the CANVAS's drag law: the
+    #   hand holds the grabbed centre. A raw model.solve() relaxes BOTH
+    #   centres to consensus ((3,1) - the pair floats and the test
+    #   measures nothing); pins is exactly what a real drag answers to.
+    assert (nc.c.x, nc.c.y) == pytest.approx((6.0, 2.0), abs=1e-6), \
+        "the association HOLDS: drag the parent and the copy swims "\
+        "with it"
+    assert nc.r - c.r == pytest.approx(3.0, abs=1e-6), "and the ring "\
+        "gap is kept - a promise, not a coincidence"
+
+
+def test_the_gap_chip_door_unlocks_the_ring(qapp):
+    cv, pal, m, c, nc = _welded(qapp)
+    rd = _rows_of(m, RadialDistance)[0]
+    cv.act_remove_constraint(rd)             # the chip's OWN door
+    for _ in range(3):
+        qapp.processEvents()
+    conc = _rows_of(m, Concentric)[0]
+    assert not _rows_of(m, RadialDistance)
+    cv.update()
+    for _ in range(3):
+        qapp.processEvents()
+    assert any(cc is conc for _r, cc in cv._constraint_hits), \
+        "delete the dimension and the distance UNLOCKS - the dangling "\
+        "weld wears the offset GLYPH: the handle the vendor names"
+    cv._hover_c = conc
+    acts = {a.text() for a in cv._build_menu().actions() if a.text()}
+    assert {"Add Offset Dimension", "Remove Association"} <= acts, \
+        "right-clicking the glyph answers BOTH documented doors"
+
+
+def test_the_glyph_restores_where_the_ring_stands(qapp):
+    cv, pal, m, c, nc = _welded(qapp)
+    rd = _rows_of(m, RadialDistance)[0]
+    cv.act_remove_constraint(rd)
+    nc.r = 12.0                               # the copy drifts free...
+    m.solve()
+    conc = _rows_of(m, Concentric)[0]
+    cv.act_add_offset_dim(conc)
+    back = _rows_of(m, RadialDistance)
+    assert len(back) == 1 and back[0].value == pytest.approx(7.0), \
+        "RESTORE stamps the gap AS IT STANDS (7.0 = 12-5), not the one "\
+        "it was born with - the book's latest truth wins (LAW-59)"
+
+
+def test_the_glyph_deletes_the_whole_association(qapp):
+    cv, pal, m, c, nc = _welded(qapp)
+    rd = _rows_of(m, RadialDistance)[0]
+    cv.act_remove_constraint(rd)             # dangling (UI-reachable)
+    conc = _rows_of(m, Concentric)[0]
+    cv.act_remove_association(conc)          # the glyph's Delete door
+    for _ in range(3):
+        qapp.processEvents()
+    assert not _rows_of(m, Concentric), \
+        "'select the offset glyph, right-click, Delete' FREES the "\
+        "association - the copy is now independent geometry (centre "\
+        "floats, radius floats), nothing half-promises"
+    res = m.solve()
+    assert res.converged and res.dof == 6, "the twin degrees return: "\
+        "3 for each ring, exactly as if the weld had never been"
+
+
+def test_the_kernel_path_welds_what_it_can_name(qapp):
+    cv, pal = _stage(qapp)
+    m = cv.model
+    m.add_rect(m.point(-10.0, -6.0), m.point(10.0, 6.0))
+    m.add_circle(m.point(0.0, 0.0), 2.0)     # a hole: the round path
+    cv._solve()
+    made = m.add_offset(2.0, join="round")
+    cv._solve()
+    for _ in range(3):
+        qapp.processEvents()
+    welds = _rows_of(m, RadialDistance)
+    par = _rows_of(m, Parallel)
+    ld = _rows_of(m, LineDistance)
+    assert par and ld, "the kernel polygon welds every straight child "\
+        "whose parent the fingerprint names uniquely (receipt 6 says "\
+        "'sketch curves', not 'the straight-loop shortcut')"
+    res = cv._last_result
+    assert res.converged, "twelve weld rows on a tessellated crowd "\
+        "still solve"
+    assert len(made) > 4, "and the arc fragments whose parents cannot "\
+        "be named stay FREE - no fake promise"
+    assert not welds, "ring laws belong to the lone-circle path; the "\
+        "crowded one is honest line work only"
+
+
+def test_the_ring_gap_rides_the_file(qapp):
+    cv, pal, m, c, nc = _welded(qapp)
+    d = model_to_dict(m)
+    assert any(rec.get("t") == "rd" for rec in d["constraints"]), \
+        "the association is IN THE FILE - a ring gap is geometry's "\
+        "word, not a canvas cosmetic"
+    back = model_from_dict(d)
+    rds = [x for x in back.sketch.constraints
+           if isinstance(x, RadialDistance)]
+    assert len(rds) == 1 and rds[0].value == pytest.approx(3.0) \
+        and rds[0].parent is back.sketch.circles[0] \
+        and rds[0].child is back.sketch.circles[1], \
+        "and the wake hands it the SAME two rings it was born between"
+
+
+def test_undo_lifts_the_whole_weld(qapp, monkeypatch):
+    # the gate walks the REAL door: act_offset pushes the ledger row
+    # BEFORE it mints (M84's law), so one undo owes the whole weld.
+    # Calling model.add_offset directly would leave NOTHING to undo -
+    # the history belongs to the COMMAND, not the kernel (R5 lesson).
+    from tracer.ui import cmddialog
+    cv, pal = _stage(qapp)
+    m = cv.model
+    m.add_circle(m.point(0.0, 0.0), 5.0)
+    cv._solve()
+    monkeypatch.setattr(cmddialog, "ask",
+                        staticmethod(lambda *a, **k: {"d": 3.0,
+                                                      "j": "mitre"}))
+    cv.act_offset()
+    for _ in range(3):
+        qapp.processEvents()
+    assert _rows_of(m, RadialDistance) and len(m.sketch.circles) == 2, \
+        "the toolbar's door welds exactly like the model's own"
+    assert cv.undo_op()
+    cv._solve()
+    assert not _rows_of(cv.model, RadialDistance) \
+        and not _rows_of(cv.model, Concentric) \
+        and len(cv.model.sketch.circles) == 1, \
+        "one gesture, one ledger row: undo takes the copy AND its "\
+        "laws back together"

@@ -24,6 +24,7 @@ from ..core.sketch.constraints import (Angle, AngleBetween, Collinear,
                                        Horizontal, LineDistance, Midpoint,
                                        Parallel, Perpendicular,
                                        PointOnCircle, PointOnLine, Radius,
+                                       RadialDistance,
                                        Symmetry, Tangent, Vertical,
                                        make_angle, make_angle_between,
                                        make_tangent, snapped, speaks_dia,
@@ -2124,12 +2125,16 @@ class SketchCanvas(QWidget):
             menu.addAction("Remove Constraint",    # hover (mousePress
                            lambda c=hv: self.act_remove_constraint(c))
             menu.addSeparator()                    # :427-429 clears not)
-        if isinstance(hv, Parallel) and self._weld_gap(hv) is None:
-            menu.addAction("Add Offset Dimension",  # M187 R4 (LAW-59):
+        if (isinstance(hv, Parallel) and self._weld_gap(hv) is None) \
+                or (isinstance(hv, Concentric)                  # M192
+                    and self._radial_gap(hv) is None):          #  R5:
+            menu.addAction("Add Offset Dimension",              # the
                            lambda c=hv: self.act_add_offset_dim(c))
-            menu.addAction("Remove Association",    # the glyph owns BOTH
+            menu.addAction("Remove Association",                #  ring
                            lambda c=hv: self.act_remove_association(c))
-            menu.addSeparator()                     #  its own doors
+            menu.addSeparator()                     #   welds answer
+            #                            the SAME two doors (LAW-59
+            #                            never limited itself to edges)
         if hv is not None and isinstance(hv, Radius):   # M174 R3 (FD5-
             menu.addAction("Toggle Radius / Diameter",  #  L35): a radial
                            lambda c=hv: self.act_dia(c))  #  chip speaks
@@ -3238,6 +3243,19 @@ class SketchCanvas(QWidget):
                 return cc
         return None
 
+    def _radial_gap(self, conc):
+        """M192 R5 [LAW-59 on rings]: the RadialDistance a concentric
+        weld shares its pair with - the ring mirror of _weld_gap, and
+        the same ONE mouth law (paint == menu == act). Pair identity
+        is unordered: the gap's sign already says which ring is the
+        larger story."""
+        for cc in self.model.sketch.constraints:
+            if isinstance(cc, RadialDistance) and \
+                    {id(cc.parent), id(cc.child)} == \
+                    {id(conc.c1), id(conc.c2)}:
+                return cc
+        return None
+
     def act_add_offset_dim(self, par):
         """M187 R4 [LAW-59]: right-click the dangling offset glyph ->
         ADD OFFSET DIMENSION. The weld gets a number back - the gap AS
@@ -3246,6 +3264,19 @@ class SketchCanvas(QWidget):
         dimension that lied about the drawing was never a promise)."""
         if not any(cc is par for cc in self.model.sketch.constraints):
             return                              # stale: zero trace
+        if isinstance(par, Concentric):         # M192 R5: the RING
+            #   weld re-mints the gap it STANDS at (c1 is named parent,
+            #   the sign falls out of the current radii - restore where
+            #   the copy lives, never where it was born)
+            if self._radial_gap(par) is not None:
+                return                          # already speaks: no twin
+            self._push_hist()
+            self.model.constrain(RadialDistance(par.c1, par.c2,
+                                                par.c2.r - par.c1.r))
+            self._hover_c = None
+            self._solve()
+            self.update()
+            return
         if self._weld_gap(par) is not None:
             return                              # already speaks: no twin
         ln = par.l2
@@ -3264,9 +3295,9 @@ class SketchCanvas(QWidget):
     def act_remove_association(self, par):
         """M187 R4 [LAW-59 first clause]: delete the offset glyph and
         the association DISSOCIATES - the parallel weld itself dies
-        (one undo, one re-solve). The dimension row, if any, was
-        already deleted through its own chip door; nothing half-
-        promises here."""
+        (one undo, one re-solve). M192 R5: the same door on a ring
+        weld kills the Concentric - the copy floats free in centre and
+        radius, nothing half-promises here."""
         if not any(cc is par for cc in self.model.sketch.constraints):
             return                              # stale: zero trace
         self._push_hist()
@@ -3305,7 +3336,10 @@ class SketchCanvas(QWidget):
                 # diameter and the chip says so. Live witness: break
                 # the symmetry and the word leaves with the truth.
                 text = f"\u00d8 {text}"
-        elif isinstance(c, LineDistance):
+        elif isinstance(c, (LineDistance, RadialDistance)):
+            # M192 R5: the ring gap speaks MAGNITUDE too - the sign
+            # says inward/outward, the dimension says how far (the
+            # sister law of M187 R3 above)
             text = f"{abs(c.value):.2f}"
         else:
             text = ""
@@ -3365,6 +3399,22 @@ class SketchCanvas(QWidget):
                 p.setPen(QPen(DIMC, 1))
                 p.drawLine(self.w2s(c.p.x, c.p.y),
                            self.w2s(ln.a.x + ux * t, ln.a.y + uy * t))
+                text = self._dim_text(c)
+            elif isinstance(c, RadialDistance):
+                # M192 R5 [LAW-59 on rings]: the ring gap wears a chip
+                # and a short witness tick ALONG the +x ray between the
+                # two rings, so the number points at the band it
+                # measures. Delete this chip and the distance UNLOCKS:
+                # the dangling weld wears the glyph (receipt 6's
+                # removal door, straight onto curves).
+                pos = self._dim_anchor_screen(c)
+                if pos is None:
+                    continue
+                p.setPen(QPen(DIMC, 1))
+                p.drawLine(self.w2s(c.parent.c.x + c.parent.r,
+                                    c.parent.c.y),
+                           self.w2s(c.parent.c.x + c.child.r,
+                                    c.parent.c.y))
                 text = self._dim_text(c)
             if text is None:
                 continue
@@ -4208,6 +4258,20 @@ class SketchCanvas(QWidget):
                     self._badge(p, self.w2s(
                         (c.l1.a.x + c.l1.b.x) / 2,
                         (c.l1.a.y + c.l1.b.y) / 2), "\u2225", c=c)
+            elif isinstance(c, Concentric):
+                # M192 R5: the RING weld keeps the same choreography
+                # ("an offset constraint glyph is displayed on the
+                # original geometry and the offset geometry" - with the
+                # centres shared, ONE mark at the centre speaks for the
+                # pair). A concentric pair whose radial gap died wears
+                # the glyph; a chipped pair shows the CHIP only (one
+                # voice per promise), and a plain concentric user-
+                # constraint wearing it gains the same two honest
+                # doors (give it a numbered ring gap, or free it) -
+                # the precedent M187 R4 set for bare parallels.
+                if self._radial_gap(c) is None:
+                    cx, cy = curve_center(c.c1)
+                    self._badge(p, self.w2s(cx, cy), "\u2225", c=c)
             # Distance & Radius: no badge — the editable dimension label
             # from _draw_dimensions is the single indicator (as in
             # Fusion). Two glyphs for one value used to collide
@@ -4272,6 +4336,13 @@ class SketchCanvas(QWidget):
             sgn = 1.0 if c.value >= 0 else -1.0
             s = self.w2s(c.p.x, c.p.y)
             return QPointF(s.x() - sgn * uy * 16, s.y() - sgn * ux * 16)
+        if isinstance(c, RadialDistance):
+            # M192 R5: the ring gap's chip rides the +x ray, seated in
+            # the BAND between the rings - the one post painter, hit
+            # list and place mode all read (paint == hit == place)
+            cen = self.w2s(c.parent.c.x, c.parent.c.y)
+            seat = (c.parent.r + c.child.r) / 2.0
+            return QPointF(cen.x() + seat * self._scale, cen.y())
         if isinstance(c, (Angle, AngleBetween)):
             arc = self._angle_arc_pts(c, 0)       # ring 0 = the natural
             return arc[1] if arc is not None else None   #  post of ONE

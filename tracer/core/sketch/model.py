@@ -17,8 +17,8 @@ from .constraints import (Angle, AngleBetween, ArcMiddle, Coincident,
                           Collinear, Concentric, Distance, Equal, Fixed,
                           Horizontal, LineDistance, Midpoint,
                           Perpendicular, PointOnCircle, PointOnLine,
-                          Parallel, Radius, Symmetry, Tangent, Vertical,
-                          make_tangent, speaks_dia)
+                          Parallel, Radius, RadialDistance, Symmetry,
+                          Tangent, Vertical, make_tangent, speaks_dia)
 from .solver import Sketch, SolveResult
 
 # Sketch planes: (u_axis, v_axis) in world coords; extrude normal = u x v.
@@ -312,7 +312,17 @@ class SketchModel:
             if c.r + d <= 1e-9:
                 raise ValueError("that offset collapses or flips the "
                                  "circle")
-            return [self.sketch.circle(c.c, c.r + d)]
+            # M192 R5 [offset association on CURVES, SKT-SKETCH-MODIFY-
+            # TOOLS]: the copy is FRESH geometry held by LAWS - a twin
+            # sharing the parent's centre POINT could never be dis-
+            # associated (identity is not a promise, it is a fact), and
+            # the vendor's glyph has a Delete door. Concentricity and
+            # the signed ring gap are minted from the construction's
+            # own numbers: the exact dialect the edge welds speak.
+            sk = self.sketch
+            nc = sk.circle(sk.point(c.c.x, c.c.y), c.r + d)
+            self._bind_circle_offset(c, nc, d)
+            return [nc]
 
         # ---- M84: the manifold kernel's robust offset does the rest ----
         import manifold3d as m3
@@ -338,6 +348,12 @@ class SketchModel:
         polys = list(out.to_polygons())
         if not polys or out.area() <= 1e-9:
             raise ValueError("that offset collapses or flips the outline")
+        parents = list(self.sketch.lines)     # M192 R5: the book BEFORE
+        #   the copy - the kernel path's straight children weld to it
+        #   through the SAME fingerprint honesty as the mitre path (an
+        #   edge whose parent cannot be named uniquely - tessellated
+        #   arc fragments, ambiguous twins - stays free rather than
+        #   lie about an association).
         made: list = []
         for ring in polys:
             pts = [(float(q[0]), float(q[1])) for q in ring]
@@ -353,7 +369,11 @@ class SketchModel:
                     made.append(self.add_line(a, b))
         if not made:
             raise ValueError("that offset collapses or flips the outline")
-        return made
+        self._bind_offset(parents, made, d)   # M192 R5: offset welds
+        return made                           #   EVERY path that can
+        #                     name its parents - receipt 6 promises the
+        #                     association to "sketch curves", not just
+        #                     to the straight-loop shortcut.
 
     def _add_offset_mitre(self, dist: float) -> list:
         """Fusion's Offset Entities (mitre variant): a parallel copy of
@@ -475,6 +495,16 @@ class SketchModel:
             #  parent's own a->b - the same form LineDistance speaks)
             self.constrain(Parallel(child, par))
             self.constrain(LineDistance(child.a, par, gap))
+
+    def _bind_circle_offset(self, parent, child, d):
+        """M192 R5 [offset association on a ring]: the lone-circle copy
+        holds its parent with CONCENTRICity plus the signed radial gap
+        AS MINTED. Identity is certain here - the construction itself
+        named both curves - so no fingerprint guess is needed, and no
+        fake promise is ever kept: the two laws drop exactly the three
+        degrees a free twin would have (centre x/y, radius)."""
+        self.constrain(Concentric(parent, child),
+                       RadialDistance(parent, child, float(d)))
 
     # ---- constraints ------------------------------------------------------
     def constrain(self, *cs: object, src: str = ""):
@@ -871,6 +901,11 @@ def model_to_dict(m: SketchModel) -> dict:
             cons.append({"t": "ld", "p": _add_pt(pts, idx, c.p),
                          "line": m.sketch.lines.index(c.line),
                          "v": c.value})
+        elif isinstance(c, RadialDistance):    # M192 R5: the ring gap
+            cons.append({"t": "rd",
+                         "a": m.sketch.circles.index(c.parent),
+                         "b": m.sketch.circles.index(c.child),
+                         "v": c.value})
         elif isinstance(c, PointOnCircle):
             cons.append({"t": "oc", "p": _add_pt(pts, idx, c.p),
                          "e": _ent_ref(m, c.curve)})
@@ -1022,6 +1057,9 @@ def model_from_dict(d: dict) -> SketchModel:
         elif t == "ld":
             m.constrain(LineDistance(pts[c["p"]],
                                      m.sketch.lines[c["line"]], c["v"]))
+        elif t == "rd":                        # M192 R5: the ring gap
+            m.constrain(RadialDistance(m.sketch.circles[c["a"]],
+                                       m.sketch.circles[c["b"]], c["v"]))
         elif t == "oc":
             m.constrain(PointOnCircle(pts[c["p"]], _ent_at(m, c["e"])))
         elif t == "//":
