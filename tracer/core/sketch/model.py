@@ -18,7 +18,8 @@ from .constraints import (Angle, AngleBetween, ArcMiddle, Coincident,
                           Horizontal, LineDistance, Midpoint,
                           Perpendicular, PointOnCircle, PointOnLine,
                           Parallel, Radius, RadialDistance, Symmetry,
-                          Tangent, Vertical, make_tangent, speaks_dia)
+                          Tangent, Vertical, make_tangent, speaks_dia,
+                          spans_dia)
 from .solver import Sketch, SolveResult
 
 # Sketch planes: (u_axis, v_axis) in world coords; extrude normal = u x v.
@@ -127,6 +128,33 @@ def _dim_tag(c) -> str:
             "R" if isinstance(c, Radius) else
             "ang" if isinstance(c, Angle) else
             "angb" if isinstance(c, AngleBetween) else "?")
+
+
+_DIM_TABLE = (Distance, Radius, LineDistance, RadialDistance)
+
+
+def dim_table(sk) -> list:
+    """M192 R6 [SKT-CREATE-DIMENSIONS, "Click an existing dimension to
+    reference it as a parameter"]: the dimension TABLE - every LENGTH
+    dimension in constraint order, named d0, d1, ... by table position.
+    Angles stay out (M89's lengths-only law survives the migration:
+    what a formula cannot bind, a formula may not borrow either).
+    """
+    return [c for c in sk.constraints if isinstance(c, _DIM_TABLE)]
+
+
+def dim_speech(sk, c) -> float:
+    """The number the chip SPEAKS at this instant: the dialect-aware
+    magnitude - a diameter voice doubles the stored radius or the
+    mirrored span (M191 R5), and a weld gap's sign is dialect too (the
+    chip shows how FAR). A borrowed d-name buys exactly what the maker
+    reads, never a hidden second truth.
+    """
+    if isinstance(c, Distance):
+        return c.value * (2.0 if spans_dia(sk, c) else 1.0)
+    if isinstance(c, Radius):
+        return c.value * (2.0 if speaks_dia(c) else 1.0)
+    return abs(c.value)                          # LineDistance | Radial
 
 
 class SketchModel:
@@ -708,26 +736,90 @@ class SketchModel:
         constraint or a type that moved under the binding IDLES it (with
         a warning) instead of silently driving the wrong dimension.
         Linear dimensions speak the document's measures and scale to
-        stored millimetres; angles never scale.  Returns warnings."""
+        stored millimetres; angles never scale.  Returns warnings.
+
+        M192 R6: the dimension TABLE rides the same sheet - an
+        expression may borrow another chip's SPOKEN number (d0, d1...).
+        Names are injected in the DOCUMENT's unit dialect (stored mm
+        divided by the scale), so one formula never mixes systems;
+        bound rows evaluate in DEPENDENCY order, so a borrowed number
+        is fresh by the time the borrower reads it, and a cycle warns
+        and idles instead of spinning.
+        """
+        import ast
         from ..params import eval_expr
         warns: list = []
         cons = self.sketch.constraints
+        name_of: dict = {}                       # constraint idx -> dN
+        idx_of_name: dict = {}                   # dN -> constraint idx
+        for i, c in enumerate(cons):
+            if isinstance(c, _DIM_TABLE):
+                n = f"d{len(name_of)}"
+                name_of[i] = n
+                idx_of_name[n] = i
+
+        def names_in(expr):
+            try:
+                tree = ast.parse(str(expr), mode="eval")
+            except SyntaxError:
+                return None
+            return {nd.id for nd in ast.walk(tree)
+                    if isinstance(nd, ast.Name)}
+
+        def speech_vals(base):
+            vals = dict(base)
+            for i, n in name_of.items():
+                vals[n] = dim_speech(self.sketch, cons[i]) / float(scale)
+            return vals
+
+        done: set = set()
+        failed: set = set()
+        stack: list = []
+
+        def evaluate(i) -> bool:
+            if i in done:
+                return True
+            if i in failed:
+                return False
+            if i in stack:
+                warns.append(f"circular fx through dimension {i} - idle")
+                failed.add(i)
+                return False
+            stack.append(i)
+            try:
+                rec = self.dim_exprs[i]
+                if names_in(rec["e"]) is None:
+                    warns.append(f"fx on dimension {i}: can't read "
+                                 "the formula - idle")
+                    failed.add(i)
+                    return False
+                for n in sorted(names_in(rec["e"])):
+                    j = idx_of_name.get(n)
+                    if j is not None and j in self.dim_exprs:
+                        if not evaluate(j):
+                            failed.add(i)
+                            return False
+                v = float(eval_expr(rec["e"], speech_vals(values)))
+                if not isinstance(cons[i], (Angle, AngleBetween)):
+                    v *= float(scale)
+                if rec.get("t") == "DIA":
+                    v *= 0.5         # M98: the fx speaks diameter; the
+                cons[i].value = v    #  constraint stays a radius
+                done.add(i)
+                return True
+            finally:
+                stack.pop()
+
         for k in sorted(self.dim_exprs, key=int):
             i = int(k)
             rec = self.dim_exprs[k]
             if not (0 <= i < len(cons)):
                 warns.append(f"fx on dimension {i}: constraint is gone")
                 continue
-            c = cons[i]
-            if _dim_tag(c) != rec.get("t"):
+            if _dim_tag(cons[i]) != rec.get("t"):
                 warns.append(f"fx on dimension {i}: type changed — idle")
                 continue
-            v = float(eval_expr(rec["e"], values))
-            if not isinstance(c, (Angle, AngleBetween)):
-                v *= float(scale)
-            if rec.get("t") == "DIA":
-                v *= 0.5        # M98: the fx speaks diameter; the
-            c.value = v         # constraint stays a radius
+            evaluate(i)
         return warns
 
     # ---- profile extraction ----------------------------------------------------

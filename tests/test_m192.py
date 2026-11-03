@@ -12,6 +12,8 @@ the "profile" eye governs is honest: it reads to_loops()+regions(), the
 same topology finish() commits through, so the shaded skin can never
 promise a profile the commit would refuse.
 """
+import math
+
 import pytest
 
 pytest.importorskip("PySide6")
@@ -1142,3 +1144,275 @@ def test_undo_lifts_the_whole_weld(qapp, monkeypatch):
         and len(cv.model.sketch.circles) == 1, \
         "one gesture, one ledger row: undo takes the copy AND its "\
         "laws back together"
+
+
+# ================= R6: DIMENSION PARAMETERS [SKT-CREATE-DIMENSIONS] =============
+# "Enter a specific value. Click an existing dimension to reference it
+# as a parameter." + "If the expression only references Driving
+# dimensions, it is converted to a static value, and cannot be
+# recovered by toggling ... back to Driving." + the chip menu's item
+# word, verbatim: "Select Toggle Driven". M89 grew the sheet half
+# (parameters into dimensions); this rung grows the SKETCH half: the
+# dimension TABLE (d0, d1... by constraint order over length dims -
+# angles stay out: what cannot bind cannot be borrowed), the click
+# that borrows a name, dependency-ordered rebuilds, the cycle that
+# idles LOUD, and the conversion the vendor says is permanent.
+
+from PySide6.QtTest import QTest                                     # noqa
+from tracer.core.sketch.constraints import (Angle, Distance,         # noqa
+                                            LineDistance)
+from tracer.ui import dimedit                                        # noqa
+
+
+def _r6_scene(qapp):
+    """Line 8 + circle r5 (bought diameter at birth) + a dangling-
+    signed weld gap: three chips, three table seats, plus an ANGLE
+    that must never join the table."""
+    cv, pal = _stage(qapp)
+    m = cv.model
+    ln = m.add_line(m.point(0.0, 0.0), m.point(8.0, 0.0))
+    ci = m.add_circle(m.point(0.0, 14.0), 5.0)
+    cv._solve()
+    cv._sel = [ln]
+    cv.act_dim()
+    d0 = cv._dim_place
+    cv._dim_place = None                       # placed, no editor yet
+    cv._sel = [ci]
+    cv.act_dim()
+    d1 = cv._dim_place
+    cv._dim_place = None
+    far = m.add_line(m.point(-20.0, 0.0), m.point(-20.0, 20.0))
+    ld = LineDistance(ln.b, far, -28.0)          # signed gap AS IT
+    m.constrain(ld)                              #  STANDS (right of an
+    #                                            #   upward line reads
+    #                                            #   negative: -28)
+    an = Angle(far, math.pi / 2)                 # inclination the line
+    m.constrain(an)                              #  ALREADY speaks: the
+    #                                            #   rows must not fight
+    #                                            #   the measured scene
+    cv._solve()
+    cv.update()
+    for _ in range(4):
+        qapp.processEvents()
+    return cv, m, d0, d1, ld, an
+
+
+def _chip_of(cv, c):
+    return next(r for r, cc in cv._dim_hits if cc is c)
+
+
+def test_the_table_names_every_length_dimension(qapp):
+    from tracer.core.sketch.model import dim_table
+    cv, m, d0, d1, ld, an = _r6_scene(qapp)
+    tbl = dim_table(m.sketch)
+    assert tbl == [d0, d1, ld] or [type(x).__name__ for x in tbl] == \
+        ["Distance", "Radius", "LineDistance"], \
+        "the table is LENGTH dimensions in constraint order (M89's "   \
+        "lengths-only law survives: an angle cannot bind, so an angle " \
+        "cannot be borrowed either)"
+    assert cv._dim_token(d0) == "d0" and cv._dim_token(d1) == "d1" \
+        and cv._dim_token(ld) == "d2", "the name is the TABLE seat"
+    assert cv._dim_token(an) is None, "the angle chip has NO name - "   \
+        "clicking it borrows nothing"
+
+
+def test_a_borrowed_name_speaks_what_the_chip_speaks(qapp):
+    cv, m, d0, d1, ld, _an = _r6_scene(qapp)
+    vals, sc = cv._fx_env()
+    assert vals["d0"] == pytest.approx(8.0), "the line's number"
+    assert vals["d1"] == pytest.approx(10.0), "the circle's chip reads " \
+        "DIAMETER - the name buys the Ø the maker sees, not the secret " \
+        "radius (one voice, no second truth)"
+    assert vals["d2"] == pytest.approx(28.0), "the weld gap reads "      \
+        "MAGNITUDE - the sign is dialect, the name says how far"
+
+
+def test_clicking_a_chip_borrows_its_name(qapp):
+    cv, m, d0, d1, _ld, _an = _r6_scene(qapp)
+    cv._open_dim_editor(d0)
+    for _ in range(3):
+        qapp.processEvents()
+    ed = cv._dim_edit
+    held = cv.focusWidget() is ed.edit           # POSITIVE CONTROL: the
+    #   pen was in the field BEFORE the boundary. The test reads the
+    #   WINDOW's focus chain, not edit.hasFocus(): _stage shows a palette
+    #   as a SECOND top-level (M192 R2's law) and under offscreen the
+    #   palette keeps app activation - hasFocus() then reads False even
+    #   while nothing stole the pen. The law is about the CANVAS's own
+    #   focusWidget surviving the reference click.
+    QTest.mousePress(cv, Qt.LeftButton, pos=_chip_of(cv, d1).center().toPoint())
+    QTest.mouseRelease(cv, Qt.LeftButton, pos=_chip_of(cv, d1).center().toPoint())
+    for _ in range(3):
+        qapp.processEvents()
+    assert ed.edit.text() == "=d1", "the vendor's clause LITERALLY: "   \
+        "click an existing dimension -> its name rides the field (the "  \
+        "selected prefill YIELDS: the fx prefix is the whole door)"
+    assert held and cv._dim_edit is ed \
+        and cv.focusWidget() is ed.edit, \
+        "the field SURVIVES the click (the focus-out farewell defers - " \
+        "a reference is not a goodbye) and KEEPS THE PEN: the canvas' "   \
+        "focus chain still ends in the field it started in"
+    assert cv._dim_drag is None and cv._chip_defer is False \
+        and cv._chip_pending is None, \
+        "no label-drag race, no swallowed farewell left riding"
+
+
+def test_reference_clicks_compose(qapp):
+    cv, m, d0, d1, ld, _an = _r6_scene(qapp)
+    cv._open_dim_editor(d0)
+    for _ in range(3):
+        qapp.processEvents()
+    ed = cv._dim_edit
+    for tgt in (d1, ld):
+        QTest.mousePress(cv, Qt.LeftButton, pos=_chip_of(cv, tgt).center().toPoint())
+        QTest.mouseRelease(cv, Qt.LeftButton, pos=_chip_of(cv, tgt).center().toPoint())
+        for _ in range(2):
+            qapp.processEvents()
+    assert ed.edit.text() == "=d1 + d2", "a second reference click "     \
+        "COMPOSES (glues through +, never welds 'd1d2' into an "         \
+        "invalid word - house law where the docs are silent)"
+    QTest.keyClick(ed.edit, Qt.Key_Return)
+    for _ in range(3):
+        qapp.processEvents()
+    assert m.dim_exprs.get(0) == {"e": "d1 + d2", "t": "D"}, \
+        "and the whole chain commits as ONE binding"
+    assert d0.value == pytest.approx(38.0), "10 (the circle's SPOKEN "  \
+        "diameter) + 28 (the gap's magnitude): the commit evaluates "    \
+        "exactly what the chips read"
+
+
+def test_the_rebuild_follows_the_borrowed_line_in_any_order(qapp):
+    from tracer.core.sketch.model import dim_speech
+    cv, m, d0, d1, _ld, _an = _r6_scene(qapp)
+    m.dim_exprs[0] = {"e": "d1*2", "t": "D"}      # consumer FIRST in
+    m.dim_exprs[1] = {"e": "width", "t": "DIA"}   #  the table too
+    warns = m.apply_dim_params({"width": 30.0})
+    assert warns == []
+    assert d1.value == pytest.approx(15.0), "the producer ran: r=15 "\
+        "speaks a 30.00 diameter"
+    assert d0.value == pytest.approx(60.0), \
+        "the consumer saw the FRESH 30 (not yesterday's 10): bound "    \
+        "rows evaluate in DEPENDENCY order in ONE rebuild"
+    assert dim_speech(m.sketch, d1) == pytest.approx(30.0)
+
+
+def test_a_circular_formula_idles_loudly(qapp):
+    cv, m, d0, d1, _ld, _an = _r6_scene(qapp)
+    m.dim_exprs[0] = {"e": "d1 + d2", "t": "D"}
+    m.dim_exprs[1] = {"e": "d0", "t": "DIA"}
+    before = (d0.value, d1.value)
+    warns = m.apply_dim_params({})
+    assert any("circular" in w for w in warns), \
+        "a ring of borrowers warns - it never spins, never half-"        \
+        "computes, never silently picks a winner"
+    assert (d0.value, d1.value) == pytest.approx(before), \
+        "and the numbers STAND where they were"
+
+
+def test_toggle_driven_staticizes_a_dim_only_formula(qapp):
+    cv, m, d0, d1, ld, _an = _r6_scene(qapp)
+    m.dim_exprs[0] = {"e": "d1 + d2", "t": "D"}
+    cv.act_driven(d0)
+    assert m.dim_exprs == {}, "the vendor's clause: an expression that " \
+        "only references Driving dimensions is converted to a STATIC "   \
+        "value AT THE TOGGLE - the formula is gone"
+    cv.act_remove_constraint(ld)                 # clear the row that
+    cv.act_remove_constraint([x for x in m.sketch.constraints
+                              if isinstance(x, Angle)][0])
+    #  would fight the walk (bindings keyed BELOW idx 2 do not shift)
+    d0.q.x = 20.0                                # walk the geometry
+    #   (Distance endpoints are .p/.q - and they ARE the line's Points)
+    cv._solve()
+    assert d0.value == pytest.approx(20.0), "driven means READING: the " \
+        "chip quotes the walking line"
+    cv.act_driven(d0)                              # back to driving
+    assert m.dim_exprs == {}, "and it CANNOT BE RECOVERED by toggling " \
+        "back - static means static"
+    assert d0.value == pytest.approx(20.0), "making it driving again "  \
+        "PINS WHERE IT READS (M178's round-trip law rides the static)"
+
+
+def test_parameter_formulas_ride_the_toggle(qapp):
+    cv, m, d0, _d1, _ld, _an = _r6_scene(qapp)
+    m.dim_exprs[0] = {"e": "width", "t": "D"}
+    cv.act_driven(d0)
+    assert 0 in m.dim_exprs, "the clause names ONLY Driving dimensions " \
+        "- a formula that borrows the SHEET keeps its fx (a law quoted " \
+        "wider than its words was never a law)"
+    cv.act_driven(d0)
+    assert 0 in m.dim_exprs
+
+
+def test_a_mixed_formula_rides_the_toggle(qapp):
+    cv, m, d0, d1, _ld, _an = _r6_scene(qapp)
+    m.dim_exprs[0] = {"e": "d1 + width", "t": "D"}
+    cv.act_driven(d0)
+    assert 0 in m.dim_exprs, "dimension AND parameter: not ONLY "       \
+        "dimensions - the binding survives the conversion"
+
+
+def test_undo_is_not_a_toggle(qapp):
+    cv, m, d0, d1, ld, _an = _r6_scene(qapp)
+    m.dim_exprs[0] = {"e": "d1 + d2", "t": "D"}
+    cv.act_driven(d0)
+    assert m.dim_exprs == {}
+    assert cv.undo_op()
+    got = cv.model.dim_exprs.get(0)
+    assert got == {"e": "d1 + d2", "t": "D"}, \
+        "'cannot be recovered by TOGGLING' - and undo is not a toggle, " \
+        "it is the maker's time machine (the ledger row was pushed "    \
+        "BEFORE the conversion died)"
+    fresh = cv.model.sketch.constraints[0]
+    assert not getattr(fresh, "driven", False)
+
+
+def test_the_chip_menu_wears_the_vendors_word(qapp):
+    cv, m, d0, d1, _ld, _an = _r6_scene(qapp)
+    cv._hover_c = d0
+    texts = [a.text() for a in cv._build_menu().actions() if a.text()]
+    assert "Toggle Driven" in texts, "the item word VERBATIM from the "  \
+        "doc ('Select Toggle Driven') - one item, and it answers at "    \
+        "BOTH ends (M178's Make Driven/Driving pair was the same flip "  \
+        "in house clothes)"
+    cv.act_driven(d0)
+    cv._hover_c = d0
+    texts = [a.text() for a in cv._build_menu().actions() if a.text()]
+    assert "Toggle Driven" in texts and "Make Driven" not in texts \
+        and "Make Driving" not in texts
+
+
+def test_the_real_page_borrows_names_too(win2, qapp2):
+    win2.new_document()
+    win2._edit_park_on = False
+    win2._edit_park = None
+    win2.action_new_sketch("XY")
+    qapp2.processEvents()
+    cv = win2.sketch
+    cv._snap_grid = False
+    m = cv.model
+    la = m.add_line(m.point(-8.0, 0.0), m.point(0.0, 0.0))
+    lb = m.add_line(m.point(2.0, 0.0), m.point(9.0, 0.0))
+    cv._solve()
+    cv._sel = [la]
+    cv.act_dim()
+    fa = cv._dim_place
+    cv._dim_place = None
+    cv._sel = [lb]
+    cv.act_dim()
+    fb = cv._dim_place
+    cv._dim_place = None
+    cv._solve()
+    cv.update()
+    for _ in range(4):
+        qapp2.processEvents()
+    cv._open_dim_editor(fa)
+    for _ in range(3):
+        qapp2.processEvents()
+    QTest.mousePress(cv, Qt.LeftButton, pos=_chip_of(cv, fb).center().toPoint())
+    QTest.mouseRelease(cv, Qt.LeftButton, pos=_chip_of(cv, fb).center().toPoint())
+    for _ in range(3):
+        qapp2.processEvents()
+    assert cv._dim_edit is not None and cv._dim_edit.edit.text() == "=d1", \
+        "on the REAL window the documented click borrows the name the "  \
+        "same way the standalone stage plays it"
+    cv._close_dim_editor()

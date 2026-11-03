@@ -434,6 +434,14 @@ def test_badge_on_label_dclick_still_opens_the_dim_chip(dim_cv):
                            for r, c in cv._constraint_hits]
     QTest.mouseDClick(cv, Qt.LeftButton, Qt.NoModifier,
                       dr.center().toPoint(), 10)
+    QTest.mouseRelease(cv, Qt.LeftButton, Qt.NoModifier,
+                       dr.center().toPoint())      # M192 R6 law: a real
+    #   double-click ENDS with a release, and QTest.mouseDClick does NOT
+    #   send one - the phantom held button leaks into QApplication.
+    #   mouseButtons() app-globally, and the chip-close's press-in-flight
+    #   arm (focus-out under a held LEFT button is a click boundary) then
+    #   reads TRUE forever after: every later deferred close gets
+    #   swallowed by a press that never comes. Balance the gesture.
     _settle(qapp2)
     assert cv._dim_edit is not None
     assert cv._dim_edit.constraint is dist           # the DIM, not the

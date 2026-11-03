@@ -1371,7 +1371,10 @@ def test_the_value_field_resolves_document_params(mkcanvas, qapp2):
     cv._params_provider = lambda: ({"wall": 7.0}, 1.0)     # resolved sheet
     cv._open_dim_editor(d)
     qapp2.processEvents()
-    assert cv._dim_edit._provider()[0] == {"wall": 7.0}    # LIVE provider
+    env = cv._dim_edit._provider()[0]              # M192 R6: the field's
+    assert env.get("wall") == 7.0                  #  LIVE env is sheet
+    assert env.get("d0") == pytest.approx(40.0)    #  + d-TABLE (the chip
+    #   can borrow a name while it types); the number leg still takes it
     _type(cv, "wall*2", qapp2)
     assert d.value == pytest.approx(14.0)
     _reap(qapp2)

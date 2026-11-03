@@ -87,7 +87,10 @@ class ChipField(ExprField):
         bare = bare_value(c)
         super().__init__(value=bare, step=0.1, suffix="", parent=canvas)
         self.constraint = c                        # re-seat identity (is)
-        self._provider = canvas._params_provider
+        self._provider = canvas._fx_env            # M192 R6: the field's
+        #                                           #  live fx check sees
+        #                                           #  the d-names the
+        #                                           #  engine will resolve
         self._angle = is_angle(c)                  # rung 2 grammar switch
         self.setFocusPolicy(Qt.NoFocus)
         self.edit.setAlignment(Qt.AlignCenter)
@@ -162,6 +165,28 @@ class ChipField(ExprField):
     # Ctrl|Meta chords die as SHORTCUTS only (KeyPress stays in the
     # field: QLineEdit's own undo lives) ----
     def eventFilter(self, obj, ev):
+        if obj is self.edit and ev.type() == ev.Type.FocusOut:
+            cv = self.parent()                 # M192 R6: a focus-out
+            if cv is not None \
+                    and getattr(cv, "_dim_edit", None) is self \
+                    and hasattr(cv, "_chip_press_in_flight"):
+                cv._chip_press_in_flight()     #   UNDER a held left
+                #                                #   button is a press in
+                #                                #   flight - the canvas
+                #                                #   defers the farewell
+                #                                #   (the field must be
+                #                                #   alive when its own
+                #                                #   press handler runs;
+                #                                #   only THAT event
+                #                                #   carries the TRUE
+                #                                #   position - QCursor
+                #                                #   lies on offscreen).
+                #                                #   The focus-out itself
+                #                                #   proceeds normally:
+                #                                #   editingFinished will
+                #                                #   emit, and the canvas
+                #                                #   SWALLOWS the result
+                #                                #   into _chip_pending.
         if obj is self.edit and ev.type() in (ev.Type.KeyPress,
                                               ev.Type.ShortcutOverride):
             if ev.key() == Qt.Key.Key_Escape:

@@ -26,7 +26,8 @@ a value). One interaction the flip had to settle - toggling a chip
 mid-edit now CLOSES the editor first (the field owns the ink; a reader
 has none) - and the ring dies with it, rung-4's law. Angle-dim quoting
 stays deferred: the painter's Angle branch bypasses _dim_text and the
-menu never offers Make Driven there.
+menu never offers Toggle Driven there (M192 R6 gave the item the
+vendor's word; the deferral survives).
 """
 import math
 
@@ -127,7 +128,12 @@ def test_the_hover_menu_flips_the_vote_both_ways(ed):
     d = dims[0]
     ed._hover_c = d
     texts = [a.text() for a in ed._build_menu().actions()]
-    assert "Make Driven" in texts              # the door is there
+    assert "Toggle Driven" in texts             # the door is there -
+    #                                            #  M192 R6 renamed it to
+    #                                            #  the vendor's OWN item
+    #                                            #  word (one item, both
+    #                                            #  ends; M178's pair was
+    #                                            #  the same flip)
     ed.act_driven(d)
     assert d.driven
     ln.b.x = 10.0                              # walk away...
@@ -138,7 +144,9 @@ def test_the_hover_menu_flips_the_vote_both_ways(ed):
     #  killed the ring (rung-4 law: it DIES with the editor) - re-arm,
     #  the cursor never left the chip
     texts = [a.text() for a in ed._build_menu().actions()]
-    assert "Make Driving" in texts             # the flip is two-way
+    assert "Toggle Driven" in texts            # the SAME word answers
+    #                                            #  at both ends - the
+    #                                            #  flip is two-way
     ed.act_driven(d)
     assert not d.driven                        # voting again: the pin
     ln.b.x = 13.0                              #  lands at the READING

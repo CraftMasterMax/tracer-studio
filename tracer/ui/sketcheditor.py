@@ -260,6 +260,18 @@ class SketchCanvas(QWidget):
         self._hover_c = None                 # constraint under the cursor
         self._hover_e = None                 # M184 R3: geometry under it
         self._dim_edit = None                # M165 R1: open chip editor
+        self._chip_defer = False             # M192 R6: a focus-out close
+        #                                       #   arriving WHILE the
+        #                                       #   left button is down
+        #                                       #   is a press in flight
+        #                                       #   (possibly a chip-to-
+        #                                       #   reference click) -
+        #                                       #   the canvas's handler
+        #                                       #   decides: insert, or
+        #                                       #   finish the goodbye
+        self._chip_pending = None            #   the swallowed farewell
+        #                                       #   ("close" | the float)
+        #                                       #   waiting to land
         self._last_dim = None                # M165 R1: rung-3 seed
         self._show_dof = False            # M119: degrees-of-freedom overlay
         self._hide_fc = False             # M192 R2 [SKT-FIND-UNDER-
@@ -931,6 +943,38 @@ class SketchCanvas(QWidget):
             #  painter uses - one post, no stale hit-list, paint-independent).
             self._finish_chain()
             return
+        if self._chip_defer or getattr(self, "_dim_edit", None) is not None:
+            # M192 R6 [SKT-CREATE-DIMENSIONS]: "Click an existing
+            # dimension to reference it as a parameter." While the chip
+            # field lives - or FADES under this very press (the focus-
+            # out farewell deferred, button still down) - a press that
+            # claims ANOTHER length dimension's chip is the documented
+            # reference gesture. Any other press finishes the goodbye
+            # first (committing what focus-out wanted, M165's law
+            # merely LATER), then lives on as the ordinary press it was.
+            ed0 = self._dim_edit
+            for rect, cc in reversed(self._dim_hits):
+                if rect.contains(q):
+                    tok = self._dim_token(cc)
+                    if (tok is not None and ed0 is not None
+                            and cc is not ed0.constraint):
+                        self._chip_defer = False
+                        self._chip_pending = None    # the swallowed
+                        #   farewell DIES here: this boundary became a
+                        #   REFERENCE, not a commit - the field keeps
+                        #   typing, and its next boundary owns it
+                        self._insert_dim_ref(tok)
+                        return
+                    if self._chip_defer:
+                        self._chip_goodbye()
+                    break                            # a chip claims its
+                    #  press (M174's law): no label-drag race against
+                    #  the farewell
+            if self._chip_defer:
+                self._chip_goodbye()                 # ordinary canvas
+                #   press: the field said goodbye for real, and the
+                #   press continues (marquee, select, ghost-place -
+                #   whatever M165's old focus-out left it doing)
         if self._dim_place is not None:                     # M175 R2: PLACE
             c = self._dim_place                           #  claims EVERY
             self._dim_place = None                        #   left press,
@@ -1599,6 +1643,15 @@ class SketchCanvas(QWidget):
                                                #  a kept promise dismisses it
 
     def mouseReleaseEvent(self, ev: QMouseEvent):
+        if self._chip_defer and ev.button() == Qt.LeftButton:
+            # M192 R6 SAFETY VALVE: a swallowed farewell must never
+            # outlive the button dance that armed it. The press branch
+            # resolves the honest click (insert, or goodbye-then-press);
+            # a release that still finds the swallow riding - a phantom
+            # held state, or a press that skipped the canvas - LANDS the
+            # goodbye HERE, not never. (A double-click that never
+            # released, QTest-style, cannot orphan the field.)
+            self._chip_goodbye()
         if ev.button() in (Qt.MiddleButton, Qt.RightButton):
             if (ev.button() == Qt.MiddleButton        # M173 R1: the
                     and self._pan_from is not None    #  middle CLICK is
@@ -2140,11 +2193,14 @@ class SketchCanvas(QWidget):
                            lambda c=hv: self.act_dia(c))  #  chip speaks
                                                           #  EITHER way
         if hv is not None and isinstance(hv, (Distance, Radius)):
-            menu.addAction("Make Driving" if getattr(hv, "driven",
-                                                     False)
-                           else "Make Driven",   # M178 R1 (FD5-L35): the
-                           lambda c=hv: self.act_driven(c))  #  reference
-                                                             #  toggle
+            menu.addAction("Toggle Driven",      # M192 R6: the vendor's
+                           lambda c=hv: self.act_driven(c))  #  OWN item
+            #                                    #   word (M178's
+            #                                    #   Make Driven/Driving
+            #                                    #   pair WAS the flip;
+            #                                    #   the doc names one
+            #                                    #   item that answers
+            #                                    #   at both ends)
         if len(sel) == 1 and isinstance(sel[0], Line):
             menu.addAction("Horizontal", self.act_H)
             menu.addAction("Vertical", self.act_V)
@@ -3128,9 +3184,47 @@ class SketchCanvas(QWidget):
             #                                     numbers; a reader has
             #                                     none to command
         self._push_hist()
+        if not getattr(c, "driven", False):      # M192 R6, verbatim:
+            self._staticize_driven(c)            #  driving -> driven is
+        #                                        #   the conversion the
+        #                                        #   doc calls irreversible
         c.driven = not getattr(c, "driven", False)
         self._solve()
         self.update()
+
+    def _staticize_driven(self, c):
+        """M192 R6 [SKT-CREATE-DIMENSIONS, verbatim]: 'If the expression
+        only references Driving dimensions, it is converted to a static
+        value, and cannot be recovered by toggling ... back to Driving.'
+        The binding DIES at the toggle - permanently as far as TOGGLES
+        go (the LEDGER still survives: undo is not a toggle, it is the
+        maker's time machine). An expression that names a parameter, or
+        a READER, or nothing at all is not the clause's 'only Driving
+        dimensions' - and a law quoted wider than its words was never
+        a law."""
+        import ast
+        i = next((j for j, cc in enumerate(self.model.sketch.constraints)
+                  if cc is c), None)
+        rec = self.model.dim_exprs.get(i) if i is not None else None
+        if rec is None:
+            return
+        try:
+            tree = ast.parse(str(rec["e"]), mode="eval")
+        except SyntaxError:
+            return
+        names = {nd.id for nd in ast.walk(tree) if isinstance(nd, ast.Name)}
+        if not names:
+            return                               # pure arithmetic borrows
+            #                                    #   nobody's number
+        from ..core.sketch.model import dim_table
+        tbl = {f"d{j}": cc for j, cc in enumerate(dim_table(self.model.sketch))}
+        if any(n not in tbl for n in names):
+            return                               # a parameter rides: the
+        #                                        #   clause names ONLY
+        #                                        #   dimensions
+        if all(not getattr(tbl[n], "driven", False) for n in names):
+            del self.model.dim_exprs[i]          # only Driving dims:
+        #                                        #   static, irreversible
 
     # ---- M192 R4: the newborn's MARKING MENU [SKT-CREATE-DIMENSIONS] ---------
     # "Before you place a dimension in the canvas, right-click to access
@@ -3561,6 +3655,11 @@ class SketchCanvas(QWidget):
             ed.closeRequested.disconnect()       #   hide()-induced focus-out
         except (RuntimeError, TypeError):
             pass
+        self._chip_defer = False                # M192 R6: the farewell
+        self._chip_pending = None               #   has LANDED (any
+        #                                        #   route); no stale
+        #                                        #   swallow may ride a
+        #                                        #   future editor
         if self._hover_c is ed.constraint:       # the ring dies with the
             self._hover_c = None                 #  editor, rung-4 law
         ed.edit.clearFocus()
@@ -3570,18 +3669,110 @@ class SketchCanvas(QWidget):
         if fw is None or fw is ed or fw is ed.edit or fw is self:
             self.setFocus()                      # the Esc ladder resumes
 
+    def _chip_press_in_flight(self) -> bool:
+        """M192 R6 [SKT-CREATE-DIMENSIONS]: a focus-out that happens
+        WHILE the left button is down is a PRESS on the canvas in
+        flight - and that press may be the documented 'click an existing
+        dimension to reference it as a parameter'. The close therefore
+        DEFERS (the field survives the focus-out); the canvas's own
+        press handler - which runs a beat later, on the same button -
+        either inserts the borrowed name or finishes the goodbye."""
+        from PySide6.QtWidgets import QApplication
+        if bool(QApplication.mouseButtons() & Qt.LeftButton):
+            self._chip_defer = True
+            return True
+        return False
+
+    def _chip_goodbye(self):
+        """The deferred farewell lands: whatever editingFinished wanted
+        (its emit was CAPTURED at the swallow) now happens - commit a
+        valid change, close an unchanged field - or nothing at all: an
+        INVALID draft stays open for retry even unfocused (M165's law,
+        untouched: the invalid path emits NOTHING, so pending is None
+        and the red field keeps its invitation)."""
+        self._chip_defer = False
+        ed = self._dim_edit
+        pend, self._chip_pending = self._chip_pending, None
+        if ed is None or pend is None:
+            return
+        if pend == "close":
+            self._on_chip_close()
+        else:
+            self._on_chip_commit(pend)
+
     def _on_chip_close(self):                    # Esc / unchanged Enter
+        if self._chip_defer:                     #  / focus-out (a press
+            self._chip_pending = "close"         #   may be in flight)
+            return
         self._close_dim_editor()
 
     def _on_chip_commit(self, _mm):              # committed(float): the
         ed = self._dim_edit                      #  float is a validity
         if ed is None:                           #  witness, TEXT is input
             return
+        if self._chip_defer:                     #  M192 R6: the press
+            self._chip_pending = _mm             #   decides timing,
+            return                               #  never semantics
         c, text = ed.constraint, ed.edit.text()
         self._close_dim_editor()                 # close BEFORE mutating
         if not any(cc is c for cc in self.model.sketch.constraints):
             return                               # dead object: no audience
         self._apply_dim_edit(c, text)
+
+    def _with_dim_names(self, vals: dict, sc: float) -> dict:
+        """M192 R6 [SKT-CREATE-DIMENSIONS]: the dimension TABLE as
+        sheet-names - d0, d1, ... borrow another chip's SPOKEN number
+        (dialect-aware: the magnitude the maker reads, never a hidden
+        second truth), injected in the DOCUMENT's unit dialect so one
+        formula never mixes systems."""
+        from ..core.sketch.model import dim_speech, dim_table
+        out = dict(vals)
+        sk = self.model.sketch
+        for j, cc in enumerate(dim_table(sk)):
+            out[f"d{j}"] = dim_speech(sk, cc) / float(sc)
+        return out
+
+    def _fx_env(self):
+        """The fx grammar's WHOLE environment: sheet parameters + the
+        dimension TABLE names (M192 R6), one mouth for the field's live
+        check, the commit's eval and the rebuild engine's resolution."""
+        vals, sc = self._params_provider()
+        return self._with_dim_names(vals, sc), sc
+
+    def _dim_token(self, c):
+        """The chip's parameter NAME (M192 R6): d{j} over the length-
+        dimension table. An angle has none - M89's lengths-only law:
+        what cannot bind cannot be borrowed either."""
+        from ..core.sketch.model import dim_table
+        for j, cc in enumerate(dim_table(self.model.sketch)):
+            if cc is c:
+                return f"d{j}"
+        return None
+
+    def _insert_dim_ref(self, tok):
+        """The click IS the reference (vendor: no dialog, no lock
+        checkbox - do not invent one). A field already typing fx takes
+        the name AT THE CURSOR; plain ink - the selected prefill or a
+        bare number - YIELDS to the reference: the binding starts with
+        the fx prefix, because the prefix IS the whole door (M89).
+        Composition law (house, docs silent): a name landing directly
+        AFTER an operand glues through " + " - a second reference click
+        must compose "d1 + d2", never weld "d1d2" into an invalid word.
+        """
+        ed = self._dim_edit
+        if ed is None:
+            return
+        t = ed.edit.text()
+        if t.strip().startswith("="):
+            tail = t[:ed.edit.cursorPosition()].rstrip()
+            if tail and (tail[-1].isalnum() or tail[-1] in ".)"):
+                ed.edit.insert(" + " + tok)
+            else:
+                ed.edit.insert(tok)
+        else:
+            ed.edit.setText("=" + tok)
+            ed.edit.deselect()                # cursor at the end
+        ed.edit.setFocus()
 
     def _apply_dim_edit(self, c, text) -> bool:
         """M165 R1 (angles in, R2): the dim commit, headless-callable
@@ -3618,9 +3809,9 @@ class SketchCanvas(QWidget):
             return True
         expr = t.lstrip("=").strip() if t.startswith("=") else ""
         if expr:
-            vals, sc = self._params_provider()   # fx: doc units x scale,
-            try:                                 #  no units, no clamp
-                newv = float(eval_expr(expr, vals)) * sc
+            vals, sc = self._fx_env()            # fx: doc units x scale,
+            try:                                 #  the TABLE (d0, d1...)
+                newv = float(eval_expr(expr, vals)) * sc   #  rides too
             except ParamError as e:              #  (M89's old contract)
                 self._warn(f"Binding refused: {e}")
                 self.update()
