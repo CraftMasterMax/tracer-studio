@@ -419,6 +419,12 @@ class RevolveFeature(Feature):
     placement: tuple = (0.0, 0.0, 0.0)
     plane: str = "XY"
     axes: list | None = None
+    axis: list | None = None       # M191 R5 [SKT-CENTERLINE-GEOMETRY]:
+    #                                2 sketch-space points [[x,y],[x,y]]
+    #                                of the sketch's DECLARED centerline.
+    #                                The vendor AUTO-AXES the revolve on
+    #                                it; None (every pre-R5 file) keeps
+    #                                the sketch V-axis, byte-identical.
     sketch: dict | None = None
     sid: int | None = None
     region: int = 0
@@ -427,20 +433,44 @@ class RevolveFeature(Feature):
         outer = np.asarray(self.outer, float)
         if outer.size == 0:
             raise ValueError(f"{self.name}: empty profile")
+        holes = [np.asarray(h, float) for h in self.holes]
+        spin = 0.0
+        anchor = None                       # M191 R5: with a DECLARED
+        if self.axis is not None:           #   centerline, every u below
+            a1 = np.asarray(self.axis[0], float)   # is measured FROM it:
+            a2 = np.asarray(self.axis[1], float)   # a rigid turn+slide of
+            dvec = a2 - a1                          # the sketch plane that
+            nrm = math.hypot(dvec[0], dvec[1])      # leaves the profile
+            if nrm < 1e-9:                          # untouched in shape.
+                raise ValueError(
+                    f"{self.name}: the centerline axis has no length — "
+                    "it cannot turn anything")
+            dx, dy = dvec / nrm
+            tf = np.stack([np.array([dy, -dx]), np.array([dx, dy])])
+            outer = (outer - a1) @ tf.T     # rows: u' perpendicular,
+            holes = [(h - a1) @ tf.T for h in holes]   # v' ALONG the line
+            spin = math.atan2(-dx, dy)      # (u',v') -> world rotation
+            anchor = a1                     # the axis line's world image
         umin, umax = outer[:, 0].min(), outer[:, 0].max()
         if umin < -1e-6 < umax:
             raise ValueError(
                 f"{self.name}: profile crosses the revolve axis "
-                "(the sketch's vertical origin line) — move it aside")
+                + ("(the declared centerline) — move it aside"
+                   if self.axis is not None
+                   else "(the sketch's vertical origin line) — move it aside"))
         neg = umax <= 1e-6                 # entirely behind the axis: mirror
 
         def adj(pts):
             pts = np.asarray(pts, float)
             return pts * [[-1.0, 1.0]] if neg else pts.copy()
 
-        s = Solid.revolve(adj(outer), [adj(h) for h in self.holes], self.angle)
-        return s.transformed(revolve_matrix(self.plane, self.placement,
-                                            self.axes))
+        s = Solid.revolve(adj(outer), [adj(h) for h in holes], self.angle)
+        m = revolve_matrix(self.plane, self.placement, self.axes, spin=spin)
+        if anchor is not None:             # slide the world frame so the
+            U, V = plane_uv(self.plane, self.axes)   # sweep axis IS the
+            m[:3, 3] = np.asarray(self.placement, float) \
+                + anchor[0] * U + anchor[1] * V      # centerline's image
+        return s.transformed(m)
 
 
 @dataclass
@@ -3324,6 +3354,8 @@ class Document:
                          angle=float(f.angle),
                          placement=list(map(float, f.placement)),
                          plane=f.plane, axes=f.axes, sketch=f.sketch,
+                         axis=([[float(x), float(y)] for x, y in f.axis]
+                               if f.axis is not None else None),  # M191 R5
                          sid=f.sid, region=f.region)
             elif isinstance(f, PrimitiveFeature):
                 d.update(kind=f.kind,
@@ -3552,6 +3584,7 @@ class Document:
                     holes=[np.array(h, float) for h in fd["holes"]],
                     angle=fd.get("angle", 360.0), placement=tuple(fd["placement"]),
                     plane=fd.get("plane", "XY"), axes=fd.get("axes"),
+                    axis=fd.get("axis"),        # M191 R5; pre-R5 files: None
                     sketch=fd.get("sketch"),
                     sid=fd.get("sid"), region=fd.get("region", 0), **base))
             elif t == "PrimitiveFeature":

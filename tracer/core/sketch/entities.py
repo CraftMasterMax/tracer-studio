@@ -42,10 +42,42 @@ class Point(Entity):
 
 
 class Line(Entity):
-    def __init__(self, a: Point, b: Point, construction: bool = False):
+    def __init__(self, a: Point, b: Point, construction: bool = False,
+                 centerline: bool = False):
         super().__init__()
         self.a, self.b = a, b
-        self.construction = bool(construction)   # guide geometry: no profile
+        self._construction = bool(construction)  # guide geometry: no profile
+        # M191 R5 [SKT-CENTERLINE-GEOMETRY]: a DECLARED centerline is the
+        # sketch's own sentence about symmetry - the vendor's Centerline
+        # paints long-dash-dot, carries no profile, AUTO-AXES a later
+        # revolve, and a span mirrored across it speaks DIAMETER. The
+        # flag rides the line object (like construction), the FILE and
+        # undo; a centerline is construction BY LAW - enforced HERE, at
+        # every door (constructor, act, file wake), so no mouth can
+        # raise the flag and forget the steel.
+        self._centerline = False
+        if centerline:
+            self.centerline = True
+
+    @property
+    def construction(self) -> bool:
+        return self._construction
+
+    @construction.setter
+    def construction(self, v: bool):
+        self._construction = bool(v)
+        if self._centerline:                 # the law never sleeps: an
+            self._construction = True        #   axis stays steel-less
+
+    @property
+    def centerline(self) -> bool:
+        return self._centerline
+
+    @centerline.setter
+    def centerline(self, v: bool):
+        self._centerline = bool(v)
+        if self._centerline:
+            self._construction = True
 
     def get_params(self): return np.array([self.a.x, self.a.y, self.b.x, self.b.y])
 

@@ -23,7 +23,8 @@ from ..core.sketch.constraints import (Angle, AngleBetween, Collinear,
                                        PointOnCircle, PointOnLine, Radius,
                                        Symmetry, Tangent, Vertical,
                                        make_angle, make_angle_between,
-                                       make_tangent, snapped, speaks_dia)
+                                       make_tangent, snapped, speaks_dia,
+                                       spans_dia)
 from ..core.sketch.entities import (Arc, Circle, Ellipse, Line, Point,
                                      curve_center, curve_radius)
 from ..core.sketch import endpoints                 # M191 R1: the dot law
@@ -1931,6 +1932,25 @@ class SketchCanvas(QWidget):
                 e.construction = not e.construction
         self._solve(); self.update()
 
+    def act_centerline(self):
+        """M191 R5 [SKT-CENTERLINE-GEOMETRY]: DECLARE the selected line a
+        CENTERLINE - the sketch's own sentence about its axis. The vendor
+        gives this entity three truths, and ours answers all three from
+        ONE flag: it carries no profile (a centerline IS construction
+        geometry, the law the constructor enforces), a later revolve
+        turns about it (document.RevolveFeature.axis, read from the
+        committed sketch), and a span mirrored across it speaks diameter
+        (the chip's word via constraints.spans_dia). Turning the
+        declaration off leaves a plain construction line - the maker's X
+        owns that half."""
+        if not any(isinstance(e, Line) for e in self._sel):
+            return
+        self._push_hist()
+        for e in self._sel:
+            if isinstance(e, Line):
+                e.centerline = not e.centerline
+        self._solve(); self.update()
+
     def act_mirror(self):
         """Mirror (Shift+M): the FIRST selected line is the axis; every
         other curve in the selection gets a mirrored twin.  Geometry on
@@ -1998,6 +2018,10 @@ class SketchCanvas(QWidget):
             menu.addAction("Hide construction"
                            if sel[0].construction else
                            "Construction geometry", self.act_construction)
+            cl = menu.addAction("Centerline")   # M191 R5: the axis
+            cl.setCheckable(True)               #   declaration, at the
+            cl.setChecked(bool(sel[0].centerline))   # line's own menu
+            cl.triggered.connect(self.act_centerline)
         elif len(sel) == 2 and all(isinstance(e, Line) for e in sel):
             menu.addAction("Perpendicular", self.act_perp)
             menu.addAction("Equal length", self.act_equal)
@@ -3064,6 +3088,12 @@ class SketchCanvas(QWidget):
                     else f"R {c.value:.2f}")
         elif isinstance(c, Distance):
             text = f"{c.value:.2f}"
+            if spans_dia(self.model.sketch, c):
+                # M191 R5: a span MIRRORED about a declared centerline
+                # is measured ACROSS AN AXIS - the vendor calls it a
+                # diameter and the chip says so. Live witness: break
+                # the symmetry and the word leaves with the truth.
+                text = f"\u00d8 {text}"
         elif isinstance(c, LineDistance):
             text = f"{abs(c.value):.2f}"
         else:
@@ -3775,8 +3805,16 @@ class SketchCanvas(QWidget):
         def solid_for(ent):
             return QPen(FG if self._ent_locked(ent) else ACCENT, 1.7)
         constr_pen = QPen(CONSTR, 1.2, Qt.DashLine)
+        # M191 R5: the vendor paints a CENTERLINE differently from plain
+        # construction guides - the long-dash SHORT-dash-long pattern is
+        # the whole CAD world's sentence for "this line is an AXIS".
+        cl_pen = QPen(CONSTR, 1.2, Qt.CustomDashLine)
+        cl_pen.setDashPattern([9, 3, 2, 3])
         for l in sk.lines:
-            p.setPen(constr_pen if l.construction else solid_for(l))
+            if getattr(l, "centerline", False):
+                p.setPen(cl_pen)
+            else:
+                p.setPen(constr_pen if l.construction else solid_for(l))
             p.drawLine(self.w2s(l.a.x, l.a.y), self.w2s(l.b.x, l.b.y))
         for ar in sk.arcs:
             p.setPen(constr_pen if ar.construction else solid_for(ar))

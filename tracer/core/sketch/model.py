@@ -63,12 +63,20 @@ def plane_uv(plane: str, axes=None) -> tuple:
     return np.array(PLANES[plane][0], float), np.array(PLANES[plane][1], float)
 
 
-def revolve_matrix(plane: str, origin=(0.0, 0.0, 0.0), axes=None) -> np.ndarray:
+def revolve_matrix(plane: str, origin=(0.0, 0.0, 0.0), axes=None,
+                   spin: float = 0.0) -> np.ndarray:
     """Local->world for a REVOLVED solid. The kernel sweeps the profile
     about ITS local z, mapping sketch (u, v) -> (u·cosθ, u·sinθ, v); so the
     world revolve axis is the sketch v-axis (the vertical line through the
-    origin), and local columns become [u, v×u, v]."""
+    origin), and local columns become [u, v×u, v].
+    M191 R5 spin (RADIANS): the frame turns INSIDE the sketch plane, so a
+    caller that already re-expressed the profile against a DECLARED
+    CENTERLINE puts the world sweep axis along that line's image. spin=0
+    is the whole pre-R5 world - byte-identical."""
     u, v = plane_uv(plane, axes)
+    if spin:
+        c_, s_ = math.cos(spin), math.sin(spin)
+        u, v = c_ * u + s_ * v, -s_ * u + c_ * v
     m = np.eye(4)
     m[:3, 0], m[:3, 1], m[:3, 2] = u, np.cross(v, u), v
     m[:3, 3] = np.asarray(origin, float)
@@ -906,7 +914,8 @@ def model_to_dict(m: SketchModel) -> dict:
                                                                #  moved
     d = {"name": m.name, "plane": m.plane,
          "points": [[p.x, p.y] for p in pts],
-         "lines": [[idx[l.a.id], idx[l.b.id], int(l.construction)]
+         "lines": [[idx[l.a.id], idx[l.b.id], int(l.construction),
+                    int(getattr(l, "centerline", False))]
                    for l in m.sketch.lines],
          "circles": [[idx[c.c.id], c.r, int(c.construction)]
                      for c in m.sketch.circles],
@@ -965,6 +974,8 @@ def model_from_dict(d: dict) -> SketchModel:
     for e in d.get("lines", []):
         ln = m.add_line(pts[e[0]], pts[e[1]])
         ln.construction = bool(e[2]) if len(e) > 2 else False
+        if len(e) > 3:                      # M191 R5 centerline; the
+            ln.centerline = bool(e[3])      #   pre-R5 file is 3-elem
     for e in d.get("circles", []):
         c = m.add_circle(pts[e[0]], e[1])
         c.construction = bool(e[2]) if len(e) > 2 else False

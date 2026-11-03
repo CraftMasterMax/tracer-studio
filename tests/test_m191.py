@@ -611,3 +611,207 @@ def test_the_key_still_orthos_when_no_midpoint_answers(qapp):
 plain ortho leash - the guard is inert"
     assert not any(isinstance(c, Midpoint) for c in
                    cv.model.sketch.constraints)
+
+
+# ---- R5: THE CENTERLINE IS THE AXIS [SKT-CENTERLINE-GEOMETRY] ------------------
+# The vendor's Centerline is not a dashed decoration: it is the sketch's
+# OWN SENTENCE about its axis. One first-class flag answers all three of
+# its truths — no profile (a centerline IS construction geometry), a
+# later revolve turns ABOUT it (RevolveFeature.axis, the kernel's rigid
+# re-frame), and a span mirrored across it speaks DIAMETER (the chip's
+# Ø word, a live witness). Zero declarations (every pre-R5 file) keep
+# the legacy sketch V-axis byte-identical; several refuse the guess.
+
+
+def _r5_model():
+    from tracer.core.sketch.model import SketchModel
+    return SketchModel()
+
+
+def test_the_declaration_rides_the_file_and_the_wake(qapp):
+    from tracer.core.sketch.model import model_from_dict, model_to_dict
+    m = _r5_model()
+    ln = m.add_line(m.point(0.0, -10.0), m.point(0.0, 10.0))
+    ln.centerline = True
+    assert ln.construction, "a centerline IS construction geometry - the "  \
+        "constructor enforces it (no material axis)"
+    d = model_to_dict(m)
+    assert d["lines"][0] == [0, 1, 1, 1]
+    legacy = dict(d, lines=[[0, 1, 1]])          # every pre-R5 file
+    back = model_from_dict(legacy)
+    assert back.sketch.lines[0].construction
+    assert not back.sketch.lines[0].centerline, "old files wake plain"
+    back2 = model_from_dict(d)
+    assert back2.sketch.lines[0].centerline, "the declaration survived"
+
+
+def test_the_axis_field_round_trips_through_the_document(qapp):
+    from tracer.core.document import Document, RevolveFeature
+    f = RevolveFeature(name="bulge", outer=np.array([[2, 0], [4, 0],
+                                                     [4, 1], [2, 1]],
+                                                    float),
+                       angle=360.0, axis=[[1.0, -5.0], [1.0, 5.0]])
+    d = Document()
+    d.add(f)
+    data = d.to_dict()
+    fd = next(x for x in data["features"] if x["name"] == "bulge")
+    assert fd["axis"] == [[1.0, -5.0], [1.0, 5.0]]
+    assert Document.from_dict(data).features[0].axis == fd["axis"]
+    fd.pop("axis")                                # a pre-R5 file
+    back = Document.from_dict(data)
+    assert back.features[0].axis is None, "legacy files keep the V-axis"
+
+
+def test_a_vertical_centerline_axes_the_revolve(qapp):
+    from tracer.core.document import RevolveFeature
+    P = np.array([[4, 0], [6, 0], [6, 1], [4, 1]], float)
+    f = RevolveFeature(name="cl", outer=P.copy(), angle=360.0,
+                       axis=[[3, 0], [3, 10]])
+    # radii from x=3: 1..3, height 1 -> pi(9-1)*1
+    assert f.build().volume == pytest.approx(8 * np.pi, rel=2e-3), \
+        "the solid turned about the DECLARED line, not the origin's"
+    c = f.build().to_trimesh().center_mass
+    assert c == pytest.approx([3.0, 0.5, 0.0], abs=0.02), \
+        "the whole spin is centred ON the centerline's image"
+
+
+def test_a_tilted_centerline_holds_pappus(qapp):
+    from tracer.core.document import RevolveFeature
+    P = np.array([[3, 0], [5, 0], [5, 2], [3, 2]], float)   # area 4
+    ax = [[0, 0], [1, 1]]
+    f = RevolveFeature(name="tilt", outer=P.copy(), angle=360.0, axis=ax)
+    s = f.build()
+    u_c = (np.array([4.0, 1.0]) - np.array([0.0, 0.0])) @ np.array(
+        [1.0, -1.0]) / np.sqrt(2)                 # centroid radius
+    assert s.volume == pytest.approx(2 * np.pi * u_c * 4.0, rel=2e-3), \
+        "Pappus about the DECLARED axis: the remap is a rigid re-frame"
+    c = s.to_trimesh().center_mass
+    assert abs(c[0] - c[1]) < 1e-6 and abs(c[2]) < 1e-6, \
+        "the centroid lies ON the tilted axis' world line"
+
+
+def test_a_profile_across_the_centerline_names_it(qapp):
+    from tracer.core.document import RevolveFeature
+    f = RevolveFeature(name="x", outer=np.array([[2, 0], [4, 0],
+                                                 [4, 1], [2, 1]], float),
+                       axis=[[3, 0], [3, 10]])
+    with pytest.raises(ValueError) as e:
+        f.build()
+    assert "declared centerline" in str(e.value), \
+        "the refusal names the line the SKETCH chose, not the origin's"
+
+
+def test_the_diameter_witness_is_live_geometry(qapp):
+    from tracer.core.sketch.constraints import Distance, spans_dia
+    m = _r5_model()
+    s = m.sketch
+    cl = m.add_line(m.point(0.0, -8.0), m.point(0.0, 8.0))
+    cl.centerline = True
+    p, q = m.point(-3.0, 2.0), m.point(3.0, 2.0)
+    c = Distance(p, q, 6.0)
+    assert spans_dia(s, c), "midpoint ON the axis, span ACROSS it -> Ø"
+    q.y = 3.0
+    assert not spans_dia(s, c), "a broken mirror takes the word with it"
+    q.y = 2.0
+    cl.centerline = False
+    assert not spans_dia(s, c), "an undeclared line is a line, not an axis"
+    cl.centerline = True
+    p.x, p.y, q.x, q.y = -1.0, -1.0, 3.0, 1.0
+    assert not spans_dia(s, c), "a slanted span is not measured across"
+
+
+def test_the_chip_speaks_the_diameter_it_sees(qapp):
+    cv = _editor(qapp)
+    from tracer.core.sketch.constraints import Distance
+    m = cv.model
+    cl = m.add_line(m.point(0.0, -8.0), m.point(0.0, 8.0))
+    cl.centerline = True
+    p, q = m.point(-3.0, 2.0), m.point(3.0, 2.0)
+    c = Distance(p, q, 6.0)
+    assert "6.00" in cv._dim_text(c)
+    assert cv._dim_text(c).startswith("\u00d8 "), "the span crosses an "  \
+        "axis - the vendor calls the number a diameter and so do we"
+    c.driven = True
+    assert cv._dim_text(c) == "(\u00d8 6.00)", "M178's parentheses wrap "  \
+        "the Ø word, they do not delete it"
+    c.driven = False
+    q.x = 2.0
+    assert not cv._dim_text(c).startswith("\u00d8 "), "paint reads the "  \
+        "same live witness as the oracle (one mouth)"
+
+
+def test_the_line_menu_declares_the_axis(qapp):
+    cv = _editor(qapp)
+    m = cv.model
+    ln = m.add_line(m.point(-12.0, 0.0), m.point(12.0, 0.0))
+    cv._sel = [ln]
+    names = [a.text() for a in cv._build_menu().actions()]
+    assert "Centerline" in names, "the act lives at the line's own menu"
+    cv.act_centerline()
+    assert ln.centerline and ln.construction
+    cv._sel = [ln]
+    acts = {a.text(): a for a in cv._build_menu().actions()}
+    assert acts["Centerline"].isCheckable()
+    assert acts["Centerline"].isChecked() is True
+    cv.act_centerline()
+    assert not ln.centerline, "the check answers the check"
+    assert ln.construction, "X owns plain construction - the declaration "  \
+        "off leaves the maker's own toggle in charge"
+
+
+def test_the_axis_mouth_reads_both_dialects(win2, qapp2):
+    m = _r5_model()
+    l1 = m.add_line(m.point(0.0, -5.0), m.point(0.0, 5.0))
+    axis, err = win2._centerline_axis_from_lines(m.sketch.lines, None)
+    assert err is None and axis is None, "zero declarations -> the legacy "  \
+        "V-axis world stands"
+    l1.centerline = True
+    axis, err = win2._centerline_axis_from_lines(m.sketch.lines, None)
+    assert err is None and axis == [[0.0, -5.0], [0.0, 5.0]]
+    from tracer.core.sketch.model import model_to_dict
+    d = model_to_dict(m)
+    axis2, err2 = win2._centerline_axis_from_lines(d["lines"], d["points"])
+    assert (axis2, err2) == (axis, None), "live objects and file entries "  \
+        "answer identically - ONE mouth, two dialects"
+    l2 = m.add_line(m.point(-5.0, 0.0), m.point(5.0, 0.0))
+    l2.centerline = True
+    axis3, err3 = win2._centerline_axis_from_lines(m.sketch.lines, None)
+    assert axis3 is None and err3 and "exactly ONE" in err3, \
+        "a crowd of axes REFUSES the commit rather than guessing"
+
+
+def test_the_declaration_wears_the_dash_dot(qapp):
+    cv = _editor(qapp)
+    m = cv.model
+    ln1 = m.add_line(m.point(-25.0, 25.0), m.point(25.0, 25.0))
+    ln1.construction = True
+    ln2 = m.add_line(m.point(-25.0, 15.0), m.point(25.0, 15.0))
+    ln2.centerline = True
+    cv._solve()
+    cv.update()
+    for _ in range(3):
+        qapp.processEvents()
+    img = cv.grab().toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+    buf = np.frombuffer(img.constBits().tobytes(), np.uint8).reshape(
+        img.height(), img.bytesPerLine() // 4, 4)[:, :img.width(), :3]
+
+    def runs(py):
+        row = buf[py, 200:400].astype(int)
+        on = (row[:, 0] - row[:, 1]) > 40            # the dimmed CONSTR red
+        out, cur = [], 0
+        for v in on:
+            if v:
+                cur += 1
+            elif cur:
+                out.append(cur)
+                cur = 0
+        if cur:
+            out.append(cur)
+        return out
+
+    r_c = runs(100)
+    r_l = runs(140)
+    assert r_c and max(r_c) <= 8, "plain construction dashes stay short"
+    assert max(r_l) >= 10 and any(2 <= x <= 5 for x in r_l), \
+        "long-dash SHORT-dash-long: the whole CAD world's sentence for "  \
+        "AXIS is on our canvas"

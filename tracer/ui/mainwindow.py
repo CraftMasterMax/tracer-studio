@@ -3205,6 +3205,67 @@ class MainWindow(QMainWindow):
         self.recompute()
         self.status.showMessage(f"Deleted {feature.name} (Ctrl+Z restores)", 4000)
 
+    def _centerline_axis_from_lines(self, lines, points):
+        """M191 R5: the ONE dialect-free reading of declared centerlines.
+        lines are the (a,b[,construction[,centerline]]) pairs - live Line
+        objects OR the file dict's entries; points only needed for the
+        dict dialect. Returns (axis | None, error | None): exactly one
+        declaration -> the axis; none -> None (the legacy V-axis world
+        stands); MANY -> the maker must pick one, and the commit REFUSES
+        rather than guess whose axis it bent the model around."""
+        cl = [l for l in lines
+              if (getattr(l, "centerline", False) if hasattr(l, "a")
+                  else len(l) > 3 and bool(l[3]))]
+        if not cl:
+            return None, None
+        if len(cl) > 1:
+            return None, (f"{len(cl)} centerlines declare {len(cl)} axes - "
+                          "a revolve turns about exactly ONE; delete the "
+                          "others")
+        if hasattr(cl[0], "a"):
+            a, b = cl[0].a, cl[0].b
+            pair = [[float(a.x), float(a.y)], [float(b.x), float(b.y)]]
+        else:
+            pa, pb = points[cl[0][0]], points[cl[0][1]]
+            pair = [[float(pa[0]), float(pa[1])], [float(pb[0]), float(pb[1])]]
+        if abs(pair[1][0] - pair[0][0]) + abs(pair[1][1] - pair[0][1]) < 1e-9:
+            return None, None               # degenerate: cannot be an axis
+        return pair, None
+
+    def _sketch_revolve_axis(self, m):
+        """M191 R5 [SKT-CENTERLINE-GEOMETRY]: the declared centerline of
+        a live sketch, as (axis | None, error | None) - see
+        _centerline_axis_from_lines for the law."""
+        if m is None:
+            return None, None
+        return self._centerline_axis_from_lines(m.sketch.lines, None)
+
+    def _axis_from_payload(self, payload):
+        """The same law read from the FILE dialect (the region-update
+        door only has the dict) - so preview, refusal and re-commit can
+        never disagree about which line is the axis."""
+        return self._centerline_axis_from_lines(
+            (payload or {}).get("lines", []),
+            (payload or {}).get("points", []))
+
+    def _profile_crosses_axis(self, outer, axis):
+        """Dry-run mirror of RevolveFeature.build's refusal: does this
+        profile straddle the CENTERLINE (None = the sketch u=0 line)?
+        Measured in the SAME frame the kernel sweeps, so the dialog's
+        yes can never disagree with the build's result."""
+        o = np.asarray(outer, float)
+        if axis is None:
+            u = o[:, 0]
+        else:
+            a1 = np.asarray(axis[0], float)
+            a2 = np.asarray(axis[1], float)
+            d = a2 - a1
+            nrm = math.hypot(d[0], d[1])
+            if nrm < 1e-9:
+                return False
+            u = (o - a1) @ np.array([d[1], -d[0]]) / nrm
+        return bool(u.min() < -1e-6 < u.max())
+
     def edit_sketch(self, feature):
         if self.doc is None or not self._discard_guard():
             return
@@ -4125,18 +4186,29 @@ class MainWindow(QMainWindow):
             self.status.showMessage(f"Updated {name} — solid recomputed", 5000)
             return
         if revolve:
+            # M191 R5 [SKT-CENTERLINE-GEOMETRY]: a DECLARED centerline
+            # IS the axis now - the dry-run measures sides against it,
+            # and the u=0 law survives untouched for every sketch that
+            # declares none (the vendor's own default).
+            _axis, _axerr = self._sketch_revolve_axis(m)
+            if _axerr is not None:
+                self.status.showMessage("Revolve refused: " + _axerr, 6000)
+                return
             for outer, _holes in profiles:
-                o = np.asarray(outer)
-                if o[:, 0].min() < -1e-6 < o[:, 0].max():
+                if self._profile_crosses_axis(outer, _axis):
                     # M189 R5 [LAW-61(a)]: a dry-run profile check BEFORE
                     # any dialog or capture - tier (a) by the ladder's own
                     # logic (the wrapped shape hid from R2's grep: the
                     # whole-set gate caught it, law 18).
                     self.status.showMessage(
-                        "Revolve refused: a profile crosses the sketch's "
-                        "vertical axis (the u=0 line through the origin) "
-                        "- Fusion revolves profiles about it, so keep "
-                        "each one on a side", 6000)
+                        "Revolve refused: a profile crosses the "
+                        + ("declared centerline - Fusion revolves about "
+                           "the line the sketch declares, so keep each "
+                           "profile on a side of it"
+                           if _axis is not None else
+                           "sketch's vertical axis (the u=0 line through "
+                           "the origin) - Fusion revolves profiles about "
+                           "it, so keep each one on a side"), 6000)
                     return
             angle, ok = Shell.getDouble(
                 self, "Revolve", "Angle (degrees):", 360.0, 1.0, 360.0, 1)
@@ -4167,6 +4239,11 @@ class MainWindow(QMainWindow):
             if not revolve and getattr(m, "handle", None):
                 common["handle"] = dict(m.handle)   # M142: extrude
             #                                          only, for now
+            if revolve and (_ax := self._sketch_revolve_axis(m)[0]):
+                common["axis"] = _ax               # M191 R5: the sketch
+            #                                          declared its own
+            #                                          axis - the kernel
+            #                                          turns on THAT
             self.doc.add(RevolveFeature(angle=angle, **common) if revolve
                          else ExtrudeFeature(height=height, **common))
         self.sketch.set_model(SketchModel())         # committed: clear editor
@@ -5989,6 +6066,16 @@ class MainWindow(QMainWindow):
                  and f.sid == sid]
         if not group:
             return
+        # M191 R5: a re-edit may DECLARE or MOVE the centerline - the
+        # revolve re-reads the axis from the fresh payload (the SAME
+        # mouth the first commit spoke), and a crowd of declarations
+        # refuses the commit exactly as the fresh door does.
+        _ax_err = None
+        if any(isinstance(f, RevolveFeature) for f in group):
+            _ax_upd, _ax_err = self._axis_from_payload(payload)
+        if _ax_err is not None:
+            self.status.showMessage("Update refused: " + _ax_err, 6000)
+            return
         if capture:
             self._capture()
         for i, (outer, holes) in enumerate(profiles):
@@ -5998,6 +6085,8 @@ class MainWindow(QMainWindow):
                 f.holes = [np.asarray(h) for h in holes]
                 f.region = i
                 f.sketch = dict(payload, regions=len(profiles), region=i)
+                if isinstance(f, RevolveFeature):
+                    f.axis = _ax_upd
             else:
                 src = group[-1]
                 extra = dict(name=f"{payload['name']} #{i + 1}",
@@ -6010,6 +6099,10 @@ class MainWindow(QMainWindow):
                                          region=i),
                              region=i)
                 if isinstance(src, RevolveFeature):
+                    # M191 R5: a region born in THIS re-edit reads the
+                    # axis from the same fresh payload — the declaration
+                    # the maker just made applies to every half of it.
+                    extra["axis"] = _ax_upd
                     self.doc.add(RevolveFeature(angle=src.angle, **extra))
                 else:
                     if getattr(src, "handle", None):

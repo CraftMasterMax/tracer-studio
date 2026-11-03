@@ -470,6 +470,43 @@ def expand(constraints: list[Constraint]) -> list[Constraint]:
     return out
 
 
+def spans_dia(sketch, c) -> bool:
+    """M191 R5 [SKT-CENTERLINE-GEOMETRY]: the vendor's diameter INTENT -
+    dimension geometry MIRRORED about a centerline and the dimension
+    speaks DIAMETER ("Ø"), because the maker measured ACROSS an axis,
+    not between two accidents. One live-geometry test, the ONE mouth
+    the chip consults: a Distance between two Points whose segment sits
+    symmetric about some declared centerline - midpoint ON the line,
+    segment PERPENDICULAR to it. It is a WITNESS, not paper: drag a
+    half out of symmetry and the Ø word leaves with the truth (no dia
+    override is consulted here - that right-click voice belongs to the
+    Radius dialect, speaks_dia)."""
+    if not isinstance(c, Distance):
+        return False
+    cl = [l for l in getattr(sketch, "lines", ())
+          if getattr(l, "centerline", False)]
+    if not cl:
+        return False
+    mx = (c.p.x + c.q.x) / 2.0
+    my = (c.p.y + c.q.y) / 2.0
+    sx, sy = c.q.x - c.p.x, c.q.y - c.p.y
+    s_len = math.hypot(sx, sy)
+    if s_len < 1e-9:
+        return False
+    for l in cl:
+        dx, dy = l.b.x - l.a.x, l.b.y - l.a.y
+        L = math.hypot(dx, dy)
+        if L < 1e-9:
+            continue
+        # midpoint on the line (distance) AND span perpendicular to it
+        if abs((mx - l.a.x) * dy - (my - l.a.y) * dx) / L > 1e-6:
+            continue
+        if abs(sx * dx + sy * dy) / (L * s_len) > 1e-6:
+            continue
+        return True
+    return False
+
+
 def speaks_dia(c) -> bool:
     """M174 R3 THE ONE MOUTH OF DIALECT (FD5-L35): a Radius chip speaks
     DIAMETER when the constraint carries an explicit override (c.dia,
