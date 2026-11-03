@@ -209,3 +209,120 @@ def test_a_stale_click_leaves_zero_trace(qapp):
     hist_before = len(cv._hist)
     cv.act_delete_coincident(ghost)
     assert len(cv._hist) == hist_before, "a stale point: no snapshot, no debt"
+
+
+# ---- R2: EDIT PARKS THE MARKER (LAW-10, completed) --------------------------------
+# The API doc names the behavior outright: "the behavior you see in
+# the user interface when you manually edit a sketch where Fusion
+# AUTOMATICALLY ROLLS THE TIMELINE BACK while you're editing the
+# sketch." M161 shipped the half where the target sat BEHIND the
+# marker; the whole law parks the marker just past the feature being
+# edited - even from a clean end-of-timeline start - and sends it
+# HOME when the maker leaves. The marker is view state (M88), so the
+# park can never poison a file; LAW-8's words ride: hidden, never
+# deleted.
+
+from PySide6.QtWidgets import QApplication                           # noqa
+from tracer.ui.renderer import SceneRenderer                         # noqa
+
+
+@pytest.fixture(scope="module")
+def qapp2():
+    yield QApplication.instance() or QApplication([])
+
+
+@pytest.fixture
+def win2(qapp2):
+    from tracer.ui.mainwindow import MainWindow
+    try:
+        r = SceneRenderer()
+    except Exception as e:
+        pytest.skip(f"no headless GL: {e}")
+    w = MainWindow(renderer=r)
+    w.resize(1100, 720)
+    w.show()
+    qapp2.processEvents()
+    yield w
+    w._unsaved = False
+    r.close()
+    w.close()
+
+
+def _sketch_at(win, i):
+    """Plate, [fillers], Boss (a REAL sketched extrude), Plate2."""
+    from tracer.core.document import PrimitiveFeature, ExtrudeFeature
+    win.new_document()
+    win._edit_park_on = False            # module-scoped win2: a prior
+    win._edit_park = None                #   test's visit must not leak
+    d = win.doc
+    d.add(PrimitiveFeature(name="Plate", kind="box", op="union",
+                           dims={"dx": 40.0, "dy": 40.0, "dz": 4.0}))
+    for k in range(i - 1):
+        d.add(PrimitiveFeature(name=f"F{k}", kind="box", op="union",
+                               dims={"dx": 8.0, "dy": 8.0, "dz": 2.0}))
+    boss = d.add(ExtrudeFeature(
+        name="Boss", outer=np.array([[0, 0], [10, 0], [10, 5]], float),
+        height=4.0,
+        sketch={"name": "SketchBoss",
+                "lines": [], "circles": [], "arcs": [], "points": [],
+                "constraints": [], "dims": []}))
+    d.add(PrimitiveFeature(name="Plate2", kind="box", op="union",
+                           dims={"dx": 40.0, "dy": 40.0, "dz": 1.0}))
+    win.recompute()
+    return d, boss
+
+
+def test_editing_parks_the_marker_even_from_the_end(win2, qapp2):
+    d, boss = _sketch_at(win2, 2)
+    assert d.rollback_to is None                # a clean, FULL timeline
+    win2.edit_sketch(boss)
+    qapp2.processEvents()
+    assert d.rollback_to == 3, \
+        "the marker parks JUST PAST the feature being edited"
+    assert win2.stack.currentWidget() is win2._sketch_page
+    assert win2._edit_park_on and win2._edit_park is None, \
+        "the memory holds HOME (None) - the position the maker was at"
+
+
+def test_leaving_sends_the_marker_home(win2, qapp2):
+    d, boss = _sketch_at(win2, 2)
+    win2.edit_sketch(boss)
+    qapp2.processEvents()
+    win2._leave_sketch_page()                   # the Back door
+    qapp2.processEvents()
+    assert d.rollback_to is None, "the timeline is WHOLE again"
+    assert win2._edit_park is None, "the memory retires with the visit"
+
+
+def test_a_prior_user_park_survives_the_visit(win2, qapp2):
+    d, boss = _sketch_at(win2, 2)
+    win2._apply_rollback(1)                     # the maker parked at 1
+    win2.edit_sketch(boss)
+    qapp2.processEvents()
+    assert d.rollback_to == 3, "the edit parks at the target anyway"
+    win2._leave_sketch_page()
+    qapp2.processEvents()
+    assert d.rollback_to == 1, "and RESTORES where the maker left it"
+
+
+def test_editing_the_last_feature_parks_home(win2, qapp2):
+    d, boss = _sketch_at(win2, 3)               # Boss: last REAL feature
+    i = d.features.index(boss)
+    win2.edit_sketch(boss)
+    qapp2.processEvents()
+    assert d.rollback_to in (i + 1, None), \
+        "the park lands just past the edited feature - and when that " \
+        f"IS the end the band ENDS (total={len(d.features)} i={i} " \
+        f"rb={d.rollback_to}); it never hides the Boss itself"
+    win2._leave_sketch_page()
+    assert d.rollback_to is None, "and leaving is home"
+
+
+def test_a_new_document_drops_the_memory(win2, qapp2):
+    d, boss = _sketch_at(win2, 2)
+    win2.edit_sketch(boss)
+    qapp2.processEvents()
+    win2.new_document()                         # a hard context switch
+    assert win2._edit_park is None, \
+        "the park memory is bound to the doc it parked"
+    assert win2.doc.rollback_to is None

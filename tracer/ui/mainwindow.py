@@ -235,6 +235,14 @@ class MainWindow(QMainWindow):
         self._log_chip.setToolTip("Message Log \u2014 click to "
                                   "show / hide")
         self._log_chip.clicked.connect(self._toggle_message_log)
+        # M191 R2: the edit-park memory (view state of a view state):
+        # the rollback position to RESTORE when the maker leaves the
+        # sketch page. ARMED is the sentinel - the remembered position
+        # may LEGITIMATELY be None (home), so None can never be the
+        # "not parked" flag (the first cut's collision, caught by the
+        # R2 gates on its first run).
+        self._edit_park_on = False
+        self._edit_park: int | None = None
         self.status.addPermanentWidget(self._log_chip)
         logservice.subscribe(self._update_log_chip)
         self.destroyed.connect(
@@ -540,7 +548,8 @@ class MainWindow(QMainWindow):
         page's Back button); Sketch tab = start a sketch if none is open."""
         if index == 0:
             if self.stack.currentWidget() is not self.viewport:
-                self._show_page(self.viewport)
+                self._end_sketch_view()         # M191 R2: leaving the
+                self._show_page(self.viewport)  #   page un-parks first
         elif self.stack.currentWidget() is not self._sketch_page:
             self.action_new_sketch()
 
@@ -946,8 +955,48 @@ class MainWindow(QMainWindow):
         else:
             self.status.showMessage("Feature has no editable sketch (yet)", 3000)
 
-    # ---- repeat last / adjust last (M165 R3) --------------------------------
-    # The memory is a ring of (key, stack, kind, payload), newest last.
+    # ---- M191 R2 [LAW-10, completed]: EDIT PARKS THE MARKER --------------------
+    # The vendor's API doc names the behavior outright: "This process
+    # mimics the behavior you see in the user interface when you
+    # manually edit a sketch where Fusion AUTOMATICALLY ROLLS THE
+    # TIMELINE BACK while you're editing the sketch." M161 LAW-10
+    # shipped the half where the target sits BEHIND the marker; the
+    # whole law is: entering ANY feature's edit parks the marker just
+    # past that feature (downstream hidden, never deleted - LAW-8's
+    # words), and leaving sends it HOME - or back to wherever the
+    # maker had parked it BEFORE the edit. The marker is view state
+    # (M88: never serialized), so the park can never poison a file.
+    def _park_marker_for_edit(self, feature):
+        if self.doc is None or feature not in self.doc.features:
+            return
+        i = self.doc.features.index(feature)
+        # "just past the LAST feature" IS home (the band's OWN law,
+        # _rollback_to's words); and a stale at-the-end NUMBER is
+        # normalized to None, because doc.rollback_to may hold either
+        # spelling of home (document.py stores int(n) unguarded).
+        target = i + 1 if i + 1 < len(self.doc.features) else None
+        cur = self.doc.rollback_to
+        if cur is not None and cur >= len(self.doc.features):
+            cur = None
+        if cur != target:
+            self._apply_rollback(target)
+
+    def _end_sketch_view(self):
+        """ONE un-park seam: every door that leaves the sketch page
+        (Back, the Design tab, every commit path) routes here FIRST;
+        outside an edit it says nothing and changes nothing."""
+        if not self._edit_park_on:
+            return
+        prev, self._edit_park = self._edit_park, None
+        self._edit_park_on = False
+        if self.doc is not None and self.doc.rollback_to != prev:
+            self._apply_rollback(prev)
+
+    def _leave_sketch_page(self):
+        self._end_sketch_view()
+        self._show_page(self.viewport)
+
+    # ---- repeat last / adjust last (M165 R3) --------------------------------    # The memory is a ring of (key, stack, kind, payload), newest last.
     # Entries are NOT lambdas holding references: they carry strings that
     # RE-RESOLVE at replay, and a dead action/feature/dim is dropped -
     # never replayed at a stale object (the palette recents' self-heal).
@@ -3127,8 +3176,22 @@ class MainWindow(QMainWindow):
         model = model_from_dict(feature.sketch)
         model.sid = feature.sid or id(model)
         self._editing_sid = model.sid
-        self.sketch.set_model(model)
-        self._show_page(self._sketch_page)
+        # M191 R2: the memory arms BEFORE any roll (M161's gate in
+        # _feature_activated may already have moved the marker - the
+        # maker's position is the one from BEFORE the visit).
+        if not self._edit_park_on:              # FIRST edit of the visit
+            # home has TWO spellings in this field (None and any number
+            # >= the feature count); normalize BEFORE the memory, or a
+            # stale number would be "restored" on leaving.
+            cur = self.doc.rollback_to
+            if cur is not None and cur >= len(self.doc.features):
+                cur = None
+                self.doc.rollback_to = None
+            self._edit_park_on = True
+            self._edit_park = cur
+        self._park_marker_for_edit(feature)     # M191 R2: editing parks
+        self.sketch.set_model(model)            #   the marker at THIS
+        self._show_page(self._sketch_page)      #   feature (LAW-10 full)
         self._pick_tool("select")
         self.status.showMessage(f"Editing {feature.sketch.get('name', 'Sketch')} — "
                                 "X to update solid")
@@ -4021,7 +4084,8 @@ class MainWindow(QMainWindow):
             self._update_sketch_features(sid, profiles, payload,
                                          capture=not owns)
             self.sketch.set_model(SketchModel())     # committed: clear editor
-            self._show_page(self.viewport)
+            self._end_sketch_view()                  # M191 R2: the marker
+            self._show_page(self.viewport)           #   goes home with you
             self.recompute()
             self.status.showMessage(f"Updated {name} — solid recomputed", 5000)
             return
@@ -4177,6 +4241,7 @@ class MainWindow(QMainWindow):
             self.doc.features.remove(f)
         self.sketch.set_model(SketchModel())
         self._editing_sid = None
+        self._end_sketch_view()                  # M191 R2: leave = un-park
         self._show_page(self.viewport)
         self.recompute()
         self.viewport.refresh(fit=True)
@@ -5994,7 +6059,7 @@ class MainWindow(QMainWindow):
         back = QPushButton("← Back")
         back.setProperty("tb", True)
         back.setToolTip("Return to the 3D model without extruding")
-        back.clicked.connect(lambda: self._show_page(self.viewport))
+        back.clicked.connect(self._leave_sketch_page)   # M191 R2: the
         bl.insertWidget(bl.count() - 1, back)
         done = QPushButton("Extrude… (X)")
         done.setProperty("tb", True)
@@ -6190,6 +6255,8 @@ class MainWindow(QMainWindow):
         self.file_path = None
         self._saved_mtime = None          # M111: on-disk conflict guard
         self._editing_sid = None
+        self._edit_park = None            # M191 R2: a new doc un-parks
+        self._edit_park_on = False
         self._unsaved = False
         self._undo.clear()
         self._redo.clear()
