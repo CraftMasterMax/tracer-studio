@@ -37,6 +37,17 @@ continuously to the straight-leg law (no dead zone, no re-press). R2
 therefore PINS that behavior as law: mid-drag crossing with tangency
 surviving the flip, the corridor handoff, and the flip off an ARC's own
 exit tangent (not an x/y trick - the cross product decides everywhere).
+
+Rung 3 is the third sentence - "You can specify a RADIUS before you
+create additional line segments." The held drag now OWNS a number cell:
+digits feed it, the dashed preview re-solves to that curvature LIVE,
+and the release files it. The number RULES where it rules: the arc
+takes the typed radius and the aim only POINTS - the end rides the
+circle the ray centre->aim crosses, NOT the raw landing (so a typed
+drag aims at existing geometry and still refuses the weld; the number
+commands, the cursor counsels). Half-typed surrenders to the bulge,
+Esc frees the number but the drag lives (M180's discipline inherited
+whole), and any commit SPENDS the cell.
 """
 import math
 
@@ -44,6 +55,8 @@ import pytest
 
 # ---- pure geometry (no Qt at all) --------------------------------------
 from tracer.core.sketch.entities import (Arc, Point, tangent_arc_mid,
+                                         tangent_arc_fixed_radius,
+                                         tangent_arc_fixed_radius_sample,
                                          tangent_arc_sample)
 
 
@@ -153,6 +166,15 @@ def _drag_to(cv, x, y):
 def _release(cv, x, y):
     QTest.mouseRelease(cv, Qt.LeftButton, Qt.KeyboardModifier.NoModifier,
                        _sp(cv, x, y))
+    QApplication.instance().processEvents()
+
+
+def _key(cv, k):
+    QTest.keyClick(cv, k)                            # NON-text keys only
+
+
+def _type(cv, s):                                    # (Backspace/Esc);
+    QTest.keyClicks(cv, s)                           #  digits need TEXT
     QApplication.instance().processEvents()
 
 
@@ -396,3 +418,167 @@ def test_flip_survives_off_the_axis_and_after_an_arc(ed):
     assert side(c2x, c2y) * side(ex, ey) > 0              # exit line, and the
     #                                                     bulge faced the LAST
     #                                                     side the cursor held
+
+
+# ---- R3: the typed RADIUS - the number rules, the aim only points ------
+def test_fixed_radius_tangency_and_landing():
+    g = tangent_arc_fixed_radius((0.0, 0.0), (1.0, 0.0), (10.0, 10.0), 5.0)
+    assert g is not None
+    (mx, my), exit_t, (bx, by), (cx, cy) = g
+    assert math.hypot(bx - cx, by - cy) == pytest.approx(5.0, abs=1e-12)
+    assert math.hypot(mx - cx, my - cy) == pytest.approx(5.0, abs=1e-12)
+    assert abs((0.0 - cx) * 1.0 + (0.0 - cy) * 0.0) < 1e-12   # ⟂ at s
+    ray = (bx - cx) * (10.0 - cy) - (by - cy) * (10.0 - cx)   # end on the
+    assert abs(ray) < 1e-12                                   #  centre->aim ray
+    assert math.hypot(*exit_t) == pytest.approx(1.0, abs=1e-12)
+    poly = tangent_arc_fixed_radius_sample((0.0, 0.0), (1.0, 0.0),
+                                           (10.0, 10.0), 5.0, n=24)
+    assert math.dist(poly[0], (0.0, 0.0)) < 1e-12
+    assert math.dist(poly[-1], (bx, by)) < 1e-12       # the ACTUAL end
+    up = tangent_arc_fixed_radius((0.0, 0.0), (1.0, 0.0), (10.0, 10.0), 5.0)
+    dn = tangent_arc_fixed_radius((0.0, 0.0), (1.0, 0.0), (10.0, -10.0), 5.0)
+    assert up[3][1] > 0.0 > dn[3][1]                   # side still commands
+    assert tangent_arc_fixed_radius((0.0, 0.0), (1.0, 0.0), (0.0, 0.0), 5) \
+        is None                                        # no aim, no arc
+    assert tangent_arc_fixed_radius((0.0, 0.0), (1.0, 0.0), (5.0, 5.0), 0) \
+        is None                                        # zero radius: none
+    assert tangent_arc_fixed_radius((0.0, 0.0), (1.0, 0.0), (5.0, 5.0), None) \
+        is None                                        # no number: none
+    assert tangent_arc_fixed_radius((0.0, 0.0), (0.0, 0.0), (5.0, 5.0), 4) \
+        is None                                        # no tangent
+    assert tangent_arc_fixed_radius((0.0, 0.0), (1.0, 0.0), (0.0, 5.0), 5) \
+        is None                                        # aim sits ON the centre
+
+
+def test_typed_radius_bends_the_drag_to_the_number(ed):
+    """The vendor's number: "You can specify a RADIUS before you create
+    additional line segments."  Digits DURING the held drag feed the
+    radius cell, the cell's whisper carries the bulge reading until a
+    digit commands, and the release files the arc at EXACTLY the typed
+    radius - the chain walks on the number's own exit tangent."""
+    cv = ed
+    cv.set_tool("line")
+    _leg(cv, 2, 6, 9, 6)
+    _press(cv, 9, 6)
+    _drag_to(cv, 16, 10)
+    assert cv._arc_live_radius() == "8.12"               # the cell WHISPERS
+    #    the bulge radius (chord²/2·reach = 65/8 = 8.125) at the 2dp reading
+    _type(cv, "5")
+    assert cv._arc_radius == "5"                     # the cell has the
+    assert cv._arc_live_radius() == "5"              #  number (typed outranks)
+    _release(cv, 16, 10)
+    sk = _sk(cv)
+    assert len(sk.arcs) == 1 and len(sk.lines) == 1
+    ar = sk.arcs[-1]
+    (cx, cy), r = ar.circle()
+    assert r == pytest.approx(5.0, abs=1e-9)         # THE NUMBER, exactly
+    assert (cx, cy) == pytest.approx((9.0, 11.0), abs=1e-6)   # centre on
+    #                                                 the normal at the weld
+    assert (ar.b.x, ar.b.y) == pytest.approx((13.9497, 10.2929), abs=1e-3)
+    assert abs(ar.b.x - 16.0) > 1.0                  # the END RIDES THE
+    #                                                 CIRCLE, not the aim
+    assert cv._line_start is ar.b                    # chain walks on
+    assert math.hypot(*cv._line_dir) == pytest.approx(1.0, abs=1e-12)
+    assert cv._arc_radius == ""                      # the cell is SPENT
+    assert cv._line_typed == "" and cv._line_angle == ""   # M180's cells
+    #                                                 never saw these digits
+    assert cv._pending is None                       # no stale chip
+
+
+def test_typed_radius_outranks_the_landing(ed):
+    """Aim at EXISTING geometry WITH a typed radius: no weld - the
+    number commands the endpoint onto its circle (short of the island
+    here) and the chain STAYS ALIVE. The L25 end law belongs to what
+    the cursor LANDS, not to what the number draws."""
+    cv = ed
+    cv.set_tool("line")
+    _leg(cv, 9, 12, 5, 12)                           # island, P at (9,12)
+    _click(cv, 5, 12)                                # close it
+    _leg(cv, 2, 6, 9, 6)                             # fresh chain, free at B
+    _press(cv, 9, 6)
+    _drag_to(cv, 9, 12)                              # aim AT the island's P
+    _type(cv, "2")                                   # R=2: too short to
+    #                                                   ever touch P
+    _release(cv, 9, 12)
+    sk = _sk(cv)
+    assert len(sk.arcs) == 1
+    ar = sk.arcs[-1]
+    (cx, cy), r = ar.circle()
+    assert r == pytest.approx(2.0, abs=1e-9)
+    assert (ar.b.x, ar.b.y) == pytest.approx((9.0, 10.0), abs=1e-6)
+    island_p = sk.lines[0].a                         # the (9,12) endpoint
+    assert ar.b is not island_p                      # NO weld: the number
+    #                                                   ruled the endpoint
+    assert cv._line_start is ar.b                    # and the chain LIVES
+    assert cv._line_dir is not None
+
+
+def test_half_typed_cell_surrenders_to_the_bulge(ed):
+    cv = ed
+    cv.set_tool("line")
+    _leg(cv, 2, 6, 9, 6)
+    _press(cv, 9, 6)
+    _drag_to(cv, 9, 12)
+    _type(cv, "2..")                                 # half-typed
+    assert cv._arc_radius == "2.."
+    _release(cv, 9, 12)
+    ar = _sk(cv).arcs[-1]
+    (_cx, _cy), r = ar.circle()
+    assert r == pytest.approx(3.0, abs=1e-6)         # the BULGE's radius
+    #                                                   (the honest semicircle)
+    assert cv._arc_radius == ""                      # half-typed: SPENT too
+    assert cv._line_start is ar.b                    # the chain rode the bulge
+
+
+def test_esc_surrenders_the_number_and_the_drag_lives(ed):
+    """M180's discipline, inherited whole: Esc frees the LIVE CELL only -
+    the gesture keeps its held button, its aim and its tangent."""
+    cv = ed
+    cv.set_tool("line")
+    _leg(cv, 2, 6, 9, 6)
+    _press(cv, 9, 6)
+    _drag_to(cv, 9, 12)
+    _type(cv, "7")
+    assert cv._arc_radius == "7"
+    _key(cv, Qt.Key_Escape)
+    assert cv._arc_radius == ""                      # the NUMBER gone...
+    assert cv._arc_drag is not None                  # ...the DRAG alive
+    assert cv._line_start is not None                # ...the anchor stays
+    _release(cv, 9, 12)
+    ar = _sk(cv).arcs[-1]
+    (_cx, _cy), r = ar.circle()
+    assert r == pytest.approx(3.0, abs=1e-6)         # bulge law, not R=7
+
+
+def test_backspace_edits_the_cell(ed):
+    cv = ed
+    cv.set_tool("line")
+    _leg(cv, 2, 6, 9, 6)
+    _press(cv, 9, 6)
+    _drag_to(cv, 16, 10)
+    _type(cv, "5")
+    _key(cv, Qt.Key_Backspace)
+    _type(cv, "8")
+    assert cv._arc_radius == "8"
+    _release(cv, 16, 10)
+    (_cx, _cy), r = _sk(cv).arcs[-1].circle()
+    assert r == pytest.approx(8.0, abs=1e-9)         # the EDITED number
+
+
+def test_tool_switch_washes_the_radius_cell(ed):
+    """The cell was typed FOR this gesture: walking the tool away
+    mid-drag spends nothing on the canvas - and leaves no number
+    behind for the next gesture to mishear."""
+    cv = ed
+    cv.set_tool("line")
+    _leg(cv, 2, 6, 9, 6)
+    _press(cv, 9, 6)
+    _drag_to(cv, 16, 10)
+    _type(cv, "5")
+    assert cv._arc_radius == "5"
+    cv.set_tool("select")                            # walking away HELD
+    assert cv._arc_radius == "" and cv._arc_drag is None
+    _release(cv, 16, 10)                             # orphaned release lands
+    #                                                  dead: NOTHING minted
+    sk = _sk(cv)
+    assert len(sk.lines) == 1 and not sk.arcs

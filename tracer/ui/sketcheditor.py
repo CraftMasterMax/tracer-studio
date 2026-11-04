@@ -31,7 +31,10 @@ from ..core.sketch.constraints import (Angle, AngleBetween, Collinear,
                                        spans_dia)
 from ..core.sketch.entities import (Arc, Circle, Ellipse, Line, Point,
                                      curve_center, curve_radius,
-                                     tangent_arc_mid, tangent_arc_sample)
+                                     tangent_arc_fixed_radius,
+                                     tangent_arc_fixed_radius_sample,
+                                     tangent_arc_mid, tangent_arc_radius,
+                                     tangent_arc_sample)
 from ..core.sketch import endpoints                 # M191 R1: the dot law
 from ..core.sketch.model import (_dim_tag, SketchModel, math_dist,
                                  model_from_dict, model_to_dict)
@@ -54,7 +57,7 @@ TOOL_HINTS = {
     "select": ("Select · L/R/C/A/Y/K draw · H/V/F/D/Q constraints · "
                "Enter finish · . on-curve"),
     "trim": "Trim — click a piece or scribe across pieces to cut (T)",
-    "line": "Line — click points, Enter/Esc stops",
+    "line": "Line — click points, drag an end to bend, Enter/Esc stops",
     "rect": "Rectangle — drag corners or click · move · click",
     "circle": "Circle — drag from center or click · move · click",
     "ellipse": "Ellipse — drag from centre or click · move · "
@@ -231,6 +234,11 @@ class SketchCanvas(QWidget):
         self._arc_drag_pushed = False          #   that TRAVELLED becomes
         self._arc_drag_to = None               #   a tangent-arc drag
         self._arc_drag_px0 = None              #  press screen pos (travel)
+        self._arc_radius = ""                  # M193 R3 [SKT-CREATE-LINES]:
+        #          "specify a RADIUS before you create additional line
+        #          segments" - the drag's third cell: digits feed this
+        #          number, the preview bends to it LIVE, the release files
+        #          it. Washed by _tangent_reset; SPENT by any commit.
         self._rect_typed_w = ""                # M182 R2: the rect's TWO
         self._rect_typed_h = ""                #  pre-mint cells (staff law:
         self._rect_cell = "w"                  #   Tab toggles the focus)
@@ -1720,15 +1728,44 @@ class SketchCanvas(QWidget):
         self._drag = None                       #  ANY grab, tool or no tool
         if self._arc_drag is not None:                  # M193 R1: the press
             start = self._arc_drag                      #  rode the free end;
-            self._arc_drag = None                       #   decide now.
-            self._arc_drag_to = None                    #
+            aim0 = self._arc_drag_to                    #   M193 R3: the
+            self._arc_drag = None                       #  typed branch
+            self._arc_drag_to = None                    #   still needs it
             if not self._arc_drag_pushed:                #  NEVER travelled:
                 self._line_start = None                  #  the OLD close-
                 self._line_reset()                       #  the-chain click,
                 self._tangent_reset()                    #  byte-for-byte.
                 self.update()                            #
                 return
-            end = self._place_point(ev.position())        #  the far end
+            typed = None                                 #  M193 R3: parse
+            if self._arc_radius.strip("."):              #   the radius
+                try:                                     #    cell ONCE;
+                    v = float(self._arc_radius)          #   blank, half-
+                    typed = v if v > 0 else None         #   typed ("2..")
+                except ValueError:                       #   or non-
+                    typed = None                         #   positive quits
+            if typed is not None and aim0 is not None:   #  M193 R3: THE
+                fr = tangent_arc_fixed_radius(           #   RADIUS RULES:
+                    (start.x, start.y), self._line_dir,  #    the arc takes
+                    tuple(aim0), typed)                  #  THE NUMBER, and
+                if fr is not None:                       #   the aim only
+                    (mx, my), (ux, uy), (bx, by), _c = fr   # the end rides
+                    if (bx - start.x) ** 2 + (by - start.y) ** 2 \
+                            > 1e-18:               #   the circle the ray
+                        end = self.model.point(bx, by)   #  centre->aim
+                        self._push_hist()          #   crosses, NOT the
+                        self.model.sketch.arc(start,   #  raw landing (no
+                            self.model.point(mx, my), end)  # magnet weld:
+                        self._line_start = end     #   the number was
+                        self._line_dir = (ux, uy)  #    asked, the number
+                        self._pending = None       #    answers). Degenerate
+                        self._solve()              #    aim (sat home):
+                        self._arc_radius = ""      #    surrender the cell
+                        self.update()              #    and close below.
+                        return
+                self._arc_radius = ""
+            self._arc_radius = ""                        #  any commit
+            end = self._place_point(ev.position())        #  SPENDS the cell
             #   magnets like any click (snap onto geometry -> a weld there)
             if end is start or (end.x - start.x) ** 2 + (end.y - start.y) ** 2 \
                     < 1e-18:                             #  a drag that came
@@ -2678,6 +2715,29 @@ class SketchCanvas(QWidget):
                 return                             #   non-printable: a
                                                    #   claim would be
                                                    #   inert dead code)
+        if self._arc_drag is not None:             # M193 R3 [SKT-CREATE-
+            #  LINES, verbatim]: "You can specify a RADIUS before you
+            #  create additional line segments." A HELD tangent-arc drag
+            #  OWNS the number keys: digits feed the radius cell, the
+            #  dashed preview re-solves to that curvature LIVE, and the
+            #  release files it. Esc surrenders the NUMBER and the drag
+            #  lives (M180's discipline, inherited); anything the gesture
+            #  does not claim (Esc-empty, letters, view keys) falls
+            #  THROUGH to the ordinary grammar unchanged.
+            txt = ev.text()
+            if txt.isdigit() or txt == ".":
+                if len(self._arc_radius) < 12:
+                    self._arc_radius += txt
+                    self.update()
+                return
+            if k == Qt.Key_Backspace:
+                self._arc_radius = self._arc_radius[:-1]
+                self.update()
+                return
+            if k == Qt.Key_Escape and self._arc_radius:
+                self._arc_radius = ""
+                self.update()
+                return
         if (self._tool == "line" and self._pending is None
                 and self._line_start is not None):
             # M180 R2 (FD5-L23): the rubber-band carries a live TYPE-IN
@@ -4107,12 +4167,15 @@ class SketchCanvas(QWidget):
     def _tangent_reset(self):
         """M193 R1 [LAW]: the tangent-arc drag is a GUEST of the chain
         anchor - the armed press, the live aim and the chain's tangent all
-        die wherever the free end dies. The cells' wash law again."""
+        die wherever the free end dies. The cells' wash law again; M193
+        R3: so does the half-typed RADIUS cell - it was typed FOR this
+        gesture."""
         self._line_dir = None
         self._arc_drag = None
         self._arc_drag_pushed = False
         self._arc_drag_to = None
         self._arc_drag_px0 = None
+        self._arc_radius = ""
 
     def _line_cells(self):
         """(typed length, typed angle deg) - None where the cell is blank
@@ -4141,6 +4204,22 @@ class SketchCanvas(QWidget):
             self._cursor[1] - self._line_start.y,
             self._cursor[0] - self._line_start.x)) % 360.0
         return f"{deg:.1f}"
+
+    def _arc_live_radius(self):
+        """M193 R3: the RADIUS cell of the held tangent-arc drag - typed
+        text OUTRANKS the hover reading (M180's law, inherited whole),
+        raw as typed; the hover reading is the radius the DRAG BULGE
+        would take (what you are pulling becomes the number you could
+        type - the cell whispers, the digits command)."""
+        if self._arc_drag is None or self._arc_drag_to is None:
+            return None
+        if self._arc_radius:
+            return self._arc_radius
+        if self._line_dir is None:
+            return None
+        r = tangent_arc_radius((self._arc_drag.x, self._arc_drag.y),
+                               self._line_dir, tuple(self._arc_drag_to))
+        return f"{r:.2f}" if r is not None else None
 
     def _rect_live_wh(self):
         """M182 R1 (FD5-L23 siblings): the rect rubber-band's live WIDTH x
@@ -4840,16 +4919,29 @@ class SketchCanvas(QWidget):
                            and self._arc_drag_pushed         #  held DRAG
                            and self._arc_drag_to is not None  # previews the
                            and self._line_dir is not None)    #  TANGENT ARC
-            if arc_preview:                                  #  it commits -
-                poly = tangent_arc_sample(                   #  dashed, and
-                    (self._arc_drag.x, self._arc_drag.y),    #   the honest
-                    self._line_dir, tuple(self._arc_drag_to))  # curve, not
-                if poly is not None:                         #  a measured
-                    prev = self.w2s(*poly[0])                #  band: the
-                    for xy in poly[1:]:                      #   cells hush
-                        qn = self.w2s(*xy)
-                        p.drawLine(prev, qn)
-                        prev = qn
+            R = None                                          # M193 R3: a
+            if arc_preview and self._arc_radius.strip("."):   #  typed radius
+                try:                                          #   bends the
+                    v = float(self._arc_radius)               #    preview
+                    R = v if v > 0 else None                  #     LIVE too
+                except ValueError:
+                    R = None                                  #  half-typed:
+                    #                                        the  BULGE rides
+            if arc_preview:                                   #   on, honest
+                s0 = (self._arc_drag.x, self._arc_drag.y)
+                poly = (tangent_arc_fixed_radius_sample(s0, self._line_dir,
+                                                        tuple(
+                                                            self._arc_drag_to),
+                                                        R)
+                        if R is not None else
+                        tangent_arc_sample(s0, self._line_dir,
+                                           tuple(self._arc_drag_to)))
+                if poly is not None:                         #  dashed, and
+                    prev = self.w2s(*poly[0])                #   the honest
+                    for xy in poly[1:]:                      #   curve, not
+                        qn = self.w2s(*xy)                   #    a measured
+                        p.drawLine(prev, qn)                 #     band: the
+                        prev = qn                            #  len/ang hush
                 else:
                     p.drawLine(self.w2s(self._line_start.x,
                                         self._line_start.y), self.w2s(*wp))
@@ -4857,7 +4949,8 @@ class SketchCanvas(QWidget):
             if not arc_preview:                    #  band AND its readings
                 p.drawLine(self.w2s(self._line_start.x,
                                     self._line_start.y), self.w2s(*wp))
-            for key, txt, dy in (() if arc_preview else
+            for key, txt, dy in ((("rad", self._arc_live_radius(), -8),)
+                                 if arc_preview else
                                  (("len", self._line_live_text(), -22),
                                   ("ang", self._line_live_angle(), 4))):
                 if not txt:
@@ -4873,7 +4966,7 @@ class SketchCanvas(QWidget):
                               br.width() + 12, br.height() + 6)
                 p.setFont(self._font)
                 p.setBrush(QColor(theme.DARK["bg2"]))
-                if self._line_cell == key:           # M180 R3: the LIVE
+                if self._line_cell == key or key == "rad":   # M180 R3: the
                     p.setPen(QPen(QColor(theme.DARK["accent"]), 1.4))  #  cell
                 else:                                #   wears the accent
                     p.setPen(Qt.NoPen)               #     border (Tab moves

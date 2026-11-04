@@ -250,6 +250,27 @@ def _tangent_circle(s, t, e):
     return cx, cy, sweep
 
 
+def _mid_exit(s, t, cx, cy, sweep):
+    """Shared by BOTH tangent-arc mouths: the Arc's bulge point (ON the
+    curve at HALF the signed sweep from s) and the UNIT exit tangent at
+    the end (t rotated by the sweep) so a following segment stays tangent.
+    Centre (cx,cy) must sit on the normal at s (guarantees tangency there)."""
+    ux, uy = s[0] - cx, s[1] - cy
+    hs, hc = math.sin(sweep / 2.0), math.cos(sweep / 2.0)
+    mid = (cx + (ux * hc - uy * hs), cy + (ux * hs + uy * hc))
+    es, ec = math.sin(sweep), math.cos(sweep)
+    return mid, (t[0] * ec - t[1] * es, t[0] * es + t[1] * ec)
+
+
+def _tangent_arc_points(cx, cy, a0, sweep, r, n):
+    """The swept arc as an (n+1)-point polyline from angle a0 by sweep."""
+    out = []
+    for i in range(n + 1):
+        a = a0 + sweep * (i / n)
+        out.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    return out
+
+
 def tangent_arc_mid(s, t, e):
     """M193 R1 [SKT-CREATE-LINES, verbatim]: "pause over an end point,
     then click and drag to create an arc segment that is TANGENT to the
@@ -263,11 +284,7 @@ def tangent_arc_mid(s, t, e):
     if solved is None:
         return None
     cx, cy, sweep = solved
-    ux, uy = s[0] - cx, s[1] - cy
-    hs, hc = math.sin(sweep / 2.0), math.cos(sweep / 2.0)
-    mid = (cx + (ux * hc - uy * hs), cy + (ux * hs + uy * hc))
-    es, ec = math.sin(sweep), math.cos(sweep)
-    return mid, (t[0] * ec - t[1] * es, t[0] * es + t[1] * ec)
+    return _mid_exit(s, t, cx, cy, sweep)
 
 
 def tangent_arc_sample(s, t, e, n: int = 24):
@@ -279,11 +296,79 @@ def tangent_arc_sample(s, t, e, n: int = 24):
     cx, cy, sweep = solved
     r = math.hypot(s[0] - cx, s[1] - cy)
     a0 = math.atan2(s[1] - cy, s[0] - cx)
-    out = []
-    for i in range(n + 1):
-        a = a0 + sweep * (i / n)
-        out.append((cx + r * math.cos(a), cy + r * math.sin(a)))
-    return out
+    return _tangent_arc_points(cx, cy, a0, sweep, r, n)
+
+
+def _tangent_circle_fixed_radius(s, t, e, radius):
+    """M193 R3 [SKT-CREATE-LINES, verbatim]: "You can specify a RADIUS
+    before you create additional line segments."  The tangent arc that
+    leaves s along unit t and takes the TYPED radius - not the drag's
+    bulge.  Centre sits on the normal at s at distance |radius|, on the
+    AIM's side (bulge still faces the cursor); the endpoint is where the
+    ray C->e crosses the circle, so you AIM the sweep and the number
+    rules the curvature.  Returns (cx, cy, sweep, end) or None when the
+    radius is not a positive number, t is zero, or the aim sits on the
+    centre (no direction to end toward)."""
+    if radius is None or radius <= 0:
+        return None
+    sx, sy = s
+    tl = math.hypot(t[0], t[1])
+    if tl < 1e-12:
+        return None
+    tx, ty = t[0] / tl, t[1] / tl
+    nx, ny = -ty, tx                        # unit normal to the entry tangent
+    vx, vy = e[0] - sx, e[1] - sy
+    if abs(vx) < 1e-18 and abs(vy) < 1e-18:
+        return None                         # aim == start: nothing to end at
+    if vx * nx + vy * ny < 0:               # face the aim: flip the normal
+        nx, ny = -nx, -ny
+    cx, cy = sx + radius * nx, sy + radius * ny
+    ex, ey = e[0] - cx, e[1] - cy           # from centre toward the aim
+    el = math.hypot(ex, ey)
+    if el < 1e-12:
+        return None                         # aim sits ON the centre
+    bx, by = cx + radius * ex / el, cy + radius * ey / el   # end ON the circle
+    ux, uy = sx - cx, sy - cy               # radius vector at s
+    wx, wy = bx - cx, by - cy               # radius vector at the end
+    sweep = math.atan2(ux * wy - uy * wx, ux * wx + uy * wy)
+    return cx, cy, sweep, (bx, by)
+
+
+def tangent_arc_fixed_radius(s, t, e, radius):
+    """The TYPED-RADIUS tangent arc.  Returns (mid, exit_tangent, end,
+    (cx,cy)) - the Arc's bulge, the chain-forward tangent at the end, the
+    ACTUAL end point ON the circle (where the chain's next segment welds,
+    NOT the raw aim) and the centre.  None => no valid fixed arc; the
+    caller keeps the drag-bulge arc or the straight-leg law."""
+    solved = _tangent_circle_fixed_radius(s, t, e, radius)
+    if solved is None:
+        return None
+    cx, cy, sweep, (bx, by) = solved
+    mid, exit_t = _mid_exit(s, t, cx, cy, sweep)
+    return mid, exit_t, (bx, by), (cx, cy)
+
+
+def tangent_arc_fixed_radius_sample(s, t, e, radius, n: int = 24):
+    """The typed-radius tangent arc as a polyline (start ... ACTUAL end on
+    the circle) - the DRAG PREVIEW when a radius is typed.  None otherwise."""
+    solved = _tangent_circle_fixed_radius(s, t, e, radius)
+    if solved is None:
+        return None
+    cx, cy, sweep, (bx, by) = solved
+    r = math.hypot(s[0] - cx, s[1] - cy)
+    a0 = math.atan2(s[1] - cy, s[0] - cx)
+    return _tangent_arc_points(cx, cy, a0, sweep, r, n)
+
+
+def tangent_arc_radius(s, t, e):
+    """The RADIUS the drag-bulge tangent arc WOULD take - the live cell's
+    hover reading (M193 R3). None when the aim carries no curve (straight
+    along the tangent, or no drag at all)."""
+    solved = _tangent_circle(s, t, e)
+    if solved is None:
+        return None
+    cx, cy, _sweep = solved
+    return math.hypot(s[0] - cx, s[1] - cy)
 
 
 def _sweep_through(a0, a1, am) -> float:
