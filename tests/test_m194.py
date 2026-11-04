@@ -25,11 +25,24 @@ This rung pays that sentence:
 - The lock LEAVES with the record: the second verb (Rung 2's law)
   frees the point and the green goes back to white with the pixels.
 
-Rung 2 pins the UNFIX half ("To unfix ... select the Fix/UnFix tool
-again, then click"): record gone, green gone, DOF returns, undo and
-file round-trip.  Rung 3 pays "or OBJECT": fixing a line/arc/circle/
+Rung 2 pins the UNFIX half, verbatim: "To unfix sketch geometry,
+select the Fix/UnFix tool again, then click the geometry in the
+canvas."  The audit's honest verdict: the doors EXIST (act_fix is a
+model.toggle, _push_hist sits before it, the serializer keeps "F"
+rows) - so this rung adds NO implementation; it proves the whole
+vendor sentence at the mouths that matter: the lock actually LOCKS
+(a disturbed solver puts the pinned point back to its targets, x AND
+y), the second verb frees those DOF again (the same disturbance then
+STAYS), undo/redo walk the record both ways with the green riding
+them, a saved file keeps the lock - and the reloaded sketch WEARS it,
+pixels back - and the verb on nothing (or on the two-Line fillet
+aim) mints no record at all.  A welded point's visit leaves the weld
+whole.
+
+Rung 3 pays "or OBJECT": fixing a line/arc/circle/
 ellipse locks size AND location, all the variables it owns.
 """
+import json
 import math
 
 import pytest
@@ -42,7 +55,8 @@ from PySide6.QtGui import QColor, QImage                          # noqa
 from PySide6.QtTest import QTest                                  # noqa
 from PySide6.QtWidgets import QApplication                        # noqa
 
-from tracer.core.sketch.model import SketchModel                  # noqa
+from tracer.core.sketch.model import (SketchModel, model_from_dict,      # noqa
+                                      model_to_dict)
 from tracer.core.sketch.constraints import Distance, Fixed        # noqa
 from tracer.ui import theme                                       # noqa
 from tracer.ui.sketcheditor import SketchCanvas                   # noqa
@@ -254,3 +268,139 @@ def test_fix_answers_only_points_for_now(ed):
     assert not any(isinstance(c, Fixed)
                    for c in cv.model.sketch.constraints)
     assert _near(FIXED_RGB)(_grab(cv)) == 0
+
+
+# ---- R2: the UNFIX half - the verb again, end to end --------------------
+def test_the_lock_locks_the_solver(ed):
+    """A LOCK, not a preference: the pinned point's two coordinates are
+    the "size and location" the vendor names.  Disturb the point behind
+    the solver's back and the solve PUTS IT BACK, exactly; the same
+    disturbance on a FREE point stays put - the rows exist because the
+    record does."""
+    cv = ed
+    _leg(cv, 2, 4, 10, 7)
+    pt = cv.model.sketch.lines[-1].b
+    target = (pt.x, pt.y)
+    _fix_verb(cv, pt)                                  # the lock files
+    pt.x, pt.y = 99.0, -13.0                           #  behind its back
+    cv._solve()
+    assert (pt.x, pt.y) == pytest.approx(target, abs=1e-9)
+    free = cv.model.point(1.0, 1.0)                    # the control:
+    free.x, free.y = 42.0, 42.0                        #  nothing pins it
+    cv._solve()
+    assert (free.x, free.y) == pytest.approx((42.0, 42.0), abs=1e-9)
+
+
+def test_unfix_returns_the_freedom(ed):
+    """The vendor's second click frees the SAME two scalars the lock
+    took: after the verb again, a disturbance STAYS (no row pulls it
+    back) - freedom, pixel-visible as R1's white return, is measured
+    here at the solver, the DOF's own court."""
+    cv = ed
+    _leg(cv, 2, 4, 10, 7)
+    pt = cv.model.sketch.lines[-1].b
+    _fix_verb(cv, pt)
+    _fix_verb(cv, pt)                                  # the verb AGAIN
+    assert not any(isinstance(c, Fixed)
+                   for c in cv.model.sketch.constraints)
+    pt.x, pt.y = 5.0, 5.0
+    cv._solve()
+    assert (pt.x, pt.y) == pytest.approx((5.0, 5.0), abs=1e-9)
+
+
+def test_undo_and_redo_walk_the_lock_both_ways(ed):
+    """History is a door like any other: undo takes the lock (and its
+    green) OFF, redo puts BOTH back - the record and the paint ride the
+    SAME state, never one without the other."""
+    cv = ed
+    _leg(cv, 2, 4, 10, 7)
+    pt = cv.model.sketch.lines[-1].b
+    _fix_verb(cv, pt)
+    assert _near(FIXED_RGB)(_dot(cv, pt)) >= 12
+    assert cv.undo_op() is True                        # the lock OFF...
+    assert not any(isinstance(c, Fixed)
+                   for c in cv.model.sketch.constraints)
+    assert _near(FIXED_RGB)(_dot(cv, pt)) == 0         #   ...with its green
+    assert cv.redo_op() is True                        # and BACK, both
+    assert any(isinstance(c, Fixed)
+               for c in cv.model.sketch.constraints)
+    assert _near(FIXED_RGB)(_dot(cv, pt)) >= 12
+
+
+def test_file_round_trip_keeps_and_wears_the_lock(ed, tmp_path):
+    """The vendor stores the sketch, not a screenshot: save the fixed
+    model through the file door, reload it, and the Fixed record
+    returns WITH its x/y targets - and a canvas wearing the reloaded
+    model shows the green AGAIN. The lock lives in the FILE."""
+    cv = ed
+    _leg(cv, 2, 4, 10, 7)
+    pt = cv.model.sketch.lines[-1].b
+    _fix_verb(cv, pt)
+    d = model_to_dict(cv.model)
+    path = tmp_path / "locked.json"                    # the file door,
+    path.write_text(json.dumps(d), encoding="utf-8")   #  honestly paid
+    reloaded = model_from_dict(json.loads(path.read_text(encoding="utf-8")))
+    recs = [c for c in reloaded.sketch.constraints if isinstance(c, Fixed)]
+    assert len(recs) == 1
+    assert (recs[0].p.x, recs[0].p.y) == pytest.approx((pt.x, pt.y),
+                                                       abs=1e-9)
+    assert recs[0].x == pytest.approx(pt.x, abs=1e-9)  #  the TARGETS
+    assert recs[0].y == pytest.approx(pt.y, abs=1e-9)  #   survived too
+    c2 = SketchCanvas()                                # a fresh wearer
+    c2.set_model(reloaded)
+    c2.resize(600, 400)
+    c2._scale = 8.0
+    c2._snap_grid = False
+    #  NO show(): grab() paints unshown; a SHOWN leftover steals the
+    #  offscreen platform's enter/leave traffic from later hover tests.
+    QApplication.instance().processEvents()
+    try:
+        assert c2._fix_locked(recs[0].p) is True
+        assert _near(FIXED_RGB)(_dot(c2, recs[0].p)) >= 12
+    finally:
+        c2.deleteLater()
+
+
+def test_the_verb_on_wrong_answers_mints_nothing(ed):
+    """The F key has OTHER owners (two Lines aim the corner fillet) and
+    NO owner at empty selection: neither route files a Fixed record -
+    the lock's door is the point, full stop (until Rung 3 moves that
+    line with the vendor's "or object")."""
+    cv = ed
+    cv._sel = []
+    QTest.keyClick(cv, Qt.Key_F)
+    assert not cv.model.sketch.constraints
+    _leg(cv, 2, 4, 10, 7)
+    _leg(cv, 3, 9, 12, 9)                              # a second, DIAGONAL
+    cv._sel = [cv.model.sketch.lines[0],               #  no auto-gifts
+               cv.model.sketch.lines[1]]
+    before = len(cv.model.sketch.constraints)
+    QTest.keyClick(cv, Qt.Key_F)                       # the fillet AIM,
+    QApplication.instance().processEvents()            #   not the lock
+    assert sum(isinstance(c, Fixed)
+               for c in cv.model.sketch.constraints) == 0
+    assert len(cv.model.sketch.constraints) == before
+
+
+def test_welded_visit_leaves_the_weld_whole(ed):
+    """A welded corner through the whole lock visit - fix, verb again:
+    the identity weld (the SHARED Point that IS coincidence, M177)
+    survives untouched, the constraint list ends as empty as it
+    started, and no half-record hides anywhere in it."""
+    cv = ed
+    cv.set_tool("line")
+    _click(cv, 2, 4)
+    _click(cv, 8, 4)
+    _click(cv, 8, 9)
+    cv.set_tool("select")
+    sk = cv.model.sketch
+    shared = sk.lines[0].b
+    assert shared is sk.lines[1].a
+    structural = list(sk.constraints)                  # the auto H/V, if
+    _fix_verb(cv, shared)                              #   the page gave
+    assert shared is sk.lines[1].a                     #  any; the weld
+    _fix_verb(cv, shared)                              #   rides through
+    assert shared is sk.lines[1].a
+    assert not any(isinstance(c, Fixed) for c in sk.constraints)
+    assert [type(c).__name__ for c in sk.constraints] == \
+        [type(c).__name__ for c in structural]
