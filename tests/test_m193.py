@@ -26,6 +26,17 @@ onto the chain's free end:
 - The tangent is a guest of the chain anchor: wherever the free end
   dies (tool switch, model swap, history jump, finish, Enter, Esc,
   typed placement) the tangent and every armed drag die with it.
+
+Rung 2 is the vendor's NEXT sentence - "Move the mouse to the OPPOSITE
+SIDE of the line segment to FLIP the DIRECTION of the arc" - and the
+honest verdict is that R1's ONE mouth already speaks it: the normal is
+chosen on the drag's side at every aim update, so the flip is LIVE
+inside the single held gesture, the release commits the LAST side the
+cursor promised, and the corridor exactly ON the tangent degrades
+continuously to the straight-leg law (no dead zone, no re-press). R2
+therefore PINS that behavior as law: mid-drag crossing with tangency
+surviving the flip, the corridor handoff, and the flip off an ARC's own
+exit tangent (not an x/y trick - the cross product decides everywhere).
 """
 import math
 
@@ -281,3 +292,107 @@ def test_armed_drag_dies_with_a_tool_switch(ed):
     #                                            dead: the generic tail has
     sk = _sk(cv)                                #  no preview to answer
     assert len(sk.lines) == 1 and not sk.arcs
+
+
+# ---- R2: the LIVE flip - one gesture, the OPPOSITE side, no re-press ---
+def test_live_flip_across_the_tangent_mid_drag(ed):
+    """SKT-CREATE-LINES, verbatim: "Move the mouse to the OPPOSITE SIDE
+    of the line segment to FLIP the DIRECTION of the arc."  The flip is
+    LIVE inside the ONE armed gesture - press, ride up, cross under,
+    release - and the release commits what the LAST side promised.  No
+    re-press, no second tool, and NOTHING is minted mid-flight: the
+    preview is pure paint, the solve is the same mouth that answers the
+    release."""
+    cv = ed
+    cv.set_tool("line")
+    _leg(cv, 2, 6, 9, 6)
+    _press(cv, 9, 6)
+    _drag_to(cv, 9, 12)                         # ABOVE: the arc rides up
+    assert cv._arc_drag_pushed and cv._arc_drag_to is not None
+    up = tangent_arc_mid((9.0, 6.0), cv._line_dir, (9.0, 12.0))
+    assert up is not None and up[0][1] > 6.0    #  the preview promises high
+    _drag_to(cv, 11, 0)                         # ACROSS the tangent line
+    assert cv._arc_drag_to is not None          # the gesture never DIED
+    assert not _sk(cv).arcs                     # and never minted partials
+    _release(cv, 11, 0)
+    sk = _sk(cv)
+    assert len(sk.lines) == 1 and len(sk.arcs) == 1
+    ar = sk.arcs[-1]
+    (cx, cy), r = ar.circle()
+    assert cy < 6.0                             # the LOW side kept its word
+    assert cx == pytest.approx(9.0, abs=1e-6)   # centre ON THE NORMAL still:
+    #                                            tangency SURVIVED the flip
+    want_mid, want_exit = tangent_arc_mid((9.0, 6.0), (1.0, 0.0), (11.0, 0.0))
+    assert want_mid[1] < 6.0                    #  the solve agrees it went low
+    assert (ar.m.x, ar.m.y) == pytest.approx(want_mid, abs=1e-6)
+    #   ONE mouth: what the dashed preview promised, the release COMMITTED
+    assert (ar.b.x, ar.b.y) == pytest.approx((11.0, 0.0), abs=1e-6)
+    assert cv._line_start is ar.b               # and the chain walks on the
+    assert cv._line_dir == pytest.approx(want_exit, abs=1e-9)  # flipped arc
+
+
+def test_across_the_straight_corridor_the_band_answers(ed):
+    """Exactly ON the tangent there is no arc to bend: the solve says
+    None and the same held gesture aims a STRAIGHT LEG (the band, not a
+    curve). A hair off the line and the ONE gesture is an arc again -
+    the flip mouth is CONTINUOUS with the leg law: no dead zone where
+    the maker would have to let go and re-press."""
+    cv = ed
+    cv.set_tool("line")
+    _leg(cv, 2, 6, 9, 6)
+    _press(cv, 9, 6)
+    _drag_to(cv, 16, 6)                         # dead ON the tangent
+    assert cv._arc_drag_pushed
+    assert tangent_arc_mid((9.0, 6.0), cv._line_dir, (16.0, 6.0)) is None
+    _drag_to(cv, 16, 0.5)                       # a hair BELOW: arc again
+    _release(cv, 16, 0.5)
+    sk = _sk(cv)
+    assert len(sk.arcs) == 1 and len(sk.lines) == 1
+    (cx, cy), _r = sk.arcs[-1].circle()
+    assert cy < 6.0                             # and it bends to the NEW
+    #                                              side the corridor opened
+    assert cv._arc_drag is None                 # the gesture settled whole
+
+
+def test_flip_survives_off_the_axis_and_after_an_arc(ed):
+    """The flip is not a x/y trick: with a DIAGONAL incoming leg the
+    cross product decides, and pressing the free end of an ALREADY-BENT
+    chain flips the SECOND arc about ITS OWN exit tangent (the one
+    mouth, everywhere)."""
+    cv = ed
+    cv.set_tool("line")
+    _leg(cv, 2, 6, 8, 12)                       # diagonal leg, dir (6,6)/L
+    d = math.hypot(6.0, 6.0)
+    assert cv._line_dir == pytest.approx((6 / d, 6 / d))
+    _press(cv, 8, 12)
+    _drag_to(cv, 4, 18)                         # LEFT of the climb: arc up
+    _drag_to(cv, 14, 10)                        # ACROSS to the right
+    _release(cv, 14, 10)
+    sk = _sk(cv)
+    assert len(sk.arcs) == 1
+    ar = sk.arcs[-1]
+    (cx, cy), r = ar.circle()
+    rx, ry = ar.a.x - cx, ar.a.y - cy
+    assert abs(rx * (6 / d) + ry * (6 / d)) < 1e-9 * max(r, 1)   # still C1
+    cross = (6 / d) * (ar.b.y - ar.a.y) - (6 / d) * (ar.b.x - ar.a.x)
+    assert cross < 0.0                          # and it bent the NEW way
+    # now flip a SECOND arc hung off that arc's own exit tangent
+    exit1 = cv._line_dir
+    px, py = -exit1[1], exit1[0]                # perpendicular to the way
+    _press(cv, ar.b.x, ar.b.y)                  #  the chain LEAVES
+    _drag_to(cv, ar.b.x + 10 * px, ar.b.y + 10 * py)    # promise one side...
+    _drag_to(cv, ar.b.x - 10 * px, ar.b.y - 10 * py)    # ...CROSS to the other
+    ex, ey = ar.b.x - 10 * px, ar.b.y - 10 * py
+    _release(cv, ex, ey)
+    sk = _sk(cv)
+    assert len(sk.arcs) == 2
+    a2 = sk.arcs[-1]
+    assert a2.a is ar.b                                   # welded end to end
+    (c2x, c2y), _r2 = a2.circle()
+    r2x, r2y = a2.a.x - c2x, a2.a.y - c2y
+    assert abs(r2x * exit1[0] + r2y * exit1[1]) < 1e-9    # C1 off the ARC
+    def side(qx, qy):                                     # which side of the
+        return exit1[0] * (qy - ar.b.y) - exit1[1] * (qx - ar.b.x)
+    assert side(c2x, c2y) * side(ex, ey) > 0              # exit line, and the
+    #                                                     bulge faced the LAST
+    #                                                     side the cursor held
