@@ -72,6 +72,9 @@ SEL = QColor(theme.SKETCH["sel"])            # picked geometry
 PROJ = QColor(theme.SKETCH["projected"])     # projected reference edges
 INFER = QColor(theme.SKETCH["infer"])        # inference + snap hint
 FG = QColor(theme.SKETCH["full"])            # fully constrained = white
+FIXEDC = QColor(theme.SKETCH["fixed"])       # M194 R1 [SKT-CONSTRAIN-
+#   FIX-UNFIX]: "The selected geometry turns GREEN, indicating that the
+#   geometry is locked." The vendor's OWN palette entry for it.
 DIM = QColor(theme.CHAR[".500"])
 CONSTR = QColor(theme.SKETCH["construction"])
 DIMC = QColor(theme.SKETCH["dim"])           # dimensions are green
@@ -735,6 +738,18 @@ class SketchCanvas(QWidget):
     # mouth serves paint, the menu and the verb.
     def _point_welded(self, pt) -> bool:
         return endpoints.is_welded(self.model.sketch, pt)
+
+    def _fix_locked(self, ent) -> bool:
+        """M194 R1 [SKT-CONSTRAIN-FIX-UNFIX, verbatim]: "The selected
+        geometry turns GREEN, indicating that the geometry is locked."
+        The lock READS its RECORD, not its mobility - a point pinned by
+        two Distance dimensions is fully DEFINED (M186's white ink, a
+        DIFFERENT sentence) but wears no green; only a Fixed record turns
+        it. ONE mouth serves the paint; entities() already speaks the
+        plural, so R3's whole objects answer here unchanged."""
+        return any(isinstance(c, Fixed)
+                   and any(ent is e for e in c.entities())
+                   for c in self.model.sketch.constraints)
 
     # ---- M191 R3 [per-sketch display truth] ------------------------------------
     # The vendor stores what a sketch SHOWS on the sketch, in the FILE
@@ -4576,12 +4591,20 @@ class SketchCanvas(QWidget):
                 pos = self.w2s(pt.x, pt.y)    #   DOTS". M192 R2: a
                 selected = pt in self._sel or pt in self._band_prev
                 hov = pt is self._hover_e     #  tamed point steps aside
-                p.setPen(QPen(SEL if selected else (HOVER if hov
-                                                    else DIM), 1.2))
                 free = not welded.get(id(pt), False)  # welded: no dot;
+                # M194 R1: the lock's GREEN is PAINT on a dot that the
+                # existence law already SHOWS (a welded point keeps "no
+                # dot" - its record speaks through the ■ badge, not an
+                # invented marker); selection/hover still outvote state.
+                green = self._fix_locked(pt) and free
+                p.setPen(QPen(SEL if selected else (HOVER if hov
+                                                    else (FIXEDC if green
+                                                          else DIM)),
+                              1.2))
                 p.setBrush(SEL if selected else (HOVER if hov
-                                                 else (FG if free
-                                                       else BG)))
+                                                 else (FIXEDC if green
+                                                       else (FG if free
+                                                             else BG))))
                 s = 3.8 if selected else (3.2 if hov else 2.6)
                 p.drawRect(QRectF(pos.x() - s, pos.y() - s, 2 * s, 2 * s))
             p.setBrush(Qt.NoBrush)
@@ -4636,7 +4659,12 @@ class SketchCanvas(QWidget):
                 self._badge(p, m, "V", c=c)
             elif isinstance(c, Fixed):
                 m = self.w2s(c.p.x, c.p.y)
-                self._badge(p, m, "\u25a0", c=c)   # ■
+                m = QPointF(m.x() + 12, m.y() - 13)   # M194 R1: the ■ sits
+                self._badge(p, m, "\u25a0", c=c)      #  BESIDE the point -
+                #   the vendor's own figure keeps the badge off the ink,
+                #   because the GEOMETRY is what turns green. Dead-center
+                #   it buried the 5 px dot under a 13x15 plate and the
+                #   lock's color never reached the screen.
             elif isinstance(c, Symmetry):
                 m = self.w2s((c.p1.x + c.p2.x) / 2, (c.p1.y + c.p2.y) / 2)
                 self._badge(p, m, "S", c=c)
