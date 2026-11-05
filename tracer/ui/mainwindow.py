@@ -5513,19 +5513,29 @@ class MainWindow(QMainWindow):
         deg = float(np.rad2deg(rad))
         is_copy = bool(payload.get("copy", False))
         self._capture()
+        if is_copy:
+            # M195 R3 [GUID-FFD25CD3 + SLD-USE-MOVE-COPY]: Rotate is a
+            # Move Type of the SAME Move/Copy dialog, so Create Copy's
+            # law rides it verbatim - the twin turns into a NEW browser
+            # body, not linked, and the original never moves. (M55's
+            # in-body union stays ONLY for files that already carry a
+            # copy RotateFeature - the kernel did not change.)
+            b = self.doc.copy_body_turned(c, e, deg)
+            self.recompute()
+            self.viewport.refresh()
+            self.status.showMessage(
+                f"Body copied — {b['name']} stands turned "
+                f"{deg:+.1f}\u00b0 about {'XYZ'[axis_i]}", 5000)
+            return
         self.doc.add(RotateFeature(
-            name=f"{'Copy' if is_copy else 'Rotate'} "
-                 f"{'xyz'[axis_i]} {deg:+.1f}\u00b0",
+            name=f"Rotate {'xyz'[axis_i]} {deg:+.1f}\u00b0",
             center=tuple(float(v) for v in c),
-            axis=tuple(float(v) for v in e), angle_deg=deg,
-            copy=is_copy))
+            axis=tuple(float(v) for v in e), angle_deg=deg))
         self.recompute()
         self.viewport.refresh()
         self.status.showMessage(
-            (f"Copied & rotated {deg:+.1f}\u00b0 about "
-             f"{'XYZ'[axis_i]} — twins joined" if is_copy else
-             f"Body rotated {deg:+.1f}\u00b0 about "
-             f"{'XYZ'[axis_i]} through its centre"), 5000)
+            f"Body rotated {deg:+.1f}\u00b0 about "
+            f"{'XYZ'[axis_i]} through its centre", 5000)
 
     def action_primitive(self):
         """Fusion Create ▸ Primitive (M65): box, cylinder or sphere,

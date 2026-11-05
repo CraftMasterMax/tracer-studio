@@ -37,6 +37,15 @@ snapshot stream reload, active body and all); and the snapshot's own
 honesty - the copy has no numeric levers, and the door says so
 instead of pretending.  (Undo of the birth itself was gated in rung
 one.)
+
+Rung 3 carries the same Create Copy law through the ROTATE door -
+Rotate is one of the Move Types of the SAME vendor dialog (GUID-
+FFD25CD3), so the twin born of a Ctrl-ring-drag is likewise a NEW
+body: the rotation is baked into the snapshot mesh at capture (the
+ImportedFeature carrier rides a placement translation, no matrix).
+The spinning half is honest-unchanged (plain drag still files the
+M55 Rotate feature) and a legacy file with a copy RotateFeature still
+replays the crossed union.
 """
 import pytest
 
@@ -46,7 +55,8 @@ import numpy as np                                                # noqa
 from PySide6.QtWidgets import QApplication                        # noqa
 
 from tracer.core.document import (Document, ImportedFeature,      # noqa
-                                  MoveFeature, PrimitiveFeature)
+                                  MoveFeature, PrimitiveFeature,
+                                  RotateFeature)
 from tracer.ui.mainwindow import MainWindow                       # noqa
 from tracer.ui.renderer import SceneRenderer                      # noqa
 
@@ -241,3 +251,97 @@ def test_the_snapshot_has_no_numbers_to_change(win, qapp, monkeypatch):
     qapp.processEvents()
     assert not seen, "the door opened numbers for a snapshot - it lies"
     assert "no plain numbers" in win.status.currentMessage()
+
+
+# ---- R3: the rotate door's copy half rides the same law -------------------
+def _plate(name="turn"):
+    d = Document(name)
+    d.add(PrimitiveFeature(name="plate", kind="box",
+                           dims={"dx": 40, "dy": 20, "dz": 10}))
+    d.recompute()
+    return d
+
+
+def test_turned_copy_grows_a_new_body():
+    """GUID-FFD25CD3 lists ROTATE among the Move Types of the SAME
+    Move/Copy dialog, so Create Copy's sentence governs here too: the
+    turned twin is a NEW body at the turned pose, and the original
+    never spins.  The +90 deg turn about the plate's centre maps
+    (x, y) -> (30 - y, x - 10): the twin's box is [10,30] x [-10,30],
+    exactly the rotated footprint, an equal twin volume."""
+    d = _plate()
+    lo0 = d.body_solids()["Body 1"].bounding_box[0].copy()
+    b = d.copy_body_turned((20.0, 10.0, 5.0), (0.0, 0.0, 1.0), 90.0)
+    d.recompute()
+    assert b["name"] == "Body 2"
+    bs = d.body_solids()
+    assert np.allclose(bs["Body 1"].bounding_box[0], lo0)    # never spins
+    lo, hi = bs["Body 2"].bounding_box
+    assert np.allclose(lo, (10.0, -10.0, 0.0)) and np.allclose(
+        hi, (30.0, 30.0, 10.0)), f"the twin stands TURNED ({lo} {hi})"
+    assert bs["Body 2"].volume == pytest.approx(bs["Body 1"].volume,
+                                                rel=1e-6)
+    assert d.result.volume == pytest.approx(12000.0, rel=1e-3)  # the PART
+
+
+def test_turned_copy_is_its_own_stream():
+    """Same M104 bookkeeping as the moved twin: the turned snapshot
+    rides its own stream and becomes the ACTIVE body."""
+    d = _plate()
+    d.copy_body_turned((20.0, 10.0, 5.0), (0.0, 0.0, 1.0), 90.0)
+    assert d.active_body == "Body 2"
+    feat = d.features[-1]
+    assert isinstance(feat, ImportedFeature) and feat.name == "Copy"
+    assert getattr(feat, "body", None) == "Body 2"
+
+
+def test_the_plain_rotate_half_still_files_a_rotate_feature():
+    """HONESTY gate: only the COPY branch moved. Without the copy
+    flag the release still files the M55 Rotate feature and the ONE
+    body spins as it always did."""
+    d = _plate()
+    d.add(RotateFeature(name="Rotate z +90.0", center=(20.0, 10.0, 5.0),
+                        axis=(0.0, 0.0, 1.0), angle_deg=90.0))
+    s = d.recompute()
+    assert [b["name"] for b in d.body_list()] == ["Body 1"]
+    lo, hi = s.bounding_box
+    assert np.allclose(lo, (10.0, -10.0, 0.0))          # the body ITSELF
+    assert np.allclose(hi, (30.0, 30.0, 10.0))          #  turned
+
+
+def test_legacy_copy_rotate_still_replays_the_cross():
+    """File compatibility again: an M55-era document with a copy
+    RotateFeature MUST keep recomputing the crossed union (12000) -
+    the kernel's copy flag never moved."""
+    d = _plate("legacy")
+    d.add(RotateFeature(name="Copy z +90.0", center=(20, 10, 5),
+                        axis=(0, 0, 1), angle_deg=90.0, copy=True))
+    d.recompute()
+    d2 = Document.from_dict(d.to_dict())
+    s = d2.recompute()
+    assert len(d2.body_list()) == 1
+    assert s.volume == pytest.approx(12000.0, rel=1e-3)
+
+
+def test_rotate_copy_release_and_undo_walk_the_body_row(win, qapp):
+    """The ring door's commit itself: the release payload with
+    copy=True GROWS the browser, the status line speaks the turned
+    birth, and undo takes the row back."""
+    win.new_document()
+    win.doc.add(PrimitiveFeature(name="plate", kind="box",
+                                 dims={"dx": 40, "dy": 20, "dz": 10}))
+    win.recompute()
+    win.viewport.refresh(fit=True)
+    qapp.processEvents()
+    win._on_rotate_drag({"axis": 2, "center": np.array([20.0, 10.0, 5.0]),
+                         "rad": float(np.pi) / 2.0, "copy": True})
+    qapp.processEvents()
+    assert [b["name"] for b in win.doc.body_list()] == ["Body 1", "Body 2"]
+    assert not [f for f in win.doc.features
+                if isinstance(f, RotateFeature)]
+    msg = win.status.currentMessage()
+    assert "stands turned" in msg and "Z" in msg, msg
+    assert win.doc.result.volume == pytest.approx(12000.0, rel=1e-3)
+    win.undo()
+    qapp.processEvents()
+    assert [b["name"] for b in win.doc.body_list()] == ["Body 1"]

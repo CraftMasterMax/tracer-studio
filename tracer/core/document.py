@@ -1123,6 +1123,31 @@ class Document:
                                                  for v in vec)))
         return b
 
+    def copy_body_turned(self, center, axis, angle_deg) -> dict:
+        """M195 R3 [GUID-FFD25CD3]: Rotate is one of the Move Types of
+        the SAME Move/Copy dialog, so the vendor's copy sentence rides
+        it verbatim - the twin is a NEW body, \"not linked\", the
+        original turns nothing.  The snapshot rides turned: the
+        rotation is baked into the mesh at capture (ImportedFeature
+        carries a placement TRANSLATION, no matrix - the same carrier
+        copy_body_moved uses, only pre-rotated)."""
+        from .geometry import rotation_about
+        src_name = self.active_body or "Body 1"
+        solid = self.body_solids().get(src_name)
+        if solid is None:
+            raise KeyError(f"no solid for body {src_name!r}")
+        turned = solid.transformed(rotation_about(
+            tuple(float(v) for v in center),
+            tuple(float(v) for v in axis),
+            np.deg2rad(float(angle_deg))))
+        tm = turned.to_trimesh()
+        verts = np.asarray(tm.vertices, float).tolist()
+        faces = np.asarray(tm.faces, np.int32).tolist()
+        b = self.add_body()
+        self.add(ImportedFeature(name="Copy", verts=verts, faces=faces,
+                                 placement=(0.0, 0.0, 0.0)))
+        return b
+
     def move_body(self, name: str, dx: float, dy: float, dz: float) -> dict:
         """Slide a body WITHOUT a timeline feature — Fusion's kinematic
         component move, as data model.  Accumulates."""
