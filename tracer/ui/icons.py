@@ -485,6 +485,17 @@ def _draft(p: QPainter):
     p.drawLine(QPointF(8, 8), QPointF(24, 8))            # free top edge
 
 
+def _offsetface(p: QPainter):
+    """M198: a body with one face lifted clean off it - the named
+    face slides OUTWARD along its own normal and the neighbours
+    follow (the page's note).  The arrow is the slide."""
+    p.drawRect(QRectF(8, 12, 16, 14))                    # the body
+    p.drawLine(QPointF(8, 6), QPointF(24, 6))            # the face, slid
+    p.drawLine(QPointF(16, 11), QPointF(16, 7.5))        # the slide
+    p.drawPolyline(QPolygonF([QPointF(13.5, 9.5), QPointF(16, 6.5),
+                              QPointF(18.5, 9.5)]))
+
+
 def _thread(p: QPainter):
     """A bolt shank with helical thread diagonals."""
     p.drawRect(QRectF(11, 5, 10, 22))
@@ -515,6 +526,7 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "constrain": _constrain, "dimension": _dimension,
               "launcher": _launcher, "section": _section,
               "thread": _thread, "split": _split, "draft": _draft,
+              "offsetface": _offsetface,
               "appearance": _appearance, "move": _move,
               "rotate": _rotate, "combine": _combine,
               "primitive": _primitive, "mass": _mass,

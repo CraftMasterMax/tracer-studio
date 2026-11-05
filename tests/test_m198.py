@@ -40,6 +40,7 @@ from tracer.core.document import (Document, OffsetFaceFeature,
                                   PrimitiveFeature)
 from tracer.core.geometry import Solid
 from tracer.core.offsetface import offset_face
+from tracer.ui import cmddialog
 
 
 def _rod(r=10.0, h=40.0):
@@ -240,3 +241,146 @@ def test_the_timeline_row_is_a_slide_not_a_plus(win, qapp):
     assert "+" not in bar._label(feat)
     v = win.doc.result.to_trimesh().vertices
     assert v[:, 2].max() == pytest.approx(45.0, abs=1e-4)
+
+
+# ---- R2: the door -----------------------------------------------------------
+
+def _rod_win(win, qapp):
+    win.new_document()
+    win.doc.add(PrimitiveFeature(name="rod", kind="cylinder",
+                                 dims={"radius": 10.0, "height": 40.0}))
+    win.recompute()
+    qapp.processEvents()
+
+
+def test_the_door_asks_the_two_rows_it_honors(win, qapp, monkeypatch):
+    """SLD-OFFSET-FACES' dialog in the house's clothes: "Select a
+    single face ... and specify the Offset distance."  The door asks
+    EXACTLY the two rows the kernel rotates with - the face by its
+    PLAIN names (the Draft law; the kernel refuses what the body
+    does not own, cure in the words) and the distance WEARING
+    MILLIMETRES, signed (the page's "positive or negative
+    direction").  No multiple faces, no manipulator: a door may not
+    promise what cannot bake.  Typed wall/+2 lands twelve on the
+    rod's rho, and the sentence speaks face, signed slide, volume."""
+    calls = []
+
+    def fake(parent, title, fields, **k):
+        calls.append((title, fields))
+        return {"face": "wall", "dist": 2.0}
+
+    monkeypatch.setattr(cmddialog, "ask", fake)
+    _rod_win(win, qapp)
+    win._body_offset()
+    assert len(calls) == 1 and calls[0][0] == "Offset a face"
+    by = {f["key"]: f for f in calls[0][1]}
+    assert list(by) == ["face", "dist"]
+    assert by["face"]["choices"] == ["bottom", "top", "wall", "+x",
+                                     "-x", "+y", "-y"]
+    assert by["dist"]["kind"] == "double"
+    assert by["dist"]["suffix"] == " mm"
+    assert by["dist"]["min"] == -1000.0            # the negative speaks
+    assert by["dist"]["decimals"] == 3
+    f = win.doc.features[-1]
+    assert isinstance(f, OffsetFaceFeature) and f.name == "Offset1"
+    assert f.face == "wall" and f.dist == 2.0      # as typed
+    _, rho = _meas(win.doc.result)
+    assert rho.max() == pytest.approx(12.0, abs=1e-4)
+    msg = win.status.currentMessage()
+    assert "Offset face 'wall' by +2 mm" in msg and "volume" in msg, msg
+
+
+def test_the_door_slides_inward_with_a_negative(win, qapp, monkeypatch):
+    """The sign law walked through the real door: bottom minus three
+    pulls the bottom cap UP to z3 while the top STANDS at forty -
+    inward along the face's own normal, the typed sign stored
+    untouched, the sentence honest about the minus."""
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"face": "bottom", "dist": -3.0})
+    _rod_win(win, qapp)
+    win._body_offset()
+    v = win.doc.result.to_trimesh().vertices
+    assert v[:, 2].min() == pytest.approx(3.0, abs=1e-4)
+    assert v[:, 2].max() == pytest.approx(40.0, abs=1e-4)   # top STANDS
+    f = win.doc.features[-1]
+    assert f.dist == -3.0                          # signed, as typed
+    assert "by -3 mm" in win.status.currentMessage()
+
+
+def test_the_door_refuses_with_the_cure_verbatim(win, qapp, monkeypatch):
+    """'+x' asked of a rod: the kernel's cure ("this cylinder's faces
+    are 'bottom', 'top', 'wall' - not '+x'") rides the status
+    VERBATIM; the refusal pops its own undo step (one that undoes
+    nothing is a lie, the M197 R2 law), writes no record, and the
+    body is untouched TO THE LAST DIGIT - fresh unrounded == (the
+    R3b law)."""
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"face": "+x", "dist": 2.0})
+    _rod_win(win, qapp)
+    vol = win.doc.result.volume                    # UNROUNDED
+    n, u = len(win.doc.features), len(win._undo)
+    win._body_offset()
+    msg = win.status.currentMessage()
+    assert msg.startswith("Offset refused:"), msg
+    assert "this cylinder's faces are" in msg and "not '+x'" in msg, msg
+    assert len(win.doc.features) == n and len(win._undo) == u
+    assert win.doc.result.volume == vol
+
+
+def test_the_door_refuses_a_wall_squeezed_through_the_axis(win, qapp,
+                                                           monkeypatch):
+    """The page's "when geometrically possible", read honestly: wall
+    minus ten on a FRESH r10 rod leaves no material - refused, not
+    shaved.  (The R2 probe met this call behind a ring already at
+    twelve, where minus ten lands honest at r2 and 502.6 mm³ =
+    pi x 4 x 40 - the kernel right, the probe's shadow wrong.  The
+    gate runs FRESH.)"""
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"face": "wall", "dist": -10.0})
+    _rod_win(win, qapp)
+    vol = win.doc.result.volume
+    win._body_offset()
+    msg = win.status.currentMessage()
+    assert msg.startswith("Offset refused:") and "must still leave" \
+        in msg, msg
+    assert len(win.doc.features) == 1              # rod only
+    assert win.doc.result.volume == vol
+
+
+def test_the_doors_cancel_and_precondition(win, qapp, monkeypatch):
+    """Cancel at the door writes NOTHING (no record, no undo step -
+    the capture waits for the dialog's commit, the M197 R2 law); a
+    window with no body yet says so in information clothes."""
+    monkeypatch.setattr(cmddialog, "ask", lambda *a, **k: None)
+    _rod_win(win, qapp)
+    n, u = len(win.doc.features), len(win._undo)
+    win._body_offset()
+    assert len(win.doc.features) == n and len(win._undo) == u
+    win.new_document()
+    win._body_offset()
+    assert "No body to offset" in win.status.currentMessage()
+
+
+def test_the_offset_door_lives_in_the_modify_menu_and_the_dock(win, qapp):
+    """The page's home: Solid tab, Modify > Offset Face - the row
+    stands in the house's Modify menu beside draft (a mnemonic-free
+    row riding its bare-key shortcut, the "Change Parameters…"
+    precedent, every letter in its name already taken).  The dock
+    button stands AFTER Draft in the design panel (the m42 pin paid
+    with the vendor IN THIS COMMIT - no R2b debt) and its glyph is
+    drawn, registered as "offsetface" - the sketch family's Offset
+    Curve already owns the plain "offset" mouth."""
+    menus = [m.menu() for m in win.menuBar().actions()]
+    modify = [m for m in menus if m and "dify" in m.title()]
+    assert modify, "the Modify menu exists"
+    assert win.act_offset in modify[0].actions()
+    from PySide6.QtWidgets import QToolButton
+    tips = []
+    lay = win.ribbon.dl
+    for i in range(lay.count()):
+        it = lay.itemAt(i).widget()
+        if isinstance(it, QToolButton):
+            tips.append(it.toolTip().split(" \u2014 ")[0].split(" (")[0])
+    assert tips[tips.index("Draft") + 1] == "Offset face"
+    from tracer.ui import icons
+    assert callable(icons._DRAW["offsetface"])

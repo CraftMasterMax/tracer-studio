@@ -94,6 +94,7 @@ def test_design_panel_groups_follow_fusion_order(win):
             "Pattern on path", "Geometric pattern", "Scale",
             "Fillet", "Shell", "Thread", "Coil", "Split body",
             "Draft",                                      # M197 R2
+            "Offset face",                                # M198 R2
             "Move body",
             "Rotate body", "Combine body",
             "Construction plane", "Work axis", "Section analysis",

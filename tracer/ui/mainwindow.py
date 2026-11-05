@@ -454,6 +454,9 @@ class MainWindow(QMainWindow):
         d("draft", "Draft — lean the body's straight walls from a "
                    "fixed plane",
           lambda checked=False: self._body_draft())
+        d("offsetface", "Offset face — slide one plain face, its "
+                        "neighbours follow",
+          lambda checked=False: self._body_offset())
         d("move", "Move body — drag the triad to slide it (Ctrl = copy)",
           lambda checked=False: self.action_move_body())
         d("rotate", "Rotate body — drag a ring to spin it (Ctrl = copy)",
@@ -679,8 +682,14 @@ class MainWindow(QMainWindow):
                                  triggered=lambda checked=False: self.action_shell())
         self.act_draft = QAction("&Draft body walls…\tD", self,
                                  triggered=lambda checked=False: self._body_draft())
+        # M198 R2 [SLD-OFFSET-FACES]: the page's home is Modify > Offset
+        # Face.  No mnemonic letter: "&Open…" owns Alt+O and every other
+        # letter in "Offset face" is taken (the "Change Parameters…"
+        # precedent: a row may ride its bare-key shortcut alone).
+        self.act_offset = QAction("Offset face…\tO", self,
+                                  triggered=lambda checked=False: self._body_offset())
         m_mo.addActions([self.act_fillet, self.act_chamfer, self.act_shell,
-                         self.act_draft])
+                         self.act_draft, self.act_offset])
         m_mo.addSeparator()
         m_mo.addAction("Change Parameters…",
                        lambda checked=False: self.action_change_params())
@@ -7925,6 +7934,59 @@ class MainWindow(QMainWindow):
             + (f"parting line at {f.parting:g} mm" if f.parting is not None
                else f"{f.fixed}")
             + f" · {f.n_walls} wall(s) leaned · volume "
+            f"{self.doc.result.volume:,.1f} mm³", 6000)
+
+    def _body_offset(self):
+        """M198 R2 [SLD-OFFSET-FACES, verbatim]: "Select a single
+        face ... and specify the Offset distance" - the door asks
+        exactly the two rows the kernel honors.  The face speaks the
+        PLAIN names (the Draft law); the distance wears millimetres
+        and takes the page's "positive or negative direction"
+        (positive slides the face OUTWARD along its own normal).
+        Multiple faces and the manipulator are NOT offered: a door
+        may not promise what cannot bake (the M196 law)."""
+        if self.doc is None or self.doc.result is None:
+            # M189 R4 [LAW-61(a)]: precondition in information clothing.
+            self.status.showMessage("No body to offset — create a "
+                                    "feature first", 5000)
+            return
+        v = cmddialog.ask(self, "Offset a face", [
+            dict(key="face", label="Face", kind="combo",
+                 choices=["bottom", "top", "wall", "+x", "-x", "+y",
+                          "-y"],
+                 default="top"),
+            dict(key="dist", label="Offset distance", kind="double",
+                 default=5.0, min=-1000.0, max=1000.0, decimals=3,
+                 suffix=" mm"),
+        ], remember_key="offset_face")
+        if v is None:
+            return
+        self._capture()
+        n = sum(isinstance(f, OffsetFaceFeature)
+                for f in self.doc.features) + 1
+        f = OffsetFaceFeature(name=f"Offset{n}", face=str(v["face"]),
+                              dist=float(v["dist"]))
+        self.doc.features.append(f)
+        self.doc.dirty = True
+        try:
+            self.doc.recompute()           # the slide lands on success
+        except Exception as e:
+            self.doc.features.remove(f)
+            self.doc.dirty = True
+            self.recompute()
+            # M189 R5 law, the door law: a refusal may not leave an
+            # undo step that undoes nothing, and the kernel's own cure
+            # ("this cylinder's faces are ...", "must still leave
+            # material") rides the status line verbatim.
+            self._undo.pop()
+            self._redo.clear()
+            self.status.showMessage(f"Offset refused: {e}", 6000)
+            return
+        self.viewport.refresh(fit=True)
+        self.rail.tree.reload()
+        self.timeline.bar.update()
+        self.status.showMessage(
+            f"Offset face '{f.face}' by {f.dist:+g} mm · volume "
             f"{self.doc.result.volume:,.1f} mm³", 6000)
 
     def _set_fillet_size(self, feature):
