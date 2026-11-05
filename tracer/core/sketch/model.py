@@ -18,8 +18,8 @@ from .constraints import (Angle, AngleBetween, ArcMiddle, Coincident,
                           Horizontal, LineDistance, Midpoint,
                           Perpendicular, PointOnCircle, PointOnLine,
                           Parallel, Radius, RadialDistance, Symmetry,
-                          Tangent, Vertical, make_tangent, speaks_dia,
-                          spans_dia)
+                          Tangent, Vertical, fixed_lock, make_tangent,
+                          speaks_dia, spans_dia)
 from .solver import Sketch, SolveResult
 
 # Sketch planes: (u_axis, v_axis) in world coords; extrude normal = u x v.
@@ -635,8 +635,9 @@ class SketchModel:
         elif ctype is Vertical:
             self.constrain(Vertical(ents[0]))
         elif ctype is Fixed:
-            p = ents[0]
-            self.constrain(Fixed(p, x=p.x, y=p.y))
+            self.constrain(fixed_lock(ents[0]))   # M194 R3: a point OR
+            #   object - the record takes whatever shape the vendor's
+            #   sentence names (x/y pair, or one row per owned scalar)
         elif ctype is Radius:
             self.constrain(Radius(ents[0], curve_radius(ents[0])))
         elif ctype is Distance:
@@ -1018,8 +1019,14 @@ def model_to_dict(m: SketchModel) -> dict:
             # the browser's solve-from-payload swore "converged" about
             # a fight the maker actually drew (a healthy solved sketch
             # is unchanged - position equals value there).
-            cons.append({"t": "F", "p": _add_pt(pts, idx, c.p),
-                         "x": c.x, "y": c.y})
+            if c.tgt:                        # M194 R3: the OBJECT lock -
+                cons.append({"t": "F", "e": _ent_ref(m, c.p),
+                             "v": list(c.tgt)})
+                #  ref + targets, the point stamp's equal: the record
+                #  IS its values (M186 R3's law, object edition)
+            else:
+                cons.append({"t": "F", "p": _add_pt(pts, idx, c.p),
+                             "x": c.x, "y": c.y})
         elif isinstance(c, Distance):
             cons.append({"t": "D", "p": _add_pt(pts, idx, c.p),
                          "q": _add_pt(pts, idx, c.q), "v": c.value})
@@ -1130,6 +1137,8 @@ def _ent_ref(m, e) -> list:
         return ["l", m.sketch.lines.index(e)]
     if isinstance(e, Arc):
         return ["a", m.sketch.arcs.index(e)]
+    if isinstance(e, Ellipse):              # M194 R3: the object lock's
+        return ["el", m.sketch.ellipses.index(e)]   #  fourth member
     return ["c", m.sketch.circles.index(e)]
 
 
@@ -1139,6 +1148,8 @@ def _ent_at(m, ref):
         return m.sketch.lines[i]
     if kind == "a":
         return m.sketch.arcs[i]
+    if kind == "el":                         # M194 R3 (paired with above)
+        return m.sketch.ellipses[i]
     return m.sketch.circles[i]
 
 
@@ -1185,8 +1196,11 @@ def model_from_dict(d: dict) -> SketchModel:
         elif t == "V":
             m.constrain(Vertical(m.sketch.lines[c["line"]]))
         elif t == "F":
-            p = pts[c["p"]]
-            m.constrain(Fixed(p, x=c["x"], y=c["y"]))
+            if "e" in c:                     # M194 R3: the object lock
+                m.constrain(Fixed(_ent_at(m, c["e"]), tgt=tuple(c["v"])))
+            else:
+                p = pts[c["p"]]
+                m.constrain(Fixed(p, x=c["x"], y=c["y"]))
         elif t == "D":
             m.constrain(Distance(pts[c["p"]], pts[c["q"]], c["v"]))
         elif t == "R":

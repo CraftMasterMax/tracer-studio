@@ -1955,7 +1955,12 @@ class SketchCanvas(QWidget):
             self._solve(); self.update()
 
     def act_fix(self):
-        if len(self._sel) == 1 and isinstance(self._sel[0], Point):
+        # M194 R3 [SKT-CONSTRAINTS, verbatim]: the tool locks "a point
+        # OR OBJECT" - the same verb, the same toggle, one door wider.
+        # (TWO Lines selected never reach here: the F key hands those to
+        # the corner fillet BEFORE this door - M172's aim unchanged.)
+        if len(self._sel) == 1 and isinstance(
+                self._sel[0], (Point, Line, Arc, Circle, Ellipse)):
             self._push_hist()
             self.model.toggle(Fixed, (self._sel[0],))
             self._solve(); self.update()
@@ -4525,6 +4530,14 @@ class SketchCanvas(QWidget):
         # makes every entity answer yes, and no witness fails every
         # entity open to blue - the same canvas, read one by one.
         def solid_for(ent):
+            # M194 R3 [SKT-CONSTRAIN-FIX-UNFIX]: "The selected geometry
+            # turns GREEN, indicating that the geometry is locked." The
+            # LOCK outvotes the defined-white (both answer a fixed
+            # object - the vendor's figure shows the record's color),
+            # and the selection glow still outvotes everything (drawn
+            # later, as ever).
+            if self._fix_locked(ent):
+                return QPen(FIXEDC, 1.7)
             return QPen(FG if self._ent_locked(ent) else ACCENT, 1.7)
         constr_pen = QPen(CONSTR, 1.2, Qt.DashLine)
         # M191 R5: the vendor paints a CENTERLINE differently from plain
@@ -4658,13 +4671,22 @@ class SketchCanvas(QWidget):
                              (c.line.a.y + c.line.b.y) / 2)
                 self._badge(p, m, "V", c=c)
             elif isinstance(c, Fixed):
-                m = self.w2s(c.p.x, c.p.y)
-                m = QPointF(m.x() + 12, m.y() - 13)   # M194 R1: the ■ sits
-                self._badge(p, m, "\u25a0", c=c)      #  BESIDE the point -
-                #   the vendor's own figure keeps the badge off the ink,
+                e = c.p                                    # M194 R3: an
+                if isinstance(e, Point):                   #  object's ■
+                    m = self.w2s(e.x, e.y)                 #  rides its
+                elif isinstance(e, Arc):                   #  own anchor,
+                    m = self.w2s(e.m.x, e.m.y)             #   never a
+                elif isinstance(e, Line):                  #   buried dot
+                    m = self.w2s((e.a.x + e.b.x) / 2, (e.a.y + e.b.y) / 2)
+                elif isinstance(e, Circle):
+                    m = self.w2s(e.c.x + e.r * 0.707, e.c.y + e.r * 0.707)
+                else:                                      # Ellipse
+                    m = self.w2s(e.c.x + e.rx * 0.707, e.c.y + e.ry * 0.707)
+                m = QPointF(m.x() + 12, m.y() - 13)        # M194 R1: the ■ sits
+                self._badge(p, m, "\u25a0", c=c)           #  BESIDE the ink -
+                #   the vendor's own figure keeps the badge off the geometry,
                 #   because the GEOMETRY is what turns green. Dead-center
-                #   it buried the 5 px dot under a 13x15 plate and the
-                #   lock's color never reached the screen.
+                #   on a point it buried the 5 px dot under a 13x15 plate.
             elif isinstance(c, Symmetry):
                 m = self.w2s((c.p1.x + c.p2.x) / 2, (c.p1.y + c.p2.y) / 2)
                 self._badge(p, m, "S", c=c)

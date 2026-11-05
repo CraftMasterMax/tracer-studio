@@ -125,7 +125,8 @@ SHORTCUTS: list[tuple[str, list[tuple[str, str, bool]]]] = [
          True),
         ("I", "Angular dimension (one line: from +X · two lines: between)",
          True),
-        ("F", "Fix a point · fillet a corner with two lines selected", True),
+        ("F", "Fix a point or object · fillet a corner with two lines "
+              "selected", True),
         ("G", "Chamfer corner (two lines sharing a corner)", True),
         (".", "On-curve constraint (point + line/circle/arc)", True),
         ("D", "Distance dimension (1 line, 2 points, or pick)", True),

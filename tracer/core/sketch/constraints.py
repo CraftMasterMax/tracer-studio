@@ -11,7 +11,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .entities import Point, Line, Circle, curve_center, curve_radius
+from .entities import (Arc, Circle, Ellipse, Line, Point, curve_center,
+                       curve_radius)
 
 _LEN_SCALE = 100.0  # mm; keeps residuals dimensionless-ish for solving
 
@@ -45,14 +46,53 @@ class Coincident(Constraint):
 
 @dataclass
 class Fixed(Constraint):
+    """M194 R3 [SKT-CONSTRAINTS, verbatim]: "The Fix/UnFix tool locks
+    the size and LOCATION of a point OR OBJECT."  A POINT record keeps
+    its humble x/y pair (fields unchanged, every old caller intact);
+    an OBJECT record (Line/Arc/Circle/Ellipse in ``p``) carries ``tgt``
+    - the snapshot of EVERY scalar the entity owns, in row order: the
+    members' (x, y) pairs, then the size scalars (a circle's radius, an
+    ellipse's semi-axes).  An arc's size is its three points' circum-
+    radius (Radius's own lesson), so six coordinates already lock it
+    completely - there is no seventh number to pin."""
     p: Point
     x: float | None = None
     y: float | None = None
     axis: int = 0
+    tgt: tuple = ()
+
+    def members(self) -> tuple:
+        """The Points whose coordinates this lock owns, in row order."""
+        e = self.p
+        if isinstance(e, Line):
+            return (e.a, e.b)
+        if isinstance(e, Arc):
+            return (e.a, e.m, e.b)
+        if isinstance(e, (Circle, Ellipse)):
+            return (e.c,)
+        return (e,)
+
+    def sizes(self) -> tuple:
+        """Names of the size scalars this lock owns, after the
+        coordinates (the solver's OWN variable census, M186's)."""
+        if isinstance(self.p, Circle):
+            return ("r",)
+        if isinstance(self.p, Ellipse):
+            return ("rx", "ry")
+        return ()
 
     def entities(self): return [self.p]
 
     def residual(self, pos):
+        if self.tgt:
+            i = self.axis
+            mem = self.members()
+            if i < 2 * len(mem):
+                pt = mem[i // 2]
+                cur = pt.x if i % 2 == 0 else pt.y
+                return cur - self.tgt[i]
+            kind = self.sizes()[i - 2 * len(mem)]
+            return (getattr(self.p, kind) - self.tgt[i]) / _LEN_SCALE
         target = self.x if self.axis == 0 else self.y
         current = self.p.x if self.axis == 0 else self.p.y
         return current - target
@@ -464,6 +504,22 @@ class ArcMiddle(Constraint):
         return (d1 - d2) / _LEN_SCALE
 
 
+def fixed_lock(ent) -> "Fixed":
+    """M194 R3: mint the lock the vendor's tool files - a POINT keeps
+    its x/y pair record; an OBJECT gets one row per scalar it owns
+    (members' coordinates, then size), snapshotted HERE: the record's
+    VALUES are its truth (M186 R3's fidelity law, inherited whole)."""
+    f = Fixed(ent)
+    if isinstance(ent, Point):
+        return Fixed(ent, x=ent.x, y=ent.y)
+    tgt = []
+    for p in f.members():
+        tgt.extend((p.x, p.y))
+    for name in f.sizes():
+        tgt.append(getattr(ent, name))
+    return Fixed(ent, tgt=tuple(tgt))
+
+
 def expand(constraints: list[Constraint]) -> list[Constraint]:
     """Coincident carries two DOFs; split into per-axis rows."""
     out = []
@@ -484,7 +540,10 @@ def expand(constraints: list[Constraint]) -> list[Constraint]:
             out.append(Collinear(c.l1, c.l2, row=0))
             out.append(Collinear(c.l1, c.l2, row=1))
         elif isinstance(c, Fixed):
-            if c.x is not None:
+            if c.tgt:                                # M194 R3 object
+                for i in range(len(c.tgt)):          #  mode: one row
+                    out.append(Fixed(c.p, tgt=c.tgt, axis=i))  #  per scalar
+            elif c.x is not None:
                 out.append(Fixed(c.p, x=c.x, y=c.y, axis=0))
             if c.y is not None:
                 out.append(Fixed(c.p, x=c.x, y=c.y, axis=1))
