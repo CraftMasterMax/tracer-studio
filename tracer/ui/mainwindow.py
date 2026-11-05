@@ -1559,7 +1559,17 @@ class MainWindow(QMainWindow):
         elif isinstance(feature, BodyFilletFeature):
             dbl("radius", "radius", feature.radius)
             check("chamfer", "chamfer, not fillet", feature.chamfer)
-            if feature.chamfer:
+            if feature.chamfer and feature.dist2 is not None:
+                # M196 R3 [SLD-REF-CHAMFER]: "Two Distance: Bevels
+                # edges based on a different distance to each side" +
+                # "you can specify two different distance values".  The
+                # Type is ONE choice, so this record speaks its second
+                # leg in MILLIMETRES (ask()'s default suffix rides -
+                # the R1b law is about not LYING, and mm is the truth
+                # here) and the angle row does NOT open at all.
+                dbl("dist2", "second distance (other face)",
+                    feature.dist2, mn=0.05)
+            elif feature.chamfer:
                 # M196 R1 [SLD-REF-CHAMFER, verbatim]: "Angle (Distance
                 # And Angle chamfer type only)" - the row exists only
                 # for the bevel record, exactly as the page's parenthetical
@@ -1702,6 +1712,11 @@ class MainWindow(QMainWindow):
                 # legacy branch (tan 45 is 0.9999999999999999, and
                 # identity is not approximation).
                 feature.angle_deg = float(v["angle_deg"])
+            if "dist2" in v:
+                # M196 R3: the second-leg row opens ONLY for a Two
+                # Distance record (see _feature_params), so a write
+                # here is always that vendor type's typed distance.
+                feature.dist2 = float(v["dist2"])
         elif isinstance(feature, ShellFeature):
             feature.thickness = mm("thickness")
         elif isinstance(feature, ThreadFeature):
@@ -7702,22 +7717,32 @@ class MainWindow(QMainWindow):
                                     "a feature first", 5000)
             return
         angle = None
+        dist2 = None
         if chamfer:
             # M196 R2 [SLD-REF-CHAMFER, verbatim]: "Type Select the
             # type of chamfer to create for the highlighted selection
             # set." with the rows "Distance" and "Angle (Distance And
             # Angle chamfer type only)".  The door now speaks the
             # vendor's rows through the house dialog; the angle WRITES
-            # only under its own type (the page's parenthetical).  Two
-            # Distance is NOT offered yet - a door may not promise a
-            # bevel the kernel cannot bake; the R2 gate pins the list
-            # and it moves with the vendor when that cut lands.
+            # only under its own type (the page's parenthetical).
+            # M196 R3: TWO DISTANCE landed in the kernel, so the list
+            # grew exactly as the R2 comment promised it would - all
+            # THREE page types now stand, in the page's own order, and
+            # the second distance row writes only under its type (the
+            # Equal choice NOTES both extra values and writes neither;
+            # each other type notes what is not its business).  Page,
+            # verbatim: "For the Two Distance chamfer type, you can
+            # specify two different distance values. The first
+            # distance value you specify applies to both sides."
             v = cmddialog.ask(self, "Chamfer body edges", [
                 dict(key="type", label="Chamfer Type", kind="combo",
-                     choices=["Equal Distance", "Distance And Angle"],
+                     choices=["Equal Distance", "Two Distance",
+                              "Distance And Angle"],
                      default="Equal Distance"),
                 dict(key="distance", label="Distance", kind="double",
                      default=2.0, min=0.05, max=1e4),
+                dict(key="dist2", label="Second distance",
+                     kind="double", default=2.0, min=0.05, max=1e4),
                 dict(key="angle", label="Angle", kind="double",
                      default=45.0, min=0.1, max=89.9, decimals=1,
                      suffix="\u00b0"),
@@ -7725,7 +7750,9 @@ class MainWindow(QMainWindow):
             if v is None:
                 return
             size = float(v["distance"])
-            if v["type"] == "Distance And Angle":
+            if v["type"] == "Two Distance":
+                dist2 = float(v["dist2"])
+            elif v["type"] == "Distance And Angle":
                 angle = float(v["angle"])
         else:
             size, ok = Shell.getDouble(
@@ -7737,7 +7764,8 @@ class MainWindow(QMainWindow):
         n = sum(isinstance(f, BodyFilletFeature)
                 for f in self.doc.features) + 1
         f = BodyFilletFeature(name=f"{kind}{n}", radius=size,
-                              chamfer=chamfer, angle_deg=angle)
+                              chamfer=chamfer, angle_deg=angle,
+                              dist2=dist2)
         self.doc.features.append(f)
         self.doc.dirty = True
         try:
@@ -7768,7 +7796,8 @@ class MainWindow(QMainWindow):
             how = "solid edges"
         self.status.showMessage(
             f"{kind}ed body edges at {size:g} mm"
-            + (f" x {angle:g}\u00b0" if angle is not None else "")
+            + (f" x {angle:g}\u00b0" if angle is not None
+               else f" x {dist2:g} mm" if dist2 is not None else "")
             + f" · {how} · volume "
             f"{self.doc.result.volume:,.1f} mm³", 6000)
 

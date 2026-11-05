@@ -23,6 +23,16 @@ opens FROM the cap.
 - The angle rides the file, the lever speaks it (the row opens ONLY
   for a bevel record - the page's "(Distance And Angle chamfer type
   only)"), and the door writes what is typed.
+
+Rung 3 lands the page's MIDDLE type: "Two Distance: Bevels edges
+based on a different distance to each side" - both legs TYPED
+millimetres, no tangent, no trigonometry.  The door's combo now
+carries all three page types in the page's own order (the R2 pin
+moved with the vendor as its comment promised); the record gains
+dist2; and a typed 5 AND 5 is the equal bevel EXACTLY - identity
+when nothing is approximated, the honest mirror of the 45-degree
+lesson.  A record may not wear two types: the kernel refuses both
+terms on one record.
 """
 import json
 
@@ -136,7 +146,8 @@ def test_legacy_record_keeps_the_symmetric_branch():
     d3 = Document.from_dict(json.loads(json.dumps(raw)))
     assert d3.features[-1].angle_deg is None
     assert d3.recompute().volume == pytest.approx(LEGACY_VOL, rel=1e-9)
-    assert d3.features[-1].src_key[-2:] == [0.0, 3]           # re-keyed
+    assert d3.features[-1].src_key[-2:] == [0.0, 4]           # re-keyed
+    # (R1 raised 2 -> 3; R3 raised 3 -> 4 with the second-distance term)
     assert _rod(45.0).recompute().volume == pytest.approx(LEGACY_VOL,
                                                           rel=1e-6)
 
@@ -244,8 +255,12 @@ def test_the_chamfer_door_asks_the_vendor_three_rows(win, qapp,
     qapp.processEvents()
     assert len(calls) == 1 and calls[0][0] == "Chamfer body edges"
     flds = {f["key"]: f for f in calls[0][1]}
-    assert list(flds) == ["type", "distance", "angle"]
-    assert flds["type"]["choices"] == ["Equal Distance",
+    # R3 moved this pin: Two Distance LANDED, so the list grew to the
+    # page's full three and the second-distance row joined - exactly as
+    # the R2 comment promised ("it moves with the vendor when that cut
+    # lands").  The page's own order rules.
+    assert list(flds) == ["type", "distance", "dist2", "angle"]
+    assert flds["type"]["choices"] == ["Equal Distance", "Two Distance",
                                        "Distance And Angle"]
     assert flds["angle"]["suffix"] == "\u00b0"          # R1b law rides
     assert flds["angle"]["min"] == 0.1 and flds["angle"]["max"] == 89.9
@@ -253,6 +268,7 @@ def test_the_chamfer_door_asks_the_vendor_three_rows(win, qapp,
     f = win.doc.features[-1]
     assert isinstance(f, BodyFilletFeature) and f.chamfer
     assert f.radius == 5.0 and f.angle_deg == 30.0
+    assert f.dist2 is None                     # ONE type per record
     assert "x 30" in win.status.currentMessage(), \
         "the sentence tells the truth about the bevel it cut"
 
@@ -307,3 +323,123 @@ def test_the_chamfer_door_cancel_writes_nothing(win, qapp, monkeypatch):
     win._body_fillet(chamfer=True)
     assert len(win.doc.features) == before
     assert len(win._undo) == undo_n
+
+
+# ---- R3: Two Distance - the page's middle type ----------------------------
+def _two(d1, d2):
+    d = Document("two")
+    d.add(PrimitiveFeature(name="rod", kind="cylinder",
+                           dims={"radius": 10.0, "height": 40.0}))
+    d.add(BodyFilletFeature(name="Chamfer1", radius=d1, chamfer=True,
+                            dist2=d2))
+    return d
+
+
+def test_two_distance_legs_measured_directly():
+    """"Bevels edges based on a different distance to each side" -
+    BOTH legs typed millimetres, no tangent, no trigonometry: on the
+    r10 h40 rod the cap keeps a flat ring at rho 10 - d1 and the wall
+    drops to 40 - d2, read straight off the vertices.  And the sides
+    ARE different: 5-and-2 and 2-and-5 are different bevels."""
+    cap, wall = _mouths(_two(5.0, 2.0).recompute())
+    assert cap == pytest.approx(5.0, abs=1e-4)          # 10 - 5
+    assert wall == pytest.approx(38.0, abs=0.05)        # 40 - 2
+    cap2, wall2 = _mouths(_two(2.0, 5.0).recompute())
+    assert cap2 == pytest.approx(8.0, abs=1e-4)
+    assert wall2 == pytest.approx(35.0, abs=0.05)
+    assert _two(5.0, 2.0).recompute().volume != \
+        _two(2.0, 5.0).recompute().volume
+
+
+def test_the_first_value_starts_on_both_sides():
+    """The note verbatim: "The first distance value you specify applies
+    to both sides of the chamfer."  Typed 5 AND 5, the second leg
+    equals the first and the cut is the LEGACY equal bevel EXACTLY -
+    float equality, no trig between them: P(0, 5.0) IS P(0, R = 5.0).
+    Identity when nothing is approximated, the honest mirror of rung
+    one's tan(45) lesson.  The RECORD still differs: it stores the
+    second value and says which type it is."""
+    assert _two(5.0, 5.0).recompute().volume == LEGACY_VOL
+    f = _two(5.0, 5.0).features[-1]
+    assert f.dist2 == 5.0 and f.angle_deg is None
+
+
+def test_a_record_may_not_wear_two_types():
+    """The page's Type is ONE choice per selection set.  A hand-crafted
+    record carrying BOTH an angle AND a second distance is a
+    contradiction, and the kernel REFUSES it rather than guessing which
+    leg the file meant."""
+    d = Document("bad")
+    d.add(PrimitiveFeature(name="rod", kind="cylinder",
+                           dims={"radius": 10.0, "height": 40.0}))
+    d.add(BodyFilletFeature(name="Chamfer1", radius=5.0, chamfer=True,
+                            angle_deg=30.0, dist2=2.0))
+    with pytest.raises(ValueError, match="not both"):
+        d.recompute()
+
+
+def test_the_door_offers_three_types_and_writes_the_chosen_leg(win, qapp,
+                                                               monkeypatch):
+    """R3 moved the R2 pin EXACTLY as that gate's comment promised:
+    the combo now carries the page's full list in the page's own order
+    and a second-distance row joins it.  Choose Two Distance, type 5
+    AND 2 (and a 70 the type has no use for): the record carries dist2
+    2.0 and NO angle - the parenthetical law mirrored - and the success
+    sentence speaks both millimetres."""
+    calls = []
+
+    def fake(parent, title, fields, **k):
+        calls.append(fields)
+        return {"type": "Two Distance", "distance": 5.0,
+                "dist2": 2.0, "angle": 70.0}
+
+    monkeypatch.setattr(cmddialog, "ask", fake)
+    _rod_win(win, qapp)
+    win._body_fillet(chamfer=True)
+    flds = {f["key"]: f for f in calls[0]}
+    assert list(flds) == ["type", "distance", "dist2", "angle"]
+    assert flds["type"]["choices"] == ["Equal Distance", "Two Distance",
+                                       "Distance And Angle"]
+    f = win.doc.features[-1]
+    assert f.radius == 5.0 and f.dist2 == 2.0 and f.angle_deg is None
+    msg = win.status.currentMessage()
+    assert "at 5 mm x 2 mm" in msg, msg
+
+
+def test_the_lever_opens_the_second_leg_not_the_angle(win, qapp):
+    """One record, one voice: the Two Distance record's Change
+    Parameters shows the second distance (a MILLIMETRE row - the R1b
+    override belongs to angle rows, and mm is the truth here) and NOT
+    the angle row.  A legacy bevel record still shows the angle row
+    (rung one's law stands beside this one)."""
+    two = BodyFilletFeature(name="Two1", radius=5.0, chamfer=True,
+                            dist2=2.0)
+    keys = [f["key"] for f in win._feature_params(two)]
+    assert "dist2" in keys and "angle_deg" not in keys
+    row = [f for f in win._feature_params(two) if f["key"] == "dist2"][0]
+    assert "suffix" not in row                # rides ask()'s " mm"
+    legacy = BodyFilletFeature(name="Ch", radius=5.0, chamfer=True)
+    assert "angle_deg" in [f["key"] for f in win._feature_params(legacy)]
+
+
+def test_the_second_distance_rides_the_file_and_the_key_grew():
+    """dist2 through disk: the NUMBER is exact and the result regrounds
+    at mesh tolerance; the stamp is the seven-term version-4 key.  An
+    R1-ERA six-term key still mismatches by SHAPE (the version term and
+    the dist2 term both differ) and recomputes ONCE through the
+    untouched branch to the very same number."""
+    d = _two(5.0, 1.5)
+    d.recompute()
+    raw = json.loads(json.dumps(d.to_dict()))
+    assert raw["features"][-1]["dist2"] == 1.5
+    d2 = Document.from_dict(raw)
+    assert d2.features[-1].dist2 == 1.5
+    assert d2.recompute().volume == pytest.approx(d.result.volume,
+                                                  rel=1e-5)
+    assert d.features[-1].src_key[-2:] == [1.5, 4]
+    fe = raw["features"][-1]
+    fe["src_key"] = fe["src_key"][:5] + [0.0, 3]        # R1-era shape
+    d3 = Document.from_dict(json.loads(json.dumps(raw)))
+    assert d3.recompute().volume == pytest.approx(d.result.volume,
+                                                  rel=1e-9)
+    assert d3.features[-1].src_key[-2:] == [1.5, 4]

@@ -142,7 +142,8 @@ def find_rims(solid: Solid) -> list[dict]:
     return out
 
 
-def _tool(rim: dict, size: float, chamfer: bool, angle_deg=None):
+def _tool(rim: dict, size: float, chamfer: bool, angle_deg=None,
+          dist2=None):
     """The revolved cutter (convex) or bead (concave), placed in world.
 
     In normalized corner coords a=dr·(ρ−r), b=dh·(z−z0) both are the same
@@ -167,7 +168,26 @@ def _tool(rim: dict, size: float, chamfer: bool, angle_deg=None):
     d = min(0.005, 0.02 * R)                         # anti-coincidence skirt
     P = lambda a, b: (r + dr * a, dh * b)             # noqa: E731
     if chamfer:
-        if angle_deg is None:
+        if angle_deg is not None and dist2 is not None:
+            # The vendor's Type is ONE choice per selection set - a
+            # record carrying BOTH a Distance And Angle term and a Two
+            # Distance term is not a type, it is a contradiction.
+            raise ValueError("a bevel takes an angle OR a second "
+                             "distance, not both")
+        if dist2 is not None:
+            # M196 R3 [SLD-REF-CHAMFER, verbatim]: "Two Distance:
+            # Bevels edges based on a different distance to each side"
+            # + "The first distance value you specify applies to both
+            # sides ... Any additional adjustments only apply to the
+            # side of the chamfer you are modifying."  Both legs are
+            # TYPED distances - the cap leg is the first distance (the
+            # pinned convention's home leg), the wall leg the second,
+            # direct: no tangent, no trig, nothing to approximate.
+            H = float(dist2)
+            if H <= 0.0:
+                raise ValueError("second distance must be positive")
+            pts = [P(-d, 0.0), P(R, 0.0), P(0.0, H)]
+        elif angle_deg is None:
             pts = [P(-d, 0.0), P(R, 0.0), P(0.0, R)]
         else:
             # M196 R1 [SLD-REF-CHAMFER, verbatim]: "Distance And Angle:
@@ -210,13 +230,14 @@ def _tool(rim: dict, size: float, chamfer: bool, angle_deg=None):
 
 
 def rim_fillet(solid: Solid, size: float, chamfer: bool = False,
-               angle_deg=None):
+               angle_deg=None, dist2=None):
     """Round every circular rim; returns (solid, n_applied).  angle_deg
-    (M196) opens the chamfer's wall leg from the cap leg - None keeps
-    the equal-distance triangle old files were baked with."""
+    (M196) opens the chamfer's wall leg from the cap leg; dist2 (M196
+    R3) TYPES the wall leg directly - each is None until its door
+    writes it, and None keeps the triangle old files were baked with."""
     out, applied = solid, 0
     for rim in find_rims(solid):
-        tool = _tool(rim, size, chamfer, angle_deg)
+        tool = _tool(rim, size, chamfer, angle_deg, dist2)
         if tool is None:
             continue                                 # oversized: skip rim
         out = (out.union(tool) if rim["concave"] else out.subtract(tool))
