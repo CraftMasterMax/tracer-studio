@@ -194,3 +194,17 @@ def test_the_door_writes_what_is_typed(win, qapp, monkeypatch):
     assert cap == pytest.approx(5.0, abs=1e-6)
     assert wall == pytest.approx(40.0 - 5.0 * math.tan(
         math.radians(30.0)), abs=0.02)
+
+
+def test_the_angle_row_wears_degrees(win, qapp):
+    """R1b, caught by the film: ask() hands every double row the
+    default ' mm' suffix, so the bevel's angle lever photographed as
+    '15.0 mm' UNDER its own degree label - one door, two mouths, two
+    units.  The dbl helper now says otherwise for angle rows; the
+    millimetre rows ride the default untouched."""
+    ch = BodyFilletFeature(name="Ch", radius=5.0, chamfer=True)
+    rows = {f["key"]: f for f in win._feature_params(ch)}
+    assert rows["angle_deg"].get("suffix") == "\u00b0"
+    assert "suffix" not in rows["radius"]      # the mm rows ride ask()'s
+    # and the label still speaks the unit in words - both mouths agree
+    assert "\u00b0" in rows["angle_deg"]["label"]

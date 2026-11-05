@@ -1503,6 +1503,13 @@ class MainWindow(QMainWindow):
             spec["default"] = float(mm) if ang else round(mm / sc, 6)
             if mn is not None:
                 spec["min"] = mn if ang else mn / sc
+            if ang:
+                # M196 R1b (film-caught lie): ask() hands every double
+                # row the " mm" suffix unless it says otherwise, so the
+                # angle levers read "45.0 mm" UNDER their own degree
+                # label - one door, two mouths, two units.  Degrees
+                # wear degrees; the millimetre rows ride the default.
+                spec["suffix"] = "\u00b0"
             fld.append(spec)
 
         def ints(key, label, val, mn=2):
