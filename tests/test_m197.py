@@ -267,3 +267,117 @@ def test_the_timeline_row_is_a_lean_not_a_plus(win, qapp):
     feat = win.doc.features[-1]
     assert bar._label(feat) == "\u25fa Draft1"
     assert "+" not in bar._label(feat)
+
+
+# ---- R2: the command door ---------------------------------------------------
+from tracer.ui import cmddialog                                        # noqa
+
+
+def _rod_win(win, qapp):
+    win.new_document()
+    win.doc.add(PrimitiveFeature(name="rod", kind="cylinder",
+                                 dims={"radius": 10.0, "height": 40.0}))
+    win.recompute()
+    qapp.processEvents()
+
+
+def test_the_draft_door_asks_the_pages_two_rows(win, qapp, monkeypatch):
+    """SLD-REF-DRAFT's dialog rows for the tool the kernel can honor:
+    "Angle Specify the draft angle" + "Fixed Plane Select a fixed
+    plane" - spoken plainly as the body's own bottom or top.  The door
+    offers ONLY the two rows rung one cuts: no Parting Line, no Angle
+    Mode, no face list, no Tangent Chain (the door law: a promise must
+    bake).  Typed 15 from the bottom lands exactly, the sentence
+    speaks the lean AND the honest wall count, and the angle row
+    wears degrees (the R1b law)."""
+    calls = []
+
+    def fake(parent, title, fields, **k):
+        calls.append((title, fields))
+        return {"angle_deg": 15.0, "fixed": "bottom"}
+
+    monkeypatch.setattr(cmddialog, "ask", fake)
+    _rod_win(win, qapp)
+    win._body_draft()
+    assert len(calls) == 1 and calls[0][0] == "Draft body walls"
+    by = {f["key"]: f for f in calls[0][1]}
+    assert list(by) == ["angle_deg", "fixed"]
+    assert by["angle_deg"]["suffix"] == "\u00b0"
+    assert by["angle_deg"]["min"] == -89.9 and by["angle_deg"]["max"] == 89.9
+    assert by["fixed"]["choices"] == ["bottom", "top"]
+    f = win.doc.features[-1]
+    assert isinstance(f, DraftFeature)
+    assert f.angle_deg == 15.0 and f.fixed == "bottom"      # as typed
+    msg = win.status.currentMessage()
+    assert "at 15" in msg and "from the bottom" in msg \
+        and "wall(s) leaned" in msg, msg
+
+
+def test_the_draft_door_writes_the_fixed_top_mirror(win, qapp,
+                                                    monkeypatch):
+    """Choose the TOP plane and the cone grows from the other end: the
+    top ring keeps its exact size, the bottom ring stands at
+    r + h x tan(angle) - the same law the lever path proves, now
+    walked through the door."""
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"angle_deg": 20.0,
+                                         "fixed": "top"})
+    _rod_win(win, qapp)
+    win._body_draft()
+    f = win.doc.features[-1]
+    assert f.angle_deg == 20.0 and f.fixed == "top"
+    bot, top = _rings(win.doc.result)
+    t = 40.0 * math.tan(math.radians(20.0))
+    assert top == pytest.approx(10.0, abs=1e-4)             # fixed holds
+    assert bot == pytest.approx(10.0 + t, abs=1e-3)         # free end
+    assert "from the top" in win.status.currentMessage()
+
+
+def test_the_draft_door_refuses_a_round_body_in_words(win, qapp,
+                                                      monkeypatch):
+    """The kernel's refusal rides the status line VERBATIM (its cure -
+    "a cylinder on its axis or a box standing on the fixed plane" - is
+    the teaching) and the refusal unwinds its own undo step: a refusal
+    may not leave a step that undoes nothing, and no record is left
+    either.  The body is unchanged to the last digit (fresh-against-
+    fresh unrounded - the R3b law)."""
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"angle_deg": 20.0,
+                                         "fixed": "bottom"})
+    win.new_document()
+    win.doc.add(PrimitiveFeature(name="sp", kind="sphere",
+                                 dims={"radius": 6.0}))
+    win.recompute()
+    n = len(win.doc.features)
+    u = len(win._undo)
+    vol = win.doc.result.volume
+    win._body_draft()
+    msg = win.status.currentMessage()
+    assert msg.startswith("Draft refused:")
+    assert "straight vertical walls" in msg, msg
+    assert len(win.doc.features) == n and len(win._undo) == u
+    assert win.doc.result.volume == vol                     # bit-exact
+
+
+def test_the_draft_door_cancel_and_precondition(win, qapp,
+                                                monkeypatch):
+    """Cancel at the door writes nothing (no record, no undo step -
+    the capture waits for the dialog's commit); and a window with no
+    body yet says so in information clothes, not a traceback."""
+    monkeypatch.setattr(cmddialog, "ask", lambda *a, **k: None)
+    _rod_win(win, qapp)
+    n, u = len(win.doc.features), len(win._undo)
+    win._body_draft()
+    assert len(win.doc.features) == n and len(win._undo) == u
+    win.new_document()
+    win._body_draft()
+    assert "No body to draft" in win.status.currentMessage()
+
+
+def test_the_draft_row_lives_in_the_modify_menu(win, qapp):
+    """The page's home is Design > Solid > Modify > Draft; the row
+    stands in the house's Modify menu beside fillet and chamfer."""
+    menus = [m.menu() for m in win.menuBar().actions()]
+    modify = [m for m in menus if m and "dify" in m.title()]
+    assert modify, "the Modify menu exists"
+    assert win.act_draft in modify[0].actions()

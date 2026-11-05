@@ -451,6 +451,9 @@ class MainWindow(QMainWindow):
           lambda checked=False: self.action_coil())
         d("split", "Split body — trim the solid flush with a plane",
           lambda checked=False: self.action_split_body())
+        d("draft", "Draft — lean the body's straight walls from a "
+                   "fixed plane",
+          lambda checked=False: self._body_draft())
         d("move", "Move body — drag the triad to slide it (Ctrl = copy)",
           lambda checked=False: self.action_move_body())
         d("rotate", "Rotate body — drag a ring to spin it (Ctrl = copy)",
@@ -674,7 +677,10 @@ class MainWindow(QMainWindow):
                                    triggered=lambda checked=False: self._body_fillet(True))
         self.act_shell = QAction("&Shell…", self,
                                  triggered=lambda checked=False: self.action_shell())
-        m_mo.addActions([self.act_fillet, self.act_chamfer, self.act_shell])
+        self.act_draft = QAction("&Draft body walls…\tD", self,
+                                 triggered=lambda checked=False: self._body_draft())
+        m_mo.addActions([self.act_fillet, self.act_chamfer, self.act_shell,
+                         self.act_draft])
         m_mo.addSeparator()
         m_mo.addAction("Change Parameters…",
                        lambda checked=False: self.action_change_params())
@@ -7818,6 +7824,58 @@ class MainWindow(QMainWindow):
             + (f" x {angle:g}\u00b0" if angle is not None
                else f" x {dist2:g} mm" if dist2 is not None else "")
             + f" · {how} · volume "
+            f"{self.doc.result.volume:,.1f} mm³", 6000)
+
+    def _body_draft(self):
+        """M197 R2 [SLD-REF-DRAFT, verbatim]: "Fixed Plane Select a
+        fixed plane to draft from" + "Angle Specify the draft angle".
+        The door asks the two rows the kernel actually leans with -
+        the angle wearing degrees (the R1b law) and the fixed plane
+        spoken plainly as the body's own bottom or top.  Parting Line,
+        Angle Mode, the face list and Tangent Chain are NOT offered:
+        a door may not promise what cannot bake (the M196 law)."""
+        if self.doc is None or self.doc.result is None:
+            # M189 R4 [LAW-61(a)]: precondition in information clothing.
+            self.status.showMessage("No body to draft — create a "
+                                    "feature first", 5000)
+            return
+        v = cmddialog.ask(self, "Draft body walls", [
+            dict(key="angle_deg", label="Draft angle", kind="double",
+                 default=10.0, min=-89.9, max=89.9, decimals=1,
+                 suffix="\u00b0"),
+            dict(key="fixed", label="Fixed plane", kind="combo",
+                 choices=["bottom", "top"], default="bottom"),
+        ], remember_key="draft_body_walls")
+        if v is None:
+            return
+        self._capture()
+        n = sum(isinstance(f, DraftFeature)
+                for f in self.doc.features) + 1
+        f = DraftFeature(name=f"Draft{n}",
+                         angle_deg=float(v["angle_deg"]),
+                         fixed=str(v["fixed"]))
+        self.doc.features.append(f)
+        self.doc.dirty = True
+        try:
+            self.doc.recompute()           # the lean lands on success
+        except Exception as e:
+            self.doc.features.remove(f)
+            self.doc.dirty = True
+            self.recompute()
+            # M189 R5 law, M196 door law: a refusal may not leave an
+            # undo step that undoes nothing, and the kernel's own cure
+            # ("a cylinder on its axis or a box...", "must still reach
+            # the fixed plane") rides the status line verbatim.
+            self._undo.pop()
+            self._redo.clear()
+            self.status.showMessage(f"Draft refused: {e}", 6000)
+            return
+        self.viewport.refresh(fit=True)
+        self.rail.tree.reload()
+        self.timeline.bar.update()
+        self.status.showMessage(
+            f"Drafted body walls at {f.angle_deg:g}\u00b0 from the "
+            f"{f.fixed} · {f.n_walls} wall(s) leaned · volume "
             f"{self.doc.result.volume:,.1f} mm³", 6000)
 
     def _set_fillet_size(self, feature):

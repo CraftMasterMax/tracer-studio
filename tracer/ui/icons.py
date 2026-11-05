@@ -476,6 +476,15 @@ def _split(p: QPainter):
     p.drawLine(QPointF(16, 6), QPointF(16, 27))
 
 
+def _draft(p: QPainter):
+    """A wall leaning away from a fixed base: short at the base,
+    wider at the top - the Draft tool's own shape."""
+    p.drawLine(QPointF(6, 26), QPointF(26, 26))          # fixed plane
+    p.drawLine(QPointF(11, 26), QPointF(8, 8))           # wall leans out
+    p.drawLine(QPointF(21, 26), QPointF(24, 8))          #     both ways
+    p.drawLine(QPointF(8, 8), QPointF(24, 8))            # free top edge
+
+
 def _thread(p: QPainter):
     """A bolt shank with helical thread diagonals."""
     p.drawRect(QRectF(11, 5, 10, 22))
@@ -505,7 +514,7 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "coil": _coil,
               "constrain": _constrain, "dimension": _dimension,
               "launcher": _launcher, "section": _section,
-              "thread": _thread, "split": _split,
+              "thread": _thread, "split": _split, "draft": _draft,
               "appearance": _appearance, "move": _move,
               "rotate": _rotate, "combine": _combine,
               "primitive": _primitive, "mass": _mass,
