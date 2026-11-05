@@ -634,6 +634,35 @@ class ThreadFeature(Feature):
 
 
 @dataclass
+class DraftFeature(Feature):
+    """M197 [SLD-REF-DRAFT]: "The Draft tool applies a fixed plane or
+    parting line draft angle to rotate planar faces on a solid body."
+    Rung one leans every STRAIGHT VERTICAL WALL of the accumulated
+    body about the line where the wall meets the fixed plane - the
+    body's own bottom or top - so the free end grows (positive angle)
+    or shrinks (negative) by height x tan(angle).  A body op like
+    BodyFilletFeature: it REPLACES the body, so `op` is unused.  Pure
+    mesh: no cache bake, no OpenCascade, works everywhere.  Parting
+    Line, Angle Mode and the face list are the page's other mouths and
+    wait for the rungs whose kernel cuts them."""
+    angle_deg: float = 10.0           # + widens AWAY from the fixed
+                                      # plane (the house taper's sign
+                                      # law, "taper: + widens as it
+                                      # goes", kept)
+    fixed: str = "bottom"             # "bottom" | "top": which plane
+                                      # of the body holds its exact
+                                      # size - that is what "fixed"
+                                      # means
+    n_walls: int = 0                  # walls leaned last run
+
+    def apply(self, src: Solid) -> Solid:
+        from .draft import draft_solid
+        out, n = draft_solid(src, self.angle_deg, self.fixed)
+        self.n_walls = n
+        return out
+
+
+@dataclass
 class ShellFeature(Feature):
     """Hollow the accumulated body to `thickness` walls, opened at the
     removed planar face(s).  `openings` stores each removed face as
@@ -3273,11 +3302,13 @@ class Document:
                 buckets[key] = solid
                 by_uid[f.uid] = solid
                 continue
-            elif isinstance(f, (BodyFilletFeature, ShellFeature,
+            elif isinstance(f, (BodyFilletFeature, DraftFeature,
+                                ShellFeature,
                                 SplitFeature, MoveFeature, RotateFeature,
                                 CombineFeature)):
                 if acc is None:
                     verb = ("fillet" if isinstance(f, BodyFilletFeature)
+                            else "draft" if isinstance(f, DraftFeature)
                             else "shell" if isinstance(f, ShellFeature)
                             else "split" if isinstance(f, SplitFeature)
                             else "move" if isinstance(f, MoveFeature)
@@ -3524,6 +3555,10 @@ class Document:
                                 else float(f.dist2)),
                          n_rims=int(f.n_rims), src_key=f.src_key,
                          res_verts=f.res_verts, res_faces=f.res_faces)
+            elif isinstance(f, DraftFeature):
+                d.update(angle_deg=float(f.angle_deg),
+                         fixed=str(f.fixed),
+                         n_walls=int(f.n_walls))
             elif isinstance(f, LoftFeature):
                 d.update(closed=bool(f.closed),
                          sections=[{"sid": s.get("sid"), "plane": s["plane"],
@@ -3860,6 +3895,11 @@ class Document:
                     src_key=fd.get("src_key", []),
                     res_verts=fd.get("res_verts", []),
                     res_faces=fd.get("res_faces", []), **base))
+            elif t == "DraftFeature":
+                doc.features.append(DraftFeature(
+                    name=fd["name"], angle_deg=float(fd["angle_deg"]),
+                    fixed=str(fd.get("fixed", "bottom")),
+                    n_walls=int(fd.get("n_walls", 0)), **base))
             else:
                 raise ValueError(f"unknown feature type {t!r}")
         if not doc.bodies:

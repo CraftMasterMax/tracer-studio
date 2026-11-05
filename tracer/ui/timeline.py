@@ -21,8 +21,8 @@ from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QScrollArea, QToolTip, QWidget
 
-from ..core.document import (BodyFilletFeature, Document, LoftFeature,
-                             ShellFeature, SweepFeature)
+from ..core.document import (BodyFilletFeature, Document, DraftFeature,
+                             LoftFeature, ShellFeature, SweepFeature)
 from . import theme
 
 OP_COLOR = {"union": theme.DARK["accent"], "subtract": theme.DARK["danger"],
@@ -211,6 +211,8 @@ class TimelineBar(QWidget):
             return f"\u25cb {f.name}"
         if isinstance(f, BodyFilletFeature):          # body op: ⌒ not +
             return f"\u2312 {f.name}"
+        if isinstance(f, DraftFeature):               # body op too: lean
+            return f"\u25fa {f.name}"                 #     not plus: ◺
         glyph = {"union": "+", "subtract": "\u2212", "intersect": "\u2229"}[f.op]
         return f"{glyph} {f.name}"
 
@@ -225,6 +227,8 @@ class TimelineBar(QWidget):
             return "\u25a4"
         if isinstance(f, BodyFilletFeature):
             return "\u25d0" if f.chamfer else "\u2312"
+        if isinstance(f, DraftFeature):
+            return "\u25fa"
         return {"union": "+", "subtract": "\u2212", "intersect": "\u2229"}[f.op]
 
     def paintEvent(self, ev):

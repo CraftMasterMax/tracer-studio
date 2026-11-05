@@ -30,7 +30,8 @@ from ..core import step
 from ..core.thread import ISO_COARSE
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              CoilFeature, CombineFeature,
-                             Document, ExtrudeFeature, GeometricPatternFeature,
+                             Document, DraftFeature,
+                             ExtrudeFeature, GeometricPatternFeature,
                              HoleFeature,
                              ImportedFeature, LinearPatternFeature,
                              LoftFeature, MirrorFeature, MoveFeature,
@@ -1579,6 +1580,17 @@ class MainWindow(QMainWindow):
                     feature.angle_deg if feature.angle_deg is not None
                     else 45.0, dec=1, mn=0.1, ang=True)
                 fld[-1]["max"] = 89.9
+        elif isinstance(feature, DraftFeature):
+            # M197 R1 [SLD-REF-DRAFT]: "Angle Specify the draft angle"
+            # - the row wears degrees (the R1b unit law rides ang=True)
+            # - plus the page's Fixed Plane choice, spoken plainly as
+            # the body's own bottom or top: rung one leans straight
+            # walls about the line where they meet that plane.
+            dbl("angle_deg", "draft angle from the fixed plane",
+                feature.angle_deg, dec=1, mn=-89.9, ang=True)
+            fld[-1]["max"] = 89.9
+            combo("fixed", "fixed plane", ("bottom", "top"),
+                  feature.fixed)
         elif isinstance(feature, ShellFeature):
             dbl("thickness", "wall thickness", feature.thickness, mn=0.05)
         elif isinstance(feature, ThreadFeature):
@@ -1717,6 +1729,13 @@ class MainWindow(QMainWindow):
                 # Distance record (see _feature_params), so a write
                 # here is always that vendor type's typed distance.
                 feature.dist2 = float(v["dist2"])
+        elif isinstance(feature, DraftFeature):
+            # M197 R1 [SLD-REF-DRAFT]: the two rows that opened the
+            # lever are this record's own - the draft angle stored AS
+            # TYPED (degrees, the R1b law) and the fixed plane every
+            # wall leans away from.
+            feature.angle_deg = float(v["angle_deg"])
+            feature.fixed = str(v["fixed"])
         elif isinstance(feature, ShellFeature):
             feature.thickness = mm("thickness")
         elif isinstance(feature, ThreadFeature):
