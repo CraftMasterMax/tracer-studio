@@ -208,3 +208,102 @@ def test_the_angle_row_wears_degrees(win, qapp):
     assert "suffix" not in rows["radius"]      # the mm rows ride ask()'s
     # and the label still speaks the unit in words - both mouths agree
     assert "\u00b0" in rows["angle_deg"]["label"]
+
+
+# ---- R2: the chamfer door speaks the vendor's three rows ------------------
+from tracer.ui import cmddialog                                        # noqa
+
+
+def _rod_win(win, qapp):
+    win.new_document()
+    win.doc.add(PrimitiveFeature(name="rod", kind="cylinder",
+                                 dims={"radius": 10.0, "height": 40.0}))
+    win.recompute()
+    qapp.processEvents()
+
+
+def test_the_chamfer_door_asks_the_vendor_three_rows(win, qapp,
+                                                     monkeypatch):
+    """SLD-REF-CHAMFER's dialog rows for the tool: \"Chamfer Type\",
+    \"Distance\" and \"Angle (Distance And Angle chamfer type only)\".
+    The command door asks all three through the house dialog - and
+    offers ONLY the two types the kernel actually cuts (Two Distance
+    is not promised until it exists; this list moves with the vendor).
+    Choosing Distance And Angle at 5 x 30 lands a record with exactly
+    those numbers, and the success sentence SPEAKS the angle."""
+    calls = []
+
+    def fake(parent, title, fields, **k):
+        calls.append((title, fields))
+        return {"type": "Distance And Angle", "distance": 5.0,
+                "angle": 30.0}
+
+    monkeypatch.setattr(cmddialog, "ask", fake)
+    _rod_win(win, qapp)
+    win._body_fillet(chamfer=True)
+    qapp.processEvents()
+    assert len(calls) == 1 and calls[0][0] == "Chamfer body edges"
+    flds = {f["key"]: f for f in calls[0][1]}
+    assert list(flds) == ["type", "distance", "angle"]
+    assert flds["type"]["choices"] == ["Equal Distance",
+                                       "Distance And Angle"]
+    assert flds["angle"]["suffix"] == "\u00b0"          # R1b law rides
+    assert flds["angle"]["min"] == 0.1 and flds["angle"]["max"] == 89.9
+    assert flds["distance"]["min"] == 0.05
+    f = win.doc.features[-1]
+    assert isinstance(f, BodyFilletFeature) and f.chamfer
+    assert f.radius == 5.0 and f.angle_deg == 30.0
+    assert "x 30" in win.status.currentMessage(), \
+        "the sentence tells the truth about the bevel it cut"
+
+
+def test_the_equal_choice_writes_no_angle(win, qapp, monkeypatch):
+    """The page's parenthetical is law: the angle belongs to Distance
+    And Angle ONLY. Choose Equal Distance - the typed 70 is NOTED and
+    NOT written: the record stays the legacy symmetric branch, and
+    the mesh drops its wall by exactly the distance."""
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"type": "Equal Distance",
+                                         "distance": 2.0, "angle": 70.0})
+    _rod_win(win, qapp)
+    win._body_fillet(chamfer=True)
+    f = win.doc.features[-1]
+    assert f.chamfer and f.radius == 2.0 and f.angle_deg is None
+    v = win.doc.result.to_trimesh().vertices
+    rho = np.hypot(v[:, 0], v[:, 1])
+    wall = v[rho > 9.99][:, 2].max()
+    assert abs(wall - 38.0) < 0.05            # 40 - D*tan(45) - the skirt
+
+
+def test_the_fillet_half_still_asks_its_one_radius(win, qapp,
+                                                   monkeypatch):
+    """Honesty gate: only the CHAMFER branch moved. The fillet half of
+    the same command still asks ONE number (Shell.getDouble - which is
+    itself one row of the same house dialog, key \"v\") - no Type, no
+    Angle, no invented rows."""
+    calls = []
+
+    def fake(parent, title, fields, **k):
+        calls.append((title, fields))
+        return {"v": 3.0}
+
+    monkeypatch.setattr(cmddialog, "ask", fake)
+    _rod_win(win, qapp)
+    win._body_fillet(chamfer=False)
+    assert len(calls) == 1 and calls[0][0] == "Fillet body edges"
+    assert [f["key"] for f in calls[0][1]] == ["v"]
+    feat = win.doc.features[-1]
+    assert isinstance(feat, BodyFilletFeature) and not feat.chamfer
+    assert feat.radius == 3.0 and feat.angle_deg is None
+
+
+def test_the_chamfer_door_cancel_writes_nothing(win, qapp, monkeypatch):
+    """Cancel at the door leaves no record and no undo step: the
+    capture happens only AFTER the dialog commits."""
+    monkeypatch.setattr(cmddialog, "ask", lambda *a, **k: None)
+    _rod_win(win, qapp)
+    before = len(win.doc.features)
+    undo_n = len(win._undo)
+    win._body_fillet(chamfer=True)
+    assert len(win.doc.features) == before
+    assert len(win._undo) == undo_n

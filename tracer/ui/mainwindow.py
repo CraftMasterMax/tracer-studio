@@ -7701,17 +7701,43 @@ class MainWindow(QMainWindow):
             self.status.showMessage(f"No body to {kind.lower()} — create "
                                     "a feature first", 5000)
             return
-        size, ok = Shell.getDouble(
-            self, f"{kind} body edges",
-            f"{'Distance' if chamfer else 'Radius'} (mm):",
-            2.0, 0.05, 1e4, 2)
-        if not ok:
-            return
+        angle = None
+        if chamfer:
+            # M196 R2 [SLD-REF-CHAMFER, verbatim]: "Type Select the
+            # type of chamfer to create for the highlighted selection
+            # set." with the rows "Distance" and "Angle (Distance And
+            # Angle chamfer type only)".  The door now speaks the
+            # vendor's rows through the house dialog; the angle WRITES
+            # only under its own type (the page's parenthetical).  Two
+            # Distance is NOT offered yet - a door may not promise a
+            # bevel the kernel cannot bake; the R2 gate pins the list
+            # and it moves with the vendor when that cut lands.
+            v = cmddialog.ask(self, "Chamfer body edges", [
+                dict(key="type", label="Chamfer Type", kind="combo",
+                     choices=["Equal Distance", "Distance And Angle"],
+                     default="Equal Distance"),
+                dict(key="distance", label="Distance", kind="double",
+                     default=2.0, min=0.05, max=1e4),
+                dict(key="angle", label="Angle", kind="double",
+                     default=45.0, min=0.1, max=89.9, decimals=1,
+                     suffix="\u00b0"),
+            ], remember_key="chamfer_body_edges")
+            if v is None:
+                return
+            size = float(v["distance"])
+            if v["type"] == "Distance And Angle":
+                angle = float(v["angle"])
+        else:
+            size, ok = Shell.getDouble(
+                self, "Fillet body edges", "Radius (mm):",
+                2.0, 0.05, 1e4, 2)
+            if not ok:
+                return
         self._capture()
         n = sum(isinstance(f, BodyFilletFeature)
                 for f in self.doc.features) + 1
         f = BodyFilletFeature(name=f"{kind}{n}", radius=size,
-                              chamfer=chamfer)
+                              chamfer=chamfer, angle_deg=angle)
         self.doc.features.append(f)
         self.doc.dirty = True
         try:
@@ -7741,7 +7767,9 @@ class MainWindow(QMainWindow):
         else:
             how = "solid edges"
         self.status.showMessage(
-            f"{kind}ed body edges at {size:g} mm · {how} · volume "
+            f"{kind}ed body edges at {size:g} mm"
+            + (f" x {angle:g}\u00b0" if angle is not None else "")
+            + f" · {how} · volume "
             f"{self.doc.result.volume:,.1f} mm³", 6000)
 
     def _set_fillet_size(self, feature):
