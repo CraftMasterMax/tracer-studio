@@ -32,7 +32,7 @@ from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              CoilFeature, CombineFeature,
                              Document, DraftFeature,
                              ExtrudeFeature, GeometricPatternFeature,
-                             HoleFeature,
+                             HoleFeature, OffsetFaceFeature,
                              ImportedFeature, LinearPatternFeature,
                              LoftFeature, MirrorFeature, MoveFeature,
                              PathPatternFeature, RotateFeature,
@@ -1609,6 +1609,17 @@ class MainWindow(QMainWindow):
                 fld[-1]["max"] = 89.9
                 dbl("parting", "parting line above the bottom",
                     float(feature.parting), mn=0.05)
+        elif isinstance(feature, OffsetFaceFeature):
+            # M198 R1 [SLD-OFFSET-FACES]: "Select a single face ...
+            # and specify the Offset distance" - the face spoken by
+            # the plain names this kernel rotates (the Draft law),
+            # and the distance WEARING MILLIMETRES, signed: positive
+            # slides the face OUTWARD along its own normal.
+            combo("face", "face to shift",
+                  ("bottom", "top", "wall", "+x", "-x", "+y", "-y"),
+                  feature.face)
+            dbl("dist", "offset distance", float(feature.dist),
+                dec=3, mn=-1000.0, plain=False)
         elif isinstance(feature, ShellFeature):
             dbl("thickness", "wall thickness", feature.thickness, mn=0.05)
         elif isinstance(feature, ThreadFeature):
@@ -1758,6 +1769,12 @@ class MainWindow(QMainWindow):
                 feature.fixed = str(v["fixed"])
             if "parting" in v:
                 feature.parting = float(v["parting"])
+        elif isinstance(feature, OffsetFaceFeature):
+            # M198 R1 [SLD-OFFSET-FACES]: the two rows that opened the
+            # lever are this record's own - the plain face name and
+            # the signed distance, AS TYPED.
+            feature.face = str(v["face"])
+            feature.dist = float(v["dist"])
         elif isinstance(feature, ShellFeature):
             feature.thickness = mm("thickness")
         elif isinstance(feature, ThreadFeature):

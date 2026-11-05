@@ -676,6 +676,32 @@ class DraftFeature(Feature):
 
 
 @dataclass
+class OffsetFaceFeature(Feature):
+    """M198 [SLD-OFFSET-FACES]: "Select a single face or multiple
+    faces and specify the Offset distance."  Rung one cuts the SINGLE
+    face on the straight-walled family: the named face slides
+    OUTWARD by the typed distance (negative shrinks) along its own
+    normal, and the page's note - "Adjoining curved tangent faces
+    will offset when geometrically possible" - falls out of the
+    rebuild: a rod's cap going up takes its wall with it, its wall
+    going out takes both caps.  A body op like DraftFeature: it
+    REPLACES the body, so `op` is unused.  Pure mesh.  Multiple
+    faces and the manipulator are the page's other mouths and wait
+    for the rungs whose kernel cuts them."""
+    face: str = "top"                # "bottom" | "top" | "wall"
+                                     # (cylinder) | "+x" "-x" "+y"
+                                     # "-y" (box) - the plain names
+                                     # offsetface speaks
+    dist: float = 5.0                # + OUTWARD along the face's
+                                     # own normal (page: "a positive
+                                     # or negative direction")
+
+    def apply(self, src: Solid) -> Solid:
+        from .offsetface import offset_face
+        return offset_face(src, self.face, self.dist)
+
+
+@dataclass
 class ShellFeature(Feature):
     """Hollow the accumulated body to `thickness` walls, opened at the
     removed planar face(s).  `openings` stores each removed face as
@@ -3316,12 +3342,14 @@ class Document:
                 by_uid[f.uid] = solid
                 continue
             elif isinstance(f, (BodyFilletFeature, DraftFeature,
-                                ShellFeature,
+                                OffsetFaceFeature, ShellFeature,
                                 SplitFeature, MoveFeature, RotateFeature,
                                 CombineFeature)):
                 if acc is None:
                     verb = ("fillet" if isinstance(f, BodyFilletFeature)
                             else "draft" if isinstance(f, DraftFeature)
+                            else "offset" if isinstance(f,
+                                                        OffsetFaceFeature)
                             else "shell" if isinstance(f, ShellFeature)
                             else "split" if isinstance(f, SplitFeature)
                             else "move" if isinstance(f, MoveFeature)
@@ -3574,6 +3602,8 @@ class Document:
                          parting=(None if f.parting is None
                                   else float(f.parting)),
                          n_walls=int(f.n_walls))
+            elif isinstance(f, OffsetFaceFeature):
+                d.update(face=str(f.face), dist=float(f.dist))
             elif isinstance(f, LoftFeature):
                 d.update(closed=bool(f.closed),
                          sections=[{"sid": s.get("sid"), "plane": s["plane"],
@@ -3917,6 +3947,10 @@ class Document:
                     parting=(None if fd.get("parting") is None
                              else float(fd["parting"])),
                     n_walls=int(fd.get("n_walls", 0)), **base))
+            elif t == "OffsetFaceFeature":
+                doc.features.append(OffsetFaceFeature(
+                    name=fd["name"], face=str(fd.get("face", "top")),
+                    dist=float(fd.get("dist", 5.0)), **base))
             else:
                 raise ValueError(f"unknown feature type {t!r}")
         if not doc.bodies:
