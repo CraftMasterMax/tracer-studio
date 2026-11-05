@@ -27,6 +27,16 @@ bodies finally make that cloneable:
   flag did not move, only the door did.
 - Undo walks the row back: the browser shrinks to one body again.
 - The plain MOVE branch is untouched: no Ctrl, still a Move feature.
+
+Rung 2 adds NO implementation - it PINS the same vendor sentences at
+the doors that matter AFTER the birth: "When you modify the original
+body or the new body, the changes are unique to that body" answers
+the REAL Change Parameters door (grow the parent there - the twin
+does not flinch); the pair rides the FILE (both browser rows and the
+snapshot stream reload, active body and all); and the snapshot's own
+honesty - the copy has no numeric levers, and the door says so
+instead of pretending.  (Undo of the birth itself was gated in rung
+one.)
 """
 import pytest
 
@@ -157,3 +167,77 @@ def test_copy_release_and_undo_walk_the_body_row(win, qapp):
     qapp.processEvents()
     assert [b["name"] for b in win.doc.body_list()] == ["Body 1"]
     assert win.doc.result.volume == pytest.approx(v0, rel=1e-3)
+
+
+# ---- R2: the NOT-LINKED law pinned at the real doors ----------------------
+def test_change_parameters_grows_the_parent_the_copy_holds(win, qapp,
+                                                           monkeypatch):
+    """The vendor's own court: "When you modify the original body or
+    the new body, the changes are unique to that body."  Grown at the
+    REAL Change Parameters door (the dialog stubbed, every other
+    mouth the door owns is live), the parent doubles - and the twin
+    holds its birth size and place, volume and bbox, untouched.
+    Undo of that growth leaves the COPY standing (the birth is a
+    separate fact from the grow)."""
+    _block_win(win, qapp)                          # 20 mm cube, Body 1
+    win._on_move_drag({"offset": np.array([45.0, 0.0, 0.0]),
+                       "copy": True})
+    qapp.processEvents()
+    from tracer.ui import cmddialog
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"dx": 30.0, "dy": 30.0,
+                                         "dz": 30.0})
+    win.action_change_params(win.doc.features[0])
+    qapp.processEvents()
+    bs = win.doc.body_solids()
+    assert bs["Body 1"].volume == pytest.approx(27000.0, rel=1e-3)
+    assert bs["Body 2"].volume == pytest.approx(8000.0, rel=1e-6)
+    assert np.allclose(bs["Body 2"].bounding_box[0], (45.0, 0.0, 0.0))
+    win.undo()                                     # the GROW undone...
+    qapp.processEvents()
+    bs = win.doc.body_solids()
+    assert bs["Body 1"].volume == pytest.approx(8000.0, rel=1e-6)
+    assert "Body 2" in bs                          # ...the birth stands
+
+
+def test_the_pair_rides_the_file(tmp_path):
+    """Two bodies, one file: the browser rows, the snapshot stream
+    (the ImportedFeature carrier), the active selection and every
+    volume come back through the disk - the born twin is a FILE
+    fact, not a session trick."""
+    d = _block()                                   # 20 mm box, Body 1
+    d.copy_body_moved((45.0, 0.0, 0.0))
+    d.recompute()
+    path = tmp_path / "pair.json"
+    import json
+    path.write_text(json.dumps(d.to_dict()), encoding="utf-8")
+    d2 = Document.from_dict(json.loads(path.read_text(encoding="utf-8")))
+    d2.recompute()
+    assert [b["name"] for b in d2.body_list()] == ["Body 1", "Body 2"]
+    assert d2.active_body == "Body 2"
+    feat = d2.features[-1]
+    assert isinstance(feat, ImportedFeature) and feat.body == "Body 2"
+    bs = d2.body_solids()
+    assert bs["Body 1"].volume == pytest.approx(bs["Body 2"].volume,
+                                                rel=1e-6)
+    assert np.allclose(bs["Body 2"].bounding_box[0], (45.0, 0.0, 0.0))
+
+
+def test_the_snapshot_has_no_numbers_to_change(win, qapp, monkeypatch):
+    """HONESTY gate at the same door: the copy is a snapshot, and a
+    snapshot has no plain levers. The Change Parameters door opens NO
+    dialog for it and says the truth in the status line - 'captured
+    geometry - no plain numbers' - rather than pretending a mesh has
+    a length to type."""
+    _block_win(win, qapp)
+    win._on_move_drag({"offset": np.array([45.0, 0.0, 0.0]),
+                       "copy": True})
+    qapp.processEvents()
+    from tracer.ui import cmddialog
+    seen = []
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: seen.append(a) or None)
+    win.action_change_params(win.doc.features[-1])   # the Copy feature
+    qapp.processEvents()
+    assert not seen, "the door opened numbers for a snapshot - it lies"
+    assert "no plain numbers" in win.status.currentMessage()
