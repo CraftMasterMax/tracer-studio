@@ -34,7 +34,7 @@ import pytest
 from tracer.core.document import (Document, DraftFeature,
                                   PrimitiveFeature)
 from tracer.core.geometry import Solid
-from tracer.core.draft import draft_solid
+from tracer.core.draft import draft_parting, draft_solid
 
 
 def _rod(r=10.0, h=40.0, center=(0.0, 0.0)):
@@ -281,33 +281,42 @@ def _rod_win(win, qapp):
     qapp.processEvents()
 
 
-def test_the_draft_door_asks_the_pages_two_rows(win, qapp, monkeypatch):
-    """SLD-REF-DRAFT's dialog rows for the tool the kernel can honor:
-    "Angle Specify the draft angle" + "Fixed Plane Select a fixed
-    plane" - spoken plainly as the body's own bottom or top.  The door
-    offers ONLY the two rows rung one cuts: no Parting Line, no Angle
-    Mode, no face list, no Tangent Chain (the door law: a promise must
-    bake).  Typed 15 from the bottom lands exactly, the sentence
-    speaks the lean AND the honest wall count, and the angle row
-    wears degrees (the R1b law)."""
+def test_the_draft_door_asks_the_pages_rows(win, qapp, monkeypatch):
+    """SLD-REF-DRAFT's dialog rows for the tool the kernel honors, IN
+    THE PAGE'S ORDER: "Type Select the draft type." (Fixed Plane /
+    Parting Line, the page's two names), "Fixed Plane Select a fixed
+    plane to draft from" and the Parting Tool spoken plainly as a
+    height above the body's own bottom, then "Angle Specify the draft
+    angle".  R2 pinned this door at TWO rows; the pin MOVED with the
+    vendor when rung three grew the kernel (M196-R3 precedent: pins
+    move, laws survive) - the law holds: no Angle Mode, no face list,
+    no Tangent Chain, nothing that cannot bake.  Typed 15 from the
+    bottom lands exactly and the parting row is NOTED AND NEVER
+    WRITTEN for a fixed-plane record (one record one voice); the
+    sentence speaks the lean AND the honest wall count, and the angle
+    row wears degrees (the R1b law)."""
     calls = []
 
     def fake(parent, title, fields, **k):
         calls.append((title, fields))
-        return {"angle_deg": 15.0, "fixed": "bottom"}
+        return {"type": "Fixed Plane", "fixed": "bottom",
+                "parting": 99.0, "angle_deg": 15.0}
 
     monkeypatch.setattr(cmddialog, "ask", fake)
     _rod_win(win, qapp)
     win._body_draft()
     assert len(calls) == 1 and calls[0][0] == "Draft body walls"
     by = {f["key"]: f for f in calls[0][1]}
-    assert list(by) == ["angle_deg", "fixed"]
+    assert list(by) == ["type", "fixed", "parting", "angle_deg"]
+    assert by["type"]["choices"] == ["Fixed Plane", "Parting Line"]
     assert by["angle_deg"]["suffix"] == "\u00b0"
     assert by["angle_deg"]["min"] == -89.9 and by["angle_deg"]["max"] == 89.9
     assert by["fixed"]["choices"] == ["bottom", "top"]
+    assert by["parting"]["kind"] == "double"
     f = win.doc.features[-1]
     assert isinstance(f, DraftFeature)
     assert f.angle_deg == 15.0 and f.fixed == "bottom"      # as typed
+    assert f.parting is None                    # row noticed, not written
     msg = win.status.currentMessage()
     assert "at 15" in msg and "from the bottom" in msg \
         and "wall(s) leaned" in msg, msg
@@ -320,12 +329,15 @@ def test_the_draft_door_writes_the_fixed_top_mirror(win, qapp,
     r + h x tan(angle) - the same law the lever path proves, now
     walked through the door."""
     monkeypatch.setattr(cmddialog, "ask",
-                        lambda *a, **k: {"angle_deg": 20.0,
-                                         "fixed": "top"})
+                        lambda *a, **k: {"type": "Fixed Plane",
+                                         "fixed": "top",
+                                         "parting": 15.0,
+                                         "angle_deg": 20.0})
     _rod_win(win, qapp)
     win._body_draft()
     f = win.doc.features[-1]
     assert f.angle_deg == 20.0 and f.fixed == "top"
+    assert f.parting is None                    # fixed-plane voice
     bot, top = _rings(win.doc.result)
     t = 40.0 * math.tan(math.radians(20.0))
     assert top == pytest.approx(10.0, abs=1e-4)             # fixed holds
@@ -342,8 +354,10 @@ def test_the_draft_door_refuses_a_round_body_in_words(win, qapp,
     either.  The body is unchanged to the last digit (fresh-against-
     fresh unrounded - the R3b law)."""
     monkeypatch.setattr(cmddialog, "ask",
-                        lambda *a, **k: {"angle_deg": 20.0,
-                                         "fixed": "bottom"})
+                        lambda *a, **k: {"type": "Fixed Plane",
+                                         "fixed": "bottom",
+                                         "parting": 15.0,
+                                         "angle_deg": 20.0})
     win.new_document()
     win.doc.add(PrimitiveFeature(name="sp", kind="sphere",
                                  dims={"radius": 6.0}))
@@ -381,3 +395,174 @@ def test_the_draft_row_lives_in_the_modify_menu(win, qapp):
     modify = [m for m in menus if m and "dify" in m.title()]
     assert modify, "the Modify menu exists"
     assert win.act_draft in modify[0].actions()
+
+
+# ---- R3: Parting Line -------------------------------------------------------
+
+def test_the_parting_line_holds_its_own_ring():
+    """Rung three, page verbatim: "Parting Line Select a parting tool
+    to define a line to draft from" - the tool spoken plainly as a
+    horizontal plane a typed height above the body's OWN bottom.
+    Fix Parting Line: the ring AT the line keeps its EXACT size (that
+    is what fix means) and BOTH free ends move away by their own
+    distance x tan(angle) - measured at the vertices.  One angle both
+    sides (the page's Symmetric); volume rides the two stacked true
+    frustums at mesh tolerance, and the rebuild is fresh-against-fresh
+    bit-exact in ONE environment (the R3b law)."""
+    t = math.tan(math.radians(10.0))
+    out, n = draft_parting(_rod(), 10.0, 15.0)
+    v = out.to_trimesh().vertices
+    rho = np.hypot(v[:, 0], v[:, 1])
+    mid = np.abs(v[:, 2] - 15.0) < 1e-4
+    assert rho[mid].max() == pytest.approx(10.0, abs=1e-4)   # waist holds
+    assert rho[v[:, 2] < 1e-4].max() == pytest.approx(10.0 + 15.0 * t,
+                                                      abs=1e-4)
+    assert rho[v[:, 2] > 39.999].max() == pytest.approx(10.0 + 25.0 * t,
+                                                        abs=1e-4)
+
+    def frus(hh, r0, r1):
+        return math.pi * hh / 3 * (r0 * r0 + r0 * r1 + r1 * r1)
+    exact = (frus(15.0, 10.0, 10.0 + 15.0 * t)
+             + frus(25.0, 10.0, 10.0 + 25.0 * t))
+    assert out.volume == pytest.approx(exact, rel=1e-3)
+    out2, _ = draft_parting(_rod(), 10.0, 15.0)
+    assert out.volume == out2.volume                    # same env: ==
+    assert n > 0
+
+
+def test_the_parting_line_shrinks_away_symmetrically():
+    """A NEGATIVE angle pulls BOTH free ends inward by their own
+    distance x tan - the sign law's mirror, now two-sided.  At five
+    degrees under, twenty up of a forty-high rod, both rings stand at
+    r - 20 x tan(5), measured - symmetric by construction."""
+    t = math.tan(math.radians(5.0))
+    out, _ = draft_parting(_rod(), -5.0, 20.0)
+    v = out.to_trimesh().vertices
+    rho = np.hypot(v[:, 0], v[:, 1])
+    want = 10.0 - 20.0 * t
+    assert rho[v[:, 2] < 1e-4].max() == pytest.approx(want, abs=1e-4)
+    assert rho[v[:, 2] > 39.999].max() == pytest.approx(want, abs=1e-4)
+
+
+def test_a_parting_box_is_two_prismatoids():
+    """The box's four walls rotate about their lines AT the parting
+    plane: THREE levels, the middle rectangle held EXACT, each end
+    grown by its own distance x tan (walls still independent).  The
+    exact volume is the SUM OF TWO SIMPSON SEGMENTS - each slice is
+    its own prismatoid; watertight and winding-consistent, the
+    zero-angle rebuild lands the plain box, and the count says FOUR
+    walls."""
+    t = math.tan(math.radians(10.0))
+    blk = _blk(20.0, 10.0, 40.0)
+    out, n = draft_parting(blk, 10.0, 15.0)
+    tm = out.to_trimesh()
+    assert tm.is_watertight and tm.is_winding_consistent
+    v = tm.vertices
+    mid = np.abs(v[:, 2] - 15.0) < 1e-6
+    assert v[mid][:, 0].min() == pytest.approx(0.0, abs=1e-6)
+    assert v[mid][:, 0].max() == pytest.approx(20.0, abs=1e-6)
+    W, H = 20.0, 10.0
+
+    def seg(s):
+        g = s * t
+        return s / 6.0 * (W * H + 4 * (W + g) * (H + g)
+                          + (W + 2 * g) * (H + 2 * g))
+    assert out.volume == pytest.approx(seg(15.0) + seg(25.0), rel=1e-6)
+    o0, _ = draft_parting(blk, 0.0, 15.0)
+    assert o0.volume == pytest.approx(8000.0, rel=1e-9)   # the plain box
+    assert n == 4
+
+
+def test_the_parting_line_refuses_where_the_page_agrees():
+    """Refuse rather than lie, parting edition: an END is not a
+    parting line - at the bottom, at the top, or over it the kernel
+    refuses WITH THE CURE ("at an end it is the fixed plane
+    instead"); a lean that squeezes the ends through the axis is a
+    collapse; and the sphere still has no walls to rotate."""
+    for bad in (0.0, 40.0, 45.0):
+        with pytest.raises(ValueError, match="between the body's"):
+            draft_parting(_rod(), 10.0, bad)
+    with pytest.raises(ValueError, match="fixed plane"):
+        draft_parting(_rod(), 10.0, 45.0)               # cure in the words
+    with pytest.raises(ValueError, match="collapse"):
+        draft_parting(_rod(), -40.0, 20.0)
+    import trimesh
+    m = trimesh.creation.icosphere(subdivisions=3, radius=6.0)
+    sph = Solid.from_mesh(m.vertices.astype(np.float64),
+                          m.faces.astype(np.int32))
+    with pytest.raises(ValueError, match="straight vertical walls"):
+        draft_parting(sph, 10.0, 3.0)
+
+
+def test_the_parting_record_rides_the_file_and_old_files_stay_put():
+    """The typed parting height is EXACT through json and the reloaded
+    body regrounds at mesh tolerance.  A record written BEFORE rung
+    three carries no parting key at all: from_dict reads None and the
+    LEGACY fixed-plane route runs untouched - the free ring measured
+    where rung one always put it.  Old files replay byte-honest."""
+    d = Document("p")
+    d.add(PrimitiveFeature(name="rod", kind="cylinder",
+                           dims={"radius": 10.0, "height": 40.0}))
+    d.add(DraftFeature(name="Draft1", angle_deg=15.0, parting=12.5))
+    v = d.recompute()
+    raw = json.loads(json.dumps(d.to_dict()))
+    fe = raw["features"][-1]
+    assert fe["parting"] == 12.5 and fe["angle_deg"] == 15.0
+    d2 = Document.from_dict(raw)
+    assert d2.recompute().volume == pytest.approx(v.volume, rel=1e-6)
+    del fe["parting"]                                   # a legacy record
+    d3 = Document.from_dict(raw)
+    f3 = d3.features[-1]
+    assert f3.parting is None and f3.fixed == "bottom"  # rung one's route
+    t = 40.0 * math.tan(math.radians(15.0))
+    vv = d3.recompute().to_trimesh().vertices
+    rho = np.hypot(vv[:, 0], vv[:, 1])
+    assert rho[vv[:, 2] > 39.999].max() == pytest.approx(10.0 + t,
+                                                         abs=1e-4)
+
+
+def test_the_parting_lever_speaks_its_own_two_rows(win, qapp):
+    """A parting record's lever opens the angle (degrees, R1b) and the
+    parting height WEARING MILLIMETRES, and CLOSES the fixed-plane
+    combo - one record one voice (the M196 law; the R1 gate pins the
+    fixed record's rows, untouched).  The apply mouth writes what was
+    typed, AS TYPED, and never invents a fixed-plane change."""
+    rows = {f["key"]: f for f in
+            win._feature_params(DraftFeature(name="D", angle_deg=12.5,
+                                             parting=12.5))}
+    assert list(rows) == ["angle_deg", "parting"]
+    assert rows["angle_deg"]["suffix"] == "\u00b0"
+    assert "mm" in rows["parting"]["label"]             # the unit rides
+    assert rows["parting"]["default"] == 12.5
+    f = DraftFeature(name="D", parting=10.0)
+    win._apply_feature_params(f, {"angle_deg": 7.5, "parting": 18.0})
+    assert f.angle_deg == 7.5 and f.parting == 18.0     # as typed
+    assert f.fixed == "bottom"                          # not touched
+
+
+def test_the_door_drafts_from_a_parting_line(win, qapp, monkeypatch):
+    """The page's second type, walked through the real door: choose
+    Parting Line, type twenty degrees fifteen above the bottom - the
+    waist holds ten EXACT, both ends grew by their OWN distance x tan
+    twenty, and the sentence speaks the parting line and the height.
+    The fixed-plane row, left at "top", is NOTICED AND NEVER WRITTEN
+    (one record one voice)."""
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"type": "Parting Line",
+                                         "fixed": "top",         # ignored
+                                         "parting": 15.0,
+                                         "angle_deg": 20.0})
+    _rod_win(win, qapp)
+    win._body_draft()
+    f = win.doc.features[-1]
+    assert f.parting == 15.0 and f.angle_deg == 20.0
+    v = win.doc.result.to_trimesh().vertices
+    rho = np.hypot(v[:, 0], v[:, 1])
+    t = math.tan(math.radians(20.0))
+    mid = np.abs(v[:, 2] - 15.0) < 1e-4
+    assert rho[mid].max() == pytest.approx(10.0, abs=1e-4)
+    assert rho[v[:, 2] < 1e-4].max() == pytest.approx(10.0 + 15.0 * t,
+                                                      abs=1e-3)
+    assert rho[v[:, 2] > 39.999].max() == pytest.approx(10.0 + 25.0 * t,
+                                                        abs=1e-3)
+    assert "from the parting line at 15 mm" in win.status.currentMessage()

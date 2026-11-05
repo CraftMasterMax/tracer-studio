@@ -1592,11 +1592,23 @@ class MainWindow(QMainWindow):
             # - plus the page's Fixed Plane choice, spoken plainly as
             # the body's own bottom or top: rung one leans straight
             # walls about the line where they meet that plane.
-            dbl("angle_deg", "draft angle from the fixed plane",
-                feature.angle_deg, dec=1, mn=-89.9, ang=True)
-            fld[-1]["max"] = 89.9
-            combo("fixed", "fixed plane", ("bottom", "top"),
-                  feature.fixed)
+            # M197 R3: a PARTING LINE record speaks its own two rows
+            # only (one record one voice, the M196 law): the angle and
+            # the parting tool plain as a height above the body's own
+            # bottom.  It never opens the fixed-plane combo - under a
+            # parting line that row is noticed and never written.
+            if feature.parting is None:
+                dbl("angle_deg", "draft angle from the fixed plane",
+                    feature.angle_deg, dec=1, mn=-89.9, ang=True)
+                fld[-1]["max"] = 89.9
+                combo("fixed", "fixed plane", ("bottom", "top"),
+                      feature.fixed)
+            else:
+                dbl("angle_deg", "draft angle from the parting line",
+                    feature.angle_deg, dec=1, mn=-89.9, ang=True)
+                fld[-1]["max"] = 89.9
+                dbl("parting", "parting line above the bottom",
+                    float(feature.parting), mn=0.05)
         elif isinstance(feature, ShellFeature):
             dbl("thickness", "wall thickness", feature.thickness, mn=0.05)
         elif isinstance(feature, ThreadFeature):
@@ -1736,12 +1748,16 @@ class MainWindow(QMainWindow):
                 # here is always that vendor type's typed distance.
                 feature.dist2 = float(v["dist2"])
         elif isinstance(feature, DraftFeature):
-            # M197 R1 [SLD-REF-DRAFT]: the two rows that opened the
-            # lever are this record's own - the draft angle stored AS
-            # TYPED (degrees, the R1b law) and the fixed plane every
-            # wall leans away from.
+            # M197 R1 [SLD-REF-DRAFT]: the rows that opened the lever
+            # are this record's own - the draft angle stored AS TYPED
+            # (degrees, the R1b law) and, per type, the fixed plane or
+            # the parting height it leans from (R3: one record one
+            # voice, so exactly one of the two mouths is present).
             feature.angle_deg = float(v["angle_deg"])
-            feature.fixed = str(v["fixed"])
+            if "fixed" in v:
+                feature.fixed = str(v["fixed"])
+            if "parting" in v:
+                feature.parting = float(v["parting"])
         elif isinstance(feature, ShellFeature):
             feature.thickness = mm("thickness")
         elif isinstance(feature, ThreadFeature):
@@ -7829,31 +7845,44 @@ class MainWindow(QMainWindow):
     def _body_draft(self):
         """M197 R2 [SLD-REF-DRAFT, verbatim]: "Fixed Plane Select a
         fixed plane to draft from" + "Angle Specify the draft angle".
-        The door asks the two rows the kernel actually leans with -
-        the angle wearing degrees (the R1b law) and the fixed plane
-        spoken plainly as the body's own bottom or top.  Parting Line,
-        Angle Mode, the face list and Tangent Chain are NOT offered:
-        a door may not promise what cannot bake (the M196 law)."""
+        Rung three grows the page's own first row into the door -
+        "Type Select the draft type." with the page's two types
+        ("Fixed Plane", "Parting Line") - and the Parting Tool row
+        spoken plainly as a height above the body's own bottom (the
+        same plain-speech rung two gave the fixed plane).  The rows
+        stand in the PAGE'S ORDER; one record one voice (M196 law):
+        under a Fixed Plane the parting row is noticed and never
+        written, under a Parting Line the fixed-plane row is.  Angle
+        Mode, the face list and Tangent Chain are still NOT offered:
+        a door may not promise what cannot bake."""
         if self.doc is None or self.doc.result is None:
             # M189 R4 [LAW-61(a)]: precondition in information clothing.
             self.status.showMessage("No body to draft — create a "
                                     "feature first", 5000)
             return
         v = cmddialog.ask(self, "Draft body walls", [
+            dict(key="type", label="Type", kind="combo",
+                 choices=["Fixed Plane", "Parting Line"],
+                 default="Fixed Plane"),
+            dict(key="fixed", label="Fixed plane", kind="combo",
+                 choices=["bottom", "top"], default="bottom"),
+            dict(key="parting", label="Parting line above the bottom",
+                 kind="double", default=15.0, min=0.05),
             dict(key="angle_deg", label="Draft angle", kind="double",
                  default=10.0, min=-89.9, max=89.9, decimals=1,
                  suffix="\u00b0"),
-            dict(key="fixed", label="Fixed plane", kind="combo",
-                 choices=["bottom", "top"], default="bottom"),
         ], remember_key="draft_body_walls")
         if v is None:
             return
         self._capture()
         n = sum(isinstance(f, DraftFeature)
                 for f in self.doc.features) + 1
+        parting = (float(v["parting"]) if str(v["type"]) == "Parting Line"
+                   else None)               # noticed, never written
         f = DraftFeature(name=f"Draft{n}",
                          angle_deg=float(v["angle_deg"]),
-                         fixed=str(v["fixed"]))
+                         fixed=str(v["fixed"]),
+                         parting=parting)
         self.doc.features.append(f)
         self.doc.dirty = True
         try:
@@ -7865,7 +7894,8 @@ class MainWindow(QMainWindow):
             # M189 R5 law, M196 door law: a refusal may not leave an
             # undo step that undoes nothing, and the kernel's own cure
             # ("a cylinder on its axis or a box...", "must still reach
-            # the fixed plane") rides the status line verbatim.
+            # the parting line", "at an end it is the fixed plane")
+            # rides the status line verbatim.
             self._undo.pop()
             self._redo.clear()
             self.status.showMessage(f"Draft refused: {e}", 6000)
@@ -7875,7 +7905,9 @@ class MainWindow(QMainWindow):
         self.timeline.bar.update()
         self.status.showMessage(
             f"Drafted body walls at {f.angle_deg:g}\u00b0 from the "
-            f"{f.fixed} · {f.n_walls} wall(s) leaned · volume "
+            + (f"parting line at {f.parting:g} mm" if f.parting is not None
+               else f"{f.fixed}")
+            + f" · {f.n_walls} wall(s) leaned · volume "
             f"{self.doc.result.volume:,.1f} mm³", 6000)
 
     def _set_fillet_size(self, feature):

@@ -146,3 +146,67 @@ def draft_solid(solid: Solid, angle_deg: float, fixed: str = "bottom"):
          (2, 3, 7), (2, 7, 6), (3, 0, 4), (3, 4, 7)]
     return Solid.from_mesh(np.asarray(V, float),
                            np.asarray(F, np.int32)), 4
+
+
+def draft_parting(solid: Solid, angle_deg: float, parting_z: float):
+    """M197 R3 [SLD-REF-DRAFT, verbatim]: Parting Line type -
+    "Select a parting tool to define a line to draft from", and the
+    tool here is spoken PLAINLY (the same plain-speech rung two gave
+    the fixed plane): a horizontal plane at parting_z millimetres
+    above the body's own bottom.  Fix Parting Line: the ring (or
+    rectangle) AT the parting line keeps its EXACT size - that is
+    what "fix" means - and each wall rotates about its line there, so
+    BOTH free ends move away from the parting by their own distance x
+    tan(angle): ONE angle applied to both sides, the page's Symmetric
+    (Two Side's separate angles, Move Parting Line, and Fixed Edges
+    are later rungs' honest business).  Same refuse-rather-lie laws as
+    the fixed plane; the parting line that coincides with an end is
+    that end's FIXED PLANE case and says so.
+    Returns (solid, n_walls)."""
+    shp = _shape(solid)
+    if shp is None:
+        raise ValueError("draft needs straight vertical walls - a "
+                         "cylinder on its axis or a box standing on "
+                         "the fixed plane")
+    z0, z1 = shp[-2], shp[-1]
+    height = z1 - z0
+    p = float(parting_z)
+    if not 0.0 < p < height - _Z_TOL:
+        raise ValueError("the parting line must stand between the "
+                         "body's bottom and top - at an end it is "
+                         "the fixed plane instead")
+    t = math.tan(math.radians(float(angle_deg)))
+    d_lo, d_hi = p, height - p                  # the ends' own distances
+    if shp[0] == "cylinder":
+        _, cx, cy, r, z0, z1 = shp
+        r_bot, r_top = r + d_lo * t, r + d_hi * t
+        if min(r_bot, r_top) <= _SHAPE_TOL:
+            raise ValueError("the draft would collapse the wall: the "
+                             "lean must still reach the parting line")
+        import manifold3d as m3
+
+        def seg(h, r_lo, r_hi, z):
+            return m3.Manifold.cylinder(h, r_lo, r_hi).translate(
+                np.array([cx, cy, z], np.float32))
+        m = seg(d_lo, r_bot, r, z0) + seg(d_hi, r, r_top, z0 + d_lo)
+        return Solid(m), _facets(solid, z0)
+    _, x0, x1, y0, y1, z0, z1 = shp
+    s_lo, s_hi = d_lo * t, d_hi * t
+    bot = (x0 - s_lo, x1 + s_lo, y0 - s_lo, y1 + s_lo)
+    mid = (x0, x1, y0, y1)
+    top = (x0 - s_hi, x1 + s_hi, y0 - s_hi, y1 + s_hi)
+    for e in (bot, top):
+        if e[1] - e[0] <= 2 * _SHAPE_TOL or e[3] - e[2] <= 2 * _SHAPE_TOL:
+            raise ValueError("the draft would collapse the wall: the "
+                             "lean must still reach the parting line")
+    V = []
+    for (ex0, ex1, ey0, ey1), z in ((bot, z0), (mid, z0 + d_lo),
+                                    (top, z1)):
+        V += [(ex0, ey0, z), (ex1, ey0, z), (ex1, ey1, z), (ex0, ey1, z)]
+    F = [(0, 2, 1), (0, 3, 2), (8, 9, 10), (8, 10, 11),          # caps
+         (0, 1, 5), (0, 5, 4), (1, 2, 6), (1, 6, 5),             # lower walls
+         (2, 3, 7), (2, 7, 6), (3, 0, 4), (3, 4, 7),
+         (4, 5, 9), (4, 9, 8), (5, 6, 10), (5, 10, 9),           # upper walls
+         (6, 7, 11), (6, 11, 10), (7, 4, 8), (7, 8, 11)]
+    return Solid.from_mesh(np.asarray(V, float),
+                           np.asarray(F, np.int32)), 4

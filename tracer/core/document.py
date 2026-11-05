@@ -653,11 +653,24 @@ class DraftFeature(Feature):
                                       # of the body holds its exact
                                       # size - that is what "fixed"
                                       # means
+    parting: float | None = None      # M197 R3 [SLD-REF-DRAFT] Parting
+                                      #  Line type, spoken plainly as a
+                                      #  horizontal plane this many mm
+                                      #  above the body's own bottom.
+                                      #  None is the LEGACY fixed-plane
+                                      #  record - rung one's route,
+                                      #  byte-untouched; under a number
+                                      #  the `fixed` row is noticed but
+                                      #  never written (one record one
+                                      #  voice, the M196 law)
     n_walls: int = 0                  # walls leaned last run
 
     def apply(self, src: Solid) -> Solid:
-        from .draft import draft_solid
-        out, n = draft_solid(src, self.angle_deg, self.fixed)
+        from .draft import draft_parting, draft_solid
+        if self.parting is None:
+            out, n = draft_solid(src, self.angle_deg, self.fixed)
+        else:
+            out, n = draft_parting(src, self.angle_deg, self.parting)
         self.n_walls = n
         return out
 
@@ -3558,6 +3571,8 @@ class Document:
             elif isinstance(f, DraftFeature):
                 d.update(angle_deg=float(f.angle_deg),
                          fixed=str(f.fixed),
+                         parting=(None if f.parting is None
+                                  else float(f.parting)),
                          n_walls=int(f.n_walls))
             elif isinstance(f, LoftFeature):
                 d.update(closed=bool(f.closed),
@@ -3899,6 +3914,8 @@ class Document:
                 doc.features.append(DraftFeature(
                     name=fd["name"], angle_deg=float(fd["angle_deg"]),
                     fixed=str(fd.get("fixed", "bottom")),
+                    parting=(None if fd.get("parting") is None
+                             else float(fd["parting"])),
                     n_walls=int(fd.get("n_walls", 0)), **base))
             else:
                 raise ValueError(f"unknown feature type {t!r}")
