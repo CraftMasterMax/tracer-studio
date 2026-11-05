@@ -84,7 +84,8 @@ def test_pattern_dialog_and_undo(win, monkeypatch):
     h = win.doc.add_cylinder("h", 1.5, 10, center=(5, 5), z=-4, op="subtract")
     win.recompute()
     script_cmd(monkeypatch, {"src": "h", "dx": 10.0, "dy": 0.0,
-                             "dz": 0.0, "count": 3})
+                             "dz": 0.0, "count": 3,
+                             "dist": "Spacing", "dir": "One Direction"})
     win.action_linear_pattern()
     pats = [f for f in win.doc.features
             if isinstance(f, LinearPatternFeature)]

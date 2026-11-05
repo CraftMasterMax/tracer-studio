@@ -142,10 +142,67 @@ class ImportedFeature(Feature):
 class LinearPatternFeature(Feature):
     """Count copies of the source feature's solid offset by a vector —
     Fusion's linear pattern, and the maker's fastest route to hole arrays.
-    Inherits the source's op unless overridden."""
+    Inherits the source's op unless overridden.
+    M200 [SLD-REF-PATTERN, verbatim] grows the page's two typed rows:
+    Distribution - "Spacing: ...spaced at the distance value" (the
+    legacy voice: the vector IS the per-step offset) | "Extent:
+    Distributes pattern instances evenly along the FULL EXTENT of the
+    distance value that you specify" (the vector is then the FULL
+    EXTENT vector, the page's own "meaning flips with Distribution");
+    and Direction - "One Direction: ...in one direction from the
+    source" (legacy, offsets 0..(n-1) steps) | "Symmetric:
+    ...symmetrically in two directions FROM THE SOURCE OBJECT" (the
+    source holds the middle - an ODD count is law-derivable, an even
+    one has no middle to hold and REFUSES with the cure: the page
+    words no rule for even, so none is invented)."""
     source_uid: str = ""
     vector: tuple = (0.0, 0.0, 0.0)
     count: int = 2
+    distribution: str = "spacing"       # "spacing" | "extent"
+    direction: str = "one"              # "one" | "symmetric"
+
+
+def linear_offsets(vector, count: int, distribution: str = "spacing",
+                   direction: str = "one"):
+    """The placement law of a linear pattern - offsets, nothing else.
+    The count INCLUDES the source (the house's rung-era law: k=0 is
+    the source itself); the vector speaks the page's Distance row in
+    its plain-speech voice (axis and magnitude together).
+    Spacing + One Direction is the legacy route and lands BIT-
+    IDENTICAL to it (k x vector, k in range(n)).  Extent re-reads
+    the vector as the full end-to-end extent: step = vector/(n-1)
+    ("evenly along the full extent" - ends exactly vector apart).
+    Symmetric centers the count ON the source: offsets step-spread
+    from -(n-1)/2 to +(n-1)/2 steps - an ODD count law only (the
+    source must be an instance AND the middle; an even count has no
+    middle instance, and the page words none, so it refuses with the
+    cure rather than inventing a rule).  Unknown enums refuse with
+    the voice named.  n<1 lands a single source copy (the legacy
+    max(1,..) guard kept)."""
+    n = max(1, int(count))
+    v = tuple(float(x) for x in vector)
+    dist = str(distribution)
+    dirn = str(direction)
+    if dist not in ("spacing", "extent"):
+        raise ValueError(f"the distribution is 'spacing' or 'extent', "
+                         f"not {dist!r}")
+    if dirn not in ("one", "symmetric"):
+        raise ValueError(f"the direction is 'one' or 'symmetric', "
+                         f"not {dirn!r}")
+    if n == 1:
+        return [(0.0, 0.0, 0.0)]
+    if dist == "extent":
+        step = tuple(x / (n - 1) for x in v)
+    else:
+        step = v
+    if dirn == "symmetric":
+        if n % 2 == 0:
+            raise ValueError("symmetric distributes from the source and "
+                             "the source must hold the middle - an odd "
+                             "count has one, an even one does not")
+        mid = (n - 1) / 2
+        return [tuple(s * (k - mid) for s in step) for k in range(n)]
+    return [tuple(s * k for s in step) for k in range(n)]
 
 
 @dataclass
@@ -3000,10 +3057,13 @@ class Document:
                 flip=bool(flip), params=params, body=target)))
         return out
 
-    def add_linear_pattern(self, name, source: Feature, vector, count, op=None):
+    def add_linear_pattern(self, name, source: Feature, vector, count,
+                           op=None, distribution="spacing",
+                           direction="one"):
         return self.add(LinearPatternFeature(
             name=name, op=op or source.op, source_uid=source.uid,
-            vector=tuple(float(v) for v in vector), count=int(count)))
+            vector=tuple(float(v) for v in vector), count=int(count),
+            distribution=str(distribution), direction=str(direction)))
 
     def add_circular_pattern(self, name, source: Feature, center=(0, 0),
                              angle=360.0, count=6, op=None, axis=""):
@@ -3139,8 +3199,9 @@ class Document:
                 if src is None:          # source deleted/suppressed: no-op
                     continue
                 solid = Solid.batch_union(
-                    [src.translated(tuple(v * k for v in f.vector))
-                     for k in range(max(1, int(f.count)))])
+                    [src.translated(o) for o in
+                     linear_offsets(f.vector, f.count, f.distribution,
+                                    f.direction)])
             elif isinstance(f, PathPatternFeature):
                 src = by_uid.get(f.source_uid)
                 if src is None:
@@ -3585,7 +3646,9 @@ class Document:
             elif isinstance(f, LinearPatternFeature):
                 d.update(source_uid=f.source_uid,
                          vector=list(map(float, f.vector)),
-                         count=int(f.count))
+                         count=int(f.count),
+                         distribution=str(f.distribution),
+                         direction=str(f.direction))
             elif isinstance(f, PathPatternFeature):
                 d.update(source_uid=f.source_uid,
                          path=[list(map(float, p)) for p in f.path],
@@ -3825,7 +3888,9 @@ class Document:
             elif t == "LinearPatternFeature":
                 doc.features.append(LinearPatternFeature(
                     name=fd["name"], source_uid=fd["source_uid"],
-                    vector=tuple(fd["vector"]), count=int(fd["count"]), **base))
+                    vector=tuple(fd["vector"]), count=int(fd["count"]),
+                    distribution=str(fd.get("distribution", "spacing")),
+                    direction=str(fd.get("direction", "one")), **base))
             elif t == "PathPatternFeature":
                 doc.features.append(PathPatternFeature(
                     name=fd["name"], source_uid=fd["source_uid"],

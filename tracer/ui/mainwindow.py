@@ -1675,6 +1675,13 @@ class MainWindow(QMainWindow):
             ints("count", "occurrences", feature.count)
             for i, k in enumerate("xyz"):
                 dbl(f"v{i}", f"offset {k}", feature.vector[i], mn=None)
+            # M200 [SLD-REF-PATTERN]: the page's two typed rows ride
+            # EVERY linear pattern record (both voices always belong
+            # to it) - spoken in the record's own lowercase voice.
+            combo("dist", "distribution", ("spacing", "extent"),
+                  feature.distribution)
+            combo("dir", "direction", ("one", "symmetric"),
+                  feature.direction)
         elif isinstance(feature, CircularPatternFeature):
             ints("count", "occurrences", feature.count)
             dbl("angle", "angle", feature.angle, dec=1, mn=1.0, ang=True)
@@ -1840,6 +1847,13 @@ class MainWindow(QMainWindow):
         elif isinstance(feature, LinearPatternFeature):
             feature.count = int(v["count"])
             feature.vector = tuple(mm(f"v{i}") for i in range(3))
+            # M200: the two new rows write ONLY when they opened the
+            # lever (guarded like draft's fixed/parting mouths) - a
+            # script driving the rung-era rows never invents a voice.
+            if "dist" in v:
+                feature.distribution = str(v["dist"])
+            if "dir" in v:
+                feature.direction = str(v["dir"])
         elif isinstance(feature, CircularPatternFeature):
             feature.count = int(v["count"])
             feature.angle = float(v["angle"])
@@ -7496,6 +7510,19 @@ class MainWindow(QMainWindow):
             f"{pivot}", 6000)
 
     def action_linear_pattern(self):
+        """M200 [SLD-REF-PATTERN, verbatim] grew the ONE dialog with
+        the page's two typed rows: Distribution - "Spacing: ...spaced
+        at the distance value" | "Extent: Distributes pattern
+        instances evenly along the FULL EXTENT of the distance value
+        that you specify" - and Direction - "One Direction: ...in one
+        direction from the source" | "Symmetric: ...symmetrically in
+        two directions from the source object".  The X/Y/Z rows are
+        the page's Distance row in the house's plain-speech voice;
+        their meaning FLIPS with Distribution, so they now say
+        "distance", the page's own word ("the meaning flips with the
+        Distribution row").  Suppression (canvas checkboxes) and
+        Compute Type (feature-face BRep) are NOT offered: doors do
+        not promise what cannot bake."""
         if self.doc is None:
             return
         cands = self._pattern_candidates()
@@ -7509,27 +7536,53 @@ class MainWindow(QMainWindow):
         v = cmddialog.ask(self, "Linear Pattern", [
             dict(key="src", label="Feature to pattern", kind="combo",
                  choices=names, group="Object"),
-            dict(key="dx", label="X spacing", kind="double", default=10.0,
+            dict(key="dx", label="X distance", kind="double", default=10.0,
                  min=-1e5, max=1e5, decimals=3, group="Direction"),
-            dict(key="dy", label="Y spacing", kind="double", default=0.0,
+            dict(key="dy", label="Y distance", kind="double", default=0.0,
                  min=-1e5, max=1e5, decimals=3, group="Direction"),
-            dict(key="dz", label="Z spacing", kind="double", default=0.0,
+            dict(key="dz", label="Z distance", kind="double", default=0.0,
                  min=-1e5, max=1e5, decimals=3, group="Direction"),
             dict(key="count", label="Occurrences", kind="int", default=3,
                  min=2, max=500, group="Pattern"),
+            dict(key="dist", label="Distribution", kind="combo",
+                 choices=["Spacing", "Extent"], default="Spacing",
+                 group="Pattern"),
+            dict(key="dir", label="Direction", kind="combo",
+                 choices=["One Direction", "Symmetric"],
+                 default="One Direction", group="Pattern"),
         ], remember_key="linear_pattern")
         if v is None:
             return
         src = cands[names.index(v["src"])]
         dx, dy, dz = v["dx"], v["dy"], v["dz"]
         count = v["count"]
+        dist = "extent" if str(v["dist"]) == "Extent" else "spacing"
+        dirn = "symmetric" if str(v["dir"]) == "Symmetric" else "one"
         self._capture()
-        self.doc.add_linear_pattern(f"Pattern of {src.name}", src,
-                                    (dx, dy, dz), count)
+        feat = self.doc.add_linear_pattern(
+            f"Pattern of {src.name}", src, (dx, dy, dz), count,
+            distribution=dist, direction=dirn)
+        try:
+            self.doc.recompute()       # the row lands on success
+        except Exception as e:
+            # M197 door law: a refusal leaves NOTHING - no record, no
+            # undo step that undoes nothing, the kernel's cure words
+            # verbatim ("an odd count has one, an even one does not").
+            self.doc.features.remove(feat)
+            self.doc.dirty = True
+            self.recompute()
+            self._undo.pop()
+            self._redo.clear()
+            self.status.showMessage(f"Pattern refused: {e}", 6000)
+            return
         self.recompute()
         self.viewport.refresh(fit=True)
+        at = (" over the full extent" if dist == "extent" else " at")
+        tail = (", symmetrically from the source" if dirn == "symmetric"
+                else "")
         self.status.showMessage(
-            f"Patterned {src.name}: {count}x at ({dx:g}, {dy:g}, {dz:g}) mm", 6000)
+            f"Patterned {src.name}: {count}x{at} ({dx:g}, {dy:g}, "
+            f"{dz:g}) mm{tail}", 6000)
 
     def _mirror_feature(self, src, plane=None, off=None):
         """Symmetric twin of ``src`` across a datum plane — an origin

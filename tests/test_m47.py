@@ -180,14 +180,20 @@ def test_circular_pattern_is_one_dialog(win, monkeypatch):
 
 
 def test_linear_pattern_is_one_dialog(win, monkeypatch):
+    """M200 grew the ONE dialog with the page's two typed rows
+    (Distribution Spacing/Extent, Direction One Direction/Symmetric)
+    - the key pin MOVED with the vendor in this commit (pins move,
+    laws survive): still ONE dialog."""
     win.doc.add_plate("plate", 40, 40, 5)
     win.doc.add_cylinder("lug", 3, 8, center=(30, 20), op="union")
     win.recompute()
     calls = _capture_asks(win, monkeypatch, {
-        "src": "lug", "dx": 10.0, "dy": 0.0, "dz": 0.0, "count": 3})
+        "src": "lug", "dx": 10.0, "dy": 0.0, "dz": 0.0, "count": 3,
+        "dist": "Spacing", "dir": "One Direction"})
     win.action_linear_pattern()
     assert len(calls) == 1
-    assert calls[0][1] == ["src", "dx", "dy", "dz", "count"]
+    assert calls[0][1] == ["src", "dx", "dy", "dz", "count", "dist",
+                           "dir"]
 
 
 def test_mirror_ribbon_is_one_dialog(win, monkeypatch):
