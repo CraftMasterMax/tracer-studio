@@ -695,9 +695,23 @@ class OffsetFaceFeature(Feature):
     dist: float = 5.0                # + OUTWARD along the face's
                                      # own normal (page: "a positive
                                      # or negative direction")
+    faces: tuple[str, ...] = ()      # M198 R3 [SLD-OFFSET-FACES]:
+                                     #  the page's OWN plural -
+                                     #  "a single face or MULTIPLE
+                                     #  FACES and specify THE Offset
+                                     #  DISTANCE" - one distance for
+                                     #  every named face.  EMPTY is
+                                     #  the LEGACY single record:
+                                     #  rung one's route, byte-
+                                     #  untouched; under names the
+                                     #  `face` row is noticed and
+                                     #  never written (one record
+                                     #  one voice, the M196 law)
 
     def apply(self, src: Solid) -> Solid:
-        from .offsetface import offset_face
+        from .offsetface import offset_face, offset_faces
+        if self.faces:
+            return offset_faces(src, self.faces, self.dist)
         return offset_face(src, self.face, self.dist)
 
 
@@ -3603,7 +3617,8 @@ class Document:
                                   else float(f.parting)),
                          n_walls=int(f.n_walls))
             elif isinstance(f, OffsetFaceFeature):
-                d.update(face=str(f.face), dist=float(f.dist))
+                d.update(face=str(f.face), dist=float(f.dist),
+                         faces=list(f.faces))
             elif isinstance(f, LoftFeature):
                 d.update(closed=bool(f.closed),
                          sections=[{"sid": s.get("sid"), "plane": s["plane"],
@@ -3950,7 +3965,8 @@ class Document:
             elif t == "OffsetFaceFeature":
                 doc.features.append(OffsetFaceFeature(
                     name=fd["name"], face=str(fd.get("face", "top")),
-                    dist=float(fd.get("dist", 5.0)), **base))
+                    dist=float(fd.get("dist", 5.0)),
+                    faces=tuple(fd.get("faces", ())), **base))
             else:
                 raise ValueError(f"unknown feature type {t!r}")
         if not doc.bodies:

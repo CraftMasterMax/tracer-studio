@@ -1624,9 +1624,20 @@ class MainWindow(QMainWindow):
             # the plain names this kernel rotates (the Draft law),
             # and the distance WEARING MILLIMETRES, signed: positive
             # slides the face OUTWARD along its own normal.
-            combo("face", "face to shift",
-                  ("bottom", "top", "wall", "+x", "-x", "+y", "-y"),
-                  feature.face)
+            # M197 R3 precedent, R3 here: a PLURAL record speaks its
+            # own rows only (one record one voice) - the checks row
+            # with its own names ticked; a legacy record never opens
+            # it, a plural one never opens the combo.
+            if feature.faces:
+                fld.append(dict(key="faces", kind="checks",
+                                label="faces to shift",
+                                choices=["bottom", "top", "wall",
+                                         "+x", "-x", "+y", "-y"],
+                                checked=list(feature.faces)))
+            else:
+                combo("face", "face to shift",
+                      ("bottom", "top", "wall", "+x", "-x", "+y", "-y"),
+                      feature.face)
             dbl("dist", "offset distance", float(feature.dist),
                 dec=3, mn=-1000.0, plain=False)
         elif isinstance(feature, ShellFeature):
@@ -1779,10 +1790,15 @@ class MainWindow(QMainWindow):
             if "parting" in v:
                 feature.parting = float(v["parting"])
         elif isinstance(feature, OffsetFaceFeature):
-            # M198 R1 [SLD-OFFSET-FACES]: the two rows that opened the
-            # lever are this record's own - the plain face name and
-            # the signed distance, AS TYPED.
-            feature.face = str(v["face"])
+            # M198 R1 [SLD-OFFSET-FACES]: the rows that opened the
+            # lever are this record's own - the plain face name (or
+            # the ticked NAMES, R3) and the signed distance, AS
+            # TYPED.  One record one voice: exactly one of the two
+            # mouths is ever present (the draft precedent).
+            if "faces" in v:
+                feature.faces = tuple(str(x) for x in v["faces"])
+            if "face" in v:
+                feature.face = str(v["face"])
             feature.dist = float(v["dist"])
         elif isinstance(feature, ShellFeature):
             feature.thickness = mm("thickness")
@@ -7938,12 +7954,14 @@ class MainWindow(QMainWindow):
 
     def _body_offset(self):
         """M198 R2 [SLD-OFFSET-FACES, verbatim]: "Select a single
-        face ... and specify the Offset distance" - the door asks
-        exactly the two rows the kernel honors.  The face speaks the
-        PLAIN names (the Draft law); the distance wears millimetres
-        and takes the page's "positive or negative direction"
-        (positive slides the face OUTWARD along its own normal).
-        Multiple faces and the manipulator are NOT offered: a door
+        face ... and specify the Offset distance".  Rung three grows
+        the door to the page's OWN plural - "a single face or
+        MULTIPLE FACES and specify THE Offset DISTANCE": a Faces
+        checks row (the plain names) and THE one distance, wearing
+        millimetres and signed.  A new record speaks with faces;
+        the `face` field is noticed and never written (one record
+        one voice, the M196 law).  The manipulator and curved
+        bodies beyond the rod's one wall are NOT offered: a door
         may not promise what cannot bake (the M196 law)."""
         if self.doc is None or self.doc.result is None:
             # M189 R4 [LAW-61(a)]: precondition in information clothing.
@@ -7951,20 +7969,31 @@ class MainWindow(QMainWindow):
                                     "feature first", 5000)
             return
         v = cmddialog.ask(self, "Offset a face", [
-            dict(key="face", label="Face", kind="combo",
+            dict(key="faces", label="Faces", kind="checks",
                  choices=["bottom", "top", "wall", "+x", "-x", "+y",
                           "-y"],
-                 default="top"),
+                 checked=["top"]),
             dict(key="dist", label="Offset distance", kind="double",
                  default=5.0, min=-1000.0, max=1000.0, decimals=3,
                  suffix=" mm"),
         ], remember_key="offset_face")
         if v is None:
             return
+        if not list(v["faces"]):
+            # ZERO ticks is not a request - and under THIS door's
+            # voice a faces-EMPTY record is the LEGACY single-face
+            # route, so writing one would slide a face nobody
+            # named (the R3 probe caught exactly that lie).  Refuse
+            # before the capture: no record, no undo step that
+            # undoes nothing, the kernel's own words verbatim.
+            self.status.showMessage("Offset refused: name at least "
+                                    "one face to offset", 6000)
+            return
         self._capture()
         n = sum(isinstance(f, OffsetFaceFeature)
                 for f in self.doc.features) + 1
-        f = OffsetFaceFeature(name=f"Offset{n}", face=str(v["face"]),
+        f = OffsetFaceFeature(name=f"Offset{n}",
+                              faces=tuple(str(x) for x in v["faces"]),
                               dist=float(v["dist"]))
         self.doc.features.append(f)
         self.doc.dirty = True
@@ -7985,8 +8014,10 @@ class MainWindow(QMainWindow):
         self.viewport.refresh(fit=True)
         self.rail.tree.reload()
         self.timeline.bar.update()
+        word = "face" if len(f.faces) == 1 else "faces"
+        names = ", ".join(repr(x) for x in f.faces)
         self.status.showMessage(
-            f"Offset face '{f.face}' by {f.dist:+g} mm · volume "
+            f"Offset {word} {names} by {f.dist:+g} mm · volume "
             f"{self.doc.result.volume:,.1f} mm³", 6000)
 
     def _set_fillet_size(self, feature):

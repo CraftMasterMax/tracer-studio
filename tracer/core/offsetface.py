@@ -116,3 +116,67 @@ def offset_face(solid: Solid, face: str, dist: float):
          (0, 1, 5), (0, 5, 4), (1, 2, 6), (1, 6, 5),
          (2, 3, 7), (2, 7, 6), (3, 0, 4), (3, 4, 7)]
     return Solid.from_mesh(np.asarray(V, float), np.asarray(F, np.int32))
+
+
+def offset_faces(solid: Solid, faces, dist: float):
+    """M198 R3 [SLD-OFFSET-FACES, verbatim]: "Select a single face
+    OR MULTIPLE FACES and specify THE Offset DISTANCE" - the page's
+    own plural with its OWN singular: ONE typed distance applied to
+    every named face at once.  The bounds a straight-walled body is
+    made of are INDEPENDENT per face (the rod's wall moves the
+    radius, each cap its own z; the box slides its own bound), so
+    the rebuild is as exact as the single slide - and one named
+    face rebuilds IDENTICAL to offset_face (measured fresh-against-
+    fresh).  The sign law is per face, unchanged: positive slides
+    OUTWARD along that face's own normal.  Every face the body does
+    not own is refused in ONE message carrying ALL the missing
+    names and the body's real ones; the collapse law now guards the
+    FINAL extents (a name is checked before a single bound moves).
+    """
+    shp = _shape(solid)
+    if shp is None:
+        raise _fail("")
+    names = tuple(dict.fromkeys(str(f) for f in faces))
+    if not names:
+        raise ValueError("name at least one face to offset")
+    d = float(dist)
+    z0, z1 = shp[-2], shp[-1]
+    if shp[0] == "cylinder":
+        _, cx, cy, r, z0, z1 = shp
+        mine = _FACES_CYL
+    else:
+        _, x0, x1, y0, y1, z0, z1 = shp
+        mine = _FACES_BOX
+    lack = [n for n in names if n not in mine]
+    if lack:
+        kind = "cylinder" if shp[0] == "cylinder" else "box"
+        raise ValueError(f"this {kind}'s faces are "
+                         f"{', '.join(map(repr, mine))} - "
+                         f"not {', '.join(map(repr, lack))}")
+    if shp[0] == "cylinder":
+        r2 = r + (d if "wall" in names else 0.0)
+        b = -d if "bottom" in names else 0.0      # z0 moves DOWN
+        t = d if "top" in names else 0.0
+        h = (z1 - z0) - b + t
+        if r2 <= _SHAPE_TOL or h <= _Z_TOL:
+            raise ValueError("the offset would collapse the body: the "
+                             "faces must still leave material")
+        import manifold3d as m3
+        m = m3.Manifold.cylinder(h, r2, r2).translate(
+            np.array([cx, cy, z0 + b], np.float32))
+        return Solid(m)
+    x0 += -d if "-x" in names else 0.0
+    x1 += d if "+x" in names else 0.0
+    y0 += -d if "-y" in names else 0.0
+    y1 += d if "+y" in names else 0.0
+    z0 += -d if "bottom" in names else 0.0
+    z1 += d if "top" in names else 0.0
+    if min(x1 - x0, y1 - y0, z1 - z0) <= _Z_TOL:
+        raise ValueError("the offset would collapse the body: the "
+                         "faces must still leave material")
+    V = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
+         (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
+    F = [(0, 2, 1), (0, 3, 2), (4, 5, 6), (4, 6, 7),
+         (0, 1, 5), (0, 5, 4), (1, 2, 6), (1, 6, 5),
+         (2, 3, 7), (2, 7, 6), (3, 0, 4), (3, 4, 7)]
+    return Solid.from_mesh(np.asarray(V, float), np.asarray(F, np.int32))

@@ -39,7 +39,7 @@ import pytest
 from tracer.core.document import (Document, OffsetFaceFeature,
                                   PrimitiveFeature)
 from tracer.core.geometry import Solid
-from tracer.core.offsetface import offset_face
+from tracer.core.offsetface import offset_face, offset_faces
 from tracer.ui import cmddialog
 
 
@@ -253,37 +253,40 @@ def _rod_win(win, qapp):
     qapp.processEvents()
 
 
-def test_the_door_asks_the_two_rows_it_honors(win, qapp, monkeypatch):
-    """SLD-OFFSET-FACES' dialog in the house's clothes: "Select a
-    single face ... and specify the Offset distance."  The door asks
-    EXACTLY the two rows the kernel rotates with - the face by its
-    PLAIN names (the Draft law; the kernel refuses what the body
-    does not own, cure in the words) and the distance WEARING
-    MILLIMETRES, signed (the page's "positive or negative
-    direction").  No multiple faces, no manipulator: a door may not
-    promise what cannot bake.  Typed wall/+2 lands twelve on the
-    rod's rho, and the sentence speaks face, signed slide, volume."""
+def test_the_door_asks_the_pages_plural(win, qapp, monkeypatch):
+    """SLD-OFFSET-FACES' dialog, the page's OWN plural: "Select a
+    single face OR MULTIPLE FACES and specify THE Offset DISTANCE" -
+    a Faces checks row (the plain names, default ticked top) and THE
+    one distance wearing millimetres, signed.  R2 pinned this door
+    at a Face COMBO; the pin MOVED with the vendor when rung three
+    grew the kernel (M196-R3 precedent: pins move, laws survive) -
+    the law holds: no manipulator, no curved bodies, nothing that
+    cannot bake.  ONE ticked face still rides rung one's single
+    rebuild and the singular sentence (measured below)."""
     calls = []
 
     def fake(parent, title, fields, **k):
         calls.append((title, fields))
-        return {"face": "wall", "dist": 2.0}
+        return {"faces": ["wall"], "dist": 2.0}
 
     monkeypatch.setattr(cmddialog, "ask", fake)
     _rod_win(win, qapp)
     win._body_offset()
     assert len(calls) == 1 and calls[0][0] == "Offset a face"
     by = {f["key"]: f for f in calls[0][1]}
-    assert list(by) == ["face", "dist"]
-    assert by["face"]["choices"] == ["bottom", "top", "wall", "+x",
-                                     "-x", "+y", "-y"]
+    assert list(by) == ["faces", "dist"]
+    assert by["faces"]["kind"] == "checks"
+    assert by["faces"]["choices"] == ["bottom", "top", "wall", "+x",
+                                      "-x", "+y", "-y"]
+    assert by["faces"]["checked"] == ["top"]
     assert by["dist"]["kind"] == "double"
     assert by["dist"]["suffix"] == " mm"
     assert by["dist"]["min"] == -1000.0            # the negative speaks
     assert by["dist"]["decimals"] == 3
     f = win.doc.features[-1]
     assert isinstance(f, OffsetFaceFeature) and f.name == "Offset1"
-    assert f.face == "wall" and f.dist == 2.0      # as typed
+    assert f.faces == ("wall",) and f.dist == 2.0  # as typed
+    assert f.face == "top"                 # noticed, NEVER written
     _, rho = _meas(win.doc.result)
     assert rho.max() == pytest.approx(12.0, abs=1e-4)
     msg = win.status.currentMessage()
@@ -296,7 +299,8 @@ def test_the_door_slides_inward_with_a_negative(win, qapp, monkeypatch):
     inward along the face's own normal, the typed sign stored
     untouched, the sentence honest about the minus."""
     monkeypatch.setattr(cmddialog, "ask",
-                        lambda *a, **k: {"face": "bottom", "dist": -3.0})
+                        lambda *a, **k: {"faces": ["bottom"],
+                                         "dist": -3.0})
     _rod_win(win, qapp)
     win._body_offset()
     v = win.doc.result.to_trimesh().vertices
@@ -315,7 +319,7 @@ def test_the_door_refuses_with_the_cure_verbatim(win, qapp, monkeypatch):
     body is untouched TO THE LAST DIGIT - fresh unrounded == (the
     R3b law)."""
     monkeypatch.setattr(cmddialog, "ask",
-                        lambda *a, **k: {"face": "+x", "dist": 2.0})
+                        lambda *a, **k: {"faces": ["+x"], "dist": 2.0})
     _rod_win(win, qapp)
     vol = win.doc.result.volume                    # UNROUNDED
     n, u = len(win.doc.features), len(win._undo)
@@ -336,7 +340,7 @@ def test_the_door_refuses_a_wall_squeezed_through_the_axis(win, qapp,
     pi x 4 x 40 - the kernel right, the probe's shadow wrong.  The
     gate runs FRESH.)"""
     monkeypatch.setattr(cmddialog, "ask",
-                        lambda *a, **k: {"face": "wall", "dist": -10.0})
+                        lambda *a, **k: {"faces": ["wall"], "dist": -10.0})
     _rod_win(win, qapp)
     vol = win.doc.result.volume
     win._body_offset()
@@ -384,3 +388,146 @@ def test_the_offset_door_lives_in_the_modify_menu_and_the_dock(win, qapp):
     assert tips[tips.index("Draft") + 1] == "Offset face"
     from tracer.ui import icons
     assert callable(icons._DRAW["offsetface"])
+
+
+# ---- R3: the page's plural ---------------------------------------------------
+
+def test_multiple_faces_slide_with_the_one_distance():
+    """The page's OWN plural with its OWN singular: "a single face or
+    MULTIPLE FACES and specify THE Offset DISTANCE" - one typed
+    distance, EVERY named face slides outward along its own normal.
+    The straight-walled body's bounds are INDEPENDENT per face, so
+    the rebuild is as exact as the single slide: the rod with all
+    three ticks stands r15 z-5..45 (measured, true cylinder at mesh
+    tolerance), the box subset lands 1848 EXACT (float64 mesh) and
+    both caps together 1800 EXACT.  ORDER NEVER MATTERS (==), and a
+    plural of ONE rebuilds IDENTICAL to rung one's single (==, fresh
+    against fresh in one environment - the R3b law)."""
+    rod = _rod()
+    out = offset_faces(rod, ["bottom", "top", "wall"], 5.0)
+    v, rho = _meas(out)
+    assert rho.max() == pytest.approx(15.0, abs=1e-4)
+    assert v[:, 2].min() == pytest.approx(-5.0, abs=1e-4)
+    assert v[:, 2].max() == pytest.approx(45.0, abs=1e-4)
+    exact = math.pi * 225.0 * 50.0
+    assert out.volume == pytest.approx(exact, rel=1e-3)
+    assert offset_faces(rod, ["wall"], 2.0).volume \
+        == offset_face(rod, "wall", 2.0).volume          # == fresh-fresh
+    assert offset_faces(rod, ["wall", "top"], 5.0).volume \
+        == offset_faces(rod, ["top", "wall"], 5.0).volume  # order never
+    box = _blk(20.0, 10.0, 5.0)
+    b = offset_faces(box, ["top", "+x", "-y"], 2.0)      # 22 x 12 x 7
+    assert b.volume == 1848.0                            # float64 EXACT
+    assert offset_faces(box, ["top", "bottom"], 2.0).volume == 1800.0
+
+
+def test_the_plural_refuses_in_one_message():
+    """One request, one answer: TWO names the rod lacks come back in
+    ONE cure carrying ALL the missing names and the body's real ones
+    (not the first refusal only); the box's ticked "wall" refuses its
+    own way; ZERO names refuses ("name at least one face") - and the
+    squeeze guard reads the FINAL extents on a FRESH body (the R2
+    shadow law): wall minus ten on r10 leaves nothing and is
+    refused, caps minus three on h5 likewise."""
+    with pytest.raises(ValueError, match=r"not '\+x', '-y'"):
+        offset_faces(_rod(), ["wall", "+x", "-y"], 2.0)
+    with pytest.raises(ValueError, match="box's faces are"):
+        offset_faces(_blk(), ["wall", "top"], 2.0)
+    with pytest.raises(ValueError, match="at least one face"):
+        offset_faces(_rod(), [], 2.0)
+    with pytest.raises(ValueError, match="collapse"):
+        offset_faces(_rod(), ["wall"], -10.0)            # FRESH r10
+    with pytest.raises(ValueError, match="collapse"):
+        offset_faces(_blk(), ["top", "bottom"], -3.0)    # h5 - 6
+
+
+def test_the_plural_record_rides_the_file_and_old_files_stay_put():
+    """The ticked NAMES ride json EXACT and the reloaded body
+    regrounds BIT-EQUAL (fresh against fresh, one environment); the
+    singular `face` rides alongside as the noticed-never-written
+    default.  A record written BEFORE rung three carries no faces
+    key at all: from_dict reads () and the LEGACY single route runs
+    untouched - the top+5 rebuild measured at zmax 45 with the ring
+    still ten.  Old files replay byte-honest."""
+    d = Document("pf")
+    d.add(PrimitiveFeature(name="rod", kind="cylinder",
+                           dims={"radius": 10.0, "height": 40.0}))
+    d.add(OffsetFaceFeature(name="Offset1", faces=("top", "wall"),
+                            dist=5.0))
+    v = d.recompute()
+    raw = json.loads(json.dumps(d.to_dict()))
+    fe = raw["features"][-1]
+    assert fe["faces"] == ["top", "wall"] and fe["dist"] == 5.0
+    d2 = Document.from_dict(raw)
+    assert d2.features[-1].faces == ("top", "wall")
+    assert d2.recompute().volume == v.volume            # ==, one env
+    del fe["faces"]                                      # a legacy record
+    d3 = Document.from_dict(raw)
+    f3 = d3.features[-1]
+    assert f3.faces == () and f3.face == "top"           # rung one's route
+    vv = d3.recompute().to_trimesh().vertices
+    rho = np.hypot(vv[:, 0], vv[:, 1])
+    assert vv[:, 2].max() == pytest.approx(45.0, abs=1e-4)
+    assert rho[vv[:, 2] > 44.999].max() == pytest.approx(10.0, abs=1e-4)
+
+
+def test_the_lever_speaks_each_records_own_voice(win, qapp):
+    """One record one voice (the M196 law): a PLURAL record opens
+    the checks row with its OWN names ticked and never the combo; a
+    legacy record opens the combo (rung one's gate pins it,
+    untouched) and never the checks.  The apply mouth writes faces
+    and distance AS TYPED and never invents a single-face change;
+    the plural apply leaves `face` where it stood."""
+    rows = {f["key"]: f for f in
+            win._feature_params(OffsetFaceFeature(name="P",
+                                                  faces=("top", "wall"),
+                                                  dist=5.0))}
+    assert list(rows) == ["faces", "dist"]
+    assert rows["faces"]["kind"] == "checks"
+    assert rows["faces"]["checked"] == ["top", "wall"]   # the record's own
+    assert rows["dist"]["default"] == 5.0
+    g = OffsetFaceFeature(name="G", faces=("wall",), dist=1.0)
+    win._apply_feature_params(g, {"faces": ["top", "bottom"],
+                                  "dist": -2.0})
+    assert g.faces == ("top", "bottom") and g.dist == -2.0   # as typed
+    assert g.face == "top"                             # not touched
+
+
+def test_the_door_offsets_every_ticked_face_and_refuses_none(win, qapp,
+                                                             monkeypatch):
+    """The plural walked through the real door on a FRESH rod:
+    bottom, top AND wall ticked with five - the rod stands r15
+    z-5..45 (measured: ten plus the one five, NOT the shadowed
+    seventeen a second offset would stack), the volume rides the
+    true cylinder at mesh tolerance, and the SENTENCE speaks EVERY
+    name in its own voice.  Zero ticks is no request: refused
+    BEFORE the capture (no record, NO undo step, the body untouched
+    to the last digit) - under this door a faces-empty record would
+    BE the legacy single route, so writing one would slide a face
+    nobody named."""
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"faces": ["bottom", "top",
+                                                   "wall"],
+                                         "dist": 5.0})
+    _rod_win(win, qapp)
+    win._body_offset()
+    f = win.doc.features[-1]
+    assert f.faces == ("bottom", "top", "wall") and f.dist == 5.0
+    v, rho = _meas(win.doc.result)
+    assert rho.max() == pytest.approx(15.0, abs=1e-4)
+    assert v[:, 2].min() == pytest.approx(-5.0, abs=1e-4)
+    assert v[:, 2].max() == pytest.approx(45.0, abs=1e-4)
+    assert v[:, 2].max() - v[:, 2].min() == pytest.approx(50.0, abs=1e-4)
+    assert win.doc.result.volume == pytest.approx(math.pi * 225.0 * 50.0,
+                                                  rel=1e-3)
+    msg = win.status.currentMessage()
+    assert "Offset faces 'bottom', 'top', 'wall' by +5 mm" in msg, msg
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"faces": [], "dist": 2.0})
+    n, u, vol = len(win.doc.features), len(win._undo), \
+        win.doc.result.volume
+    win._body_offset()
+    assert win.status.currentMessage().startswith("Offset refused:")
+    assert "at least one face" in win.status.currentMessage()
+    assert len(win.doc.features) == n and len(win._undo) == u
+    assert win.doc.result.volume == vol
