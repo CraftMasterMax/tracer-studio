@@ -5443,13 +5443,26 @@ class MainWindow(QMainWindow):
             return
         self._capture()
         is_copy = bool(payload.get("copy", False))
-        self.doc.add(MoveFeature(name="Copy" if is_copy else "Move",
-                                 vec=off_v, copy=is_copy))
+        if is_copy:
+            # M195 R1 [SLD-USE-MOVE-COPY, verbatim]: Create Copy makes
+            # a copy "instead of moving the original" and "the new
+            # body is not linked to the original body" - so the twin
+            # rides into a NEW browser body as its own snapshot stream.
+            # (M53's in-body union stays ONLY for files that already
+            # carry a copy MoveFeature - the kernel did not change.)
+            b = self.doc.copy_body_moved(off_v)
+            self.recompute()
+            self.viewport.refresh()
+            self.status.showMessage(
+                f"Body copied — {b['name']} stands on its own at x "
+                + f"{off_v[0]:+g}, y {off_v[1]:+g}, z {off_v[2]:+g} mm",
+                5000)
+            return
+        self.doc.add(MoveFeature(name="Move", vec=off_v))
         self.recompute()
         self.viewport.refresh()
         self.status.showMessage(
-            ("Body copied — twin joined at x " if is_copy else
-             "Body moved — x ")
+            "Body moved — x "
             + f"{off_v[0]:+g}, y {off_v[1]:+g}, z {off_v[2]:+g} mm",
             5000)
 

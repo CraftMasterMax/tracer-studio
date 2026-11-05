@@ -188,7 +188,14 @@ def test_move_copy_flag_json_round_trip():
 
 
 def test_ctrl_drag_copies(win, qapp):
-    """Ctrl held when grabbing the arrow — Fusion's copy gesture."""
+    """Ctrl held when grabbing the arrow — Fusion's copy gesture.
+    M195 R1 MOVED this door's line with the vendor: SLD-USE-MOVE-COPY
+    says Create Copy "create[s] a copy of the selected object instead
+    of moving the original" and "The new body is not linked to the
+    original body" — so the gesture now GROWS A NEW BROWSER BODY (a
+    snapshot stream) instead of filing M53's in-body union feature.
+    The kernel union still replays for files that carry one (the
+    gates above pin that legacy fidelity)."""
     _block_copy(win, qapp)
     v0 = win.doc.result.volume
     win.action_move_body()
@@ -207,8 +214,13 @@ def test_ctrl_drag_copies(win, qapp):
     QTest.mouseRelease(vp, Qt.LeftButton, Qt.NoModifier,
                        QPoint(int(p1[0]), int(p1[1])), 10)
     qapp.processEvents()
-    mf = [f for f in win.doc.features if isinstance(f, MoveFeature)]
-    assert len(mf) == 1 and mf[0].copy and mf[0].name == "Copy"
+    assert not [f for f in win.doc.features
+                if isinstance(f, MoveFeature)]      # the union door is gone
+    names = [b["name"] for b in win.doc.body_list()]
+    assert names == ["Body 1", "Body 2"]            # the twin is ITS OWN body
+    bs = win.doc.body_solids()
+    assert bs["Body 1"].volume == pytest.approx(v0, rel=1e-6)   # original
+    assert np.allclose(bs["Body 1"].bounding_box[0], (0, 0, 0))  # never moved
     assert win.doc.result.volume == pytest.approx(2 * v0, rel=1e-3)
     assert "copied" in win.status.currentMessage()
 

@@ -1091,6 +1091,38 @@ class Document:
                 return b
         raise KeyError(f"no body {name!r}")
 
+    def copy_body_moved(self, vec) -> dict:
+        """M195 R1 [SLD-USE-MOVE-COPY, verbatim]: "Check the box next
+        to Create Copy to create a copy of the selected object instead
+        of moving the original." + "The new body is not linked to the
+        original body. When you modify the original body or the new
+        body, the changes are unique to that body."  The twin rides
+        into a NEW browser body as its own stream: a mesh snapshot of
+        the source's CURRENT solid, shifted by ``vec`` — the
+        ImportedFeature mouth, the same first-class-history carrier
+        STEP imports ride (and the same "arrays are JSON — fine for
+        maker-scale meshes" law).  This deliberately is NOT the
+        MoveFeature(copy=True) union M53 filed before bodies existed:
+        a union welds the twin into the source's history, and the
+        vendor says the copy's changes stay UNIQUE to it — edit the
+        original, the copy does not flinch.  The original never
+        moves.  M104's own rule carries the rest: add_body makes the
+        new stream active, so the next gesture rides the copy (Fusion
+        selects what it just made)."""
+        src_name = self.active_body or "Body 1"
+        solid = self.body_solids().get(src_name)
+        if solid is None:
+            raise KeyError(f"no solid for body {src_name!r}")
+        tm = solid.to_trimesh()
+        verts = np.asarray(tm.vertices, float).tolist()
+        faces = np.asarray(tm.faces, np.int32).tolist()
+        b = self.add_body()                       # auto-named Body N,
+        self.add(ImportedFeature(name="Copy",    #  now the ACTIVE one
+                                 verts=verts, faces=faces,
+                                 placement=tuple(float(v)
+                                                 for v in vec)))
+        return b
+
     def move_body(self, name: str, dx: float, dy: float, dz: float) -> dict:
         """Slide a body WITHOUT a timeline feature — Fusion's kinematic
         component move, as data model.  Accumulates."""
