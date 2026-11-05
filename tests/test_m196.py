@@ -354,12 +354,20 @@ def test_two_distance_legs_measured_directly():
 def test_the_first_value_starts_on_both_sides():
     """The note verbatim: "The first distance value you specify applies
     to both sides of the chamfer."  Typed 5 AND 5, the second leg
-    equals the first and the cut is the LEGACY equal bevel EXACTLY -
-    float equality, no trig between them: P(0, 5.0) IS P(0, R = 5.0).
-    Identity when nothing is approximated, the honest mirror of rung
-    one's tan(45) lesson.  The RECORD still differs: it stores the
-    second value and says which type it is."""
-    assert _two(5.0, 5.0).recompute().volume == LEGACY_VOL
+    equals the first and the cut IS the legacy cut - the very same
+    three points (P(0, dist2) is literally P(0, R)), the same tool,
+    the same boolean.  So the comparison rides fresh-against-fresh in
+    ONE environment, where it is bit-exact.  Against the banked
+    constant the house tolerance rules: the last digit of a volume
+    sum belongs to the library build, not to the geometry - CI's
+    python 3.12 grinds this same mesh to ...618 where 3.13 lands on
+    ...622 (R3b, the paid lesson).  Identity when nothing is
+    approximated, the honest mirror of rung one's tan(45) lesson.
+    The RECORD still differs: it stores the second value and says
+    which type it is."""
+    assert _two(5.0, 5.0).recompute().volume == _rod(None).recompute().volume
+    assert _two(5.0, 5.0).recompute().volume == pytest.approx(LEGACY_VOL,
+                                                              rel=1e-9)
     f = _two(5.0, 5.0).features[-1]
     assert f.dist2 == 5.0 and f.angle_deg is None
 
