@@ -978,6 +978,14 @@ class MainWindow(QMainWindow):
             self._set_fillet_size(feature)      # reopen the size dialog
         elif isinstance(feature, ExtrudeFeature):
             self._set_distance(feature)         # e.g. Press-Pull: no sketch
+        elif isinstance(feature, OffsetFaceFeature):
+            # M198 R4 [SLD-OFFSET-FACES]: "a new Offset Face feature
+            # is created within the Timeline, which gives you an
+            # opportunity to COME BACK AND EDIT IT LATER BY DOUBLE-
+            # CLICKING ITS ICON".  The chip opens the record's OWN
+            # lever (plural checks / legacy combo - one record one
+            # voice); the marker law above has already parked.
+            self.action_change_params(feature)
         else:
             self.status.showMessage("Feature has no editable sketch (yet)", 3000)
 

@@ -531,3 +531,86 @@ def test_the_door_offsets_every_ticked_face_and_refuses_none(win, qapp,
     assert "at least one face" in win.status.currentMessage()
     assert len(win.doc.features) == n and len(win._undo) == u
     assert win.doc.result.volume == vol
+
+
+# ---- R4: the page's double-clicked icon --------------------------------------
+
+def test_the_plural_chip_double_click_opens_its_lever(win, qapp,
+                                                      monkeypatch):
+    """The page's promise, verbatim: "a new Offset Face feature is
+    created within the Timeline, which gives you an opportunity to
+    COME BACK AND EDIT IT LATER BY DOUBLE-CLICKING ITS ICON."  The
+    edit door (test_m18's timeline double-click path, called here
+    exactly as that gate calls it) opens the PLURAL record's OWN
+    lever - faces + the one distance, fx column riding - the typed
+    edit lands (fresh rod back from all-three to wall-only: ring
+    thirteen, bottom HOME at zero, top at the typed forty) and the
+    status says Parameters changed, NOT the shrug.  R4's audit fact:
+    before this rung the ⇕ chip SHRUGGED ("no editable sketch") -
+    the promise unkept; no gate pinned the shrug, so the pin grows
+    in the honest direction."""
+    win.new_document()
+    win.doc.add(PrimitiveFeature(name="rod", kind="cylinder",
+                                 dims={"radius": 10.0, "height": 40.0}))
+    win.doc.add(OffsetFaceFeature(name="Offset1",
+                                  faces=("bottom", "top", "wall"),
+                                  dist=5.0))
+    win.recompute()
+    calls = []
+
+    def fake(parent, title, fields, **k):
+        calls.append((title, [f["key"] for f in fields]))
+        return {"faces": ["wall"], "dist": 3.0, "fx_dist": ""}
+
+    monkeypatch.setattr(cmddialog, "ask", fake)
+    win._feature_activated(win.doc.features[-1])
+    qapp.processEvents()
+    assert calls[0][0] == "Change Parameters \u2014 Offset1"
+    assert calls[0][1] == ["faces", "dist", "fx_dist"]   # plural voice
+    rec = win.doc.features[-1]
+    assert rec.faces == ("wall",) and rec.dist == 3.0    # as typed
+    v, rho = _meas(win.doc.result)
+    assert rho.max() == pytest.approx(13.0, abs=1e-4)
+    assert v[:, 2].min() == pytest.approx(0.0, abs=1e-4)   # bottom HOME
+    assert v[:, 2].max() == pytest.approx(40.0, abs=1e-4)  # typed forty
+    assert "Parameters changed on Offset1" in win.status.currentMessage()
+    assert "no editable sketch" not in win.status.currentMessage()
+
+
+def test_the_legacy_chip_opens_the_combo_voice(win, qapp, monkeypatch):
+    """One record one voice, now through the TIMELINE door: a legacy
+    record's chip opens the COMBO lever (never the checks row) and
+    the edit runs rung one's single route - bottom+2 rewritten to
+    top+5 puts the bottom back at zero and stands zmax 45, faces
+    still empty.  The marker law rides untouched: a PARKED marker
+    rolls before the edit opens (LAW-10, pinned by m161 for every
+    edit door - here it just must not block the lever)."""
+    win.new_document()
+    win.doc.add(PrimitiveFeature(name="rod", kind="cylinder",
+                                 dims={"radius": 10.0, "height": 40.0}))
+    win.doc.add(OffsetFaceFeature(name="Offset1", face="bottom",
+                                  dist=2.0))
+    win.recompute()
+    keys = []
+    monkeypatch.setattr(
+        cmddialog, "ask",
+        lambda p, t, fields, **k: (keys.append([f["key"]
+                                                for f in fields]),
+                                   {"face": "top", "dist": 5.0,
+                                    "fx_dist": ""})[1])
+    win._feature_activated(win.doc.features[-1])
+    qapp.processEvents()
+    assert keys[0] == ["face", "dist", "fx_dist"]          # combo voice
+    rec = win.doc.features[-1]
+    assert rec.face == "top" and rec.faces == () and rec.dist == 5.0
+    v = win.doc.result.to_trimesh().vertices
+    assert v[:, 2].min() == pytest.approx(0.0, abs=1e-4)   # bottom HOME
+    assert v[:, 2].max() == pytest.approx(45.0, abs=1e-4)
+    win.doc.rollback_to = 1                                # PARKED
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"face": "top", "dist": 7.0,
+                                         "fx_dist": ""})
+    win._feature_activated(win.doc.features[-1])           # must still open
+    qapp.processEvents()
+    assert win.doc.features[-1].dist == 7.0
+    assert "Parameters changed on Offset1" in win.status.currentMessage()
