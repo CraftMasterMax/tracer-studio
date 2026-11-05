@@ -264,15 +264,27 @@ class BodyFilletFeature(Feature):
     without OpenCascade."""
     radius: float = 2.0
     chamfer: bool = False
+    angle_deg: float | None = None   # M196 [SLD-REF-CHAMFER] "Distance
+                                     #  And Angle": the bevel's wall leg
+                                     #  opens from the cap leg by this
+                                     #  angle.  None is the LEGACY
+                                     #  record - the equal-distance
+                                     #  triangle, untouched; 45.0 is
+                                     #  NOT None (tan 45 is
+                                     #  0.9999999999999999).
     n_rims: int = 0                                   # rims done last run
     src_key: list = field(default_factory=list)     # see apply()
     res_verts: list = field(default_factory=list)
     res_faces: list = field(default_factory=list)
 
     def _key(self, src: Solid) -> list:
-        # trailing 2: M19 added the rim pass; old caches recompute once
+        # trailing 2: M19 added the rim pass; old caches recompute once.
+        # 3 (M196): the bevel angle joins the key - pre-angle files
+        # mismatch by SHAPE (four terms short of the new five) and
+        # recompute once, byte-identically (the None branch never moved).
         return [round(src.volume, 3), len(src.to_trimesh().faces),
-                float(self.radius), bool(self.chamfer), 2]
+                float(self.radius), bool(self.chamfer),
+                float(self.angle_deg or 0.0), 3]
 
     def _baked(self) -> Solid:
         return Solid.from_mesh(np.asarray(self.res_verts, float),
@@ -291,7 +303,8 @@ class BodyFilletFeature(Feature):
                 ran_occt = True
             except Exception as exc:
                 occt_err = exc      # geometry rejection: rims may still work
-        out, n_rims = rim_fillet(base, self.radius, chamfer=self.chamfer)
+        out, n_rims = rim_fillet(base, self.radius, chamfer=self.chamfer,
+                                 angle_deg=self.angle_deg)
         self.n_rims = n_rims
         if not ran_occt and n_rims == 0:
             if self.res_faces and not step.available():
@@ -3495,6 +3508,8 @@ class Document:
                          size=float(f.size))
             elif isinstance(f, BodyFilletFeature):
                 d.update(radius=float(f.radius), chamfer=bool(f.chamfer),
+                         angle_deg=(None if f.angle_deg is None
+                                    else float(f.angle_deg)),
                          n_rims=int(f.n_rims), src_key=f.src_key,
                          res_verts=f.res_verts, res_faces=f.res_faces)
             elif isinstance(f, LoftFeature):
@@ -3825,6 +3840,8 @@ class Document:
                 doc.features.append(BodyFilletFeature(
                     name=fd["name"], radius=float(fd["radius"]),
                     chamfer=bool(fd.get("chamfer", False)),
+                    angle_deg=(None if fd.get("angle_deg") is None
+                               else float(fd["angle_deg"])),
                     n_rims=int(fd.get("n_rims", 0)),
                     src_key=fd.get("src_key", []),
                     res_verts=fd.get("res_verts", []),

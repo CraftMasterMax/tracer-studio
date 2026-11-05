@@ -167,7 +167,9 @@ def test_occt_and_rims_both_run(monkeypatch):
     # straight box edges were filleted by OCCT too: a plain rounded box of
     # the same size keeps more material than this (the bore took its share)
     assert v.to_trimesh().is_watertight
-    assert f.src_key[-1] == 2                 # M19 cache-key version
+    assert f.src_key[-1] == 3                 # cache-key version (M196
+                                              #  raised 2 -> 3: the bevel
+                                              #  angle joined the key)
 
 
 def test_m18_4_element_key_recomputes():
@@ -179,7 +181,7 @@ def test_m18_4_element_key_recomputes():
     f.src_key = f.src_key[:4]                 # pretend it came from M18
     d.dirty = True
     v2 = d.recompute()
-    assert len(f.src_key) == 5
+    assert len(f.src_key) == 6                # M196: 5 -> 6, the angle term
     assert v2.volume == pytest.approx(v1.volume, rel=1e-9)
 
 
@@ -192,7 +194,8 @@ def test_bake_roundtrip_survives_bare_machine(monkeypatch):
     got = d2.recompute()                      # cache hit -> baked mesh
     assert got.volume == pytest.approx(v.volume, rel=1e-9)
     assert d2.features[-1].n_rims == 2        # count survived serialization
-    assert len(d.to_dict()["features"][-1]["src_key"]) == 5
+    assert len(d.to_dict()["features"][-1]["src_key"]) == 6   # M196: the
+                                                              #  angle term
 
 
 # ---- UI --------------------------------------------------------------------

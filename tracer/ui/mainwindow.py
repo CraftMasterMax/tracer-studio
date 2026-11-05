@@ -1552,6 +1552,16 @@ class MainWindow(QMainWindow):
         elif isinstance(feature, BodyFilletFeature):
             dbl("radius", "radius", feature.radius)
             check("chamfer", "chamfer, not fillet", feature.chamfer)
+            if feature.chamfer:
+                # M196 R1 [SLD-REF-CHAMFER, verbatim]: "Angle (Distance
+                # And Angle chamfer type only)" - the row exists only
+                # for the bevel record, exactly as the page's parenthetical
+                # says.  A legacy record opens at 45.0: the equal-
+                # distance bevel IS forty-five degrees, geometrically.
+                dbl("angle_deg", "bevel angle from the cap",
+                    feature.angle_deg if feature.angle_deg is not None
+                    else 45.0, dec=1, mn=0.1, ang=True)
+                fld[-1]["max"] = 89.9
         elif isinstance(feature, ShellFeature):
             dbl("thickness", "wall thickness", feature.thickness, mn=0.05)
         elif isinstance(feature, ThreadFeature):
@@ -1676,6 +1686,15 @@ class MainWindow(QMainWindow):
         elif isinstance(feature, BodyFilletFeature):
             feature.radius = mm("radius")
             feature.chamfer = bool(v["chamfer"])
+            if "angle_deg" in v:
+                # M196 R1: the row only opens for a chamfer record (see
+                # _feature_params), so a write here is always the
+                # vendor's Distance And Angle row. It stores the typed
+                # number AS TYPED - 45.0 typed becomes a 45.0 record,
+                # which is geometrically the equal bevel but not the
+                # legacy branch (tan 45 is 0.9999999999999999, and
+                # identity is not approximation).
+                feature.angle_deg = float(v["angle_deg"])
         elif isinstance(feature, ShellFeature):
             feature.thickness = mm("thickness")
         elif isinstance(feature, ThreadFeature):

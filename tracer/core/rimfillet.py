@@ -142,7 +142,7 @@ def find_rims(solid: Solid) -> list[dict]:
     return out
 
 
-def _tool(rim: dict, size: float, chamfer: bool) -> Solid | None:
+def _tool(rim: dict, size: float, chamfer: bool, angle_deg=None):
     """The revolved cutter (convex) or bead (concave), placed in world.
 
     In normalized corner coords a=dr·(ρ−r), b=dh·(z−z0) both are the same
@@ -167,7 +167,24 @@ def _tool(rim: dict, size: float, chamfer: bool) -> Solid | None:
     d = min(0.005, 0.02 * R)                         # anti-coincidence skirt
     P = lambda a, b: (r + dr * a, dh * b)             # noqa: E731
     if chamfer:
-        pts = [P(-d, 0.0), P(R, 0.0), P(0.0, R)]
+        if angle_deg is None:
+            pts = [P(-d, 0.0), P(R, 0.0), P(0.0, R)]
+        else:
+            # M196 R1 [SLD-REF-CHAMFER, verbatim]: "Distance And Angle:
+            # Bevels edges based on a single distance and an angle."
+            # The CONVENTION (pinned at opening): the distance is the
+            # leg along the CAP face (the R leg - the skirt rides it,
+            # so legacy numbers move least), and the angle OPENS FROM
+            # the cap: the wall leg is H = D*tan(theta).  theta = None
+            # is NOT theta = 45 - the legacy branch above stays the
+            # branch old files take, byte for byte (tan(45) is
+            # 0.9999999999999999, and identity is not approximation).
+            th = float(angle_deg)
+            if not 0.0 < th < 90.0:
+                raise ValueError("bevel angle must be between 0 and 90 "
+                                 "degrees")
+            H = R * float(np.tan(np.deg2rad(th)))
+            pts = [P(-d, 0.0), P(R, 0.0), P(0.0, H)]
     else:
         th = np.linspace(np.pi, 1.5 * np.pi, _ARC_SEG + 1)
         arc = [P(R + R * np.cos(t), R + R * np.sin(t)) for t in th]
@@ -192,11 +209,14 @@ def _tool(rim: dict, size: float, chamfer: bool) -> Solid | None:
     return tool.transformed(m)
 
 
-def rim_fillet(solid: Solid, size: float, chamfer: bool = False):
-    """Round every circular rim; returns (solid, n_applied)."""
+def rim_fillet(solid: Solid, size: float, chamfer: bool = False,
+               angle_deg=None):
+    """Round every circular rim; returns (solid, n_applied).  angle_deg
+    (M196) opens the chamfer's wall leg from the cap leg - None keeps
+    the equal-distance triangle old files were baked with."""
     out, applied = solid, 0
     for rim in find_rims(solid):
-        tool = _tool(rim, size, chamfer)
+        tool = _tool(rim, size, chamfer, angle_deg)
         if tool is None:
             continue                                 # oversized: skip rim
         out = (out.union(tool) if rim["concave"] else out.subtract(tool))
