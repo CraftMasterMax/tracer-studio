@@ -300,19 +300,23 @@ def test_the_draft_door_asks_the_pages_rows(win, qapp, monkeypatch):
     def fake(parent, title, fields, **k):
         calls.append((title, fields))
         return {"type": "Fixed Plane", "fixed": "bottom",
-                "parting": 99.0, "angle_deg": 15.0}
+                "parting": 99.0, "angle_deg": 15.0,
+                "sides": "Symmetric", "angle2": 55.0}
 
     monkeypatch.setattr(cmddialog, "ask", fake)
     _rod_win(win, qapp)
     win._body_draft()
     assert len(calls) == 1 and calls[0][0] == "Draft body walls"
     by = {f["key"]: f for f in calls[0][1]}
-    assert list(by) == ["type", "fixed", "parting", "angle_deg"]
+    assert list(by) == ["type", "fixed", "parting", "angle_deg",
+                        "sides", "angle2"]
     assert by["type"]["choices"] == ["Fixed Plane", "Parting Line"]
     assert by["angle_deg"]["suffix"] == "\u00b0"
     assert by["angle_deg"]["min"] == -89.9 and by["angle_deg"]["max"] == 89.9
     assert by["fixed"]["choices"] == ["bottom", "top"]
     assert by["parting"]["kind"] == "double"
+    assert by["sides"]["choices"] == ["Symmetric", "Two Side"]
+    assert by["angle2"]["suffix"] == "\u00b0"
     f = win.doc.features[-1]
     assert isinstance(f, DraftFeature)
     assert f.angle_deg == 15.0 and f.fixed == "bottom"      # as typed
@@ -332,7 +336,9 @@ def test_the_draft_door_writes_the_fixed_top_mirror(win, qapp,
                         lambda *a, **k: {"type": "Fixed Plane",
                                          "fixed": "top",
                                          "parting": 15.0,
-                                         "angle_deg": 20.0})
+                                         "angle_deg": 20.0,
+                                         "sides": "Symmetric",
+                                         "angle2": 20.0})
     _rod_win(win, qapp)
     win._body_draft()
     f = win.doc.features[-1]
@@ -357,7 +363,9 @@ def test_the_draft_door_refuses_a_round_body_in_words(win, qapp,
                         lambda *a, **k: {"type": "Fixed Plane",
                                          "fixed": "bottom",
                                          "parting": 15.0,
-                                         "angle_deg": 20.0})
+                                         "angle_deg": 20.0,
+                                         "sides": "Symmetric",
+                                         "angle2": 20.0})
     win.new_document()
     win.doc.add(PrimitiveFeature(name="sp", kind="sphere",
                                  dims={"radius": 6.0}))
@@ -551,11 +559,14 @@ def test_the_door_drafts_from_a_parting_line(win, qapp, monkeypatch):
                         lambda *a, **k: {"type": "Parting Line",
                                          "fixed": "top",         # ignored
                                          "parting": 15.0,
-                                         "angle_deg": 20.0})
+                                         "angle_deg": 20.0,
+                                         "sides": "Symmetric",   # rung 3
+                                         "angle2": 55.0})        # ignored
     _rod_win(win, qapp)
     win._body_draft()
     f = win.doc.features[-1]
     assert f.parting == 15.0 and f.angle_deg == 20.0
+    assert f.angle2 is None                     # noticed, never written
     v = win.doc.result.to_trimesh().vertices
     rho = np.hypot(v[:, 0], v[:, 1])
     t = math.tan(math.radians(20.0))
@@ -566,3 +577,241 @@ def test_the_door_drafts_from_a_parting_line(win, qapp, monkeypatch):
     assert rho[v[:, 2] > 39.999].max() == pytest.approx(10.0 + 25.0 * t,
                                                         abs=1e-3)
     assert "from the parting line at 15 mm" in win.status.currentMessage()
+
+
+# ---- R5: the page's TWO SIDE --------------------------------------------------
+
+def test_two_side_leans_each_side_its_own_way():
+    """[SLD-REF-DRAFT, verbatim] "Two Side: Create a draft on both
+    sides of the parting line. Specify a different angle for each
+    side".  The parting ring HOLDS its exact size (fix means fix,
+    rung three's law unchanged) while each end grows by its OWN
+    distance x tan of its OWN angle: the r10 h40 rod parted at 15
+    with Angle 1 ten (below) and Angle 2 twenty (above) stands
+    10+15tan10 bottom and 10+25tan20 top (measured at the rings),
+    the held ring ten - two library cones at DIFFERENT leans welded
+    at the waist, watertight and winding-consistent, the volume
+    riding the sum of two frusta at the library's tolerance."""
+    rod = _rod()
+    t1, t2 = math.tan(math.radians(10.0)), math.tan(math.radians(20.0))
+    out, n = draft_parting(rod, 10.0, 15.0, angle2=20.0)
+    tm = out.to_trimesh()
+    assert tm.is_watertight and tm.is_winding_consistent and n == 256
+    v = tm.vertices
+    rho = np.hypot(v[:, 0], v[:, 1])
+    lo = v[:, 2] < 1e-4
+    mid = np.abs(v[:, 2] - 15.0) < 1e-4
+    hi = v[:, 2] > 39.999
+    assert rho[lo].max() == pytest.approx(10.0 + 15.0 * t1, abs=1e-4)
+    assert rho[mid].max() == pytest.approx(10.0, abs=1e-4)   # fix means fix
+    assert rho[hi].max() == pytest.approx(10.0 + 25.0 * t2, abs=1e-4)
+    r_b, r_t = 10.0 + 15.0 * t1, 10.0 + 25.0 * t2
+    exact = (math.pi * 15.0 / 3.0 * (r_b * r_b + r_b * 10.0 + 100.0)
+             + math.pi * 25.0 / 3.0 * (100.0 + 10.0 * r_t + r_t * r_t))
+    assert out.volume == pytest.approx(exact, rel=1e-3)
+
+
+def test_two_side_generalizes_the_symmetric_exactly():
+    """The rung-five generalization must be a SUPERSET, not a new
+    tool: angle2=None is rung three's ONE angle both sides (the
+    page's Symmetric) BIT-IDENTICAL fresh-against-fresh (==), an
+    EXPLICIT Angle 2 equal to Angle 1 lands the same build (==), a
+    DIFFERENT Angle 2 genuinely differs (!= - the sides moved
+    separately), and the mirror law rides: (Angle 1 below, Angle 2
+    above) parted at p is the same SOLID VOLUME as (Angle 2 below,
+    Angle 1 above) parted at the height minus p - the two sides
+    swapped, the body turned over (==)."""
+    rod = _rod()
+    legacy = draft_parting(rod, 12.0, 15.0)[0]
+    none2 = draft_parting(rod, 12.0, 15.0, angle2=None)[0]
+    same = draft_parting(rod, 12.0, 15.0, angle2=12.0)[0]
+    assert none2.volume == legacy.volume                    # ==, one env
+    assert same.volume == legacy.volume                     # ==
+    split = draft_parting(rod, 10.0, 15.0, angle2=20.0)[0]
+    assert split.volume != legacy.volume                    # sides moved
+    mirror = draft_parting(_rod(), 20.0, 25.0, angle2=10.0)[0]
+    assert mirror.volume == split.volume                    # ==, turned
+
+
+def test_a_two_side_box_grows_each_end_its_own_way():
+    """The box's rung-five shape: THREE levels, the middle rectangle
+    held EXACT, each end grown by its OWN distance x tan of its OWN
+    angle (walls independent, rung three's law per side).  The exact
+    volume is again the SUM OF TWO SIMPSON SEGMENTS - each slice its
+    own prismatoid, each with its own lean - watertight, winding-
+    consistent, FOUR walls counted, and the angle2=None rebuild stays
+    rung three's byte-honest single (volume ==)."""
+    t1, t2 = math.tan(math.radians(8.0)), math.tan(math.radians(15.0))
+    blk = _blk(20.0, 10.0, 5.0)
+    out, n = draft_parting(blk, 8.0, 2.0, angle2=15.0)
+    tm = out.to_trimesh()
+    assert tm.is_watertight and tm.is_winding_consistent and n == 4
+    v = tm.vertices
+    mid = np.abs(v[:, 2] - 2.0) < 1e-6
+    assert v[mid][:, 0].min() == pytest.approx(0.0, abs=1e-6)
+    assert v[mid][:, 0].max() == pytest.approx(20.0, abs=1e-6)
+    lo = v[:, 2] < 1e-6
+    hi = v[:, 2] > 4.999
+    assert v[lo][:, 0].max() - v[lo][:, 0].min() \
+        == pytest.approx(20.0 + 2.0 * 2.0 * t1, abs=1e-4)     # 2 x tan8
+    assert v[hi][:, 0].max() - v[hi][:, 0].min() \
+        == pytest.approx(20.0 + 2.0 * 3.0 * t2, abs=1e-4)     # 3 x tan15
+    W, H = 20.0, 10.0
+
+    def seg(s, t):
+        g = s * t
+        return s / 6.0 * ((W + 2 * g) * (H + 2 * g) + 4 * (W + g) * (H + g)
+                          + W * H)
+    assert out.volume == pytest.approx(seg(2.0, t1) + seg(3.0, t2),
+                                       rel=1e-6)
+    sym = draft_parting(_blk(20.0, 10.0, 5.0), 9.0, 2.0)[0]
+    with2 = draft_parting(_blk(20.0, 10.0, 5.0), 9.0, 2.0,
+                          angle2=9.0)[0]
+    assert with2.volume == sym.volume                        # ==, legacy
+
+
+def test_the_two_side_refusals_stay_fresh():
+    """Either side may refuse on its OWN: on a FRESH rod (the
+    probe-shadow law), Angle 1 minus eighty squeezes the bottom
+    through the axis and Angle 2 minus eighty the top - each refused
+    with rung three's cure words ("still reach the parting line");
+    the box's end refused the same way; and the parting-line
+    boundary law is angle2-INDEPENDENT (at an end it is still the
+    fixed plane, cure in the words).  A refusal is a refusal on a
+    body nobody has drafted yet."""
+    with pytest.raises(ValueError, match="collapse"):
+        draft_parting(_rod(), -80.0, 15.0, angle2=10.0)
+    with pytest.raises(ValueError, match="collapse"):
+        draft_parting(_rod(), 10.0, 15.0, angle2=-80.0)
+    with pytest.raises(ValueError, match="collapse"):
+        draft_parting(_blk(), 10.0, 2.0, angle2=-80.0)       # h5: top in
+    for bad in (0.0, 5.0):
+        with pytest.raises(ValueError, match="between the body's"):
+            draft_parting(_blk(20.0, 10.0, 5.0), 10.0, bad, angle2=5.0)
+
+
+def test_the_two_side_record_rides_the_file_and_old_files_stay_put():
+    """The typed Angle 2 is EXACT through json and the reloaded body
+    regrounds BIT-EQUAL (fresh against fresh, one environment - the
+    R3b law).  A record written BEFORE rung five carries no angle2
+    key at all: from_dict reads None and rung three's SINGLE route
+    runs untouched - the top ring measured 10+25tan20 for the
+    twenty-degree record, the waist still held ten.  Old files
+    replay byte-honest."""
+    d = Document("ts")
+    d.add(PrimitiveFeature(name="rod", kind="cylinder",
+                           dims={"radius": 10.0, "height": 40.0}))
+    d.add(DraftFeature(name="Draft1", angle_deg=20.0, parting=15.0,
+                       angle2=30.0))
+    v = d.recompute()
+    raw = json.loads(json.dumps(d.to_dict()))
+    fe = raw["features"][-1]
+    assert fe["angle2"] == 30.0 and fe["parting"] == 15.0
+    d2 = Document.from_dict(raw)
+    assert d2.features[-1].angle2 == 30.0
+    assert d2.recompute().volume == v.volume                 # ==, one env
+    del fe["angle2"]                                         # a legacy file
+    d3 = Document.from_dict(raw)
+    f3 = d3.features[-1]
+    assert f3.angle2 is None                                 # rung 3's voice
+    vv = d3.recompute().to_trimesh().vertices
+    rho = np.hypot(vv[:, 0], vv[:, 1])
+    t = math.tan(math.radians(20.0))
+    assert rho[vv[:, 2] > 39.999].max() == pytest.approx(10.0 + 25.0 * t,
+                                                         abs=1e-3)
+    assert rho[np.abs(vv[:, 2] - 15.0) < 1e-4].max() \
+        == pytest.approx(10.0, abs=1e-4)
+
+
+def test_the_two_side_lever_speaks_the_notes_three_rows(win, qapp):
+    """The note's words - "two angle settings display and are labeled
+    Angle 1 and Angle 2" - ride the lever of a TWO-SIDE record:
+    angle_deg (Angle 1, the side below the parting line), angle2
+    (Angle 2, above) both WEARING DEGREES (the R1b unit law), plus
+    the plain parting height.  A SYMMETRIC record never opens the
+    Angle 2 row (rung three's two-row pin, untouched - one record
+    one voice); the apply mouth writes all three rows AS TYPED."""
+    rows = {f["key"]: f for f in win._feature_params(
+        DraftFeature(name="T", angle_deg=10.0, parting=15.0,
+                     angle2=20.0))}
+    assert list(rows) == ["angle_deg", "angle2", "parting"]
+    assert "Angle 1" in rows["angle_deg"]["label"]
+    assert "Angle 2" in rows["angle2"]["label"]
+    assert rows["angle_deg"]["suffix"] == "\u00b0"
+    assert rows["angle2"]["suffix"] == "\u00b0"
+    assert rows["angle2"]["default"] == 20.0
+    assert rows["angle_deg"]["min"] == -89.9
+    sym = {f["key"]: f for f in win._feature_params(
+        DraftFeature(name="S", angle_deg=12.5, parting=12.5))}
+    assert list(sym) == ["angle_deg", "parting"]             # rung 3, kept
+    f = DraftFeature(name="D", angle_deg=1.0, parting=10.0, angle2=2.0)
+    win._apply_feature_params(f, {"angle_deg": 12.5, "angle2": 17.5,
+                                  "parting": 20.0})
+    assert (f.angle_deg, f.angle2, f.parting) == (12.5, 17.5, 20.0)
+    assert f.fixed == "bottom"                               # not touched
+
+
+def test_the_door_drafts_two_sides_and_refuses_the_squeeze(win, qapp,
+                                                           monkeypatch):
+    """The page's Two Side walked through the real door: Parting
+    Line, Two Side, ten below and twenty above at fifteen - the
+    fresh rod stands 10+15tan10 at the bottom and 10+25tan20 at the
+    top (measured), the sentence speaks BOTH angles ("10° below and
+    20° above the parting line at 15 mm"), and the fixed-plane row
+    stays noticed-never-written.  Under the FIXED voice the sides
+    and Angle 2 are noticed too and never written (a plain-named
+    body lies wholly one side of its own plane - the door asks for
+    the parting's sides, the fixed record keeps its single voice).
+    A typed squeeze refuses the R2 law whole: no record, no undo
+    step, the body untouched to the LAST DIGIT."""
+    t1, t2 = math.tan(math.radians(10.0)), math.tan(math.radians(20.0))
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"type": "Parting Line",
+                                         "fixed": "top",         # ignored
+                                         "parting": 15.0,
+                                         "angle_deg": 10.0,
+                                         "sides": "Two Side",
+                                         "angle2": 20.0})
+    _rod_win(win, qapp)
+    win._body_draft()
+    f = win.doc.features[-1]
+    assert f.parting == 15.0 and f.angle_deg == 10.0 and f.angle2 == 20.0
+    v = win.doc.result.to_trimesh().vertices
+    rho = np.hypot(v[:, 0], v[:, 1])
+    assert rho[v[:, 2] < 1e-4].max() == pytest.approx(10.0 + 15.0 * t1,
+                                                      abs=1e-4)
+    assert rho[v[:, 2] > 39.999].max() == pytest.approx(10.0 + 25.0 * t2,
+                                                        abs=1e-4)
+    msg = win.status.currentMessage()
+    assert "10\u00b0 below and 20\u00b0 above the parting line at 15 mm" \
+        in msg, msg
+    # Each voice gets a FRESH rod (the shadow law the R3 gates paid):
+    # after the two-side lean the body has THREE levels, and a
+    # drafted rod is a different question than a plain one.
+    _rod_win(win, qapp)
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"type": "Fixed Plane",
+                                         "fixed": "bottom",
+                                         "parting": 15.0,
+                                         "angle_deg": 10.0,
+                                         "sides": "Two Side",
+                                         "angle2": 30.0})
+    win._body_draft()
+    f2 = win.doc.features[-1]
+    assert f2.parting is None and f2.angle2 is None    # noticed, unwritten
+    assert "at 10\u00b0 from the bottom" in win.status.currentMessage()
+    _rod_win(win, qapp)                                # fresh rod AGAIN
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"type": "Parting Line",
+                                         "fixed": "bottom",
+                                         "parting": 15.0,
+                                         "angle_deg": 10.0,
+                                         "sides": "Two Side",
+                                         "angle2": -85.0})
+    n, u, vol = len(win.doc.features), len(win._undo), \
+        win.doc.result.volume
+    win._body_draft()                                  # the squeeze
+    assert win.status.currentMessage().startswith("Draft refused:")
+    assert "collapse" in win.status.currentMessage()
+    assert len(win.doc.features) == n and len(win._undo) == u
+    assert win.doc.result.volume == vol                # to the last digit

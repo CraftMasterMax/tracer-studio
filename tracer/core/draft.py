@@ -148,7 +148,8 @@ def draft_solid(solid: Solid, angle_deg: float, fixed: str = "bottom"):
                            np.asarray(F, np.int32)), 4
 
 
-def draft_parting(solid: Solid, angle_deg: float, parting_z: float):
+def draft_parting(solid: Solid, angle_deg: float, parting_z: float,
+                  angle2: float | None = None):
     """M197 R3 [SLD-REF-DRAFT, verbatim]: Parting Line type -
     "Select a parting tool to define a line to draft from", and the
     tool here is spoken PLAINLY (the same plain-speech rung two gave
@@ -157,12 +158,20 @@ def draft_parting(solid: Solid, angle_deg: float, parting_z: float):
     rectangle) AT the parting line keeps its EXACT size - that is
     what "fix" means - and each wall rotates about its line there, so
     BOTH free ends move away from the parting by their own distance x
-    tan(angle): ONE angle applied to both sides, the page's Symmetric
-    (Two Side's separate angles, Move Parting Line, and Fixed Edges
-    are later rungs' honest business).  Same refuse-rather-lie laws as
-    the fixed plane; the parting line that coincides with an end is
-    that end's FIXED PLANE case and says so.
-    Returns (solid, n_walls)."""
+    tan(angle).
+    Rung five cuts the page's TWO SIDE, verbatim: "Create a draft on
+    both sides of the parting line. Specify a different angle for
+    each side" - the two settings the note labels ANGLE 1 and ANGLE
+    2.  THE HOUSE MAPPING (the page names no sides until the Faces
+    pick, an unpromised mouth): ANGLE 1 = angle_deg leans the side
+    BELOW the parting line, ANGLE 2 = angle2 the side ABOVE; each
+    sign keeps the same law - positive widens AWAY from the parting.
+    angle2=None is rung three's ONE ANGLE both sides, the page's
+    SYMMETRIC - measured BIT-IDENTICAL to the single-angle build.
+    Move Parting Line and Fixed Edges stay later rungs' business.
+    Same refuse-rather-lie laws as the fixed plane; the parting line
+    that coincides with an end is that end's FIXED PLANE case and
+    says so.  Returns (solid, n_walls)."""
     shp = _shape(solid)
     if shp is None:
         raise ValueError("draft needs straight vertical walls - a "
@@ -175,11 +184,12 @@ def draft_parting(solid: Solid, angle_deg: float, parting_z: float):
         raise ValueError("the parting line must stand between the "
                          "body's bottom and top - at an end it is "
                          "the fixed plane instead")
-    t = math.tan(math.radians(float(angle_deg)))
+    t1 = math.tan(math.radians(float(angle_deg)))
+    t2 = t1 if angle2 is None else math.tan(math.radians(float(angle2)))
     d_lo, d_hi = p, height - p                  # the ends' own distances
     if shp[0] == "cylinder":
         _, cx, cy, r, z0, z1 = shp
-        r_bot, r_top = r + d_lo * t, r + d_hi * t
+        r_bot, r_top = r + d_lo * t1, r + d_hi * t2
         if min(r_bot, r_top) <= _SHAPE_TOL:
             raise ValueError("the draft would collapse the wall: the "
                              "lean must still reach the parting line")
@@ -191,7 +201,7 @@ def draft_parting(solid: Solid, angle_deg: float, parting_z: float):
         m = seg(d_lo, r_bot, r, z0) + seg(d_hi, r, r_top, z0 + d_lo)
         return Solid(m), _facets(solid, z0)
     _, x0, x1, y0, y1, z0, z1 = shp
-    s_lo, s_hi = d_lo * t, d_hi * t
+    s_lo, s_hi = d_lo * t1, d_hi * t2
     bot = (x0 - s_lo, x1 + s_lo, y0 - s_lo, y1 + s_lo)
     mid = (x0, x1, y0, y1)
     top = (x0 - s_hi, x1 + s_hi, y0 - s_hi, y1 + s_hi)

@@ -1620,9 +1620,27 @@ class MainWindow(QMainWindow):
                 fld[-1]["max"] = 89.9
                 combo("fixed", "fixed plane", ("bottom", "top"),
                       feature.fixed)
-            else:
+            elif feature.angle2 is None:
                 dbl("angle_deg", "draft angle from the parting line",
                     feature.angle_deg, dec=1, mn=-89.9, ang=True)
+                fld[-1]["max"] = 89.9
+                dbl("parting", "parting line above the bottom",
+                    float(feature.parting), mn=0.05)
+            else:
+                # M197 R5 [SLD-REF-DRAFT, verbatim]: the note's TWO
+                # angle settings - "labeled Angle 1 and Angle 2" -
+                # ride the record's own rows: Angle 1 leans the side
+                # BELOW the parting line, Angle 2 the side above (the
+                # plain-speech mapping the door documented).  A
+                # SYMMETRIC parting record never opens this branch -
+                # its single angle is rung three's row, untouched.
+                dbl("angle_deg", "Angle 1: draft angle below the "
+                                 "parting line",
+                    feature.angle_deg, dec=1, mn=-89.9, ang=True)
+                fld[-1]["max"] = 89.9
+                dbl("angle2", "Angle 2: draft angle above the "
+                              "parting line",
+                    float(feature.angle2), dec=1, mn=-89.9, ang=True)
                 fld[-1]["max"] = 89.9
                 dbl("parting", "parting line above the bottom",
                     float(feature.parting), mn=0.05)
@@ -1792,11 +1810,17 @@ class MainWindow(QMainWindow):
             # (degrees, the R1b law) and, per type, the fixed plane or
             # the parting height it leans from (R3: one record one
             # voice, so exactly one of the two mouths is present).
+            # R5: a TWO-SIDE record also rode its Angle 2 row; the
+            # angle2 key in v means exactly that voice was open - a
+            # symmetric or fixed record never shows it and so is
+            # never written by it.
             feature.angle_deg = float(v["angle_deg"])
             if "fixed" in v:
                 feature.fixed = str(v["fixed"])
             if "parting" in v:
                 feature.parting = float(v["parting"])
+            if "angle2" in v:
+                feature.angle2 = float(v["angle2"])
         elif isinstance(feature, OffsetFaceFeature):
             # M198 R1 [SLD-OFFSET-FACES]: the rows that opened the
             # lever are this record's own - the plain face name (or
@@ -7902,9 +7926,16 @@ class MainWindow(QMainWindow):
         same plain-speech rung two gave the fixed plane).  The rows
         stand in the PAGE'S ORDER; one record one voice (M196 law):
         under a Fixed Plane the parting row is noticed and never
-        written, under a Parting Line the fixed-plane row is.  Angle
-        Mode, the face list and Tangent Chain are still NOT offered:
-        a door may not promise what cannot bake."""
+        written, under a Parting Line the fixed-plane row is.  Rung
+        five grows the page's DRAFT SIDES: "Two Side: Create a draft
+        on both sides of the parting line. Specify a different angle
+        for each side" - a Draft sides combo with the page's two
+        bakes (Symmetric = "a single angle for both sides", rung
+        three's exact behavior; Two Side = the note's Angle 1 below
+        the parting line and Angle 2 above), and the Angle 2 row it
+        displays.  "One Side" is NOT offered: which side IS the Faces
+        pick - a door may not promise what cannot bake.  Angle Mode,
+        the face list and Tangent Chain are still NOT offered."""
         if self.doc is None or self.doc.result is None:
             # M189 R4 [LAW-61(a)]: precondition in information clothing.
             self.status.showMessage("No body to draft — create a "
@@ -7921,6 +7952,12 @@ class MainWindow(QMainWindow):
             dict(key="angle_deg", label="Draft angle", kind="double",
                  default=10.0, min=-89.9, max=89.9, decimals=1,
                  suffix="\u00b0"),
+            dict(key="sides", label="Draft sides", kind="combo",
+                 choices=["Symmetric", "Two Side"],
+                 default="Symmetric"),
+            dict(key="angle2", label="Angle 2 above the parting line",
+                 kind="double", default=10.0, min=-89.9, max=89.9,
+                 decimals=1, suffix="\u00b0"),
         ], remember_key="draft_body_walls")
         if v is None:
             return
@@ -7929,10 +7966,14 @@ class MainWindow(QMainWindow):
                 for f in self.doc.features) + 1
         parting = (float(v["parting"]) if str(v["type"]) == "Parting Line"
                    else None)               # noticed, never written
+        two = str(v["sides"]) == "Two Side"  # read ALWAYS (the door
+        a2 = float(v["angle2"])              # asked these rows)
         f = DraftFeature(name=f"Draft{n}",
                          angle_deg=float(v["angle_deg"]),
                          fixed=str(v["fixed"]),
-                         parting=parting)
+                         parting=parting,
+                         angle2=(a2 if two and parting is not None
+                                 else None))  # fixed voice: noticed
         self.doc.features.append(f)
         self.doc.dirty = True
         try:
@@ -7953,11 +7994,15 @@ class MainWindow(QMainWindow):
         self.viewport.refresh(fit=True)
         self.rail.tree.reload()
         self.timeline.bar.update()
+        lean = (f"at {f.angle_deg:g}\u00b0 below and {f.angle2:g}\u00b0 "
+                f"above the parting line at {f.parting:g} mm"
+                if f.angle2 is not None else
+                f"at {f.angle_deg:g}\u00b0 from the "
+                + (f"parting line at {f.parting:g} mm"
+                   if f.parting is not None else f"{f.fixed}"))
         self.status.showMessage(
-            f"Drafted body walls at {f.angle_deg:g}\u00b0 from the "
-            + (f"parting line at {f.parting:g} mm" if f.parting is not None
-               else f"{f.fixed}")
-            + f" · {f.n_walls} wall(s) leaned · volume "
+            f"Drafted body walls {lean}"
+            f" · {f.n_walls} wall(s) leaned · volume "
             f"{self.doc.result.volume:,.1f} mm³", 6000)
 
     def _body_offset(self):

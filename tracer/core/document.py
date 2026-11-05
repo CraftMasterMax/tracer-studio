@@ -663,6 +663,24 @@ class DraftFeature(Feature):
                                       #  the `fixed` row is noticed but
                                       #  never written (one record one
                                       #  voice, the M196 law)
+    angle2: float | None = None       # M197 R5 [SLD-REF-DRAFT,
+                                      #  verbatim]: "Two Side: Create a
+                                      #  draft on both sides of the
+                                      #  parting line. Specify a
+                                      #  different angle for each
+                                      #  side" - the note's ANGLE 2,
+                                      #  the side ABOVE the parting
+                                      #  line (angle_deg is then its
+                                      #  Angle 1, the side below).
+                                      #  None is rung three's ONE
+                                      #  angle both sides - the page's
+                                      #  SYMMETRIC - legacy byte-
+                                      #  untouched; it has a voice ONLY
+                                      #  under a parting line (a plain-
+                                      #  named body lies wholly ONE
+                                      #  side of its own fixed plane:
+                                      #  under `fixed` it is noticed
+                                      #  and never written)
     n_walls: int = 0                  # walls leaned last run
 
     def apply(self, src: Solid) -> Solid:
@@ -670,7 +688,8 @@ class DraftFeature(Feature):
         if self.parting is None:
             out, n = draft_solid(src, self.angle_deg, self.fixed)
         else:
-            out, n = draft_parting(src, self.angle_deg, self.parting)
+            out, n = draft_parting(src, self.angle_deg, self.parting,
+                                   angle2=self.angle2)
         self.n_walls = n
         return out
 
@@ -3615,6 +3634,8 @@ class Document:
                          fixed=str(f.fixed),
                          parting=(None if f.parting is None
                                   else float(f.parting)),
+                         angle2=(None if f.angle2 is None
+                                 else float(f.angle2)),
                          n_walls=int(f.n_walls))
             elif isinstance(f, OffsetFaceFeature):
                 d.update(face=str(f.face), dist=float(f.dist),
@@ -3961,6 +3982,8 @@ class Document:
                     fixed=str(fd.get("fixed", "bottom")),
                     parting=(None if fd.get("parting") is None
                              else float(fd["parting"])),
+                    angle2=(None if fd.get("angle2") is None
+                            else float(fd["angle2"])),
                     n_walls=int(fd.get("n_walls", 0)), **base))
             elif t == "OffsetFaceFeature":
                 doc.features.append(OffsetFaceFeature(
