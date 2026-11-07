@@ -19,8 +19,18 @@ kernel REFUSES with the cure rather than inventing one.
 
 Unpromised, by the pages' own words: Suppression (canvas checkboxes
 over instances - no typed equivalent), Compute Type (feature-face
-BRep), picked edge/cylindrical Axes, second-edge skew, pattern-on-
-path and geometric siblings.
+BRep), picked edge/cylindrical Axes, second-edge skew.
+
+Rung two took the circular sibling's Distribution (Full | Partial |
+Symmetric - "around the axis" instead of "along it"), rung three the
+pattern-on-path's Orientation ("Identical: Orients all pattern
+instances to match the source object" | "Path Direction: Orients each
+pattern instance relative to its position along the path"), and rung
+four the rectangular tool's SECOND DIRECTION: the vendor has one tool
+whose rows repeat per axis, and the how-to words the one-direction
+case as "set the Quantity value for Axis 2 to 1" - so the second axis
+is a count row defaulting to 1, and at that value the rung-era list
+comes back untouched.
 """
 import json
 import math
@@ -215,7 +225,11 @@ def test_the_door_lands_the_two_new_voices_and_refuses_the_even(
                         lambda *a, **k: {"src": "h", "dx": 20.0,
                                          "dy": 0.0, "dz": 0.0,
                                          "count": 3, "dist": "Extent",
-                                         "dir": "Symmetric"})
+                                         "dir": "Symmetric",
+                                         "count2": 1, "dx2": 0.0,
+                                         "dy2": 0.0, "dz2": 0.0,
+                                         "dist2": "Spacing",
+                                         "dir2": "One Direction"})
     _plate_hole(win)
     win.action_linear_pattern()
     f = win.doc.features[-1]
@@ -230,7 +244,11 @@ def test_the_door_lands_the_two_new_voices_and_refuses_the_even(
                         lambda *a, **k: {"src": "h", "dx": 10.0,
                                          "dy": 0.0, "dz": 0.0,
                                          "count": 3, "dist": "Spacing",
-                                         "dir": "One Direction"})
+                                         "dir": "One Direction",
+                                         "count2": 1, "dx2": 0.0,
+                                         "dy2": 0.0, "dz2": 0.0,
+                                         "dist2": "Spacing",
+                                         "dir2": "One Direction"})
     _plate_hole(win)
     win.action_linear_pattern()
     assert win.status.currentMessage() == \
@@ -239,7 +257,11 @@ def test_the_door_lands_the_two_new_voices_and_refuses_the_even(
                         lambda *a, **k: {"src": "h", "dx": 10.0,
                                          "dy": 0.0, "dz": 0.0,
                                          "count": 4, "dist": "Spacing",
-                                         "dir": "Symmetric"})
+                                         "dir": "Symmetric",
+                                         "count2": 1, "dx2": 0.0,
+                                         "dy2": 0.0, "dz2": 0.0,
+                                         "dist2": "Spacing",
+                                         "dir2": "One Direction"})
     _plate_hole(win)
     n, u, vol = len(win.doc.features), len(win._undo), \
         win.doc.result.volume
@@ -263,7 +285,9 @@ def test_the_lever_opens_the_page_rows_for_every_record(win, qapp):
                                vector=(5.0, 0.0, 0.0),
                                distribution="extent", direction="one")
     rows = {f["key"]: f for f in win._feature_params(rec)}
-    assert list(rows) == ["count", "v0", "v1", "v2", "dist", "dir"]
+    assert list(rows) == ["count", "v0", "v1", "v2", "dist", "dir",
+                          "count2", "w0", "w1", "w2", "dist2",
+                          "dir2"]              # M201 grew the axis
     assert tuple(rows["dist"]["choices"]) == ("spacing", "extent")
     assert rows["dist"]["default"] == "extent"            # the record's own
     assert tuple(rows["dir"]["choices"]) == ("one", "symmetric")
@@ -717,3 +741,231 @@ def test_the_path_door_asks_the_orientation_row_and_both_voices_land(
     assert (g.count, g.orientation) == (5, "identical")
     win._apply_feature_params(g, {"count": 4, "orient": "path"})
     assert (g.count, g.orientation) == (4, "path")    # as typed
+
+
+# ---- R4: the rectangular pattern's own second direction ------------------
+
+def test_the_second_direction_crosses_two_lists_and_obeys_one():
+    """[SLD-REF-PATTERN, rectangular how-to, verbatim] "To create a
+    Rectangular Pattern in only one direction, set the Quantity value
+    for Axis 2 to 1", and Quantity reads "Specify the number of pattern
+    instances to create along or around an axis or path" - per axis.
+    So the SECOND DIRECTION IS A COUNT ROW like the first: at count2=1
+    linear_offsets hands back the rung-era list UNTOUCHED (a typed
+    vector2 changes nothing there - it is noticed and never crossed);
+    at 3 x 2 the two lists CROSS with the first direction walking
+    outermost, so a 3-long ladder and a 2-long leg lay six copies in
+    rows of two.  Each axis keeps its OWN voice: extent divides the
+    second vector by (n2-1), symmetric spreads the second axis about
+    the source even when the first direction holds a single copy, an
+    even symmetric second count says the SAME cure ("an odd count has
+    one, an even one does not") and an unknown word names the voices
+    ("the distribution is 'spacing' or 'extent', not 'sideways'")."""
+    one = linear_offsets(V, 3)
+    assert one == [(0.0, 0.0, 0.0), (10.0, 0.0, 0.0), (20.0, 0.0, 0.0)]
+    assert linear_offsets(V, 3, "spacing", "one", (0.0, 8.0, 0.0),
+                          1) == one                       # axis 2 silent
+    assert linear_offsets(V, 3, "spacing", "one", None, 2) == one
+    grid = linear_offsets(V, 3, "spacing", "one", (0.0, 8.0, 0.0), 2)
+    assert grid == [(0.0, 0.0, 0.0), (0.0, 8.0, 0.0),
+                    (10.0, 0.0, 0.0), (10.0, 8.0, 0.0),
+                    (20.0, 0.0, 0.0), (20.0, 8.0, 0.0)]
+    ext = linear_offsets(V, 3, "spacing", "one", (0.0, 16.0, 0.0), 3,
+                         "extent")
+    assert ext[:3] == [(0.0, 0.0, 0.0), (0.0, 8.0, 0.0),
+                       (0.0, 16.0, 0.0)]     # step = extent/(n2-1)
+    assert len(ext) == 9
+    sym = linear_offsets(V, 1, "spacing", "one", (0.0, 10.0, 0.0), 3,
+                         "spacing", "symmetric")
+    assert sym == [(0.0, -10.0, 0.0), (0.0, 0.0, 0.0),
+                   (0.0, 10.0, 0.0)]         # axis 1 holds one copy
+    with pytest.raises(ValueError, match="odd count has one"):
+        linear_offsets(V, 3, "spacing", "one", (0.0, 10.0, 0.0), 4,
+                       "spacing", "symmetric")
+    with pytest.raises(ValueError, match="'spacing' or 'extent'"):
+        linear_offsets(V, 3, "spacing", "one", (0.0, 10.0, 0.0), 2,
+                       "sideways")
+
+
+def test_the_second_direction_lays_a_grid_and_leaves_one_direction_alone():
+    """Through the document: three balls along x span -2..22 with the
+    y bounds of ONE ball (-2..2); adding a two-long leg along y lifts
+    the y bounds to -2..10 while x does not move a millimetre, and the
+    volume is SIX balls where the same axis-1 rows gave three (rel
+    2e-2 - mesh unions).  And the rung-zero law, measured fresh against
+    fresh in ONE process with ==: count2=1 with a TYPED vector2
+    regrounds BIT-EQUAL to the same build with no second direction at
+    all, because at the page's own one-direction value the second
+    axis is absent, not multiplied by zero.  A symmetric second axis
+    stands the row about the source (-12..12 in y) while x holds one
+    copy at -2..2."""
+    one = _doc(count=3).recompute().to_trimesh()
+    grid = _doc(count=3, vector2=(0.0, 8.0, 0.0),
+                count2=2).recompute().to_trimesh()
+    assert (one.bounds[1][0], one.bounds[1][1]) == pytest.approx(
+        (22.0, 2.0), abs=1e-4)
+    assert (grid.bounds[1][0], grid.bounds[1][1]) == pytest.approx(
+        (22.0, 10.0), abs=1e-4)
+    assert grid.is_watertight and grid.is_winding_consistent
+    assert grid.volume == pytest.approx(2 * one.volume, rel=2e-2)
+    v_typed = _doc(count=3, vector2=(0.0, 3.0, 0.0), count2=1).recompute()
+    assert v_typed.volume == _doc(count=3).recompute().volume
+    row = _doc(count=1, vector2=(0.0, 10.0, 0.0), count2=3,
+               direction2="symmetric").recompute().to_trimesh()
+    assert (row.bounds[0][1], row.bounds[1][1]) == pytest.approx(
+        (-12.0, 12.0), abs=1e-3)
+    assert (row.bounds[0][0], row.bounds[1][0]) == pytest.approx(
+        (-2.0, 2.0), abs=1e-3)
+
+
+def test_the_second_direction_rides_the_file_and_legacy_stays_one_way():
+    """A grid record carries count2 / vector2 / distribution2 /
+    direction2 through json and the reloaded body regrounds BIT-EQUAL
+    (fresh against fresh, one environment).  A record written before
+    this rung carries NONE of those keys: from_dict reads count 1 and
+    the tool stays the one-direction pattern it always was - measured
+    by replaying such a stripped record against a fresh one-direction
+    build of the same axis-1 rows."""
+    d = _doc(count=3, vector2=(0.0, 10.0, 0.0), count2=2,
+             distribution2="extent", direction2="symmetric")
+    d.features[-1].direction2 = "one"          # 2 x 2: even symmetric
+    d.features[-1].count2 = 3                  # ...would refuse at 4
+    d.features[-1].direction2 = "symmetric"    # odd: law-derivable
+    v = d.recompute()
+    raw = json.loads(json.dumps(d.to_dict()))
+    fe = raw["features"][-1]
+    assert fe["count2"] == 3 and fe["vector2"] == [0.0, 10.0, 0.0]
+    assert fe["distribution2"] == "extent" and fe["direction2"] == \
+        "symmetric"
+    assert Document.from_dict(raw).recompute().volume == \
+        pytest.approx(v.volume, rel=1e-9)
+    for k in ("vector2", "count2", "distribution2", "direction2"):
+        del fe[k]
+    old = Document.from_dict(raw)
+    assert (old.features[-1].count2, old.features[-1].vector2) == \
+        (1, (0.0, 0.0, 0.0))
+    assert old.recompute().volume == pytest.approx(
+        _doc(count=3).recompute().volume, rel=1e-9)
+
+
+def test_the_linear_door_asks_the_pages_second_direction_and_lands_both(
+        win, qapp, monkeypatch):
+    """The page's second axis walked through the REAL door: thirteen
+    rows in the page's own order, Occurrences 2 DEFAULTING TO 1 - the
+    how-to's own one-direction value - so the door's face at rest is
+    the rung-era tool and says the rung-era sentence BYTE-IDENTICAL
+    ("Patterned h: 3x at (10, 0, 0) mm") whatever was typed into the
+    second rows (they are stored, and inert).  Ask for two and the
+    sentence grows the grid: "... by 2x at (0, 3, 0) mm" - six holes
+    cut, 1200 minus six, while one direction cut three.  The page's
+    other voices speak per axis too: extent says "over the full
+    extent" and symmetric grows the tail again.  An even symmetric
+    SECOND count refuses the M197 door law whole: no record, no undo
+    step that undoes nothing, the body untouched to the last digit."""
+    def answers(**over):
+        base = dict(src="h", dx=10.0, dy=0.0, dz=0.0, count=3,
+                    dist="Spacing", dir="One Direction",
+                    count2=1, dx2=0.0, dy2=3.0, dz2=0.0,
+                    dist2="Spacing", dir2="One Direction")
+        base.update(over)
+        return base
+
+    calls = []
+
+    def spy(**over):
+        def _ask(parent, title, fields, **k):
+            calls.append(([f["key"] for f in fields],
+                          {f["key"]: f.get("default") for f in fields}))
+            return answers(**over)
+        return _ask
+
+    hole = math.pi * 1.5 ** 2 * 2
+    monkeypatch.setattr(cmddialog, "ask", spy())
+    _plate_hole(win)
+    win.action_linear_pattern()
+    qapp.processEvents()
+    keys, defaults = calls[0]
+    assert keys == ["src", "dx", "dy", "dz", "count", "dist", "dir",
+                    "count2", "dx2", "dy2", "dz2", "dist2", "dir2"]
+    assert defaults["count2"] == 1 and defaults["dist2"] == "Spacing" \
+        and defaults["dir2"] == "One Direction" \
+        and (defaults["dx2"], defaults["dy2"], defaults["dz2"]) == \
+        (0.0, 0.0, 0.0)
+    f = win.doc.features[-1]
+    assert f.count2 == 1 and f.vector2 == (0.0, 3.0, 0.0)   # stored...
+    assert win.status.currentMessage() == \
+        "Patterned h: 3x at (10, 0, 0) mm"                  # ...and inert
+    assert win.doc.result.volume == pytest.approx(1200 - 3 * hole,
+                                                  rel=2e-2)
+    one_vol = win.doc.result.volume
+
+    monkeypatch.setattr(cmddialog, "ask", spy(count2=2))
+    _plate_hole(win)
+    win.action_linear_pattern()
+    qapp.processEvents()
+    assert win.doc.features[-1].count2 == 2
+    assert win.status.currentMessage() == \
+        "Patterned h: 3x at (10, 0, 0) mm by 2x at (0, 3, 0) mm"
+    assert win.doc.result.volume == pytest.approx(1200 - 6 * hole,
+                                                  rel=2e-2)
+    assert win.doc.result.volume < one_vol - hole           # a real row
+
+    monkeypatch.setattr(cmddialog, "ask",
+                        spy(count2=2, dist2="Extent", dy2=16.0))
+    _plate_hole(win)
+    win.action_linear_pattern()
+    qapp.processEvents()
+    assert win.status.currentMessage().endswith(
+        "by 2x over the full extent (0, 16, 0) mm"), \
+        win.status.currentMessage()
+
+    monkeypatch.setattr(cmddialog, "ask",
+                        spy(count2=4, dir2="Symmetric"))
+    _plate_hole(win)
+    n, u, vol = len(win.doc.features), len(win._undo), \
+        win.doc.result.volume
+    win.action_linear_pattern()
+    qapp.processEvents()
+    msg = win.status.currentMessage()
+    assert msg.startswith("Pattern refused:") and \
+        "odd count has one" in msg, msg
+    assert len(win.doc.features) == n and len(win._undo) == u
+    assert win.doc.result.volume == vol              # LAST digit intact
+
+
+def test_the_lever_opens_the_second_direction_and_the_mouth_is_guarded(
+        win, qapp):
+    """Every linear record speaks the page's two axes in its OWN
+    voices: the lever opens twelve rows (count, the three offsets,
+    distribution, direction, then occurrences 2, the three second
+    offsets, distribution 2, direction 2) and each combo defaults to
+    what the record says.  The apply mouth is GUARDED for the new
+    rows: a script driving the rung-era six rows never invents a
+    second axis, while a script that asks for one writes it as typed
+    (12 mm in y at the document's own scale)."""
+    rec = LinearPatternFeature(name="R", source_uid="x", count=3,
+                               vector=V, count2=2, vector2=(0.0, 7.0,
+                                                            0.0),
+                               distribution2="extent",
+                               direction2="symmetric")
+    rows = {f["key"]: f for f in win._feature_params(rec)}
+    assert list(rows) == ["count", "v0", "v1", "v2", "dist", "dir",
+                          "count2", "w0", "w1", "w2", "dist2", "dir2"]
+    assert rows["count2"]["default"] == 2
+    assert (rows["w0"]["default"], rows["w1"]["default"]) == (0.0, 7.0)
+    assert tuple(rows["dist2"]["choices"]) == ("spacing", "extent")
+    assert rows["dist2"]["default"] == "extent"        # the record's own
+    assert rows["dir2"]["default"] == "symmetric"
+    g = LinearPatternFeature(name="G", source_uid="x", count=3,
+                             vector=V)
+    win._apply_feature_params(g, {"count": 4, "v0": 6.0, "v1": 0.0,
+                                  "v2": 0.0})
+    assert (g.count2, g.vector2, g.distribution2) == \
+        (1, (0.0, 0.0, 0.0), "spacing")                # never invented
+    win._apply_feature_params(g, {"count": 4, "v0": 6.0, "v1": 0.0,
+                                  "v2": 0.0, "count2": 3, "w0": 0.0,
+                                  "w1": 12.0, "w2": 0.0,
+                                  "dist2": "extent",
+                                  "dir2": "symmetric"})
+    assert (g.count2, g.vector2, g.distribution2, g.direction2) == \
+        (3, (0.0, 12.0, 0.0), "extent", "symmetric")

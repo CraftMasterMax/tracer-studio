@@ -154,17 +154,31 @@ class LinearPatternFeature(Feature):
     ...symmetrically in two directions FROM THE SOURCE OBJECT" (the
     source holds the middle - an ODD count is law-derivable, an even
     one has no middle to hold and REFUSES with the cure: the page
-    words no rule for even, so none is invented)."""
+    words no rule for even, so none is invented).
+    M201 [SLD-REF-PATTERN + its rectangular how-to, verbatim] grows
+    the page's SECOND direction: "Quantity: Specify the number of
+    pattern instances to create along or around an axis or path" -
+    the vendor's ONE tool carries Axis 1 AND Axis 2, and the how-to
+    words the single-direction case as "To create a Rectangular
+    Pattern in only one direction, set the Quantity value for Axis 2
+    to 1".  So count2 DEFAULTS TO 1: at that value the second
+    direction is absent and the offsets are the rung-era list (the
+    same object route, not a zero-padded copy of it); any other
+    count2 crosses the two lists, each direction reading its own
+    Distance / Distribution / Direction rows under the same laws."""
     source_uid: str = ""
     vector: tuple = (0.0, 0.0, 0.0)
     count: int = 2
     distribution: str = "spacing"       # "spacing" | "extent"
     direction: str = "one"              # "one" | "symmetric"
+    vector2: tuple = (0.0, 0.0, 0.0)
+    count2: int = 1                     # 1 = one direction (the page's)
+    distribution2: str = "spacing"
+    direction2: str = "one"
 
 
-def linear_offsets(vector, count: int, distribution: str = "spacing",
-                   direction: str = "one"):
-    """The placement law of a linear pattern - offsets, nothing else.
+def _linear_offsets_one(vector, count, distribution, direction):
+    """The placement law of ONE direction - offsets, nothing else.
     The count INCLUDES the source (the house's rung-era law: k=0 is
     the source itself); the vector speaks the page's Distance row in
     its plain-speech voice (axis and magnitude together).
@@ -203,6 +217,37 @@ def linear_offsets(vector, count: int, distribution: str = "spacing",
         mid = (n - 1) / 2
         return [tuple(s * (k - mid) for s in step) for k in range(n)]
     return [tuple(s * k for s in step) for k in range(n)]
+
+
+def linear_offsets(vector, count: int, distribution: str = "spacing",
+                   direction: str = "one", vector2=None, count2: int = 1,
+                   distribution2: str = "spacing",
+                   direction2: str = "one"):
+    """The placement law of the page's RECTANGULAR pattern: the vendor's
+    ONE tool carries a second direction, and the how-to words the
+    single-direction case as nothing special - "To create a Rectangular
+    Pattern in only one direction, set the Quantity value for Axis 2 to
+    1" - so count2 defaults to 1 and the SECOND DIRECTION IS ABSENT at
+    that value: the list handed back is the rung-era one-direction
+    list, THE SAME OBJECT ROUTE, bit for bit (no zero-addition, no
+    re-ordering).  Any other count2 crosses the two lists the way the
+    vendor's rows say - "Quantity: Specify the number of pattern
+    instances to create along or around an axis or path" per axis, each
+    axis reading its own Distance / Distribution (Spacing | Extent) and
+    Direction (One Direction | Symmetric) - so an offset is (first leg
+    + second leg) with the FIRST direction walking outermost (rows:
+    one row of the second direction per step of the first).  Each
+    direction keeps its own laws and its own refusals: an even
+    symmetric count says the cure, an unknown word names the voices.
+    A vector2 of None or all-zero with count2 > 1 stacks every copy of
+    the second direction ON the first - degenerate but the page words
+    no rule against it, so the geometry says what it says."""
+    one = _linear_offsets_one(vector, count, distribution, direction)
+    n2 = max(1, int(count2))
+    if vector2 is None or n2 == 1:
+        return one                                 # the legacy route
+    two = _linear_offsets_one(vector2, n2, distribution2, direction2)
+    return [tuple(a + b for a, b in zip(p, q)) for p in one for q in two]
 
 
 @dataclass
@@ -3128,11 +3173,15 @@ class Document:
 
     def add_linear_pattern(self, name, source: Feature, vector, count,
                            op=None, distribution="spacing",
-                           direction="one"):
+                           direction="one", vector2=None, count2=1,
+                           distribution2="spacing", direction2="one"):
         return self.add(LinearPatternFeature(
             name=name, op=op or source.op, source_uid=source.uid,
             vector=tuple(float(v) for v in vector), count=int(count),
-            distribution=str(distribution), direction=str(direction)))
+            distribution=str(distribution), direction=str(direction),
+            vector2=tuple(float(v) for v in (vector2 or (0., 0., 0.))),
+            count2=int(count2), distribution2=str(distribution2),
+            direction2=str(direction2)))
 
     def add_circular_pattern(self, name, source: Feature, center=(0, 0),
                              angle=360.0, count=6, op=None, axis="",
@@ -3272,7 +3321,8 @@ class Document:
                 solid = Solid.batch_union(
                     [src.translated(o) for o in
                      linear_offsets(f.vector, f.count, f.distribution,
-                                    f.direction)])
+                                    f.direction, f.vector2, f.count2,
+                                    f.distribution2, f.direction2)])
             elif isinstance(f, PathPatternFeature):
                 src = by_uid.get(f.source_uid)
                 if src is None:
@@ -3748,7 +3798,11 @@ class Document:
                          vector=list(map(float, f.vector)),
                          count=int(f.count),
                          distribution=str(f.distribution),
-                         direction=str(f.direction))
+                         direction=str(f.direction),
+                         vector2=list(map(float, f.vector2)),
+                         count2=int(f.count2),
+                         distribution2=str(f.distribution2),
+                         direction2=str(f.direction2))
             elif isinstance(f, PathPatternFeature):
                 d.update(source_uid=f.source_uid,
                          path=[list(map(float, p)) for p in f.path],
@@ -3992,7 +4046,12 @@ class Document:
                     name=fd["name"], source_uid=fd["source_uid"],
                     vector=tuple(fd["vector"]), count=int(fd["count"]),
                     distribution=str(fd.get("distribution", "spacing")),
-                    direction=str(fd.get("direction", "one")), **base))
+                    direction=str(fd.get("direction", "one")),
+                    vector2=tuple(fd.get("vector2", (0., 0., 0.))),
+                    count2=int(fd.get("count2", 1)),
+                    distribution2=str(fd.get("distribution2", "spacing")),
+                    direction2=str(fd.get("direction2", "one")),
+                    **base))
             elif t == "PathPatternFeature":
                 doc.features.append(PathPatternFeature(
                     name=fd["name"], source_uid=fd["source_uid"],

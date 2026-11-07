@@ -1682,6 +1682,17 @@ class MainWindow(QMainWindow):
                   feature.distribution)
             combo("dir", "direction", ("one", "symmetric"),
                   feature.direction)
+            # M201 [SLD-REF-PATTERN]: the second direction rides EVERY
+            # linear record - the page gives the tool two axes, and a
+            # record with Quantity 2 = 1 says so in its own rows.
+            ints("count2", "occurrences 2", feature.count2, mn=1)
+            for i, k in enumerate("xyz"):
+                dbl(f"w{i}", f"offset 2 {k}", feature.vector2[i],
+                    mn=None)
+            combo("dist2", "distribution 2", ("spacing", "extent"),
+                  feature.distribution2)
+            combo("dir2", "direction 2", ("one", "symmetric"),
+                  feature.direction2)
         elif isinstance(feature, CircularPatternFeature):
             ints("count", "occurrences", feature.count)
             # M200 R2 [SLD-REF-PATTERN]: the page's circular
@@ -1870,6 +1881,17 @@ class MainWindow(QMainWindow):
                 feature.distribution = str(v["dist"])
             if "dir" in v:
                 feature.direction = str(v["dir"])
+            # M201: the second direction's rows are guarded the same
+            # way - a script driving the rung-era six rows never
+            # invents an axis it never asked for.
+            if "count2" in v:
+                feature.count2 = int(v["count2"])
+            if "w0" in v:
+                feature.vector2 = tuple(mm(f"w{i}") for i in range(3))
+            if "dist2" in v:
+                feature.distribution2 = str(v["dist2"])
+            if "dir2" in v:
+                feature.direction2 = str(v["dir2"])
         elif isinstance(feature, CircularPatternFeature):
             feature.count = int(v["count"])
             # M200 R2: the angle row opens on every voice EXCEPT a
@@ -7629,6 +7651,33 @@ class MainWindow(QMainWindow):
             dict(key="dir", label="Direction", kind="combo",
                  choices=["One Direction", "Symmetric"],
                  default="One Direction", group="Pattern"),
+            # M201 [SLD-REF-PATTERN + rectangular how-to, verbatim]:
+            # the vendor's ONE tool carries a second direction - the
+            # Quantity row reads "Specify the number of pattern
+            # instances to create along or around an axis or path" for
+            # EACH axis, and the how-to words the single-direction case
+            # as "To create a Rectangular Pattern in only one direction,
+            # set the Quantity value for Axis 2 to 1".  So Occurrences 2
+            # DEFAULTS TO 1: nothing second is asked, the sentence keeps
+            # its rung-era shape, and the door's own default is the
+            # page's own one-direction case.
+            dict(key="count2", label="Occurrences 2", kind="int",
+                 default=1, min=1, max=500, group="Second direction"),
+            dict(key="dx2", label="X distance 2", kind="double",
+                 default=0.0, min=-1e5, max=1e5, decimals=3,
+                 group="Second direction"),
+            dict(key="dy2", label="Y distance 2", kind="double",
+                 default=0.0, min=-1e5, max=1e5, decimals=3,
+                 group="Second direction"),
+            dict(key="dz2", label="Z distance 2", kind="double",
+                 default=0.0, min=-1e5, max=1e5, decimals=3,
+                 group="Second direction"),
+            dict(key="dist2", label="Distribution 2", kind="combo",
+                 choices=["Spacing", "Extent"], default="Spacing",
+                 group="Second direction"),
+            dict(key="dir2", label="Direction 2", kind="combo",
+                 choices=["One Direction", "Symmetric"],
+                 default="One Direction", group="Second direction"),
         ], remember_key="linear_pattern")
         if v is None:
             return
@@ -7637,10 +7686,16 @@ class MainWindow(QMainWindow):
         count = v["count"]
         dist = "extent" if str(v["dist"]) == "Extent" else "spacing"
         dirn = "symmetric" if str(v["dir"]) == "Symmetric" else "one"
+        count2 = int(v["count2"])
+        dx2, dy2, dz2 = v["dx2"], v["dy2"], v["dz2"]
+        dist2 = "extent" if str(v["dist2"]) == "Extent" else "spacing"
+        dirn2 = ("symmetric" if str(v["dir2"]) == "Symmetric" else "one")
         self._capture()
         feat = self.doc.add_linear_pattern(
             f"Pattern of {src.name}", src, (dx, dy, dz), count,
-            distribution=dist, direction=dirn)
+            distribution=dist, direction=dirn,
+            vector2=(dx2, dy2, dz2), count2=count2,
+            distribution2=dist2, direction2=dirn2)
         try:
             self.doc.recompute()       # the row lands on success
         except Exception as e:
@@ -7659,9 +7714,19 @@ class MainWindow(QMainWindow):
         at = (" over the full extent" if dist == "extent" else " at")
         tail = (", symmetrically from the source" if dirn == "symmetric"
                 else "")
+        base = (f"Patterned {src.name}: {count}x{at} ({dx:g}, {dy:g}, "
+                f"{dz:g}) mm{tail}")
+        if count2 == 1:
+            # the page's own one-direction case: the rung-era sentence,
+            # byte for byte, whatever the second rows were typed as.
+            self.status.showMessage(base, 6000)
+            return
+        at2 = (" over the full extent" if dist2 == "extent" else " at")
+        tail2 = (", symmetrically from the source" if dirn2 == "symmetric"
+                 else "")
         self.status.showMessage(
-            f"Patterned {src.name}: {count}x{at} ({dx:g}, {dy:g}, "
-            f"{dz:g}) mm{tail}", 6000)
+            f"{base} by {count2}x{at2} ({dx2:g}, {dy2:g}, {dz2:g}) "
+            f"mm{tail2}", 6000)
 
     def _mirror_feature(self, src, plane=None, off=None):
         """Symmetric twin of ``src`` across a datum plane — an origin
