@@ -183,6 +183,56 @@ def sample_polyline(pts, count: int) -> list:
     return out
 
 
+def path_stations(pts, count: int) -> list:
+    """M200 R3 [SLD-REF-PATTERN, verbatim]: "Path Direction: Orients
+    each pattern instance relative to its position along the path" -
+    the stations of sample_polyline PAIRED with the path's own turn
+    at each one, in DEGREES measured from the direction the path
+    leaves the FIRST station in (the source's own way of going).
+    The plain-speech law needs nothing the page does not word: the
+    path turns by its own bending, and a copy turns with it.  The
+    tangent AT a vertex is the OUTGOING segment (the way the copy
+    walks on from there); the last station keeps the incoming one.
+    A straight path turns nothing anywhere - Path Direction then
+    lands exactly what "Identical: Orients all pattern instances to
+    match the source object" gives (the house's translation-only v1
+    voice, the geometry twin the gates measure).  Same stations,
+    same count guard as sample_polyline; a degenerate (zero-length)
+    path turns nothing."""
+    pts = np.asarray(pts, float)
+    if pts.shape[0] < 2:
+        raise ValueError("the path is too short to pattern along")
+    st = sample_polyline(pts, count)
+    n = max(2, int(count))
+    seg = np.diff(pts, axis=0)
+    length = np.linalg.norm(seg, axis=1)
+    total = float(length.sum())
+    if total < 1e-9:
+        return [(x, y, 0.0) for (x, y) in st]
+    cum = np.concatenate([[0.0], np.cumsum(length)])
+
+    def dir_at(k: int):
+        j = k                                   # outgoing, then back
+        while j < len(seg) and length[j] < 1e-12:
+            j += 1
+        if j >= len(seg):
+            j = k
+            while j > 0 and length[j] < 1e-12:
+                j -= 1
+        return seg[j] / length[j]
+
+    turns = []
+    first = dir_at(0)
+    for t in np.linspace(0.0, total, n):
+        k = int(np.clip(np.searchsorted(cum, t, side="right") - 1,
+                        0, len(seg) - 1))
+        d = dir_at(k)
+        turns.append(math.degrees(math.atan2(
+            first[0] * d[1] - first[1] * d[0],
+            first[0] * d[0] + first[1] * d[1])))
+    return [(st[i][0], st[i][1], turns[i]) for i in range(n)]
+
+
 def sweep_tube(path, radius: float, closed: bool, ring: int = 32) -> Solid:
     """Solid tube of `radius` around a 2D polyline (sketch-plane coords):
     circular stations normal to the local tangent, stitched by the loft

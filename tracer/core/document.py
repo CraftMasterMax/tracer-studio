@@ -286,13 +286,23 @@ class PathPatternFeature(Feature):
     sketch coordinates, placed into 3D by `plane`/`placement`/`axes`
     exactly like a sweep.  `count` equally spaced stations ride the
     path; copy 0 stays where the source is, the rest follow the path's
-    spacing (translation-only, v1).  Start the path at the source."""
+    spacing (translation-only, v1).  Start the path at the source.
+    M200 R3 [SLD-REF-PATTERN, verbatim] grows the page's Orientation
+    row: "Identical: Orients all pattern instances to match the
+    source object" (the translation-only v1 voice - the LEGACY
+    default, bit-untouched) | "Path Direction: Orients each pattern
+    instance relative to its position along the path" - each copy
+    turns by the angle the PATH has turned since the source, about
+    the path plane's normal through its station (the law the page
+    words needs nothing else; Start Point and the Distance/
+    Distribution row stay later rungs' honest business)."""
     source_uid: str = ""
     path: list = field(default_factory=list)      # [[x, y], ...]
     count: int = 3
     plane: str = "XY"
     placement: tuple = (0.0, 0.0, 0.0)
     axes: list | None = None
+    orientation: str = "identical"        # "identical" | "path"
 
 
 @dataclass
@@ -3267,12 +3277,43 @@ class Document:
                 src = by_uid.get(f.source_uid)
                 if src is None:
                     continue
-                from .sweep import sample_polyline
+                from .sweep import path_stations, sample_polyline
+                orient = str(f.orientation)
+                if orient not in ("identical", "path"):
+                    # M200 R3 [SLD-REF-PATTERN]: the page's two
+                    # orientation voices - nothing else is law, and
+                    # a wrong word refuses with the voice named.
+                    raise ValueError(
+                        f"the orientation is 'identical' or 'path', "
+                        f"not {orient!r}")
                 M = plane_matrix(f.plane, f.placement, f.axes)
-                ws = [M[:3, :3] @ np.array([x, y, 0.0]) + M[:3, 3]
-                      for x, y in sample_polyline(f.path, f.count)]
-                solid = Solid.batch_union(
-                    [src.translated(tuple(w - ws[0])) for w in ws])
+                if orient == "identical":
+                    ws = [M[:3, :3] @ np.array([x, y, 0.0]) + M[:3, 3]
+                          for x, y in sample_polyline(f.path, f.count)]
+                    solid = Solid.batch_union(
+                        [src.translated(tuple(w - ws[0])) for w in ws])
+                else:
+                    st = path_stations(f.path, f.count)
+                    ws = [M[:3, :3] @ np.array([x, y, 0.0]) + M[:3, 3]
+                          for x, y, _t in st]
+                    nrm = M[:3, 2]
+                    w0 = ws[0]
+                    xf = []
+                    for (_x, _y, t), w in zip(st, ws):
+                        # x -> R(nrm, t)(x - w0) + w: the source
+                        # leaves its own station, TURNS by the
+                        # path's bend about the plane normal, and
+                        # lands anchored AT its station (station 0
+                        # turn 0 lands the plain source).
+                        rot = _rot_about_line((0.0, 0.0, 0.0), nrm,
+                                              math.radians(t))
+                        A = np.eye(4)
+                        A[:3, 3] = w
+                        B = np.eye(4)
+                        B[:3, 3] = -w0
+                        xf.append(A @ rot @ B)
+                    solid = Solid.batch_union(
+                        [src.transformed(m) for m in xf])
             elif isinstance(f, CircularPatternFeature):
                 src = by_uid.get(f.source_uid)
                 if src is None:
@@ -3713,7 +3754,8 @@ class Document:
                          path=[list(map(float, p)) for p in f.path],
                          count=int(f.count), plane=f.plane,
                          placement=list(map(float, f.placement)),
-                         axes=f.axes)
+                         axes=f.axes,
+                         orientation=str(f.orientation))
             elif isinstance(f, CircularPatternFeature):
                 d.update(source_uid=f.source_uid,
                          center=list(map(float, f.center)),
@@ -3957,7 +3999,9 @@ class Document:
                     path=[list(map(float, p)) for p in fd["path"]],
                     count=int(fd["count"]), plane=fd.get("plane", "XY"),
                     placement=tuple(fd.get("placement", (0., 0., 0.))),
-                    axes=fd.get("axes"), **base))
+                    axes=fd.get("axes"),
+                    orientation=str(fd.get("orientation", "identical")),
+                    **base))
             elif t == "CircularPatternFeature":
                 doc.features.append(CircularPatternFeature(
                     name=fd["name"], source_uid=fd["source_uid"],

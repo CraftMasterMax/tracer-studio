@@ -140,7 +140,8 @@ def _walk_sketch(win, qapp, coords=((10, 10), (30, 10), (50, 10))):
 
 def test_command_walks_the_boss_down_the_path(win, qapp, monkeypatch):
     _walk_sketch(win, qapp)
-    script_cmd(monkeypatch, {"src": "boss", "count": 3})
+    script_cmd(monkeypatch, {"src": "boss", "count": 3,
+                             "orient": "Identical"})
     before = win.doc.result.volume
     win.action_path_pattern()
     qapp.processEvents()
@@ -179,7 +180,8 @@ def test_closed_loop_is_refused(win, qapp, monkeypatch):
 
 def test_inspector_counts_copies_along_length(win, qapp, monkeypatch):
     _walk_sketch(win, qapp)
-    script_cmd(monkeypatch, {"src": "boss", "count": 3})
+    script_cmd(monkeypatch, {"src": "boss", "count": 3,
+                             "orient": "Identical"})
     win.action_path_pattern()
     pf = [f for f in win.doc.features
           if isinstance(f, PathPatternFeature)][0]

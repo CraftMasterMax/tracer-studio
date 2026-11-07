@@ -1699,6 +1699,10 @@ class MainWindow(QMainWindow):
                     ang=True)
         elif isinstance(feature, PathPatternFeature):
             ints("count", "occurrences", feature.count)
+            # M200 R3 [SLD-REF-PATTERN]: the page's Orientation row
+            # rides every path record (the record's own voice).
+            combo("orient", "orientation", ("identical", "path"),
+                  feature.orientation)
         elif isinstance(feature, GeometricPatternFeature):
             ints("n1", "count 1", feature.n1, mn=1)
             ints("n2", "count 2", feature.n2, mn=1)
@@ -1878,6 +1882,10 @@ class MainWindow(QMainWindow):
                 feature.distribution = str(v["dist"])
         elif isinstance(feature, PathPatternFeature):
             feature.count = int(v["count"])
+            # M200 R3: guarded like every mouth since rung one - a
+            # script driving the rung-era rows never invents a voice.
+            if "orient" in v:
+                feature.orientation = str(v["orient"])
         elif isinstance(feature, GeometricPatternFeature):
             feature.n1, feature.n2 = int(v["n1"]), int(v["n2"])
             feature.t1, feature.t2 = mm("t1"), mm("t2")
@@ -7427,7 +7435,15 @@ class MainWindow(QMainWindow):
     def action_path_pattern(self):
         """Fusion Pattern-on-Path (M50): the open line/arc chain of the
         current sketch is the walk — N equally spaced copies of the
-        chosen feature ride it, translation first (v1)."""
+        chosen feature ride it, translation first (v1).
+        M200 R3 [SLD-REF-PATTERN, verbatim] grew the page's
+        Orientation row - "Identical: Orients all pattern instances
+        to match the source object" (the v1 voice, the default) |
+        "Path Direction: Orients each pattern instance relative to
+        its position along the path" (each copy turns by the angle
+        the path has turned since the source).  Start Point and the
+        Distance/Distribution row are the page's other path mouths
+        and stay UNOFFERED until a rung cuts them."""
         if self.doc is None or self.doc.result is None:
             return
         m = self.sketch.model
@@ -7466,20 +7482,28 @@ class MainWindow(QMainWindow):
                  choices=names, group="Object"),
             dict(key="count", label="Occurrences along the path",
                  kind="int", default=4, min=2, max=200, group="Pattern"),
+            dict(key="orient", label="Orientation", kind="combo",
+                 choices=["Identical", "Path Direction"],
+                 default="Identical", group="Pattern"),
         ], remember_key="path_pattern")
         if v is None:
             return
         src = cands[names.index(v["src"])]
+        orient = "path" if str(v["orient"]) == "Path Direction" \
+            else "identical"
         self._capture()
         self.doc.add(PathPatternFeature(
             name=f"Path of {src.name}", op=src.op, source_uid=src.uid,
             path=[list(map(float, p)) for p in pts],
             count=int(v["count"]), plane=m.plane,
-            placement=tuple(map(float, m.origin)), axes=m.axes))
+            placement=tuple(map(float, m.origin)), axes=m.axes,
+            orientation=orient))
         self.recompute()
         self.viewport.refresh(fit=True)
         self.status.showMessage(
-            f"Patterned {src.name} \u00d7{v['count']} along the path", 6000)
+            f"Patterned {src.name} \u00d7{v['count']} along the path"
+            + (", each turned to its place along it"
+               if orient == "path" else ""), 6000)
 
     def action_circular_pattern(self):
         """M200 R2 [SLD-REF-PATTERN, verbatim] grew the ONE dialog

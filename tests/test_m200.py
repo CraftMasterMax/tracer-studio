@@ -30,8 +30,8 @@ import pytest
 
 from tracer.core.document import (CircularPatternFeature,
                                   Document, LinearPatternFeature,
-                                  PrimitiveFeature, circular_rotations,
-                                  linear_offsets)
+                                  PathPatternFeature, PrimitiveFeature,
+                                  circular_rotations, linear_offsets)
 from tracer.core.geometry import Solid
 from tracer.ui import cmddialog
 
@@ -497,3 +497,223 @@ def test_the_circular_lever_speaks_each_records_own_voice(win, qapp):
     win._apply_feature_params(g, {"count": 3, "angle": 90.0,
                                   "dist": "symmetric"})
     assert (g.distribution, g.angle) == ("symmetric", 90.0)  # as typed
+
+
+# ---- R3: the pattern-on-path Orientation row -------------------------------
+
+def _path_doc(pts, orientation="identical", count=3,
+              dims=None, placement=(0.0, 0.0, 0.0)):
+    d = Document("pp")
+    src = d.add(PrimitiveFeature(
+        name="bar", kind="box",
+        dims=dims or {"dx": 4.0, "dy": 1.0, "dz": 1.0},
+        placement=placement))
+    d.add(PathPatternFeature(name="P", op="union", source_uid=src.uid,
+                             path=[list(map(float, p)) for p in pts],
+                             count=count, orientation=orientation))
+    return d
+
+
+def test_path_stations_pair_points_with_the_paths_own_turn():
+    """[SLD-REF-PATTERN, verbatim] "Path Direction: Orients each
+    pattern instance relative to its position along the path" and
+    "Identical: Orients all pattern instances to match the source
+    object".  path_stations returns the SAME stations as
+    sample_polyline (the placement law is untouched) each paired with
+    the path's turn in degrees from the first station's direction: a
+    straight path turns nothing (0/0/0); an L turns 90 at the corner
+    and keeps it for the far leg; a quarter-circle grows 0/30/60/...
+    toward ninety; a degenerate point path turns nothing and a lone
+    source (n<2) lands the two-station guard with zero turn."""
+    from tracer.core.sweep import path_stations, sample_polyline
+    straight = [[0, 0], [10, 0], [20, 0]]
+    st = path_stations(straight, 3)
+    assert [(round(x, 6), round(y, 6)) for x, y, _t in st] == \
+        sample_polyline(straight, 3)            # stations UNTOUCHED
+    assert [t for _x, _y, t in st] == [0.0, 0.0, 0.0]
+    L = [[0, 0], [10, 0], [10, 10]]
+    assert [round(t, 6) for _x, _y, t in path_stations(L, 3)] == \
+        [0.0, 90.0, 90.0]
+    assert [round(t, 6) for _x, _y, t in path_stations(L, 4)] == \
+        [0.0, 0.0, 90.0, 90.0]          # still on the first leg = 0
+    import math as _m
+    th = [i * (_m.pi / 2) / 24 for i in range(25)]
+    arc = [[10 * _m.cos(a), 10 * _m.sin(a)] for a in th]
+    at = [t for _x, _y, t in path_stations(arc, 4)]
+    assert at[0] == 0.0 and all(at[i] < at[i + 1] for i in range(3))
+    assert 30 < at[1] < 45 and 80 < at[3] < 95   # monotone toward 90
+    assert [t for _x, _y, t in path_stations([[5, 5], [5, 5]], 3)] == \
+        [0.0, 0.0, 0.0]                          # degenerate: no turn
+    assert [round(t, 6) for _x, _y, t in path_stations(straight, 1)] == \
+        [0.0, 0.0]                               # n<2 -> 2 stations
+
+
+def test_path_direction_turns_the_copies_the_path_turns():
+    """Through the document the turns become geometry.  On a STRAIGHT
+    path Path Direction lands EXACTLY what Identical gives (same
+    bounds, same volume to 1e-6) - there is no bend to follow, so a
+    naive "the two modes always differ" claim is a lie this gate
+    refuses to tell (the probe-shadow law).  On an L the chiral
+    4x1x1 bar witnesses the turn: Identical keeps every copy axis-
+    aligned (bounds x 0..14, y 0..11 - the far bar still lying down
+    at the top); Path Direction stands the corner copies UP (bounds
+    x 0..10, y 0..14 - the tall bar now reaching y 14), volumes
+    CLOSE but bounding boxes DISJOINT in shape.  Watertight and
+    winding-consistent both ways; a bad orientation word refuses with
+    the voice named, and the n<2 guard still lands a solid."""
+    straight = [[0, 0], [10, 0], [20, 0]]
+    bi = _path_doc(straight).recompute().to_trimesh()
+    bp = _path_doc(straight, orientation="path").recompute() \
+        .to_trimesh()
+    assert bi.bounds == pytest.approx(bp.bounds, abs=1e-4)  # straight!
+    assert bi.volume == pytest.approx(bp.volume, rel=1e-6)
+    L = [[0, 0], [10, 0], [10, 10]]
+    Li = _path_doc(L).recompute().to_trimesh()
+    Lp = _path_doc(L, orientation="path").recompute().to_trimesh()
+    assert Li.is_watertight and Li.is_winding_consistent
+    assert Lp.is_watertight and Lp.is_winding_consistent
+    assert (Li.bounds[1][0], Li.bounds[1][1]) == pytest.approx(
+        (14.0, 11.0), abs=1e-3)                 # far bar lying down
+    assert (Lp.bounds[1][0], Lp.bounds[1][1]) == pytest.approx(
+        (10.0, 14.0), abs=1e-3)                 # far bar stood up
+    assert Lp.bounds[1][1] > Li.bounds[1][1]    # the turn is REAL
+    with pytest.raises(ValueError, match="'identical' or 'path'"):
+        _path_doc(straight, orientation="swirl").recompute()
+    assert _path_doc(straight, orientation="path", count=1).recompute(
+    ).volume > 0
+
+
+def test_the_orientation_voice_rides_the_file_and_old_files_stay_put():
+    """Path Direction is EXACT through json and the reloaded body
+    regrounds BIT-EQUAL (fresh against fresh, one environment); a
+    record written BEFORE rung three carries no orientation key, so
+    from_dict reads 'identical' and the v1 translation route runs
+    untouched - the L's far bar lies down again (y max 11, not 14).
+    Old files replay byte-honest."""
+    L = [[0, 0], [10, 0], [10, 10]]
+    d = _path_doc(L, orientation="path")
+    v = d.recompute()
+    raw = json.loads(json.dumps(d.to_dict()))
+    fe = raw["features"][-1]
+    assert fe["orientation"] == "path"
+    d2 = Document.from_dict(raw)
+    assert d2.features[-1].orientation == "path"
+    assert d2.recompute().volume == pytest.approx(v.volume, rel=1e-9)
+    del fe["orientation"]                       # a legacy file
+    d3 = Document.from_dict(raw)
+    assert d3.features[-1].orientation == "identical"
+    b3 = d3.recompute().to_trimesh().bounds
+    assert b3[1][1] == pytest.approx(11.0, abs=1e-3)   # v1 lay-down
+
+
+def _walk_sketch_m200(win, qapp, coords, plate=(80, 20), boss=(10, 10)):
+    from PySide6.QtWidgets import QMessageBox
+    # A second walk on one window meets the discard guard (the prior
+    # sketch's lines are still in the editor); answer it Yes so the
+    # door test can walk the straight and the L on one window.
+    QMessageBox.question = staticmethod(
+        lambda *a, **k: QMessageBox.Yes)
+    win.new_document()
+    win.doc.add(PrimitiveFeature(name="plate", kind="box",
+                                 dims={"dx": plate[0], "dy": plate[1],
+                                       "dz": 5}))
+    win.doc.add(PrimitiveFeature(name="boss", kind="cylinder",
+                                 dims={"radius": 4.0, "height": 6},
+                                 placement=(boss[0], boss[1], 5.0),
+                                 op="union"))
+    win.recompute()
+    win.action_new_sketch()
+    qapp.processEvents()
+    m = win.sketch.model
+    pts = [m.point(*c) for c in coords]
+    for i in range(len(pts) - 1):
+        m.add_line(pts[i], pts[i + 1])
+    qapp.processEvents()
+
+
+def test_the_path_door_asks_the_orientation_row_and_both_voices_land(
+        win, qapp, monkeypatch):
+    """The page's Orientation row walked through the real door (fresh
+    sketch each voice - the probe-shadow law: an active sketch makes
+    the SECOND action_new_sketch meet the discard guard).  The door
+    asks THREE rows [src, count, orient]; Identical rides the v1
+    words BYTE-IDENTICAL ("...×3 along the path") and stores the
+    legacy voice; Path Direction grows the page's tail
+    ("...turned to its place along it") and stands the corner boss
+    UP (an L walk's bounding box reaches further in y than the same
+    walk Identical).  The lever speaks both voices and the apply
+    mouth is GUARDED - a script driving the rung-era {count} row
+    never invents an orientation."""
+    straight = ((10, 10), (30, 10), (50, 10))
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"src": "boss", "count": 3,
+                                         "orient": "Identical"})
+    _walk_sketch_m200(win, qapp, straight)
+    calls = []
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda p, t, fl, **k: (calls.append(
+                            [f["key"] for f in fl]),
+                            {"src": "boss", "count": 3,
+                             "orient": "Identical"})[1])
+    win.action_path_pattern()
+    qapp.processEvents()
+    assert calls[0] == ["src", "count", "orient"]     # the page's row
+    f = win.doc.features[-1]
+    assert f.orientation == "identical"
+    assert win.status.currentMessage() == \
+        "Patterned boss ×3 along the path"            # byte-v1
+    ident_vol = win.doc.result.volume
+
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"src": "boss", "count": 3,
+                                         "orient": "Path Direction"})
+    _walk_sketch_m200(win, qapp, straight)
+    win.action_path_pattern()
+    qapp.processEvents()
+    f = win.doc.features[-1]
+    assert f.orientation == "path"
+    assert win.status.currentMessage() == \
+        "Patterned boss ×3 along the path, each turned to its place " \
+        "along it"
+    assert win.doc.result.volume == pytest.approx(ident_vol, rel=1e-6)
+
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"src": "boss", "count": 3,
+                                         "orient": "Path Direction"})
+    _walk_sketch_m200(win, qapp, ((10, 10), (30, 10), (30, 20)),
+                      plate=(50, 25), boss=(14, 10))
+    win.action_path_pattern()
+    qapp.processEvents()
+    ly = win.doc.result.to_trimesh().bounds[1][1]
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"src": "boss", "count": 3,
+                                         "orient": "Identical"})
+    _walk_sketch_m200(win, qapp, ((10, 10), (30, 10), (30, 20)),
+                      plate=(50, 25), boss=(14, 10))
+    win.action_path_pattern()
+    qapp.processEvents()
+    iy = win.doc.result.to_trimesh().bounds[1][1]
+    # An OFF-CENTER source is the honest witness (a boss centered on
+    # the walk start turns about its own axis - turned, it is the
+    # same boss, a "differs" claim there would be a lie). With the
+    # boss 4 mm right of the start and the corner turning UPWARD,
+    # Path Direction swings the far boss OVER the plate edge (its
+    # rim reaches y 28 past the plate's 25) where Identical keeps it
+    # inside (y 24): the turn, measured.
+    assert ly == pytest.approx(28.0, abs=0.5)
+    assert iy == pytest.approx(25.0, abs=0.5)   # the plate edge wins
+    assert ly > iy + 1.5
+
+    rows = {fl["key"]: fl for fl in win._feature_params(
+        PathPatternFeature(name="R", source_uid="x",
+                           path=[[0, 0], [5, 0]], count=3,
+                           orientation="path"))}
+    assert list(rows) == ["count", "orient"]
+    assert tuple(rows["orient"]["choices"]) == ("identical", "path")
+    assert rows["orient"]["default"] == "path"
+    g = PathPatternFeature(name="G", source_uid="x",
+                           path=[[0, 0], [5, 0]], count=3)
+    win._apply_feature_params(g, {"count": 5})        # legacy script
+    assert (g.count, g.orientation) == (5, "identical")
+    win._apply_feature_params(g, {"count": 4, "orient": "path"})
+    assert (g.count, g.orientation) == (4, "path")    # as typed
