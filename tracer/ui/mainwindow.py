@@ -1684,7 +1684,19 @@ class MainWindow(QMainWindow):
                   feature.direction)
         elif isinstance(feature, CircularPatternFeature):
             ints("count", "occurrences", feature.count)
-            dbl("angle", "angle", feature.angle, dec=1, mn=1.0, ang=True)
+            # M200 R2 [SLD-REF-PATTERN]: the page's circular
+            # Distribution row rides every record (the record's own
+            # lowercase voice).  A FULL record never opens the Angle
+            # row - the page's Full takes no angle ("360 degrees
+            # around the axis"), so its angle speaks nothing (one
+            # record one voice, the draft law); auto/partial/
+            # symmetric all speak theirs.
+            combo("dist", "distribution", ("auto", "full", "partial",
+                                           "symmetric"),
+                  feature.distribution)
+            if feature.distribution != "full":
+                dbl("angle", "angle", feature.angle, dec=1, mn=1.0,
+                    ang=True)
         elif isinstance(feature, PathPatternFeature):
             ints("count", "occurrences", feature.count)
         elif isinstance(feature, GeometricPatternFeature):
@@ -1856,7 +1868,14 @@ class MainWindow(QMainWindow):
                 feature.direction = str(v["dir"])
         elif isinstance(feature, CircularPatternFeature):
             feature.count = int(v["count"])
-            feature.angle = float(v["angle"])
+            # M200 R2: the angle row opens on every voice EXCEPT a
+            # full record's (the page's Full takes no angle); guarded
+            # like every rung-one mouth - a script driving the
+            # rung-era rows never invents a voice.
+            if "angle" in v:
+                feature.angle = float(v["angle"])
+            if "dist" in v:
+                feature.distribution = str(v["dist"])
         elif isinstance(feature, PathPatternFeature):
             feature.count = int(v["count"])
         elif isinstance(feature, GeometricPatternFeature):
@@ -7463,6 +7482,18 @@ class MainWindow(QMainWindow):
             f"Patterned {src.name} \u00d7{v['count']} along the path", 6000)
 
     def action_circular_pattern(self):
+        """M200 R2 [SLD-REF-PATTERN, verbatim] grew the ONE dialog
+        with the page's circular Distribution row - "Full: Distributes
+        pattern instances 360 degrees around the axis" | "Partial:
+        ...in one direction from the source object around the axis to
+        an angle value that you specify" | "Symmetric: ...
+        symmetrically in two directions from the source object around
+        the axis to an angle value that you specify".  The page's
+        FULL words NO angle, so a Full pick NOTICES the typed Angle
+        row and NEVER WRITES it (the draft door's two-voice law - one
+        record one voice); Partial and Symmetric write it as the rung
+        era always did.  Suppression and Compute Type stay UNOFFERED
+        (canvas checkboxes / feature-face BRep)."""
         if self.doc is None:
             return
         cands = self._pattern_candidates()
@@ -7485,6 +7516,9 @@ class MainWindow(QMainWindow):
                  min=-1e5, max=1e5, group="Axis"),
             dict(key="cy", label="Center Y", kind="double", default=0.0,
                  min=-1e5, max=1e5, group="Axis"),
+            dict(key="dist", label="Distribution", kind="combo",
+                 choices=["Full", "Partial", "Symmetric"], default="Full",
+                 group="Pattern"),
             dict(key="ang", label="Angle", kind="double", default=360.0,
                  min=-360.0, max=360.0, decimals=1, suffix="°",
                  group="Pattern"),
@@ -7495,19 +7529,40 @@ class MainWindow(QMainWindow):
             return
         src = cands[names.index(v["src"])]
         cx, cy = v["cx"], v["cy"]
-        ang, count = v["ang"], v["count"]
+        dist = str(v["dist"]).lower()         # the page's own voice
+        ang = 360.0 if dist == "full" else float(v["ang"])
+        # Full takes NO angle (page words none): the typed row is
+        # noticed, never written - the record carries the default.
+        count = v["count"]
         axsel = v["axis"]
         axis = "" if axsel.startswith("+Z") else \
             axsel[0] if "(origin)" in axsel else axsel
         self._capture()
-        self.doc.add_circular_pattern(f"Circle of {src.name}", src,
-                                      (cx, cy), ang, count, axis=axis)
+        feat = self.doc.add_circular_pattern(f"Circle of {src.name}", src,
+                                             (cx, cy), ang, count,
+                                             axis=axis, distribution=dist)
+        try:
+            self.doc.recompute()       # the row lands on success
+        except Exception as e:
+            # M200 R1 door law kept whole: a refusal leaves NOTHING -
+            # no record, no undo step that undoes nothing, the
+            # kernel's cure verbatim ("an odd count has one, an even
+            # one does not").
+            self.doc.features.remove(feat)
+            self.doc.dirty = True
+            self.recompute()
+            self._undo.pop()
+            self._redo.clear()
+            self.status.showMessage(f"Pattern refused: {e}", 6000)
+            return
         self.recompute()
         self.viewport.refresh(fit=True)
         pivot = f"axis {axis!r}" if axis else f"({cx:g}, {cy:g})"
         self.status.showMessage(
             f"Patterned {src.name}: {count}x over {ang:g}° about "
-            f"{pivot}", 6000)
+            f"{pivot}"
+            + (", symmetrically from the source" if dist == "symmetric"
+               else ""), 6000)
 
     def action_linear_pattern(self):
         """M200 [SLD-REF-PATTERN, verbatim] grew the ONE dialog with

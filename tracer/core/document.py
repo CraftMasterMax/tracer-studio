@@ -212,12 +212,71 @@ class CircularPatternFeature(Feature):
     a work axis from the browser; when set, the axis line itself is the
     pivot and `center` steps aside). angle=360 spaces copies evenly
     without a wrap duplicate; a partial angle spans its copies inclusive
-    (Fusion's circular pattern)."""
+    (Fusion's circular pattern).
+    M200 R2 [SLD-REF-PATTERN, verbatim] grows the page's CIRCULAR
+    Distribution row: "Full: Distributes pattern instances 360 degrees
+    around the axis" | "Partial: ...in one direction from the source
+    object around the axis to an angle value that you specify" |
+    "Symmetric: ...symmetrically in two directions from the source
+    object around the axis to an angle value that you specify".
+    "auto" is the rung-era derivation (|angle| 360 = Full, else
+    Partial) - the LEGACY voice, bit-untouched; the explicit enums
+    name the page's own three ways.  Full takes NO angle (the page
+    words none for it), so a full record's angle row is noticed and
+    never written - the kernel reads +360 around the axis."""
     source_uid: str = ""
     center: tuple = (0.0, 0.0)
     angle: float = 360.0
     count: int = 6
     axis: str = ""
+    distribution: str = "auto"          # "auto" | "full" | "partial"
+                                        # | "symmetric"
+
+
+def circular_rotations(angle: float, count: int, distribution: str = "auto"):
+    """The placement law of a circular pattern - rotation angles in
+    DEGREES, nothing else (the document turns each into its matrix).
+    The count INCLUDES the source at the first spoke.  "auto" is the
+    rung-era derivation: |angle| exactly 360 spaces the copies over
+    the full turn with NO wrap duplicate (step angle/n), any other
+    angle spans its copies inclusive (step angle/(n-1)) - the same
+    floats in the same order as the rung-era loop, measured
+    BIT-IDENTICAL.  "full" is the page's Full - 360 degrees around the
+    axis, step 360/n (the page words NO angle for it, so the record's
+    angle speaks nothing here).  "partial" is the page's Partial -
+    one direction from the source to the typed angle, inclusive
+    (step angle/(n-1); a typed 360 lands the last copy on the source -
+    the page refuses no such thing, the union simply dedups).
+    "symmetric" distributes in TWO DIRECTIONS FROM THE SOURCE to the
+    typed angle: the source IS an instance AND the middle - an ODD
+    count is law-derivable (the ends stand +-angle/2), an even one has
+    no middle instance and the page words no rule, so it refuses with
+    the cure rather than inventing one (the rung-one law, same page
+    family).  Unknown enums refuse with the voice named.  n<1 lands a
+    single source copy (the legacy max(1,..) guard kept)."""
+    n = max(1, int(count))
+    ang = float(angle)
+    dist = str(distribution)
+    if dist not in ("auto", "full", "partial", "symmetric"):
+        raise ValueError(f"the distribution is 'auto', 'full', "
+                         f"'partial' or 'symmetric', not {dist!r}")
+    if n == 1:
+        return [0.0]
+    if dist == "full":
+        return [360.0 / n * k for k in range(n)]
+    if dist == "auto":
+        full = abs(abs(ang) - 360.0) < 1e-9
+        step = ang / (n if full else max(n - 1, 1))
+        return [step * k for k in range(n)]
+    step = ang / max(n - 1, 1)
+    if dist == "symmetric":
+        if n % 2 == 0:
+            raise ValueError("symmetric distributes from the source and "
+                             "the source must hold the middle - an odd "
+                             "count has one, an even one does not")
+        mid = (n - 1) / 2
+        return [step * (k - mid) for k in range(n)]
+    return [step * k for k in range(n)]
 
 
 @dataclass
@@ -3066,11 +3125,13 @@ class Document:
             distribution=str(distribution), direction=str(direction)))
 
     def add_circular_pattern(self, name, source: Feature, center=(0, 0),
-                             angle=360.0, count=6, op=None, axis=""):
+                             angle=360.0, count=6, op=None, axis="",
+                             distribution="auto"):
         return self.add(CircularPatternFeature(
             name=name, op=op or source.op, source_uid=source.uid,
             center=(float(center[0]), float(center[1])),
-            angle=float(angle), count=int(count), axis=axis))
+            angle=float(angle), count=int(count), axis=axis,
+            distribution=str(distribution)))
 
     def add_mirror(self, name, source: Feature, plane="YZ", offset=0.0,
                    op=None):
@@ -3216,18 +3277,16 @@ class Document:
                 src = by_uid.get(f.source_uid)
                 if src is None:
                     continue
-                n = max(1, int(f.count))
-                ang = float(f.angle)
-                full = abs(abs(ang) - 360.0) < 1e-9
-                step = ang / (n if full else max(n - 1, 1))
+                rots = circular_rotations(f.angle, f.count,
+                                          f.distribution)
                 if f.axis:                      # M125: named datum pivot
                     ao, ad = self.axis_frame(f.axis)
-                    xf = [_rot_about_line(ao, ad, math.radians(step * k))
-                          for k in range(n)]
+                    xf = [_rot_about_line(ao, ad, math.radians(a))
+                          for a in rots]
                 else:                           # legacy: +Z through center
                     xf = [self._rotz_about(f.center[0], f.center[1],
-                                           math.radians(step * k))
-                          for k in range(n)]
+                                           math.radians(a))
+                          for a in rots]
                 solid = Solid.batch_union([src.transformed(m) for m in xf])
             elif isinstance(f, MirrorFeature):
                 src = by_uid.get(f.source_uid)
@@ -3659,7 +3718,8 @@ class Document:
                 d.update(source_uid=f.source_uid,
                          center=list(map(float, f.center)),
                          angle=float(f.angle), count=int(f.count),
-                         axis=f.axis)
+                         axis=f.axis,
+                         distribution=str(f.distribution))
             elif isinstance(f, MirrorFeature):
                 d.update(source_uid=f.source_uid, plane=f.plane,
                          offset=float(f.offset))
@@ -3903,6 +3963,7 @@ class Document:
                     name=fd["name"], source_uid=fd["source_uid"],
                     center=tuple(fd["center"]), angle=float(fd["angle"]),
                     count=int(fd["count"]), axis=fd.get("axis", ""),
+                    distribution=str(fd.get("distribution", "auto")),
                     **base))
             elif t == "MirrorFeature":
                 doc.features.append(MirrorFeature(

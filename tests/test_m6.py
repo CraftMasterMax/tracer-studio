@@ -95,7 +95,7 @@ def test_circular_pattern_dialog_and_undo(win, monkeypatch):
     win.recompute()
     script_cmd(monkeypatch, {"src": "bolt hole", "axis": "+Z (through center)",
                              "cx": 20.0, "cy": 20.0,
-                             "ang": 360.0, "count": 5})
+                             "ang": 360.0, "count": 5, "dist": "Full"})
     win.action_circular_pattern()
     pats = [f for f in win.doc.features
             if isinstance(f, CircularPatternFeature)]

@@ -28,8 +28,10 @@ import math
 import numpy as np
 import pytest
 
-from tracer.core.document import (Document, LinearPatternFeature,
-                                  PrimitiveFeature, linear_offsets)
+from tracer.core.document import (CircularPatternFeature,
+                                  Document, LinearPatternFeature,
+                                  PrimitiveFeature, circular_rotations,
+                                  linear_offsets)
 from tracer.core.geometry import Solid
 from tracer.ui import cmddialog
 
@@ -277,3 +279,221 @@ def test_the_lever_opens_the_page_rows_for_every_record(win, qapp):
                                   "dir": "symmetric"})
     assert (g.distribution, g.direction) == ("extent", "symmetric")
     assert g.vector == (20.0, 0.0, 0.0)                   # as typed
+
+
+# ---- R2: the circular Distribution row -----------------------------------
+
+def _ball_cp(count=3, **kw):
+    d = Document("cp")
+    d.add(PrimitiveFeature(name="ball", kind="sphere",
+                           dims={"radius": 2.0},
+                           placement=(10.0, 0.0, 0.0)))
+    d.add(CircularPatternFeature(name="C", source_uid=d.features[0].uid,
+                                 count=count, **kw))
+    return d
+
+
+def test_circular_auto_full_partial_land_bit_identical():
+    """The page's Full is "360 degrees around the axis" - it words NO
+    angle, so the kernel's full ignores the typed value (step 360/n)
+    and lands BIT-IDENTICAL (==) to auto at 360; partial is the
+    rung-era inclusive span (step ang/(n-1), == auto at 90); the n<1
+    guard lands one source copy; the explicit enums are named in the
+    refusal when the voice is wrong.  The auto route itself is the
+    old loop untouched - the same floats in the same order."""
+    assert circular_rotations(360.0, 4) == [0.0, 90.0, 180.0, 270.0]
+    assert circular_rotations(90.0, 4) == [0.0, 30.0, 60.0, 90.0]
+    assert circular_rotations(90.0, 4, "full") == \
+        circular_rotations(360.0, 4, "auto")          # angle NOTICED
+    assert circular_rotations(90.0, 4, "partial") == \
+        circular_rotations(90.0, 4, "auto")           # the same span
+    assert circular_rotations(360.0, 0, "auto") == [0.0]   # legacy guard
+    with pytest.raises(ValueError, match="'auto', 'full'"):
+        circular_rotations(90.0, 3, "weave")
+
+
+def test_circular_symmetric_holds_the_source_in_the_middle():
+    """"Symmetric: ...in two directions from the source object to an
+    angle value": the source IS an instance AND the angular middle -
+    n=3 at 90 stands -45/0/+45, n=5 at 180 spans -90..+90; through
+    the document the r2 ball at radius 10 measures exactly that (the
+    y extremes are 10 sin45 + 2, x reaches 12 - bounds truth).  An
+    EVEN count has no middle instance and the page words no rule -
+    the SAME rung-one cure rides ("an odd count has one, an even one
+    does not"), and the refusal comes through recompute too.  The
+    named-axis voice (M125) rotates the symmetric spread about it."""
+    assert circular_rotations(90.0, 3, "symmetric") == [-45.0, 0.0, 45.0]
+    assert circular_rotations(180.0, 5, "symmetric") == \
+        [-90.0, -45.0, 0.0, 45.0, 90.0]
+    assert circular_rotations(90.0, 1, "symmetric") == [0.0]
+    v = _ball_cp(angle=90.0, distribution="symmetric") \
+        .recompute().to_trimesh().vertices
+    want = 10.0 * math.sin(math.radians(45.0)) + 2.0
+    assert v[:, 1].min() == pytest.approx(-want, abs=1e-3)
+    assert v[:, 1].max() == pytest.approx(want, abs=1e-3)
+    assert v[:, 0].max() == pytest.approx(12.0, abs=1e-3)   # source spoke
+    v5 = _ball_cp(count=5, angle=180.0, distribution="symmetric") \
+        .recompute().to_trimesh().vertices
+    assert (v5[:, 1].min(), v5[:, 1].max()) == pytest.approx(
+        (-12.0, 12.0), abs=1e-3)
+    with pytest.raises(ValueError, match="odd count has one"):
+        circular_rotations(90.0, 4, "symmetric")
+    with pytest.raises(ValueError, match="odd count has one"):
+        _ball_cp(count=4, distribution="symmetric").recompute()
+    d = Document("cp")
+    d.add(PrimitiveFeature(name="ball", kind="sphere",
+                           dims={"radius": 2.0},
+                           placement=(10.0, 0.0, 0.0)))
+    d.add(CircularPatternFeature(name="C", source_uid=d.features[0].uid,
+                                 count=3, angle=90.0, axis="Y",
+                                 distribution="symmetric"))
+    va = d.recompute().to_trimesh().vertices      # rotation about Y:
+    assert va[:, 2].min() == pytest.approx(-want, abs=1e-3)   # the spread
+    assert va[:, 2].max() == pytest.approx(want, abs=1e-3)    # lifts in z
+
+
+def test_the_wrap_copy_lands_on_the_source_and_replays_are_honest():
+    """Partial at a typed 360 spans 0/180/360 - the last copy lands
+    ON the source (the page's "to an angle value", inclusive) and the
+    union simply dedups: the bounds stay -12..12 x -2..2.  A
+    symmetric spread and its auto sibling are RIGID ROTATIONS of the
+    same copy set - their volumes are EQUAL within numerical noise
+    (rel 1e-9, NOT bit: the inputs are different rotated meshes and
+    each carries its own last-ulp float - the R3b lesson again, and
+    the honesty test a naive "differs" assertion would fail).
+    Files: the voice rides json EXACT and
+    the reload regrounds BIT-EQUAL (==, one environment); a file
+    written BEFORE rung two carries no distribution key - auto reads
+    and the pre-M200 span replays BIT-EQUAL to the same build made
+    fresh with the defaults."""
+    b = _ball_cp(angle=360.0, distribution="partial") \
+        .recompute().to_trimesh().bounds
+    assert (b[0][0], b[1][0]) == pytest.approx((-12.0, 12.0), abs=1e-4)
+    assert (b[0][1], b[1][1]) == pytest.approx((-2.0, 2.0), abs=1e-4)
+    assert _ball_cp(angle=120.0, distribution="symmetric") \
+        .recompute().volume == pytest.approx(
+            _ball_cp(angle=120.0).recompute().volume, rel=1e-9)
+    d = _ball_cp(angle=90.0, distribution="symmetric")
+    vol = d.recompute()
+    raw = json.loads(json.dumps(d.to_dict()))
+    fe = raw["features"][-1]
+    assert fe["distribution"] == "symmetric"
+    d2 = Document.from_dict(raw)
+    assert d2.recompute().volume == vol.volume             # ==, one env
+    del fe["distribution"]                                 # an old file
+    d3 = Document.from_dict(raw)
+    assert d3.features[-1].distribution == "auto"
+    assert d3.recompute().volume == _ball_cp(angle=90.0).recompute().volume
+
+
+def test_the_circular_door_lands_the_three_voices(win, qapp, monkeypatch):
+    """The page's circular Distribution walked through the real door.
+    FULL notices the typed Angle and NEVER WRITES it (the page's Full
+    words no angle - the draft door's two-voice law): the record
+    stores the 360 default and the sentence rides the rung-era words
+    BYTE-IDENTICAL.  PARTIAL writes the typed angle, also byte-
+    legacy.  SYMMETRIC and PARTIAL on a hole near a plate edge tell
+    the geometry TRUTH: at 30 degrees over 3 occurrences the partial
+    spread puts its outer hole HALF OFF the plate (half a hole
+    removed) while the symmetric spread stands with all THREE holes
+    inside - 1200-2.5xH against 1200-3xH, measured (their volumes
+    could NOT differ on open material: a rotated set is congruent -
+    the container is the witness).  The symmetric sentence grows the
+    page's tail; an EVEN symmetric count refuses the R1 door law
+    whole: no record, no undo step, body untouched to the last digit.
+    """
+    H = math.pi * 1.5 ** 2 * 2
+
+    def plate_hole():
+        win.new_document()
+        win.doc.add_plate("plate", 60, 10, 2)
+        win.doc.add_cylinder("h", 1.5, 10, center=(40, 5), z=-4,
+                             op="subtract")
+        win.recompute()
+
+    # Full notices the angle: typed 45, stored 360, legacy words
+    plate_hole()
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"src": "h",
+                                         "axis": "+Z (through center)",
+                                         "cx": 30.0, "cy": 5.0,
+                                         "dist": "Full", "ang": 45.0,
+                                         "count": 6})
+    win.action_circular_pattern()
+    f = win.doc.features[-1]
+    assert f.distribution == "full" and f.angle == 360.0    # NOTICED only
+    assert win.status.currentMessage() == \
+        "Patterned h: 6x over 360\u00b0 about (30, 5)"      # byte-legacy
+    # Partial 30x3: the outer hole hangs half off the plate edge
+    plate_hole()
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"src": "h",
+                                         "axis": "+Z (through center)",
+                                         "cx": 30.0, "cy": 5.0,
+                                         "dist": "Partial", "ang": 30.0,
+                                         "count": 3})
+    win.action_circular_pattern()
+    assert win.doc.result.volume == pytest.approx(1200 - 2.5 * H,
+                                                  rel=2e-2)
+    assert win.status.currentMessage() == \
+        "Patterned h: 3x over 30\u00b0 about (30, 5)"       # byte-legacy
+    # Symmetric 30x3: the source holds the middle, all THREE inside
+    plate_hole()
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"src": "h",
+                                         "axis": "+Z (through center)",
+                                         "cx": 30.0, "cy": 5.0,
+                                         "dist": "Symmetric",
+                                         "ang": 30.0, "count": 3})
+    win.action_circular_pattern()
+    f = win.doc.features[-1]
+    assert f.distribution == "symmetric" and f.angle == 30.0  # WRITTEN
+    assert win.doc.result.volume == pytest.approx(1200 - 3 * H,
+                                                  rel=2e-2)
+    assert win.status.currentMessage() == \
+        "Patterned h: 3x over 30\u00b0 about (30, 5), symmetrically " \
+        "from the source"
+    # Even symmetric refuses the R1 law whole (FRESH plate)
+    plate_hole()
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"src": "h",
+                                         "axis": "+Z (through center)",
+                                         "cx": 30.0, "cy": 5.0,
+                                         "dist": "Symmetric",
+                                         "ang": 90.0, "count": 4})
+    n, u, vol = len(win.doc.features), len(win._undo), \
+        win.doc.result.volume
+    win.action_circular_pattern()
+    assert win.status.currentMessage().startswith("Pattern refused:")
+    assert "odd count has one" in win.status.currentMessage()
+    assert len(win.doc.features) == n and len(win._undo) == u
+    assert win.doc.result.volume == vol            # to the last digit
+
+
+def test_the_circular_lever_speaks_each_records_own_voice(win, qapp):
+    """One record one voice at the lever: the Distribution combo
+    rides EVERY circular record (the record's own lowercase values);
+    a FULL record never opens the Angle row - the page's Full takes
+    no angle, so its stored value is never written from a row that
+    does not exist; auto/partial/symmetric all open it.  The apply
+    mouth is GUARDED both ways: the rung-era script answer {count,
+    angle} still writes and never invents a voice, and a full
+    answer writes distribution alone."""
+    full = {f["key"]: f for f in win._feature_params(
+        CircularPatternFeature(name="F", distribution="full",
+                               angle=360.0))}
+    assert list(full) == ["count", "dist"]                 # NO angle
+    assert tuple(full["dist"]["choices"]) == ("auto", "full", "partial",
+                                              "symmetric")
+    assert full["dist"]["default"] == "full"               # the record's own
+    auto = {f["key"]: f for f in win._feature_params(
+        CircularPatternFeature(name="A", distribution="auto",
+                               angle=90.0))}
+    assert list(auto) == ["count", "dist", "angle"]        # legacy + the row
+    assert auto["angle"]["suffix"] == "\u00b0"             # the R1b law
+    g = CircularPatternFeature(name="G", count=3, angle=10.0)
+    win._apply_feature_params(g, {"count": 5, "angle": 77.0})  # script
+    assert (g.count, g.angle, g.distribution) == (5, 77.0, "auto")
+    win._apply_feature_params(g, {"count": 3, "angle": 90.0,
+                                  "dist": "symmetric"})
+    assert (g.distribution, g.angle) == ("symmetric", 90.0)  # as typed

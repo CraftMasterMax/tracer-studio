@@ -351,7 +351,7 @@ def test_circular_dialog_passes_named_axis(win, monkeypatch):
     win.doc.add_axis_2pt((5, 5, 0), (5, 5, 9))
     _dialog_answers(monkeypatch, {"src": "lug", "axis": "Axis 1",
                                   "cx": 0.0, "cy": 0.0, "ang": 360.0,
-                                  "count": 4})
+                                  "count": 4, "dist": "Full"})
     win.action_circular_pattern()
     cp = [f for f in win.doc.features
           if isinstance(f, CircularPatternFeature)][0]
@@ -368,7 +368,7 @@ def test_circular_dialog_default_is_the_legacy_plus_z(win, monkeypatch):
     _dialog_answers(monkeypatch, {"src": "lug",
                                   "axis": "+Z (through center)",
                                   "cx": 0.0, "cy": 0.0, "ang": 360.0,
-                                  "count": 6})
+                                  "count": 6, "dist": "Full"})
     win.action_circular_pattern()
     cp = [f for f in win.doc.features
           if isinstance(f, CircularPatternFeature)][0]
