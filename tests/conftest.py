@@ -65,6 +65,27 @@ def script_cmd_cancel(monkeypatch):
     monkeypatch.setattr(cmddialog, "ask", lambda *a, **k: None)
 
 
+def script_extrude_door(monkeypatch, height, direction="one",
+                        measurement="whole", height2=0.0):
+    """M201 R3: answer the GROWN extrude creation door - ONE dialog
+    (title "Extrude", [SLD-REF-EXTRUDE] Direction row + the house's
+    one number + the page's two conditional siblings). Any OTHER
+    dialog title is delegated to the ask that was patched BEFORE this
+    call (script_cmd etc.), so order is law: script the rest first,
+    wrap the door last. Records born through the resting reply speak
+    the door's legacy voice - direction "one" is what the one-number
+    door always birthed."""
+    from tracer.ui import cmddialog
+    prior = cmddialog.ask
+
+    def routed(parent, title, fields, remember_key=None):
+        if title == "Extrude":
+            return dict(height=float(height), direction=direction,
+                        measurement=measurement, height2=float(height2))
+        return prior(parent, title, fields, remember_key=remember_key)
+    monkeypatch.setattr(cmddialog, "ask", routed)
+
+
 def settle_panels(app):
     """M163 harness law: processEvents() alone does NOT reap a panel's
     deleteLater(); a half-dead panel can keep a handler's QSettings alive

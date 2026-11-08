@@ -24,6 +24,7 @@ from PySide6.QtWidgets import QApplication                             # noqa: E
 
 from tracer.core import export2d, import2d                            # noqa: E402
 from tracer.core.sketch.model import SketchModel                      # noqa: E402
+from conftest import script_extrude_door                               # noqa: E402
 
 
 def _bracket_model():
@@ -166,7 +167,8 @@ def test_export_verb_writes_and_speaks(win, qapp, tmp_path):
     assert sum(1 for o in back if o[0] == "line") == 4
 
 
-def test_export_verb_on_a_saved_sketch_feature(win, qapp, tmp_path):
+def test_export_verb_on_a_saved_sketch_feature(win, qapp, tmp_path,
+                                               monkeypatch):
     from tracer.core.sketch.constraints import (Horizontal, Vertical)
     from tracer.ui.cmddialog import Shell
     win.new_document()
@@ -180,7 +182,12 @@ def test_export_verb_on_a_saved_sketch_feature(win, qapp, tmp_path):
     l3, l4 = m.add_line(c, e), m.add_line(e, a)
     m.sketch.constraints.extend([Horizontal(l1), Horizontal(l3),
                                  Vertical(l2), Vertical(l4)])
-    Shell.getDouble = staticmethod(lambda *A, **K: (5.0, True))
+    monkeypatch.setattr(Shell, "getDouble",
+                        staticmethod(lambda *A, **K: (5.0, True)))
+    # M201 R3: the grown creation door rides cmddialog.ask now; and the
+    # raw assignment this test used to do LEAKED the patch process-wide
+    # (the audit flagged it) - monkeypatch restores, the leak is gone.
+    script_extrude_door(monkeypatch, 5.0)
     cv.finish()
     qapp.processEvents()
     feat = win.doc.features[0]

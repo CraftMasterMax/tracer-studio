@@ -40,6 +40,7 @@ from tracer.core import step as _step                            # noqa: E402
 from tracer.core.sketch.model import SketchModel, model_to_dict  # noqa: E402
 from tracer.ui import dimedit, theme                             # noqa: E402
 from tracer.ui.dimedit import ChipField, chip_rect               # noqa: E402
+from conftest import script_extrude_door                         # noqa: E402
 
 
 # conftest forces QT_QPA_PLATFORM=offscreen at ITS import (line 12),
@@ -637,6 +638,7 @@ def test_mw_guard_swallows_model_layer_while_editing(win, monkeypatch):
     from tracer.ui.cmddialog import Shell
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (5.0, True)))
+    script_extrude_door(monkeypatch, 5.0)  # M201 R3: the grown door
     win.new_document()
     win.action_new_sketch()
     m = win.sketch.model
@@ -670,6 +672,7 @@ def test_widget_edit_drives_the_solid(win, monkeypatch):
     from tracer.ui.cmddialog import Shell
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (5.0, True)))
+    script_extrude_door(monkeypatch, 5.0)  # M201 R3: the grown door
     win.new_document()
     win.action_new_sketch()
     m = win.sketch.model

@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication, QInputDialog     # noqa: E402
 from tracer.core.document import ExtrudeFeature, PrimitiveFeature  # noqa: E402
 from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.document import Document                     # noqa: E402
+from conftest import script_extrude_door                      # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -29,6 +30,7 @@ def win(qapp, monkeypatch):
         pytest.skip(f"no headless GL: {e}")
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (10.0, True)))
+    script_extrude_door(monkeypatch, 10.0)   # M201 R3: the grown door
     w = MainWindow(renderer=r)
     w.resize(1100, 720)
     w.show()

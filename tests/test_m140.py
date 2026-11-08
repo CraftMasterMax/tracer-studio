@@ -32,6 +32,7 @@ from PySide6.QtWidgets import QApplication
 from tracer.core.document import (ExtrudeFeature, PrimitiveFeature)
 from tracer.core.sketch.model import SketchModel, face_axes
 from tracer.ui.cmddialog import Shell
+from conftest import script_extrude_door                          # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -125,6 +126,7 @@ def test_committed_host_sketch_names_count_up(win, qapp,
                                               monkeypatch):
     monkeypatch.setattr(Shell, "getDouble", lambda *a, **k:
                         (4.0, True))
+    script_extrude_door(monkeypatch, 4.0)  # M201 R3: the grown door
     m = face_sketch(win, (5.0, 5.0, 20.0), (0, 0, 1), "Stud")
     outer = np.array([[2, 2], [8, 2], [8, 8], [2, 8], [2, 2]],
                      float)
@@ -189,6 +191,7 @@ def test_face_extrude_over_material_still_joins(win, qapp,
                                                 monkeypatch):
     monkeypatch.setattr(Shell, "getDouble", lambda *a, **k:
                         (4.0, True))
+    script_extrude_door(monkeypatch, 4.0)  # M201 R3: the grown door
     win.doc.active_body = "Body 1"     # the host body is the stream
     m = face_sketch(win, (20.0, 10.0, 6.0), (0, 0, 1), "Body 1")
     outer = np.array([[15, 2], [25, 2], [25, 12], [15, 12],
@@ -204,6 +207,7 @@ def test_face_extrude_between_material_cuts(win, qapp,
                                             monkeypatch):
     monkeypatch.setattr(Shell, "getDouble", lambda *a, **k:
                         (4.0, True))
+    script_extrude_door(monkeypatch, 4.0)  # M201 R3: the grown door
     win.doc.active_body = "Body 1"     # the pocket cuts its host body
     m = SketchModel(plane="FACE")
     m.axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
@@ -223,6 +227,7 @@ def test_plane_sketches_ride_the_old_law(win, qapp,
                                          monkeypatch):
     monkeypatch.setattr(Shell, "getDouble", lambda *a, **k:
                         (2.0, True))
+    script_extrude_door(monkeypatch, 2.0)  # M201 R3: the grown door
     win.action_new_sketch("XY")
     m = win.sketch.model
     assert m.plane == "XY" and m.origin == (0.0, 0.0, 0.0)

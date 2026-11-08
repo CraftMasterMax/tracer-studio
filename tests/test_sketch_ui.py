@@ -10,7 +10,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import QPoint, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog  # noqa: E402
-from conftest import tree_texts  # noqa: E402
+from conftest import tree_texts, script_extrude_door  # noqa: E402
 from tracer.ui.cmddialog import Shell                    # noqa: E402
 
 from tracer.core.sketch.constraints import (Distance, Fixed,
@@ -124,6 +124,7 @@ def test_h_toggle_key_on_selected_line(win, qapp):
 def test_circle_tool_and_finish_extrudes_into_document(win, qapp, monkeypatch):
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (6.0, True)))
+    script_extrude_door(monkeypatch, 6.0)  # M201 R3: the grown door
     v_before = win.doc.result.volume
     win.action_new_sketch()
     canvas = win.sketch
@@ -211,6 +212,7 @@ def test_new_sketch_guard_protects_work(win, qapp, monkeypatch):
 def test_extrude_from_two_region_sketch(win, qapp, monkeypatch):
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (2.0, True)))
+    script_extrude_door(monkeypatch, 2.0)  # M201 R3: the grown door
     n_before = len(win.doc.features)
     win.action_new_sketch()
     m = win.sketch.model

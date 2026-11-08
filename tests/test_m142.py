@@ -27,6 +27,7 @@ from tracer.core import params
 from tracer.core.document import (Document, ExtrudeFeature,
                                   PrimitiveFeature)
 from tracer.core.sketch.model import face_axes
+from conftest import script_extrude_door                          # noqa: E402
 
 
 def cap_rect(x0, y0, x1, y1):
@@ -190,6 +191,7 @@ def test_face_commit_stores_the_handle_and_follows_live(win, qapp,
     from tracer.ui.cmddialog import Shell
     monkeypatch.setattr(Shell, "getDouble", lambda *a, **k:
                         (4.0, True))
+    script_extrude_door(monkeypatch, 4.0)  # M201 R3: the grown door
     vp = win.viewport
     sp = vp._cam.project((20.0, 15.0, 6.0), vp.width(), vp.height())
     hit, why = vp.face_probe(QPointF(*sp))

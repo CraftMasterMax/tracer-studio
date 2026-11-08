@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QApplication,        # noqa: E402
 from tracer.core.sketch.constraints import Distance, Fixed, Radius  # noqa: E402
 from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.document import ExtrudeFeature      # noqa: E402
-from conftest import script_dim_edit                 # noqa: E402
+from conftest import (script_dim_edit, script_extrude_door)     # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -62,6 +62,7 @@ def test_dimension_labels_appear_and_edit_drives_solid(win, qapp, monkeypatch):
     answers = [5.0]                       # extrude height on first finish
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (answers.pop(0), True)))
+    script_extrude_door(monkeypatch, 5.0)  # M201 R3: the grown door
     win.sketch.finish()
     qapp.processEvents()
     feats = [f for f in win.doc.features
@@ -98,6 +99,7 @@ def test_radius_label_edit(win, qapp, monkeypatch):
     _rect_with_dims(win)
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (5.0, True)))
+    script_extrude_door(monkeypatch, 5.0)  # M201 R3: the grown door
     win.sketch.finish()
     qapp.processEvents()
     feat = win.doc.features[0]

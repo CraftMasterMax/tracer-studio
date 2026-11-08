@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication, QInputDialog  # noqa: E402
 from tracer.core.document import Document, ExtrudeFeature  # noqa: E402
 from tracer.ui.cmddialog import Shell                    # noqa: E402
 from tracer.core.sketch.model import face_basis, frame_matrix  # noqa: E402
+from conftest import script_extrude_door                     # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -104,6 +105,7 @@ def test_sketch_on_face_flow_and_volume(win, qapp, monkeypatch):
     _plate_win(win)
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (3.0, True)))
+    script_extrude_door(monkeypatch, 3.0)  # M201 R3: the grown door
     qapp.processEvents()
     vp = win.viewport
     QTest.mouseDClick(vp, Qt.LeftButton, Qt.NoModifier,
@@ -129,6 +131,7 @@ def test_sketch_on_face_flow_and_volume(win, qapp, monkeypatch):
 def test_face_feature_serializes_and_reedits(win, qapp, monkeypatch):
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (3.0, True)))
+    script_extrude_door(monkeypatch, 3.0)  # M201 R3: the grown door
     test_sketch_on_face_flow_and_volume(win, qapp, monkeypatch)
     doc2 = Document.from_dict(win.doc.to_dict())
     ff = [f for f in doc2.features

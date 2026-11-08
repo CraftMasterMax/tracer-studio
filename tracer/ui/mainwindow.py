@@ -4505,9 +4505,59 @@ class MainWindow(QMainWindow):
             if not ok:
                 return
         else:
-            height, ok = Shell.getDouble(
-                self, "Extrude", "Height (mm):", 5.0, 0.01, 1e5, 2)
-            if not ok:
+            # M201 R3 [SLD-REF-EXTRUDE]: the page IS the EXTRUDE TOOL's
+            # dialog - its rows are the CREATION voice, so the door grew
+            # Direction and its two conditional siblings next to the one
+            # number it always asked (M47 law: ONE dialog, never a
+            # prompt chain). Page order: Direction, Measurement, then
+            # the distance (the page words it "Distance" under an
+            # Extent Type this door cannot honour - To Object and All
+            # are picking and visibility - so the row keeps the house's
+            # own word, height, never a quoted vendor label). The rows
+            # outside the chosen direction are asked, stored and INERT
+            # (the modal door cannot open and close rows mid-command -
+            # the conditional-row law, same coin as the lever).
+            # Resting voices: direction "one" - the door has ONLY ever
+            # birthed one-side records; the 5.0 default is the house's
+            # own (the page names none: "default" appears zero times).
+            v = cmddialog.ask(self, "Extrude", [
+                dict(key="direction", label="direction", kind="combo",
+                     choices=("one", "two", "symmetric"), default="one",
+                     group="Direction"),
+                dict(key="measurement", label="measurement (symmetric)",
+                     kind="combo", choices=("whole", "half"),
+                     default="whole", group="Direction"),
+                dict(key="height", label="height", kind="double",
+                     default=5.0, min=0.01, max=1e5, decimals=2,
+                     group="Distance"),
+                dict(key="height2", label="height 2 (second side)",
+                     kind="double", default=0.0, min=0.0, max=1e5,
+                     decimals=2, group="Distance"),
+            ], remember_key="extrude")
+            if v is None:
+                return
+            height = float(v["height"])
+            edirection = str(v["direction"])
+            esym = edirection == "symmetric"       # the paper follows
+            #                                       the word, always in
+            #                                       the door's own coin
+            emeas = str(v["measurement"])
+            eheight2 = float(v["height2"])
+            # M197 door law, preflight edition: the fold refuses these
+            # words (the R2 kernel law), but a door must refuse BEFORE
+            # the capture - a refused door leaves no undo step behind.
+            # A combo can only offer the page's voices in production;
+            # this guards the scripted and future mouths.
+            if edirection not in ("one", "two", "symmetric"):
+                self.status.showMessage(
+                    "Extrude refused: the direction is 'one', 'two' or "
+                    f"'symmetric', not {edirection!r}", 6000)
+                return
+            if edirection == "symmetric" and emeas not in ("whole",
+                                                           "half"):
+                self.status.showMessage(
+                    "Extrude refused: the measurement is 'whole' or "
+                    f"'half', not {emeas!r}", 6000)
                 return
         self._capture()
         for i, (outer, holes) in enumerate(profiles):
@@ -4535,7 +4585,11 @@ class MainWindow(QMainWindow):
             #                                          axis - the kernel
             #                                          turns on THAT
             self.doc.add(RevolveFeature(angle=angle, **common) if revolve
-                         else ExtrudeFeature(height=height, **common))
+                         else ExtrudeFeature(height=height,
+                                             direction=edirection,
+                                             symmetric=esym,
+                                             measurement=emeas,
+                                             height2=eheight2, **common))
         self.sketch.set_model(SketchModel())         # committed: clear editor
         self._show_page(self.viewport)
         self.recompute()
@@ -4549,9 +4603,26 @@ class MainWindow(QMainWindow):
             why = (" — cut: material sat on both sides of the face"
                    if m.plane == "FACE" and any(
                        f.op == "subtract" for f in fresh) else "")
+            # M201 R3: the sentence tells the record's OWN voice. The
+            # one-side sentence stays BYTE-IDENTICAL to the rung-era
+            # one (the door's resting voice is the voice it always
+            # had); the other two grow tails that say what the page's
+            # swapped words MEAN as this tool does them - whole h
+            # straddles h/2 each side, half h reaches h EACH side
+            # (the vendor's words, obeyed as written, never fixed).
+            if edirection == "two":
+                voice = (f"by {height:g} mm and {eheight2:g} mm "
+                         "the other side")
+            elif edirection == "symmetric" and emeas == "half":
+                voice = f"by {height:g} mm to each side of the plane"
+            elif edirection == "symmetric":
+                voice = (f"by {height:g} mm straddling the plane "
+                         "(half to each side)")
+            else:
+                voice = f"by {height:g} mm"
             self.status.showMessage(
                 f"Extruded {len(profiles)} region(s) from {name} "
-                f"by {height:g} mm{why}", 6000)
+                f"{voice}{why}", 6000)
 
     def action_hole(self):
         """Fusion Hole: each circle in the current sketch drills one hole —
@@ -6421,6 +6492,16 @@ class MainWindow(QMainWindow):
                     if getattr(src, "handle", None):
                         extra["handle"] = dict(src.handle)  # M142:
                         #   added regions inherit the attachment
+                    # M201 R3: and the DIRECTION VOICE - the door
+                    # asked it ONCE for this sketch, so a region born
+                    # into the group speaks the same answer (a
+                    # two-sided sketch must not grow a one-sided
+                    # sibling). Word and paper travel together, as
+                    # they were born agreeing.
+                    extra.update(direction=src.direction,
+                                 symmetric=src.symmetric,
+                                 measurement=src.measurement,
+                                 height2=src.height2)
                     self.doc.add(ExtrudeFeature(height=src.height,
                                                 **extra))
         for f in group[len(profiles):]:     # regions shrank: drop stale features

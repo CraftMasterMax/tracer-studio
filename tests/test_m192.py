@@ -24,6 +24,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox              # noqa
 
 from tracer.core.sketch.model import (SketchModel, model_from_dict,  # noqa
                                       model_to_dict)
+from conftest import script_extrude_door                             # noqa
 
 
 def _grab(w):
@@ -384,6 +385,7 @@ def test_the_eyes_ride_the_commit_the_file_and_the_wake(win2, qapp2,
     from tracer.ui.cmddialog import Shell
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (5.0, True)))
+    script_extrude_door(monkeypatch, 5.0)  # M201 R3: the grown door
     monkeypatch.setattr(QMessageBox, "information",
                         staticmethod(lambda *a, **k: None))
     monkeypatch.setattr(QMessageBox, "warning",

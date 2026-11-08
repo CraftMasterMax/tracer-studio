@@ -575,3 +575,218 @@ def test_the_lever_opens_the_page_s_rows_and_the_mouth_is_guarded(win):
     assert g.height2 == 9.0                   # stored...
     # footprint 40x20 = 800 mm^2 x the half reading's 2h = 10 mm reach:
     assert tm.volume == pytest.approx(8000.0, rel=1e-6)  # ...and inert
+
+
+# ---- R3: the creation door speaks the page's Direction at birth ------------
+
+def _spy_ask(reply, store):
+    def _ask(parent, title, fields, remember_key=None):
+        store["title"] = title
+        store["keys"] = [f["key"] for f in fields]
+        store["defaults"] = {f["key"]: f.get("default") for f in fields}
+        store["choices"] = {f["key"]: tuple(f.get("choices", ()))
+                            for f in fields if f["kind"] == "combo"}
+        return dict(reply) if reply is not None else None
+    return _ask
+
+
+def _stage_rect():
+    return np.array([[0.0, 0.0], [40.0, 0.0], [40.0, 20.0], [0.0, 20.0]])
+
+
+def test_the_creation_door_asks_the_page_s_rows_and_rests_at_one_side(
+        win, qapp, monkeypatch):
+    """[SLD-REF-EXTRUDE] the page IS the Extrude TOOL's dialog - its
+    rows are the CREATION voice, so the door that asks only a number
+    grew the page's Direction and its conditional siblings beside the
+    house's own one number (M47: ONE dialog). The spy sees the real
+    field list: direction / measurement / height / height2, the page's
+    three voices exactly, resting at the legacy answer - direction
+    "one" (every record this door ever birthed was one-sided; the page
+    names NO default, "default" appears zero times). A record born at
+    the resting reply carries the WORD it was asked ("one", never the
+    silent "") and folds the rung-era arithmetic: == the plain kernel
+    build (same computation in this very process), z 0..6, and the
+    door's sentence is byte-identical to the one the one-number door
+    always said. The word rides the file the reload replays ==."""
+    seen = {}
+    win.new_document()
+    win.action_new_sketch("XY")           # the door speaks on a live sketch
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"direction": "one", "measurement": "whole", "height": 6.0,
+         "height2": 0.0}, seen))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    assert seen["title"] == "Extrude"
+    assert seen["keys"] == ["direction", "measurement", "height",
+                            "height2"]
+    assert seen["choices"]["direction"] == ("one", "two", "symmetric")
+    assert seen["choices"]["measurement"] == ("whole", "half")
+    assert seen["defaults"]["direction"] == "one"      # the legacy rest
+    assert seen["defaults"]["measurement"] == "whole"  # the pinned read
+    assert seen["defaults"]["height"] == 5.0           # the HOUSE rest
+    assert seen["defaults"]["height2"] == 0.0
+    f = win.doc.features[-1]
+    assert isinstance(f, ExtrudeFeature)
+    assert (f.direction, f.symmetric, f.measurement, f.height2) == \
+        ("one", False, "whole", 0.0)
+    assert f._effective_direction() == "one"
+    assert win.doc.result.volume == _ex(height=6.0).recompute().volume
+    assert win.status.currentMessage() == \
+        "Extruded 1 region(s) from sk by 6 mm"          # byte-identical
+    raw = json.loads(json.dumps(win.doc.to_dict()))
+    fe = [x for x in raw["features"] if x["type"] == "ExtrudeFeature"][0]
+    assert fe["direction"] == "one"                     # the asked word
+    assert Document.from_dict(raw).recompute().volume == \
+        win.doc.result.volume                            # ==, replay
+
+
+def test_the_door_bears_two_sides_and_both_symmetric_readings(
+        win, qapp, monkeypatch):
+    """The grown door can BIRTH every voice the page words. Two sides
+    with 6 and 4 lands z -4..+6 (800 mm^2 x 10 = 8,000 mm^3) and says
+    "by 6 mm and 4 mm the other side" - each side its OWN distance,
+    the how-to's words. Symmetric + whole (the vendor's SWAPPED line
+    "Extrudes half the specified distance to each side", obeyed as
+    written) lands z -3..+3 with ONE prism's volume, 4,800, and says
+    "straddling the plane (half to each side)". Symmetric + half
+    ("the specified distance to each side") lands z -6..+6, 9,600 -
+    measured exactly twice whole - and says "to each side of the
+    plane". The bool paper follows the word in every birth: True only
+    under "symmetric"."""
+    def birth(reply):
+        win.new_document()
+        win.action_new_sketch("XY")       # the door speaks on a live sketch
+        monkeypatch.setattr(cmddialog, "ask", _spy_ask(reply, {}))
+        win._on_profiles([(_stage_rect(), [])], "sk")
+        qapp.processEvents()
+        f = win.doc.features[-1]
+        tm = win.doc.result.to_trimesh()
+        return f, (round(float(tm.bounds[0][2]), 6),
+                   round(float(tm.bounds[1][2]), 6)), \
+            tm.volume, win.status.currentMessage()
+
+    f, z, vol, msg = birth({"direction": "two", "measurement": "whole",
+                            "height": 6.0, "height2": 4.0})
+    assert (f.direction, f.symmetric, f.height2) == ("two", False, 4.0)
+    assert z == (-4.0, 6.0) and vol == pytest.approx(8000.0, rel=1e-6)
+    assert msg == "Extruded 1 region(s) from sk by 6 mm and 4 mm " \
+                  "the other side"
+
+    fw, zw, volw, msgw = birth({"direction": "symmetric",
+                                "measurement": "whole", "height": 6.0,
+                                "height2": 0.0})
+    assert (fw.direction, fw.symmetric) == ("symmetric", True)
+    assert zw == (-3.0, 3.0) and volw == pytest.approx(4800.0, rel=1e-6)
+    assert msgw == "Extruded 1 region(s) from sk by 6 mm straddling " \
+                   "the plane (half to each side)"
+
+    fh, zh, volh, msgh = birth({"direction": "symmetric",
+                                "measurement": "half", "height": 6.0,
+                                "height2": 0.0})
+    assert (fh.direction, fh.symmetric, fh.measurement) == \
+        ("symmetric", True, "half")
+    assert zh == (-6.0, 6.0)
+    assert volh == pytest.approx(2 * volw, rel=1e-6)      # twice whole
+    assert msgh == "Extruded 1 region(s) from sk by 6 mm to each " \
+                   "side of the plane"
+
+
+def test_a_refused_word_and_a_cancelled_door_leave_nothing(
+        win, qapp, monkeypatch):
+    """The M197 door law at the grown creation door, PRECHECK edition:
+    a direction word outside the page's three and a measurement word
+    outside the pair refuse BEFORE the capture - no record, no undo
+    step that undoes nothing - the fold would refuse the same words at
+    recompute (R2 law), but a door that lets them in would leave a
+    dead undo step behind, and that is what the precheck pays. Cancel
+    (the dialog's None) leaves the same clean nothing. The refusals
+    NAME the legal voices, as the kernel's do."""
+    win.new_document()
+    win.action_new_sketch("XY")           # the door speaks on a live sketch
+    n, u = len(win.doc.features), len(win._undo)
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"direction": "sideways", "measurement": "whole",
+         "height": 6.0, "height2": 0.0}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    msg = win.status.currentMessage()
+    assert msg.startswith("Extrude refused:") \
+        and "'one', 'two' or 'symmetric'" in msg and "sideways" in msg
+    assert len(win.doc.features) == n and len(win._undo) == u
+
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"direction": "symmetric", "measurement": "furlong",
+         "height": 6.0, "height2": 0.0}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    msg = win.status.currentMessage()
+    assert msg.startswith("Extrude refused:") \
+        and "'whole' or 'half'" in msg and "furlong" in msg
+    assert len(win.doc.features) == n and len(win._undo) == u
+
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(None, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    assert len(win.doc.features) == n and len(win._undo) == u
+    assert win.status.currentMessage() == msg   # cancel says nothing new
+
+
+def test_a_grown_region_inherits_its_sketch_s_own_voice(win):
+    """The door asks ONCE for the whole sketch - so every region of
+    that sketch answers the SAME voice. A region BORN LATER (re-edit
+    adds a profile to a two-sided sketch) inherits the parent's whole
+    answer: word, paper copy, measurement and second distance, not
+    just the height it always copied (the R2 audit named this: an
+    inherited height under a silent voice would strand the sibling
+    one-sided). The inherited pair agrees (word + paper born true),
+    so the fold never sees a disagreement, and the new region straddles
+    exactly as its sibling does: z -4..+6 for heights 6 and 4."""
+    d = win.doc
+    parent = d.add(ExtrudeFeature(name="sk", outer=_stage_rect(),
+                                  height=6.0, direction="two",
+                                  height2=4.0, sid=7, region=0))
+    win._update_sketch_features(7, [(_stage_rect(), []),
+                                    (_stage_rect(), [])],
+                                {"name": "sk"}, capture=False)
+    kids = [f for f in d.features
+            if isinstance(f, ExtrudeFeature) and f.sid == 7]
+    assert len(kids) == 2
+    kid = kids[1]
+    assert (kid.direction, kid.symmetric, kid.measurement,
+            kid.height2, kid.height) == ("two", False, "whole", 4.0, 6.0)
+    assert kid.uid != parent.uid
+    tm = d.recompute().to_trimesh()              # both straddle alike
+    assert (round(float(tm.bounds[0][2]), 6),
+            round(float(tm.bounds[1][2]), 6)) == (-4.0, 6.0)
+
+
+def test_the_paper_copy_keeps_the_rail_honest_about_the_born_voice(
+        win, qapp, monkeypatch):
+    """The rail (panels.py) reads the PAPER COPY (the symmetric bool),
+    never the word - so the door keeps them in step and the rail can
+    never contradict a born record. A "symmetric" birth makes the rail
+    say the rung-era line "extent: symmetric" (test_m70's pinned coin,
+    unchanged); a "two" birth - whose bool paper is honestly False -
+    grows NO extent line at all: the rail keeps silent about a voice
+    it has no words for (absence is honesty too - the page's rail
+    vocabulary was one extent word, and none was invented)."""
+    win.new_document()
+    win.action_new_sketch("XY")           # the door speaks on a live sketch
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"direction": "symmetric", "measurement": "whole",
+         "height": 6.0, "height2": 0.0}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sym")
+    qapp.processEvents()
+    win.rail.props.show_feature(win.doc.features[-1])
+    assert "extent: symmetric" in win.rail.props._body.text()
+
+    win.new_document()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"direction": "two", "measurement": "whole",
+         "height": 6.0, "height2": 4.0}, {}))
+    win._on_profiles([(_stage_rect(), [])], "tw")
+    qapp.processEvents()
+    win.rail.props.show_feature(win.doc.features[-1])
+    assert "extent:" not in win.rail.props._body.text()

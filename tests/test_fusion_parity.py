@@ -10,7 +10,8 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import QPointF, QPoint, Qt  # noqa: E402
 from PySide6.QtTest import QSignalSpy, QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox  # noqa: E402
-from conftest import feature_rows, tree_texts  # noqa: E402
+from conftest import (feature_rows, tree_texts,                # noqa: E402
+                      script_extrude_door)
 from tracer.ui.cmddialog import Shell                    # noqa: E402
 
 from tracer.core.document import ExtrudeFeature  # noqa: E402
@@ -120,6 +121,7 @@ def test_line_tool_snaps_horizontal_and_records_constraint(win, qapp):
 def test_edit_sketch_updates_solid(win, qapp, monkeypatch):
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (4.0, True)))
+    script_extrude_door(monkeypatch, 4.0)  # M201 R3: the grown door
     win.new_document()                     # empty doc: clean volume baseline
     win.action_new_sketch()
     cv = win.sketch
@@ -155,6 +157,7 @@ def test_sketch_reedit_removes_and_adds_region_features(win, qapp, monkeypatch):
     than features drops the stale ones, more regions appends new ones."""
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (6.0, True)))
+    script_extrude_door(monkeypatch, 6.0)  # M201 R3: the grown door
     win.new_document()
     win.action_new_sketch()
     m = win.sketch.model
