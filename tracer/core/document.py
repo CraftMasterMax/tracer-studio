@@ -521,7 +521,29 @@ class BodyFilletFeature(Feature):
 class ExtrudeFeature(Feature):
     """Profile (outer contour + holes) on a sketch plane extruded along
     the plane normal. `sketch` is the serialized SketchModel payload that
-    makes this feature re-editable (associative)."""
+    makes this feature re-editable (associative).
+
+    M201 R2 [SLD-REF-EXTRUDE + its how-to, verbatim] grows the page's
+    Direction row - "One Side: Creates an extrusion on one side of the
+    profile plane" | "Two Sides: Creates a UNIQUE extrusion on EACH
+    side of the profile plane" (and the how-to's "Adjust the settings
+    in step 6 independently for each side" - the second side is the
+    page's OWN shape for it, so `height2` speaks it) | "Symmetric:
+    Creates identical extrusions on each side of the profile plane" -
+    and its Measurement row, opened for Symmetric only: "Whole Length:
+    Extrudes half the specified distance to each side" | "Half Length:
+    Extrudes the specified distance to each side". THE VENDOR'S TWO
+    DESCRIPTIONS READ SWAPPED relative to their labels - they are
+    quoted, obeyed as written, never fixed. `direction` "" is the
+    LEGACY mouth (every pre-R2 record spoke only the `symmetric` bool,
+    so True reads "symmetric" and False reads "one" - the rung-era
+    arithmetic, bit for bit); the bool is the rail's PAPER COPY of the
+    word, so an explicit word that disagrees with it is a record whose
+    two mouths tell different stories - refused, not patched.
+    `measurement` and `height2` are CONDITIONAL rows: the page opens
+    them for one direction each and words no rule elsewhere, so they
+    are STORED and INERT outside their own voice (noticed, never
+    crossed - the vector2-at-count-1 law)."""
     outer: np.ndarray = field(default_factory=lambda: np.zeros((0, 2)))
     holes: list = field(default_factory=list)
     height: float = 1.0
@@ -535,8 +557,28 @@ class ExtrudeFeature(Feature):
     chamfer: float = 0.0     # cut vertical edges (2D corner chamfer, mm)
     taper: float = 0.0       # draft angle in degrees; + widens as it goes
     symmetric: bool = False  # straddle the sketch plane (Fusion extent)
+    direction: str = ""      # M201 R2: "" (legacy: the bool speaks) |
+    #                          "one" | "two" | "symmetric"
+    measurement: str = "whole"   # symmetric only: "whole" | "half"
+    height2: float = 0.0     # two sides only: the second side's distance
     handle: dict | None = None   # M142: {"feature", "part"} — the LIVE
     #   face this sketch attached to at pick; None = frozen snapshot
+
+    def _effective_direction(self) -> str:
+        """The Direction row as the record MEANS it. "" is the legacy
+        mouth and defers to the symmetric bool (bit-identical rung-era
+        reading); an explicit word must AGREE with its paper copy."""
+        d = str(self.direction)
+        if d == "":
+            return "symmetric" if self.symmetric else "one"
+        if d not in ("one", "two", "symmetric"):
+            raise ValueError("the direction is 'one', 'two' or "
+                             f"'symmetric', not {d!r}")
+        if (d == "symmetric") != bool(self.symmetric):
+            raise ValueError(f"the direction '{d}' and the symmetric "
+                             f"flag {bool(self.symmetric)!r} tell "
+                             "different stories")
+        return d
 
     def _profile(self):
         if self.fillet > 0 or self.chamfer > 0:
@@ -546,18 +588,25 @@ class ExtrudeFeature(Feature):
             return outer, holes
         return self.outer, self.holes
 
-    def _loft_taper(self, outer, holes) -> Solid:
+    def _loft_taper(self, outer, holes, hh=None,
+                    down: bool = False) -> Solid:
         """Tapered wall (Fusion's draft): the outer skin lofts to the
         profile offset outward by h·tan(taper); each hole lofts to its
         shrunken self as a cutter extended past both caps.  Areas grow
         quadratically with z, so the lofted solid tracks the exact
-        prismatoid to tessellation tolerance."""
+        prismatoid to tessellation tolerance.  M201 R2: the SAME law
+        walks EITHER way from the profile plane ("+ widens as it goes"
+        reads along each side's own going) - hh names the distance and
+        down the side; the default call is the rung-era arithmetic,
+        bit for bit."""
         import math
 
         from shapely.geometry import Polygon
 
         from .loft import loft
-        d = math.tan(math.radians(float(self.taper))) * self.height
+        h = float(self.height) if hh is None else float(hh)
+        sgn_z = -1.0 if down else 1.0
+        d = math.tan(math.radians(float(self.taper))) * h
 
         def sgn(a):
             return float(np.sum(a[:, 0] * np.roll(a[:, 1], -1)
@@ -587,31 +636,88 @@ class ExtrudeFeature(Feature):
             a = np.asarray(p2, float)
             return np.column_stack([a, np.full(len(a), z)])
 
-        h = float(self.height)
-        body = loft([ring(outer, 0.0), ring(off(outer, d), h)])
+        sgn_z = -1.0 if down else 1.0
+        body = loft([ring(outer, 0.0), ring(off(outer, d), sgn_z * h)])
         step = d / h                            # radial drift per mm
         for hole in holes:
             # a +taper WIDENS material, so the hole shrinks going up:
             # buffer(-d) at the top; extended 1 mm past each cap along
-            # the same slope for a clean through-cut
-            cutter = loft([ring(off(hole, step), -1.0),
-                           ring(off(hole, -(d + step)), h + 1.0)])
+            # the same slope for a clean through-cut (mirrored whole,
+            # when the side itself grows downward)
+            cutter = loft([ring(off(hole, step), -sgn_z),
+                           ring(off(hole, -(d + step)),
+                                sgn_z * (h + 1.0))])
             body = body.subtract(cutter)
         return body
 
-    def build(self) -> Solid:
-        outer, holes = self._profile()
-        if abs(float(self.taper)) < 1e-9:
-            s = Solid.extrude(outer, holes, self.height)
-        else:
-            s = self._loft_taper(outer, holes)
-        if self.symmetric:            # Fusion's symmetric extent: the
-            s = s.translated((0.0, 0.0,   # profile grows evenly about
-                              -float(self.height) / 2.0))  # its plane
+    def _place(self, s: Solid) -> Solid:
+        """The rung-era tail, VERBATIM: local +z lands on the sketch
+        frame (XY translates; other planes ride plane_matrix)."""
         if self.plane == "XY":
             return s.translated(self.placement)
         m = plane_matrix(self.plane, self.placement, self.axes)
         return s.transformed(m)
+
+    def _one_side(self, outer, holes) -> Solid:
+        """The rung-era build, VERBATIM: straight extrude or the
+        tapered loft, 0..height along local +z."""
+        if abs(float(self.taper)) < 1e-9:
+            return Solid.extrude(outer, holes, self.height)
+        return self._loft_taper(outer, holes)
+
+    def build(self) -> Solid:
+        """M201 R2 [SLD-REF-EXTRUDE, verbatim] speaks the page's
+        Direction voices: "one" and the whole-length symmetric are the
+        rung-era arithmetic untouched (identical calls, identical
+        order); "two" grows the second side's OWN distance - for a
+        straight wall that is one prism of h1+h2 sunk h2 below the
+        plane (the exact point set of the two butt-welded prisms, no
+        boolean, no slivers), for a tapered one each side lofts with
+        the "+ widens as it goes" law read along its OWN going; and
+        "symmetric" + "Half Length: Extrudes the specified distance to
+        each side" doubles the reach (straight: one 2h prism about the
+        plane; tapered: two mirror-law lofts, since the page words no
+        rule for a symmetric draft and none is invented)."""
+        outer, holes = self._profile()
+        d = self._effective_direction()
+        h = float(self.height)
+        if d == "two":
+            h2 = float(self.height2)
+            if h2 <= 0.0:
+                # "a UNIQUE extrusion on EACH side" - a zero second
+                # distance says what it says: nothing that way (the
+                # page words no minimum, so none is invented).
+                return self._place(self._one_side(outer, holes))
+            if abs(float(self.taper)) < 1e-9:
+                s = Solid.extrude(outer, holes, h + h2)
+                return self._place(s.translated((0.0, 0.0, -h2)))
+            s = Solid.batch_union([self._one_side(outer, holes),
+                                   self._loft_taper(outer, holes, hh=h2,
+                                                    down=True)])
+            return self._place(s)
+        if d == "symmetric":
+            m = str(self.measurement)
+            if m == "whole":
+                # the pinned legacy reading: "Extrudes half the
+                # specified distance to each side" - the whole solid,
+                # re-centred. Rung-era calls, bit for bit.
+                s = self._one_side(outer, holes)
+                s = s.translated((0.0, 0.0, -h / 2.0))
+                return self._place(s)
+            if m == "half":
+                if abs(float(self.taper)) < 1e-9:
+                    s = Solid.extrude(outer, holes, 2.0 * h)
+                    s = s.translated((0.0, 0.0, -h))
+                else:
+                    s = Solid.batch_union([
+                        self._one_side(outer, holes),
+                        self._loft_taper(outer, holes, down=True)])
+                return self._place(s)
+            raise ValueError(f"the measurement is 'whole' or 'half', "
+                             f"not {m!r}")
+        # "one" - the rung-era single side; measurement and height2 are
+        # noticed and never crossed (the page opens them elsewhere).
+        return self._place(self._one_side(outer, holes))
 
 
 @dataclass
@@ -2316,9 +2422,21 @@ class Document:
         elif isinstance(f, ExtrudeFeature):
             M = plane_matrix(f.plane, tuple(pl), f.axes)
             n, o, h = M[:3, 2], M[:3, 3], float(f.height)
-            if f.symmetric:
+            d = f._effective_direction()
+            m = str(f.measurement)
+            if d == "symmetric" and m not in ("whole", "half"):
+                raise ValueError(f"the measurement is 'whole' or "
+                                 f"'half', not {m!r}")
+            if d == "symmetric" and m == "half":
+                yield ("cap-top", o + n * h, n)
+                yield ("cap-bottom", o - n * h, -n)
+            elif d == "symmetric":
                 yield ("cap-top", o + n * (h / 2.0), n)
                 yield ("cap-bottom", o - n * (h / 2.0), -n)
+            elif d == "two":
+                yield ("cap-top", o + n * h, n)
+                yield ("cap-bottom", o - n * max(0.0, float(f.height2)),
+                       -n)
             else:
                 yield ("cap-top", o + n * h, n)
                 yield ("cap-bottom", o, -n)
@@ -3789,6 +3907,9 @@ class Document:
                          fillet=float(f.fillet), chamfer=float(f.chamfer),
                          taper=float(f.taper),
                          symmetric=bool(f.symmetric),
+                         direction=str(f.direction),
+                         measurement=str(f.measurement),
+                         height2=float(f.height2),
                          placement=list(map(float, f.placement)),
                          plane=f.plane, axes=f.axes, sketch=f.sketch,
                          sid=f.sid, region=f.region,
@@ -4041,6 +4162,9 @@ class Document:
                     chamfer=float(fd.get("chamfer", 0.0)),
                     taper=float(fd.get("taper", 0.0)),
                     symmetric=bool(fd.get("symmetric", False)),
+                    direction=str(fd.get("direction", "")),
+                    measurement=str(fd.get("measurement", "whole")),
+                    height2=float(fd.get("height2", 0.0)),
                     placement=tuple(fd["placement"]),
                     plane=fd.get("plane", "XY"), axes=fd.get("axes"),
                     sketch=fd.get("sketch"),

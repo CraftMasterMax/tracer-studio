@@ -40,14 +40,15 @@ numbers hold rel 1e-6.
 """
 import json
 
+import numpy as np
 import pytest
 
 pytest.importorskip("PySide6")
 
 from PySide6.QtWidgets import QApplication                           # noqa: E402
 
-from tracer.core.document import (Document, MirrorFeature,           # noqa: E402
-                                  PrimitiveFeature)
+from tracer.core.document import (Document, ExtrudeFeature,          # noqa: E402
+                                  MirrorFeature, PrimitiveFeature)
 from tracer.ui import cmddialog, cmdpanel                            # noqa: E402
 from tracer.ui.mainwindow import MainWindow                          # noqa: E402
 from tracer.ui.renderer import SceneRenderer                         # noqa: E402
@@ -363,3 +364,214 @@ def test_the_lever_opens_no_operation_and_the_menu_stays_join(win):
     assert m.operation == "join" and len(win.doc.body_solids()) == 1
     assert win.status.currentMessage() == \
         "Mirrored lug across YZ @ 0 mm"
+
+
+# ---- R2: the extrude page's own Direction and Measurement ------------------
+
+def _rect():
+    return np.array([[0.0, 0.0], [40.0, 0.0], [40.0, 20.0], [0.0, 20.0]])
+
+
+def _ex(**kw):
+    d = Document("ex")
+    d.add(ExtrudeFeature(name="w", outer=_rect(), **kw))
+    return d
+
+
+def test_the_legacy_route_never_moved_and_the_two_mouths_must_agree():
+    """[SLD-REF-EXTRUDE, verbatim] Direction: "One Side: Creates an
+    extrusion on one side of the profile plane" | "Two Sides: ..." |
+    "Symmetric: ...". direction "" is the LEGACY mouth - it defers to
+    the symmetric bool and the fold runs the rung-era calls in the
+    rung-era order, measured BIT-IDENTICAL (volumes with ==, bounds
+    with array_equal) over 36 fresh-vs-fresh configurations (heights
+    3/10/0.5 x bool x taper 0/12/-8 x plane XY/XZ). An explicit word
+    must AGREE with its paper copy: the bool mirrors the word
+    "symmetric" ONLY, so "one"+True and "symmetric"+False are records
+    whose mouths tell different stories ("tell different stories")
+    while "two"+False is the truth ("two" never claimed to straddle -
+    the page says each side gets its OWN settings). A third direction
+    word refuses naming all three voices; a bad measurement refuses on
+    BOTH symmetric routes (the worded record AND the legacy bool one -
+    the cap law validates too); on a "one" record the measurement and
+    height2 rows are noticed and NEVER CROSSED (bit-equal to the plain
+    build - the vector2-at-count-1 law)."""
+    for h in (3.0, 10.0, 0.5):
+        for sym in (False, True):
+            for taper in (0.0, 12.0, -8.0):
+                for plane in ("XY", "XZ"):
+                    a = _ex(height=h, symmetric=sym, taper=taper,
+                            plane=plane,
+                            placement=(1.5, -2.25, 4.0)).recompute()
+                    b = _ex(height=h, direction=("symmetric" if sym
+                                                  else "one"),
+                            symmetric=sym, taper=taper, plane=plane,
+                            placement=(1.5, -2.25, 4.0)).recompute()
+                    assert a.volume == b.volume
+                    assert np.array_equal(a.to_trimesh().bounds,
+                                          b.to_trimesh().bounds)
+    with pytest.raises(ValueError, match="'one', 'two' or 'symmetric'"):
+        _ex(height=5.0, direction="sideways").recompute()
+    with pytest.raises(ValueError, match="different stories"):
+        _ex(height=5.0, direction="one", symmetric=True).recompute()
+    with pytest.raises(ValueError, match="different stories"):
+        _ex(height=5.0, direction="symmetric",
+            symmetric=False).recompute()
+    ok = _ex(height=6.0, direction="two", height2=4.0)   # consistent!
+    assert ok.recompute().volume == pytest.approx(8000, rel=1e-6)
+    for kw in (dict(direction="symmetric", symmetric=True,
+                    measurement="furlong"),
+               dict(symmetric=True, measurement="furlong")):
+        with pytest.raises(ValueError, match="'whole' or 'half'"):
+            _ex(height=5.0, **kw).recompute()
+    inert = _ex(height=5.0, direction="one", measurement="furlong",
+                height2=99.0)      # INVALID-but-inert on ONE side? no -
+    assert inert.recompute().volume == \
+        _ex(height=5.0).recompute().volume          # noticed, never read
+
+
+def test_two_sides_grows_the_page_s_own_second_distance():
+    """"Two Sides: Creates a UNIQUE extrusion on EACH side of the
+    profile plane" + the how-to's "Adjust the settings in step 6
+    independently for each side" - the second side is the page's OWN
+    shape, so height2 is its own distance along -normal. A straight
+    two-sides wall IS one prism of h1+h2 sunk h2 below the plane (the
+    exact point set of the two butt-welded prisms - == the same
+    single extrude of that size, no boolean, no slivers): footprint
+    800 mm^2 x 10 mm reads 8000 with z -4..+6. A TAPERED two sides
+    welds two lofts whose draft reads "+ widens as it goes" along
+    each side's OWN going, and the weld at the profile plane stays
+    WATERTIGHT. And height2 = 0 says what it says: nothing that way
+    (== the one-side build; the page words no minimum, none invented).
+    The caps answer in the same coin: cap-top +h, cap-bottom -h2."""
+    d = _ex(height=6.0, direction="two", height2=4.0)
+    tm = d.recompute().to_trimesh()
+    assert tm.volume == pytest.approx(8000.0, rel=1e-6)
+    assert (tm.bounds[0][2], tm.bounds[1][2]) == pytest.approx(
+        (-4.0, 6.0), abs=1e-6)
+    assert tm.is_watertight and tm.is_winding_consistent
+    plain = _ex(height=10.0, placement=(0.0, 0.0, -4.0))
+    assert d.recompute().volume == plain.recompute().volume  # ==, same
+    zero = _ex(height=6.0, direction="two", height2=0.0)     #   prism
+    assert zero.recompute().volume == \
+        _ex(height=6.0).recompute().volume                    # ==
+    dt = _ex(height=5.0, taper=15.0, direction="two", height2=5.0)
+    tw = dt.recompute().to_trimesh()
+    assert tw.is_watertight and tw.is_winding_consistent
+    assert (tw.bounds[0][2], tw.bounds[1][2]) == pytest.approx(
+        (-5.0, 5.0), abs=1e-3)
+    assert tw.volume > 8000.0                # both drafts widen outward
+    d.recompute()
+    caps = {name: round(float(p[2]), 6)
+            for name, p, _n in d._published_planes(d.features[0])}
+    assert caps == {"cap-top": 6.0, "cap-bottom": -4.0}
+
+
+def test_half_and_whole_read_the_vendor_s_own_swapped_words():
+    """[verbatim] Measurement, Symmetric only: "Whole Length: Extrudes
+    HALF the specified distance to each side" | "Half Length: Extrudes
+    THE SPECIFIED distance to each side" - the labels read swapped to
+    plain English, and they are OBEYED AS WRITTEN, never fixed. Whole
+    is the pinned legacy straddle: height 10 lands z -5..+5 with the
+    volume of ONE 10 mm prism (8000) - BIT-EQUAL to the symmetric-bool
+    route. Half lands z -10..+10 with 16000: rel 1e-6 exactly twice
+    whole. The caps mirror both readings (±h/2, ±h), and the file's
+    ABSENCE of the measurement key is whole (a pre-R2 file cannot
+    suddenly reach twice as deep - replays the whole straddle ==)."""
+    whole = _ex(height=10.0, direction="symmetric", symmetric=True)
+    bool_route = _ex(height=10.0, symmetric=True)
+    assert whole.recompute().volume == bool_route.recompute().volume
+    tw = whole.recompute().to_trimesh()
+    assert (tw.bounds[0][2], tw.bounds[1][2]) == pytest.approx(
+        (-5.0, 5.0), abs=1e-6)
+    half = _ex(height=10.0, direction="symmetric", symmetric=True,
+               measurement="half")
+    th = half.recompute().to_trimesh()
+    assert (th.bounds[0][2], th.bounds[1][2]) == pytest.approx(
+        (-10.0, 10.0), abs=1e-6)
+    assert th.is_watertight
+    assert th.volume == pytest.approx(2 * tw.volume, rel=1e-6)
+    half.recompute()
+    caps = {name: round(float(p[2]), 6)
+            for name, p, _n in half._published_planes(half.features[0])}
+    assert caps == {"cap-top": 10.0, "cap-bottom": -10.0}
+
+
+def test_the_rows_ride_the_file_and_key_absent_records_defer_to_bool():
+    """direction / measurement / height2 ride both mouths; a reload
+    replays BIT-EQUAL (== - the same computation through the file). A
+    record written BEFORE this rung carries none of the three keys:
+    direction reads "" and the fold defers to the symmetric bool - the
+    tool stays exactly the tool it was (a True file replays the pinned
+    straddle, a False one the one-side build, both ==). A half record
+    with its measurement key stripped is the whole straddle again -
+    the DEFAULT is the legacy reading, never a vendor fiat (the page
+    states no initial value: "default" appears ZERO times on it)."""
+    d = _ex(height=6.0, direction="two", height2=4.0)
+    v = d.recompute()
+    raw = json.loads(json.dumps(d.to_dict()))
+    fe = raw["features"][0]
+    assert fe["direction"] == "two" and fe["height2"] == 4.0 \
+        and fe["measurement"] == "whole"
+    assert Document.from_dict(raw).recompute().volume == v.volume
+    for k in ("direction", "measurement", "height2"):
+        del fe[k]
+    old = Document.from_dict(raw)
+    assert old.features[0].direction == ""
+    assert old.features[0]._effective_direction() == "one"
+    assert old.recompute().volume == _ex(height=6.0).recompute().volume
+    hraw = json.loads(json.dumps(_ex(height=10.0, symmetric=True,
+                                     measurement="half").to_dict()))
+    del hraw["features"][0]["measurement"]
+    back = Document.from_dict(hraw)
+    assert back.features[0].measurement == "whole"
+    assert back.recompute().volume == _ex(height=10.0, symmetric=True
+                                          ).recompute().volume
+
+
+def test_the_lever_opens_the_page_s_rows_and_the_mouth_is_guarded(win):
+    """The edit door grew the page's rows in the house's order: height,
+    fillet, chamfer, taper, symmetric, then DIRECTION (choices exactly
+    the three voices), MEASUREMENT (whole|half) and the second side's
+    height 2 - every combo defaulting to the RECORD's own voice, and a
+    legacy bool record SHOWS its effective word (the lever never
+    contradicts the rail). The apply mouth is GUARDED for all three:
+    the rung-era five-row script keeps the bool as its whole mouth and
+    never invents a direction; an explicit word SYNCS its paper copy
+    (symmetric=True follows "symmetric") and the conditional rows write
+    as typed. Outside their voice the conditional rows are stored and
+    inert: a half straddle ignores the typed height 2."""
+    rec = ExtrudeFeature(name="R", outer=_rect(), height=7.0,
+                         direction="two", height2=3.0)
+    rows = {f["key"]: f for f in win._feature_params(rec)}
+    assert list(rows) == ["height", "fillet", "chamfer", "taper",
+                          "symmetric", "direction", "measurement",
+                          "height2"]
+    assert tuple(rows["direction"]["choices"]) == \
+        ("one", "two", "symmetric")
+    assert rows["direction"]["default"] == "two"       # the record's own
+    assert rows["height2"]["default"] == 3.0
+    legacy = ExtrudeFeature(name="L", outer=_rect(), height=4.0,
+                            symmetric=True)            # no word spoken
+    rows2 = {f["key"]: f for f in win._feature_params(legacy)}
+    assert rows2["direction"]["default"] == "symmetric"  # the EFFECTIVE
+    g = ExtrudeFeature(name="G", outer=_rect(), height=4.0)
+    win._apply_feature_params(g, {"height": 5.0, "fillet": 0.0,
+                                  "chamfer": 0.0, "taper": 0.0,
+                                  "symmetric": False})
+    assert (g.direction, g.measurement, g.height2) == \
+        ("", "whole", 0.0)                    # never invented
+    win._apply_feature_params(g, {"height": 5.0, "fillet": 0.0,
+                                  "chamfer": 0.0, "taper": 0.0,
+                                  "symmetric": False,
+                                  "direction": "symmetric",
+                                  "measurement": "half",
+                                  "height2": 9.0})
+    assert (g.direction, g.symmetric, g.measurement) == \
+        ("symmetric", True, "half")           # paper follows the word
+    tm = g.build().to_trimesh()
+    assert (tm.bounds[0][2], tm.bounds[1][2]) == pytest.approx(
+        (-5.0, 5.0), abs=1e-6)                # half of h=5 each way
+    assert g.height2 == 9.0                   # stored...
+    # footprint 40x20 = 800 mm^2 x the half reading's 2h = 10 mm reach:
+    assert tm.volume == pytest.approx(8000.0, rel=1e-6)  # ...and inert

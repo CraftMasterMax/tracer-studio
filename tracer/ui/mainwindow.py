@@ -1574,6 +1574,19 @@ class MainWindow(QMainWindow):
                 ang=True)
             check("symmetric", "symmetric about the sketch plane",
                   feature.symmetric)
+            # M201 R2 [SLD-REF-EXTRUDE]: the page's Direction row and
+            # its two CONDITIONAL rows (Measurement reads for Symmetric
+            # only; the second distance belongs to Two Sides - "Adjust
+            # the settings in step 6 independently for each side").
+            # A legacy record (direction "") shows its EFFECTIVE voice,
+            # so the lever never contradicts the rail.
+            combo("direction", "direction",
+                  ("one", "two", "symmetric"),
+                  feature._effective_direction())
+            combo("measurement", "measurement (symmetric)",
+                  ("whole", "half"), feature.measurement)
+            dbl("height2", "height 2 (second side)", feature.height2,
+                mn=0.0)
         elif isinstance(feature, RevolveFeature):
             dbl("angle", "angle", feature.angle, dec=1, ang=True)
         elif isinstance(feature, HoleFeature):
@@ -1815,6 +1828,18 @@ class MainWindow(QMainWindow):
             feature.chamfer = mm("chamfer")
             feature.taper = float(v["taper"])
             feature.symmetric = bool(v["symmetric"])
+            # M201 R2: the page's three new rows write ONLY when they
+            # opened the lever (the count2 law) - a script driving the
+            # rung-era five rows keeps the bool as its whole mouth and
+            # never invents a direction word. An explicit word SYNCS
+            # its paper copy: the bool is the rail's echo of the word.
+            if "direction" in v:
+                feature.direction = str(v["direction"])
+                feature.symmetric = (feature.direction == "symmetric")
+            if "measurement" in v:
+                feature.measurement = str(v["measurement"])
+            if "height2" in v:
+                feature.height2 = mm("height2")
         elif isinstance(feature, RevolveFeature):
             feature.angle = float(v["angle"])
         elif isinstance(feature, HoleFeature):
