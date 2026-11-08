@@ -4489,6 +4489,12 @@ class MainWindow(QMainWindow):
             self.recompute()
             self.status.showMessage(f"Updated {name} — solid recomputed", 5000)
             return
+        # M201 R5: the page's Operation answer exists ONLY for the
+        # extrude door off a non-FACE plane; every other mouth (the
+        # revolve door - its own page is UNPROMISED - and the FACE
+        # sketch, where the M140 probe owns operation) writes None
+        # here and keeps the rung-era union/probe law untouched.
+        eop = None
         if revolve:
             # M191 R5 [SKT-CENTERLINE-GEOMETRY]: a DECLARED centerline
             # IS the axis now - the dry-run measures sides against it,
@@ -4534,7 +4540,7 @@ class MainWindow(QMainWindow):
             # Resting voices: direction "one" - the door has ONLY ever
             # birthed one-side records; the 5.0 default is the house's
             # own (the page names none: "default" appears zero times).
-            v = cmddialog.ask(self, "Extrude", [
+            fields = [
                 # M201 R4 [SLD-REF-EXTRUDE, verbatim]: "Start:
                 # Establishes the starting point for the extrusion.
                 # Profile Plane: Starts extrusion from the profile
@@ -4566,7 +4572,39 @@ class MainWindow(QMainWindow):
                 dict(key="height2", label="height 2 (second side)",
                      kind="double", default=0.0, min=0.0, max=1e5,
                      decimals=2, group="Distance"),
-            ], remember_key="extrude")
+            ]
+            # M201 R5 [SLD-REF-EXTRUDE, verbatim] "Operation: Select
+            # an operation to control how the feature affects the
+            # design. Join: Combines the new body with an existing
+            # body | Cut: Cuts an area out of an existing body |
+            # Intersect: Creates a body at the intersection of an
+            # existing body and the new body | New Body: ... | New
+            # Component ... (Hybrid Design type only)". THE THREE
+            # BOOLEAN VOICES: our fold needs NO target-picking - a
+            # feature cuts/joins/intersects the accumulator of the
+            # body it streams into ("a cut in Body 2 leaves Body 1
+            # standing"), so Join|Cut|Intersect speak without the
+            # page's "Objects To Cut" (which the page itself restricts
+            # to EDIT operations); New Body / New Component stay
+            # UNPROMISED (body creation is the mirror door's coin,
+            # M200; the vendor restricts the fifth voice to Hybrid
+            # Design itself). CONDITIONAL OPENING (M196 R1 law - a row
+            # opens only where it rules): on a FACE sketch the M140
+            # CONTACT PROBE already owns operation - "PROBE, don't
+            # guess" - and a door that never asks never writes (the
+            # probe's rung-era mouths stay byte-identical, m140's
+            # pins untouched). Rest "Join": the voice this door has
+            # ALWAYS birthed off-face (op="union"); the page names no
+            # default. Choices ride the mirror door's house coin
+            # (capitalised vendor words, "Join"/"New Body", M200).
+            # Page order: Operation sits AFTER the distance rows.
+            if m.plane != "FACE":
+                fields.append(
+                    dict(key="op", label="operation", kind="combo",
+                         choices=("Join", "Cut", "Intersect"),
+                         default="Join", group="Operation"))
+            v = cmddialog.ask(self, "Extrude", fields,
+                              remember_key="extrude")
             if v is None:
                 return
             height = float(v["height"])
@@ -4582,6 +4620,33 @@ class MainWindow(QMainWindow):
             #                                       the door's own coin
             emeas = str(v["measurement"])
             eheight2 = float(v["height2"])
+            # M201 R5: the Operation answer - None on a FACE sketch
+            # (the M140 probe owns operation there; the row never
+            # opened and this door writes no word it did not ask).
+            eop = None if m.plane == "FACE" else str(v["op"])
+            if eop is not None and eop not in ("Join", "Cut",
+                                               "Intersect"):
+                self.status.showMessage(
+                    "Extrude refused: the operation is 'Join', 'Cut' "
+                    f"or 'Intersect', not {eop!r}", 6000)
+                return
+            if eop == "Cut" and self.doc.result is None:
+                # The M197 precheck law, operation edition: the fold
+                # refuses a first-feature subtract by name at recompute
+                # (m118 pins that mouth), but a door that lets it in
+                # leaves a dead undo step - refuse BEFORE the capture,
+                # quoting the fold's own words.
+                self.status.showMessage(
+                    "Extrude refused: a cut needs material to cut - "
+                    "the first feature cannot be a subtract", 6000)
+                return
+            # INTERSECT is NOT refused on an empty body: the fold's own
+            # quirk lets a first intersect stand as the feature itself
+            # (nothing to intersect WITH). The door mirrors the fold's
+            # refusal SET exactly and invents none - but the sentence
+            # must not claim an intersection with material that was
+            # never there, so the door NOTES what it found.
+            eop_mat = self.doc.result is not None
             # M197 door law, preflight edition: the fold refuses these
             # words (the R2 kernel law), but a door must refuse BEFORE
             # the capture - a refused door leaves no undo step behind.
@@ -4608,6 +4673,14 @@ class MainWindow(QMainWindow):
                 op, flip = self._contact_op(m, outer)
                 if flip:
                     axes = [[-t for t in axes[0]], axes[1]]
+            elif eop is not None:
+                # M201 R5: the door ASKED the page's Operation row -
+                # the answer writes, in the kernel's own words (the
+                # fold's coin). Join is what this door has always
+                # birthed off-face; the mapping is the house menu's
+                # (browser ▸ Boolean operation: Join/Cut/Intersect).
+                op = {"Join": "union", "Cut": "subtract",
+                      "Intersect": "intersect"}[eop]
             placement = tuple(m.origin) if face else (0.0, 0.0, 0.0)
             sketch = dict(payload, regions=len(profiles), region=i)
             common = dict(name=tag, outer=np.asarray(outer),
@@ -4665,9 +4738,25 @@ class MainWindow(QMainWindow):
             # sentence is the R3 one, byte for byte.
             start = (f" starting {eoffset:g} mm off the plane"
                      if eoffset != 0.0 else "")
+            # M201 R5: the operation tail says what the row ASKED the
+            # feature does to the material it streams into - the fold
+            # reads and writes the feature's OWN body accumulator, so
+            # "what was already there" is the honest object. Join is
+            # the rest: no tail, the sentence byte-identical. The FACE
+            # probe has its own why-sentence (the "why" above); the
+            # row never opened there, so the tails never co-write.
+            optail = {"Cut": " — cut out of what was already there",
+                      "Intersect": " — intersected with what was "
+                                   "already there"}.get(eop) or ""
+            if eop == "Intersect" and not eop_mat:
+                optail = ""            # nothing WAS already there -
+            #                          the fold keeps the feature
+            #                          itself (its quirk, honest);
+            #                          the sentence says nothing it
+            #                          did not do
             self.status.showMessage(
                 f"Extruded {len(profiles)} region(s) from {name} "
-                f"{voice}{start}{why}", 6000)
+                f"{voice}{start}{why}{optail}", 6000)
 
     def action_hole(self):
         """Fusion Hole: each circle in the current sketch drills one hole —
@@ -6546,11 +6635,18 @@ class MainWindow(QMainWindow):
                     # M201 R4: and so does the START - the door asked
                     # the offset ONCE too; a sibling must not start at
                     # the plane when its family starts off it.
+                    # M201 R5: and the OPERATION - the door asked it
+                    # ONCE (off-face; on a FACE sketch the probe
+                    # decided per profile and the family already
+                    # speaks what it measured - a grown sibling
+                    # inherits THAT same answer rather than silently
+                    # switching to union mid-family).
                     extra.update(direction=src.direction,
                                  symmetric=src.symmetric,
                                  measurement=src.measurement,
                                  height2=src.height2,
-                                 offset=src.offset)
+                                 offset=src.offset,
+                                 op=src.op)
                     self.doc.add(ExtrudeFeature(height=src.height,
                                                 **extra))
         for f in group[len(profiles):]:     # regions shrank: drop stale features

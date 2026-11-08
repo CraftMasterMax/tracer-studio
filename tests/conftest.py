@@ -66,7 +66,8 @@ def script_cmd_cancel(monkeypatch):
 
 
 def script_extrude_door(monkeypatch, height, direction="one",
-                        measurement="whole", height2=0.0, offset=0.0):
+                        measurement="whole", height2=0.0, offset=0.0,
+                        op="Join"):
     """M201 R3: answer the GROWN extrude creation door - ONE dialog
     (title "Extrude", [SLD-REF-EXTRUDE] Direction row + the house's
     one number + the page's two conditional siblings). Any OTHER
@@ -77,7 +78,10 @@ def script_extrude_door(monkeypatch, height, direction="one",
     door always birthed. M201 R4: the door READS the page's Offset
     row too (page order: Start above Direction) - the reply grows it
     at 0.0, "Profile Plane", the start every repaid test was born
-    with."""
+    with. M201 R5: and the Operation row - answered "Join" (what this
+    door has always birthed off-face); a reply key the door did not
+    open (a FACE sketch, where the probe owns operation) is simply
+    never read, so one coin serves both doors."""
     from tracer.ui import cmddialog
     prior = cmddialog.ask
 
@@ -85,7 +89,7 @@ def script_extrude_door(monkeypatch, height, direction="one",
         if title == "Extrude":
             return dict(height=float(height), direction=direction,
                         measurement=measurement, height2=float(height2),
-                        offset=float(offset))
+                        offset=float(offset), op=op)
         return prior(parent, title, fields, remember_key=remember_key)
     monkeypatch.setattr(cmddialog, "ask", routed)
 

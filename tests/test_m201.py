@@ -634,12 +634,18 @@ def test_the_creation_door_asks_the_page_s_rows_and_rests_at_one_side(
     win._on_profiles([(_stage_rect(), [])], "sk")
     qapp.processEvents()
     assert seen["title"] == "Extrude"
-    # R4: the door now opens five rows in PAGE ORDER - the Start/Offset
-    # numeric sits ABOVE the Direction row, as the page lists it.
+    # R4: the door opens the Start/Offset numeric ABOVE the Direction
+    # row (page order). R5: off a FACE sketch it also opens the page's
+    # Operation row LAST (Join|Cut|Intersect - the three voices the
+    # fold can speak with NO target-picking; New Body/New Component
+    # stay unpromised), resting at "Join", the voice this door has
+    # ALWAYS birthed off-face (the page names no default).
     assert seen["keys"] == ["offset", "direction", "measurement",
-                            "height", "height2"]
+                            "height", "height2", "op"]
     assert seen["choices"]["direction"] == ("one", "two", "symmetric")
     assert seen["choices"]["measurement"] == ("whole", "half")
+    assert seen["choices"]["op"] == ("Join", "Cut", "Intersect")
+    assert seen["defaults"]["op"] == "Join"            # the legacy rest
     assert seen["defaults"]["offset"] == 0.0   # "Profile Plane" rest
     assert seen["defaults"]["direction"] == "one"      # the legacy rest
     assert seen["defaults"]["measurement"] == "whole"  # the pinned read
@@ -957,3 +963,184 @@ def test_the_lever_writes_the_offset_only_when_it_opened_the_row(win):
     tm = g.build().to_trimesh()
     assert (round(float(tm.bounds[0][2]), 6),
             round(float(tm.bounds[1][2]), 6)) == (1.5, 6.5)
+
+
+# ---- R5: the page's Operation row at the creation door ----------------------
+
+def _base(d, w=50.0, dp=30.0, h=10.0):
+    """Material that was already there: a 50x30x10 slab, 15,000 mm^3."""
+    d.add(ExtrudeFeature(name="base",
+                         outer=np.array([[0.0, 0.0], [w, 0.0],
+                                         [w, dp], [0.0, dp]]),
+                         height=h))
+    return d
+
+
+def test_the_operation_row_opens_only_where_the_tool_has_no_probe(
+        win, qapp, monkeypatch):
+    """The page's Operation row OFFERS five voices; the fold speaks
+    the three booleans with NO target-picking (a feature joins/cuts/
+    intersects the accumulator of the body it streams into), so the
+    door asks Join|Cut|Intersect - and ONLY off a FACE sketch, where
+    the M140 CONTACT PROBE already owns operation ("PROBE, don't
+    guess"): the FACE door asks no op row and a door that never asks
+    never writes (its rung-era mouths, m140's pins, untouched).
+    New Body / New Component stay UNPROMISED (the vendor restricts
+    the fifth to Hybrid Design itself; body creation is the mirror
+    door's coin)."""
+    win.new_document()
+    win.action_new_sketch("XY")
+    seen = {}
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask({"height": 6.0},
+                                                   seen))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    assert "op" in seen["keys"]                    # off-face: it opens
+    assert seen["keys"][-1] == "op"                # LAST: page order
+    assert win.doc.features[-1].op == "union"      # the Join rest
+    assert win.status.currentMessage() == \
+        "Extruded 1 region(s) from sk by 6 mm"     # no tail at the rest
+
+    win.new_document()
+    win.action_new_sketch("XY")
+    m = win.sketch.model                           # a FACE sketch
+    m.plane = "FACE"
+    m.axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+    m.origin = np.zeros(3)
+    seen2 = {}
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask({"height": 6.0},
+                                                   seen2))
+    win._on_profiles([(_stage_rect(), [])], "f")
+    qapp.processEvents()
+    assert "op" not in seen2["keys"], \
+        f"the FACE door never asks what the probe owns ({seen2})"
+    assert seen2["keys"] == ["offset", "direction", "measurement",
+                             "height", "height2"]
+    assert win.doc.features[-1].op == "union"      # the probe's word
+
+
+def test_a_born_cut_eats_from_what_was_already_there(win, qapp,
+                                                     monkeypatch):
+    """"Cut: Cuts an area out of an existing body" - and OUR fold
+    needs no "Objects To Cut" pick to do it: the cut reads and writes
+    the accumulator of the feature's own body. A 40x20 profile
+    extruded 6 mm (4,800 mm^3) CUT into the 15,000 mm^3 slab leaves
+    10,200; the record carries the kernel word op="subtract" (the
+    file replays it), the rail says the word it always said
+    ("operation: subtract"), and the sentence grows the honest tail.
+    Join is the rest: no tail, the R4 sentence byte-identical."""
+    win.new_document()
+    _base(win.doc)
+    win.recompute()
+    assert win.doc.result.volume == pytest.approx(15000.0, rel=1e-6)
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"height": 6.0, "op": "Cut"}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    f = win.doc.features[-1]
+    assert f.op == "subtract"
+    assert win.doc.result.volume == pytest.approx(10200.0, rel=1e-6)
+    assert win.status.currentMessage() == \
+        "Extruded 1 region(s) from sk by 6 mm — cut out of what was " \
+        "already there"
+    win.rail.props.show_feature(f)
+    assert "operation: subtract" in win.rail.props._body.text()
+    raw = json.loads(json.dumps(win.doc.to_dict()))
+    assert Document.from_dict(raw).recompute().volume == \
+        pytest.approx(10200.0, rel=1e-6)
+
+
+def test_a_cut_without_material_and_a_fourth_voice_refuse_early(
+        win, qapp, monkeypatch):
+    """The M197 precheck law, operation edition: the fold refuses a
+    first-feature subtract by name at recompute (m118 pins THAT
+    mouth), but a door that let it in would leave an undo step that
+    undoes nothing - so the door refuses BEFORE the capture, quoting
+    the fold's own words. A fourth operation word refuses naming the
+    page's three booleans. And the honesty TRAP: the fold does NOT
+    refuse a first INTERSECT (its quirk: with nothing to intersect,
+    the feature itself stands) - the door mirrors the fold's refusal
+    SET, invents none, and the sentence keeps SILENT about
+    intersecting with material that was never there."""
+    win.new_document()
+    win.action_new_sketch("XY")
+    n, u = len(win.doc.features), len(win._undo)
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"height": 6.0, "op": "Cut"}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    assert win.status.currentMessage() == \
+        "Extrude refused: a cut needs material to cut - the first " \
+        "feature cannot be a subtract"
+    assert len(win.doc.features) == n and len(win._undo) == u
+
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"height": 6.0, "op": "Shrink"}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    msg = win.status.currentMessage()
+    assert msg.startswith("Extrude refused:") \
+        and "'Join', 'Cut' or 'Intersect'" in msg and "Shrink" in msg
+    assert len(win.doc.features) == n and len(win._undo) == u
+
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"height": 6.0, "op": "Intersect"}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    f = win.doc.features[-1]
+    assert f.op == "intersect"                     # the fold stands it
+    assert win.doc.result.volume == pytest.approx(4800.0, rel=1e-6)
+    assert win.status.currentMessage() == \
+        "Extruded 1 region(s) from sk by 6 mm"     # SILENT, and honest
+
+
+def test_a_born_intersect_meets_the_material_it_finds(win, qapp,
+                                                      monkeypatch):
+    """"Intersect: Creates a body at the intersection of an existing
+    body and the new body": the same offset-2 wall that R4 born
+    FLOATING (z 2..8) into the slab's z 0..10 INTERSECTS to the
+    common space - still 4,800 mm^3 (it sat wholly inside), bounds
+    z 2..8 - and the sentence now EARNED its tail: intersected with
+    what was already there."""
+    win.new_document()
+    _base(win.doc)
+    win.recompute()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"height": 6.0, "offset": 2.0, "op": "Intersect"}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    f = win.doc.features[-1]
+    assert f.op == "intersect"
+    tm = win.doc.result.to_trimesh()
+    assert (round(float(tm.bounds[0][2]), 6),
+            round(float(tm.bounds[1][2]), 6)) == (2.0, 8.0)
+    assert tm.volume == pytest.approx(4800.0, rel=1e-6)
+    assert win.status.currentMessage() == \
+        "Extruded 1 region(s) from sk by 6 mm starting 2 mm off the " \
+        "plane — intersected with what was already there"
+
+
+def test_the_shared_answer_grows_to_the_operation_too(win):
+    """The door asks ONCE for the whole sketch - the shared-answer
+    law now covers the SIXTH sibling: a region born LATER into a cut
+    family must cut like its kin (the growth used to copy the height
+    and let the new region default back to union - a family that
+    silently switched from eating to adding mid-sketch). Base slab
+    15,000; the family's offset-2 walls eat the SAME z 2..8 space
+    twice which is once - 10,200 stands."""
+    d = win.doc
+    _base(d)
+    d.add(ExtrudeFeature(name="sk", outer=_stage_rect(), height=6.0,
+                         offset=2.0, op="subtract", sid=7, region=0))
+    win._update_sketch_features(7, [(_stage_rect(), []),
+                                    (_stage_rect(), [])],
+                                {"name": "sk"}, capture=False)
+    kids = [f for f in d.features
+            if isinstance(f, ExtrudeFeature) and f.sid == 7]
+    assert len(kids) == 2
+    assert kids[1].op == "subtract"                # the voice travels
+    assert kids[1].offset == 2.0
+    win.recompute()
+    assert d.result.volume == pytest.approx(10200.0, rel=1e-6)
