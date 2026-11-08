@@ -7728,13 +7728,19 @@ class MainWindow(QMainWindow):
             f"{base} by {count2}x{at2} ({dx2:g}, {dy2:g}, {dz2:g}) "
             f"mm{tail2}", 6000)
 
-    def _mirror_feature(self, src, plane=None, off=None):
+    def _mirror_feature(self, src, plane=None, off=None, operation="join"):
         """Symmetric twin of ``src`` across a datum plane — an origin
         plane or any M125 construction plane. Mirroring the part's
         mid-plane reproduces Fusion's most common mirror (e.g. a
         one-sided lug on a bracket).  Whatever the caller already knows
         (plane from a menu, values from the ribbon panel) skips the
-        prompt — what's missing lands in ONE live panel (M163)."""
+        prompt — what's missing lands in ONE live panel (M163).
+        `operation` is the page's Operation row (M201): "join" (the
+        legacy voice, the twin lands in the source's body) or "new"
+        (a body of the twin's own).  The panel this method opens asks
+        the PLANE and the OFFSET — never the operation — so a caller
+        that did not ask cannot write it: the browser menu's mirror
+        stays the join it always was."""
         known = plane is not None
         is_origin = plane in MirrorFeature.NORMALS
         if off is None:
@@ -7766,11 +7772,33 @@ class MainWindow(QMainWindow):
                          remember_key="mirror")
             return
         self._capture()
-        self.doc.add_mirror(f"Mirror of {src.name}", src, plane, off)
+        knew = {b["name"] for b in self.doc.bodies}
+        feat = self.doc.add_mirror(f"Mirror of {src.name}", src, plane, off,
+                                   operation=operation)
+        try:
+            self.doc.recompute()       # the row lands on success
+        except Exception as e:
+            # M197 door law, M201 edition: a refusal leaves NOTHING -
+            # not the record, not the body a "new" mirror had to open,
+            # not the undo step that would undo nothing.
+            self.doc.features.remove(feat)
+            self.doc.bodies = [b for b in self.doc.bodies
+                               if b["name"] in knew]
+            if self.doc.active_body not in knew:
+                self.doc.active_body = (self.doc.bodies[0]["name"]
+                                        if self.doc.bodies else None)
+            self.doc.dirty = True
+            self.recompute()
+            self._undo.pop()
+            self._redo.clear()
+            self.status.showMessage(f"Mirror refused: {e}", 6000)
+            return
         self.recompute()
         self.viewport.refresh(fit=True)
         self.status.showMessage(
-            f"Mirrored {src.name} across {plane} @ {off:g} mm", 6000)
+            f"Mirrored {src.name} across {plane} @ {off:g} mm"
+            + (f" as a new body ({feat.body})" if operation == "new"
+               else ""), 6000)
 
     def action_geometric_pattern(self):
         """Fusion's Geometric Pattern (M126): a T·R·S lattice — two step
@@ -7966,6 +7994,20 @@ class MainWindow(QMainWindow):
                  choices=planes, group="Plane"),
             dict(key="off", label="Plane offset", kind="double",
                  default=0.0, min=-1e6, max=1e6, group="Plane"),
+            # M201 [SLD-REF-MIRROR-DIALOG, verbatim]: "Operation:
+            # Select whether to create a new body or join the mirrored
+            # body with the original body." - "Join: Joins the mirrored
+            # body with the original body, if they intersect. Solid
+            # bodies are combined." (what this tool has ALWAYS done, so
+            # it is the door's resting voice and old files replay it) |
+            # "New Body: Creates a new body mirrored across the mirror
+            # plane." The page states no initial value anywhere - the
+            # word "default" does not appear on it - so Join is chosen
+            # because it is the legacy voice, not because the vendor
+            # named a default.
+            dict(key="op", label="Operation", kind="combo",
+                 choices=["Join", "New Body"], default="Join",
+                 group="Boolean"),
         ]
 
         def src_of(v):
@@ -7978,7 +8020,8 @@ class MainWindow(QMainWindow):
                      preview=lambda v: self._mirror_preview(
                          src_of(v), v["plane"], v.get("off", 0.0)),
                      commit=lambda v: self._mirror_feature(
-                         src_of(v), v["plane"], v["off"]),
+                         src_of(v), v["plane"], v["off"],
+                         "new" if str(v["op"]) == "New Body" else "join"),
                      abort=self._cmdpanel_abort("Mirror"),
                      remember_key="mirror")
 

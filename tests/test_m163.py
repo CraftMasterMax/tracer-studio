@@ -250,7 +250,11 @@ def test_mirror_opens_a_live_panel_not_a_dialog(win, monkeypatch):
     win.action_mirror()
     p = win._cmd_panel
     assert isinstance(p, CmdPanel) and p.command_id == "mirror"
-    assert list(p._edits) == ["src", "plane", "off"]
+    assert list(p._edits) == ["src", "plane", "off", "op"]
+    # M201: the page's Operation row joined the panel - the row pin
+    # MOVED with the vendor (pins move, laws survive). At rest it says
+    # Join, the voice this tool has always had.
+    assert p._edits["op"].currentText() == "Join"
     n = len(win.doc.features)
     p.btn_commit.click()
     assert len(win.doc.features) == n + 1
@@ -296,7 +300,7 @@ def test_committed_values_are_remembered_next_time(win):
     fld._finish()
     p.btn_commit.click()
     assert cmddialog.remembered("mirror") == {"src": "lug", "plane": "XY",
-                                              "off": 7.0}
+                                              "off": 7.0, "op": "Join"}
     win.action_mirror()                       # reopen the verb
     p2 = win._cmd_panel
     assert p2._edits["off"].value_mm() == 7.0

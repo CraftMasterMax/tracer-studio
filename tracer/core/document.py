@@ -355,12 +355,25 @@ class MirrorFeature(Feature):
     """Mirror twin of the source solid across a datum plane: the coordinate
     plane XY/XZ/YZ shifted `offset` mm along its normal. Inherits the
     source's op, so mirroring a Cut gives a matching second Cut — the
-    maker's symmetric-lug trick."""
+    maker's symmetric-lug trick.
+    M201 [SLD-REF-MIRROR-DIALOG, verbatim] grows the page's Operation
+    row: "Join: Joins the mirrored body with the original body, if they
+    intersect. Solid bodies are combined." (THE LEGACY VOICE - what the
+    tool has always done: the twin lands in the SOURCE's body and the
+    solids are combined) | "New Body: Creates a new body mirrored across
+    the mirror plane." (the twin becomes a body of its own; `body`
+    names it, and a body is BUILT, not cut, so the twin's op is union
+    there). The page words the join only "if they intersect" and says
+    NOTHING about a twin that does not touch - no rule is invented:
+    join combines either way, which is what "Solid bodies are combined"
+    already says. Note the page names NO offset row at all: `offset` is
+    the house's own mouth, never to be quoted as the vendor's."""
     NORMALS = {"XY": (0.0, 0.0, 1.0), "XZ": (0.0, 1.0, 0.0),
                "YZ": (1.0, 0.0, 0.0)}
     source_uid: str = ""
     plane: str = "YZ"
     offset: float = 0.0
+    operation: str = "join"             # "join" | "new" (the page's two)
 
 
 @dataclass
@@ -3193,10 +3206,26 @@ class Document:
             distribution=str(distribution)))
 
     def add_mirror(self, name, source: Feature, plane="YZ", offset=0.0,
-                   op=None):
+                   op=None, operation="join"):
+        """Join the twin into the source's body (the legacy voice) or
+        give it a body of its own - the page's "New Body: Creates a new
+        body mirrored across the mirror plane".  A new body is BUILT by
+        the twin, so its op is union there; and the body the user is
+        working in stays active - the twin's body is a result, not a
+        workbench handed over behind their back."""
+        oper = str(operation)
+        if oper not in ("join", "new"):
+            raise ValueError(f"the operation is 'join' or 'new', not "
+                             f"{oper!r}")
+        body = None
+        if oper == "new":
+            prev = self.active_body
+            body = self.add_body()["name"]
+            self.active_body = prev
         return self.add(MirrorFeature(
-            name=name, op=op or source.op, source_uid=source.uid,
-            plane=plane, offset=float(offset)))
+            name=name, op=op or ("union" if oper == "new" else source.op),
+            source_uid=source.uid, plane=plane, offset=float(offset),
+            operation=oper, body=body))
 
     def add_geometric_pattern(self, name, source: Feature, *, axis="Z",
                               base=(0.0, 0.0, 0.0), d1=(1.0, 0.0, 0.0),
@@ -3383,6 +3412,26 @@ class Document:
                 src = by_uid.get(f.source_uid)
                 if src is None:
                     continue
+                oper = str(f.operation)
+                if oper not in ("join", "new"):
+                    # M201 [SLD-REF-MIRROR-DIALOG]: the page's two
+                    # voices, and a third word is refused naming them.
+                    raise ValueError(f"the operation is 'join' or 'new', "
+                                     f"not {oper!r}")
+                if oper == "new":
+                    own = getattr(f, "body", None) or "Body 1"
+                    src_f = next((g for g in self.features
+                                  if g.uid == f.source_uid), None)
+                    src_body = (getattr(src_f, "body", None)
+                                or "Body 1") if src_f is not None else None
+                    if src_body is not None and own == src_body:
+                        # The record CLAIMS a new body but streams into
+                        # the original - a lying record, not a silent
+                        # join.  add_mirror() gives the twin its own
+                        # body; hand-built records must too.
+                        raise ValueError(
+                            f"a new-body mirror needs a body of its own, "
+                            f"not {own!r} twice")
                 n = MirrorFeature.NORMALS.get(f.plane)
                 p0 = (0.0, 0.0, 0.0)
                 if n is None:                   # M125: custom datum plane
@@ -3818,7 +3867,8 @@ class Document:
                          distribution=str(f.distribution))
             elif isinstance(f, MirrorFeature):
                 d.update(source_uid=f.source_uid, plane=f.plane,
-                         offset=float(f.offset))
+                         offset=float(f.offset),
+                         operation=str(f.operation))
             elif isinstance(f, GeometricPatternFeature):
                 d.update(source_uid=f.source_uid, axis=f.axis,
                          base=list(map(float, f.base)),
@@ -4071,7 +4121,9 @@ class Document:
             elif t == "MirrorFeature":
                 doc.features.append(MirrorFeature(
                     name=fd["name"], source_uid=fd["source_uid"],
-                    plane=fd["plane"], offset=float(fd["offset"]), **base))
+                    plane=fd["plane"], offset=float(fd["offset"]),
+                    operation=str(fd.get("operation", "join")),
+                    **base))
             elif t == "GeometricPatternFeature":
                 doc.features.append(GeometricPatternFeature(
                     name=fd["name"], source_uid=fd["source_uid"],

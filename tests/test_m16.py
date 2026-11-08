@@ -131,11 +131,12 @@ def test_action_mirror_flow(win, monkeypatch):
                                  dims={"dx": 2, "dy": 8, "dz": 5},
                                  placement=(1, 2, 5)))           # y 2..10
     win.recompute()
-    picks = {"src": "lug", "plane": "XZ", "off": 10.0}
+    picks = {"src": "lug", "plane": "XZ", "off": 10.0, "op": "Join"}
     script_panel(monkeypatch, picks)         # M163: Mirror rides the live
     win.action_mirror()                      # panel now (was modal ask)
     m = win.doc.features[-1]
     assert isinstance(m, MirrorFeature) and m.plane == "XZ"
+    assert m.operation == "join"             # M201: the door's resting voice
     # plate 2000 + lug y2..10 (80) + twin y10..18 (80), both on the plate
     assert win.doc.result.volume == pytest.approx(2000 + 160, rel=1e-6)
 

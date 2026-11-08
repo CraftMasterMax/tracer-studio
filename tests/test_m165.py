@@ -760,7 +760,8 @@ def _plate_and_mirror(win, monkeypatch):
                                  placement=(1, 2, 5)))
     win.recompute()
     qapp2.processEvents()
-    script_panel(monkeypatch, {"src": "lug", "plane": "XZ", "off": 10.0})
+    script_panel(monkeypatch, {"src": "lug", "plane": "XZ", "off": 10.0,
+                               "op": "Join"})
     win.act_mirror.trigger()                           # the bypass the
     for _ in range(40):                                #  recon flagged:
         qapp2.processEvents()                          #  act.trigger IS

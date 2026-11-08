@@ -215,10 +215,17 @@ def test_mirror_ribbon_is_one_dialog(win, monkeypatch):
     win.doc.add_cylinder("lug", 3, 8, center=(30, 20), op="union")
     win.recompute()
     calls = _capture_panels(win, monkeypatch,
-                            {"src": "lug", "plane": "YZ", "off": 0.0})
+                            {"src": "lug", "plane": "YZ", "off": 0.0,
+                             # M201: the door now READS the page's
+                             # Operation row, so the fake answers it -
+                             # Join is what this tool always did.
+                             "op": "Join"})
     win.action_mirror()
     assert len(calls) == 1
-    assert calls[0][1] == ["src", "plane", "off"]
+    # M201 grew the ONE panel with the page's Operation row (Join |
+    # New Body) - the key pin MOVED with the vendor in this commit
+    # (pins move, laws survive): still ONE panel.
+    assert calls[0][1] == ["src", "plane", "off", "op"]
     assert any(type(f).__name__ == "MirrorFeature"
                for f in win.doc.features)
 
