@@ -542,11 +542,17 @@ def test_the_lever_opens_the_page_s_rows_and_the_mouth_is_guarded(win):
     as typed. Outside their voice the conditional rows are stored and
     inert: a half straddle ignores the typed height 2."""
     rec = ExtrudeFeature(name="R", outer=_rect(), height=7.0,
-                         direction="two", height2=3.0)
+                         direction="two", height2=3.0, offset=1.5)
     rows = {f["key"]: f for f in win._feature_params(rec)}
     assert list(rows) == ["height", "fillet", "chamfer", "taper",
-                          "symmetric", "direction", "measurement",
-                          "height2"]
+                          "symmetric", "offset", "direction",
+                          "measurement", "height2"]
+    assert rows["offset"]["default"] == 1.5           # the record's own
+    # (R4: the Offset row sits BEFORE the Direction row - the page
+    # lists Start above Direction - and it is a SIGNED row: dbl()
+    # with mn=None grows no "min" key, so ask()'s spin accepts the
+    # negative side; the page words no sign rule, silence is silence)
+    assert "min" not in rows["offset"]
     assert tuple(rows["direction"]["choices"]) == \
         ("one", "two", "symmetric")
     assert rows["direction"]["default"] == "two"       # the record's own
@@ -586,7 +592,17 @@ def _spy_ask(reply, store):
         store["defaults"] = {f["key"]: f.get("default") for f in fields}
         store["choices"] = {f["key"]: tuple(f.get("choices", ()))
                             for f in fields if f["kind"] == "combo"}
-        return dict(reply) if reply is not None else None
+        if reply is None:
+            return None
+        # M201 R4: a real modal answers EVERY row it opened - the OK
+        # click returns the whole values() dict, resting rows included.
+        # The fake mirrors that: the field defaults fill the door, the
+        # script's reply overrides. (R3 wrote the replies before the
+        # door grew the Offset row; auto-fill keeps them honest at the
+        # 0.0 rest and pays the fifth row without a rewrite.)
+        out = {f["key"]: f.get("default") for f in fields}
+        out.update(reply)
+        return dict(out)
     return _ask
 
 
@@ -618,10 +634,13 @@ def test_the_creation_door_asks_the_page_s_rows_and_rests_at_one_side(
     win._on_profiles([(_stage_rect(), [])], "sk")
     qapp.processEvents()
     assert seen["title"] == "Extrude"
-    assert seen["keys"] == ["direction", "measurement", "height",
-                            "height2"]
+    # R4: the door now opens five rows in PAGE ORDER - the Start/Offset
+    # numeric sits ABOVE the Direction row, as the page lists it.
+    assert seen["keys"] == ["offset", "direction", "measurement",
+                            "height", "height2"]
     assert seen["choices"]["direction"] == ("one", "two", "symmetric")
     assert seen["choices"]["measurement"] == ("whole", "half")
+    assert seen["defaults"]["offset"] == 0.0   # "Profile Plane" rest
     assert seen["defaults"]["direction"] == "one"      # the legacy rest
     assert seen["defaults"]["measurement"] == "whole"  # the pinned read
     assert seen["defaults"]["height"] == 5.0           # the HOUSE rest
@@ -790,3 +809,151 @@ def test_the_paper_copy_keeps_the_rail_honest_about_the_born_voice(
     qapp.processEvents()
     win.rail.props.show_feature(win.doc.features[-1])
     assert "extent:" not in win.rail.props._body.text()
+
+
+# ---- R4: the Start/Offset numeric moves the plane every voice speaks from --
+
+def test_the_offset_number_moves_the_plane_for_every_voice():
+    """[SLD-REF-EXTRUDE, verbatim] "Offset: Starts extrusion a
+    specified offset distance from the profile plane" + "Offset
+    (Offset or Object start only): Specify distance to offset
+    extrusion from profile plane". The page words NO rule pairing
+    Start with Direction and none is invented: the profile plane
+    MOVES by the number along the normal and every voice then speaks
+    from the moved plane (footprint 40x20 = 800 mm^2). Sign: the page
+    says "distance" but words no sign rule - silence is silence - so
+    the house coin (the signed number) rules and a negative offset
+    starts the other way. Moving a plane conserves the solid: every
+    volume below EQUALS the same voice at rest, digit for digit -
+    and the rest itself is the identity (offset 0.0 builds == the
+    plain build, this very process)."""
+    def zv(d):
+        tm = d.recompute().to_trimesh()
+        return (round(float(tm.bounds[0][2]), 6),
+                round(float(tm.bounds[1][2]), 6)), tm.volume
+
+    plain = _ex(height=6.0)
+    rest = _ex(height=6.0, offset=0.0)
+    assert rest.recompute().volume == plain.recompute().volume   # rest
+
+    z, v = zv(_ex(height=6.0, offset=2.0))                        # one
+    assert z == (2.0, 8.0) and v == pytest.approx(4800.0, rel=1e-6)
+    z, v = zv(_ex(height=6.0, direction="two", height2=4.0,
+                  offset=2.0))                                    # two
+    assert z == (-2.0, 8.0) and v == pytest.approx(8000.0, rel=1e-6)
+    z, v = zv(_ex(height=6.0, symmetric=True, offset=1.0))        # whole
+    assert z == (-2.0, 4.0) and v == pytest.approx(4800.0, rel=1e-6)
+    z, v = zv(_ex(height=6.0, symmetric=True, measurement="half",
+                  offset=-1.0))                                   # half,
+    assert z == (-7.0, 5.0)                                # NEGATIVE sign
+    assert v == pytest.approx(9600.0, rel=1e-6)
+
+
+def test_the_offset_rides_both_mouths_and_the_caps_answer_in_the_same_coin():
+    """The writer carries the number and the reader honours it; a file
+    made BEFORE this rung (no "offset" key) cannot suddenly start off
+    the plane - the key-absent record defers to 0.0, "Profile Plane",
+    and replays == the plain build. The published caps answer in the
+    SAME coin as the build: a two-sided record offset 2 with heights 6
+    and 4 caps at +8 and -2 (off+h above the original plane, off-h2
+    below it) - the faces a sketch on the moved top would trust."""
+    d = _ex(height=6.0, direction="two", height2=4.0, offset=2.0)
+    raw = json.loads(json.dumps(d.to_dict()))
+    fe = [x for x in raw["features"] if x["type"] == "ExtrudeFeature"][0]
+    assert fe["offset"] == 2.0                          # the writer
+    assert Document.from_dict(raw).recompute().volume == \
+        d.recompute().volume                            # the reader
+    del fe["offset"]                                    # a pre-R4 file
+    back = Document.from_dict(raw)
+    assert back.features[0].offset == 0.0
+    assert back.recompute().volume == _ex(height=6.0, direction="two",
+                                          height2=4.0).recompute().volume
+    caps = {name: round(float(p[2]), 6)
+            for name, p, _n in d._published_planes(d.features[0])}
+    assert caps == {"cap-top": 8.0, "cap-bottom": -2.0}
+
+
+def test_the_creation_door_bears_the_start_row_says_the_tail_and_the_rail(\
+        win, qapp, monkeypatch):
+    """The creation door opens the Offset row ABOVE the Direction row
+    (page order) at the 0.0 rest - "Profile Plane", the start this
+    door has ALWAYS birthed (the page names no default: "default"
+    appears zero times). Typed 2 mm, the record is born starting off
+    the plane (z 2..8) and the sentence grows the honest tail; at the
+    rest the R3 sentence survives BYTE-IDENTICAL and the rail keeps
+    its rung-era lines - the "start: 2 mm off the plane" line appears
+    only when the plane actually moved (absence is honesty too)."""
+    win.new_document()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"offset": 2.0, "direction": "one", "measurement": "whole",
+         "height": 6.0, "height2": 0.0}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    f = win.doc.features[-1]
+    assert f.offset == 2.0
+    tm = win.doc.result.to_trimesh()
+    assert (round(float(tm.bounds[0][2]), 6),
+            round(float(tm.bounds[1][2]), 6)) == (2.0, 8.0)
+    assert win.status.currentMessage() == \
+        "Extruded 1 region(s) from sk by 6 mm starting 2 mm off the " \
+        "plane"
+    win.rail.props.show_feature(f)
+    assert "start: 2 mm off the plane" in win.rail.props._body.text()
+
+    win.new_document()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"direction": "one", "measurement": "whole", "height": 6.0,
+         "height2": 0.0}, {}))                # the fake fills offset 0.0
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    g = win.doc.features[-1]
+    assert g.offset == 0.0
+    assert win.status.currentMessage() == \
+        "Extruded 1 region(s) from sk by 6 mm"          # byte-identical
+    win.rail.props.show_feature(g)
+    assert "start:" not in win.rail.props._body.text()
+
+
+def test_a_grown_region_inherits_the_start_too(win):
+    """The shared-answer law grows to the fifth sibling: the door
+    asked the offset ONCE for the whole sketch, so a region BORN
+    LATER into an offset family starts off the plane EXACTLY like its
+    kin (an inherited distance under a silent start would strand the
+    sibling at the plane - the record would contradict its own
+    sketch). A two-sided family offset 2: both straddle z -2..+8."""
+    d = win.doc
+    d.add(ExtrudeFeature(name="sk", outer=_stage_rect(), height=6.0,
+                         direction="two", height2=4.0, offset=2.0,
+                         sid=7, region=0))
+    win._update_sketch_features(7, [(_stage_rect(), []),
+                                    (_stage_rect(), [])],
+                                {"name": "sk"}, capture=False)
+    kids = [f for f in d.features
+            if isinstance(f, ExtrudeFeature) and f.sid == 7]
+    assert len(kids) == 2
+    assert kids[1].offset == 2.0                       # the START travels
+    tm = d.recompute().to_trimesh()
+    assert (round(float(tm.bounds[0][2]), 6),
+            round(float(tm.bounds[1][2]), 6)) == (-2.0, 8.0)
+
+
+def test_the_lever_writes_the_offset_only_when_it_opened_the_row(win):
+    """The guarded coin grows to the Start row: the rung-era five-row
+    script never touches a record's start (a lever that was never
+    asked never writes - the count2 law), while an answer that names
+    the row writes it in document measures. The ROW itself is pinned
+    by the R2 gate (page order, the record's own default, signed)."""
+    g = ExtrudeFeature(name="G", outer=_rect(), height=4.0, offset=2.0)
+    win._apply_feature_params(g, {"height": 5.0, "fillet": 0.0,
+                                  "chamfer": 0.0, "taper": 0.0,
+                                  "symmetric": False})
+    assert g.offset == 2.0                    # kept, never invented-away
+    win._apply_feature_params(g, {"height": 5.0, "fillet": 0.0,
+                                  "chamfer": 0.0, "taper": 0.0,
+                                  "symmetric": False, "offset": 1.5})
+    assert g.offset == 1.5                    # the row spoke, it wrote
+    tm = g.build().to_trimesh()
+    assert (round(float(tm.bounds[0][2]), 6),
+            round(float(tm.bounds[1][2]), 6)) == (1.5, 6.5)

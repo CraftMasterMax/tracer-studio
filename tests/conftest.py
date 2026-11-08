@@ -66,7 +66,7 @@ def script_cmd_cancel(monkeypatch):
 
 
 def script_extrude_door(monkeypatch, height, direction="one",
-                        measurement="whole", height2=0.0):
+                        measurement="whole", height2=0.0, offset=0.0):
     """M201 R3: answer the GROWN extrude creation door - ONE dialog
     (title "Extrude", [SLD-REF-EXTRUDE] Direction row + the house's
     one number + the page's two conditional siblings). Any OTHER
@@ -74,14 +74,18 @@ def script_extrude_door(monkeypatch, height, direction="one",
     call (script_cmd etc.), so order is law: script the rest first,
     wrap the door last. Records born through the resting reply speak
     the door's legacy voice - direction "one" is what the one-number
-    door always birthed."""
+    door always birthed. M201 R4: the door READS the page's Offset
+    row too (page order: Start above Direction) - the reply grows it
+    at 0.0, "Profile Plane", the start every repaid test was born
+    with."""
     from tracer.ui import cmddialog
     prior = cmddialog.ask
 
     def routed(parent, title, fields, remember_key=None):
         if title == "Extrude":
             return dict(height=float(height), direction=direction,
-                        measurement=measurement, height2=float(height2))
+                        measurement=measurement, height2=float(height2),
+                        offset=float(offset))
         return prior(parent, title, fields, remember_key=remember_key)
     monkeypatch.setattr(cmddialog, "ask", routed)
 

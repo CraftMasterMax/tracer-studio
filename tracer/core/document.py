@@ -561,6 +561,16 @@ class ExtrudeFeature(Feature):
     #                          "one" | "two" | "symmetric"
     measurement: str = "whole"   # symmetric only: "whole" | "half"
     height2: float = 0.0     # two sides only: the second side's distance
+    offset: float = 0.0      # M201 R4 [SLD-REF-EXTRUDE]: the Start/
+    #   Offset numeric. 0.0 is "Profile Plane: Starts extrusion from
+    #   the profile plane" - what this door has ALWAYS done; non-zero
+    #   is "Offset: Starts extrusion a specified offset distance from
+    #   the profile plane". Object start is PICKING and stays
+    #   UNPROMISED, so the number ENCODES the two honored starts (the
+    #   conditional-row law, numeric edition). The page words no rule
+    #   pairing Start with Direction and none is invented: the profile
+    #   plane MOVES by the number along the sketch normal and every
+    #   voice speaks from that moved plane.
     handle: dict | None = None   # M142: {"feature", "part"} — the LIVE
     #   face this sketch attached to at pick; None = frozen snapshot
 
@@ -658,6 +668,29 @@ class ExtrudeFeature(Feature):
         m = plane_matrix(self.plane, self.placement, self.axes)
         return s.transformed(m)
 
+    def _zoff(self, s: Solid) -> Solid:
+        """M201 R4 [SLD-REF-EXTRUDE, verbatim] speaks the Start/Offset
+        pair: "Offset: Starts extrusion a specified offset distance
+        from the profile plane" + "Offset (Offset or Object start
+        only): Specify distance to offset extrusion from profile
+        plane". THE NUMERIC-ONLY VOICE: the page's Start row offers
+        Profile Plane | Offset | Object, and Object is PICKING - it
+        stays unpromised - so the number ENCODES the two honored
+        starts: 0.0 is "Profile Plane", what this tool has ALWAYS
+        done, and the rest at every mouth; non-zero is the page's
+        Offset start. The page words no rule pairing Start with
+        Direction and none is invented: the profile plane MOVES by
+        the number along the local normal and every voice then
+        speaks from that moved plane - one: [off, off+h]; two:
+        [off-h2, off+h]; whole: off+-h/2; half: off+-h. Sign: the
+        page says "distance" but words NO sign rule (silence is
+        silence), so the house coin - the signed number - rules:
+        a negative offset starts the other way along the normal.
+        At the rest the identity: the rung-era call survives UNTOUCHED
+        (no extra translate - bit-for-bit, not just equal)."""
+        off = float(self.offset)
+        return s if off == 0.0 else s.translated((0.0, 0.0, off))
+
     def _one_side(self, outer, holes) -> Solid:
         """The rung-era build, VERBATIM: straight extrude or the
         tapered loft, 0..height along local +z."""
@@ -687,14 +720,16 @@ class ExtrudeFeature(Feature):
                 # "a UNIQUE extrusion on EACH side" - a zero second
                 # distance says what it says: nothing that way (the
                 # page words no minimum, so none is invented).
-                return self._place(self._one_side(outer, holes))
+                return self._place(self._zoff(self._one_side(outer,
+                                                             holes)))
             if abs(float(self.taper)) < 1e-9:
                 s = Solid.extrude(outer, holes, h + h2)
-                return self._place(s.translated((0.0, 0.0, -h2)))
+                return self._place(self._zoff(s.translated((0.0, 0.0,
+                                                            -h2))))
             s = Solid.batch_union([self._one_side(outer, holes),
                                    self._loft_taper(outer, holes, hh=h2,
                                                     down=True)])
-            return self._place(s)
+            return self._place(self._zoff(s))
         if d == "symmetric":
             m = str(self.measurement)
             if m == "whole":
@@ -703,7 +738,7 @@ class ExtrudeFeature(Feature):
                 # re-centred. Rung-era calls, bit for bit.
                 s = self._one_side(outer, holes)
                 s = s.translated((0.0, 0.0, -h / 2.0))
-                return self._place(s)
+                return self._place(self._zoff(s))
             if m == "half":
                 if abs(float(self.taper)) < 1e-9:
                     s = Solid.extrude(outer, holes, 2.0 * h)
@@ -712,12 +747,12 @@ class ExtrudeFeature(Feature):
                     s = Solid.batch_union([
                         self._one_side(outer, holes),
                         self._loft_taper(outer, holes, down=True)])
-                return self._place(s)
+                return self._place(self._zoff(s))
             raise ValueError(f"the measurement is 'whole' or 'half', "
                              f"not {m!r}")
         # "one" - the rung-era single side; measurement and height2 are
         # noticed and never crossed (the page opens them elsewhere).
-        return self._place(self._one_side(outer, holes))
+        return self._place(self._zoff(self._one_side(outer, holes)))
 
 
 @dataclass
@@ -2422,6 +2457,12 @@ class Document:
         elif isinstance(f, ExtrudeFeature):
             M = plane_matrix(f.plane, tuple(pl), f.axes)
             n, o, h = M[:3, 2], M[:3, 3], float(f.height)
+            # M201 R4 [SLD-REF-EXTRUDE]: the Start/Offset numeric MOVES
+            # the profile plane along the normal BEFORE any voice
+            # speaks from it - the caps answer in the same coin as the
+            # build's _zoff (one: off/off+h; two: off-h2/off+h; whole:
+            # off+-h/2; half: off+-h).
+            o = o + n * float(f.offset)
             d = f._effective_direction()
             m = str(f.measurement)
             if d == "symmetric" and m not in ("whole", "half"):
@@ -3910,6 +3951,7 @@ class Document:
                          direction=str(f.direction),
                          measurement=str(f.measurement),
                          height2=float(f.height2),
+                         offset=float(f.offset),
                          placement=list(map(float, f.placement)),
                          plane=f.plane, axes=f.axes, sketch=f.sketch,
                          sid=f.sid, region=f.region,
@@ -4165,6 +4207,7 @@ class Document:
                     direction=str(fd.get("direction", "")),
                     measurement=str(fd.get("measurement", "whole")),
                     height2=float(fd.get("height2", 0.0)),
+                    offset=float(fd.get("offset", 0.0)),
                     placement=tuple(fd["placement"]),
                     plane=fd.get("plane", "XY"), axes=fd.get("axes"),
                     sketch=fd.get("sketch"),

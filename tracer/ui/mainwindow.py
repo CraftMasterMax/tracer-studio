@@ -1580,6 +1580,16 @@ class MainWindow(QMainWindow):
             # the settings in step 6 independently for each side").
             # A legacy record (direction "") shows its EFFECTIVE voice,
             # so the lever never contradicts the rail.
+            # M201 R4 [SLD-REF-EXTRUDE, verbatim]: "Offset (Offset or
+            # Object start only): Specify distance to offset extrusion
+            # from profile plane" - the Start/Offset numeric, grown in
+            # PAGE ORDER (the page lists Start before Direction). The
+            # page words no sign rule (silence is silence) so the
+            # number is SIGNED, the house coin; the rest is whatever
+            # the RECORD says (0.0 for every record ever made before
+            # this rung - the lever echoes, never contradicts).
+            dbl("offset", "offset from the plane", feature.offset,
+                mn=None)
             combo("direction", "direction",
                   ("one", "two", "symmetric"),
                   feature._effective_direction())
@@ -1840,6 +1850,10 @@ class MainWindow(QMainWindow):
                 feature.measurement = str(v["measurement"])
             if "height2" in v:
                 feature.height2 = mm("height2")
+            if "offset" in v:
+                # M201 R4: the same guarded coin - a script driving the
+                # rung-era rows never invents an offset.
+                feature.offset = mm("offset")
         elif isinstance(feature, RevolveFeature):
             feature.angle = float(v["angle"])
         elif isinstance(feature, HoleFeature):
@@ -4521,6 +4535,25 @@ class MainWindow(QMainWindow):
             # birthed one-side records; the 5.0 default is the house's
             # own (the page names none: "default" appears zero times).
             v = cmddialog.ask(self, "Extrude", [
+                # M201 R4 [SLD-REF-EXTRUDE, verbatim]: "Start:
+                # Establishes the starting point for the extrusion.
+                # Profile Plane: Starts extrusion from the profile
+                # plane. Offset: Starts extrusion a specified offset
+                # distance from the profile plane. Object: Starts
+                # extrusion from a face or plane that you select" +
+                # "Offset (Offset or Object start only): Specify
+                # distance to offset extrusion from profile plane".
+                # THE NUMERIC-ONLY VOICE: Object is PICKING and stays
+                # unpromised, so the row ENCODES the two honored
+                # starts - 0.0 is the page's own "Profile Plane", what
+                # this door has ALWAYS birthed (and the page names no
+                # default anywhere: "default" appears zero times). The
+                # page words no sign rule - silence is silence - so
+                # the house coin rules: a signed number. Page order:
+                # the Start rows sit ABOVE the Direction row.
+                dict(key="offset", label="offset from the plane",
+                     kind="double", default=0.0, min=-1e5, max=1e5,
+                     decimals=2, group="Start"),
                 dict(key="direction", label="direction", kind="combo",
                      choices=("one", "two", "symmetric"), default="one",
                      group="Direction"),
@@ -4537,6 +4570,12 @@ class MainWindow(QMainWindow):
             if v is None:
                 return
             height = float(v["height"])
+            eoffset = float(v["offset"])          # M201 R4: the page's
+            #   Offset numeric - 0.0 says "Profile Plane", the start
+            #   this door has ALWAYS used; the kernel validates the
+            #   number as a number (a spin box cannot speak a wrong
+            #   word, so this row grows NO new refusal - the R3 word
+            #   refusals stand as they are).
             edirection = str(v["direction"])
             esym = edirection == "symmetric"       # the paper follows
             #                                       the word, always in
@@ -4589,7 +4628,8 @@ class MainWindow(QMainWindow):
                                              direction=edirection,
                                              symmetric=esym,
                                              measurement=emeas,
-                                             height2=eheight2, **common))
+                                             height2=eheight2,
+                                             offset=eoffset, **common))
         self.sketch.set_model(SketchModel())         # committed: clear editor
         self._show_page(self.viewport)
         self.recompute()
@@ -4620,9 +4660,14 @@ class MainWindow(QMainWindow):
                          "(half to each side)")
             else:
                 voice = f"by {height:g} mm"
+            # M201 R4: the Start/Offset tail says WHERE the wall
+            # starts when the number moved the plane; at 0.0 the
+            # sentence is the R3 one, byte for byte.
+            start = (f" starting {eoffset:g} mm off the plane"
+                     if eoffset != 0.0 else "")
             self.status.showMessage(
                 f"Extruded {len(profiles)} region(s) from {name} "
-                f"{voice}{why}", 6000)
+                f"{voice}{start}{why}", 6000)
 
     def action_hole(self):
         """Fusion Hole: each circle in the current sketch drills one hole —
@@ -6498,10 +6543,14 @@ class MainWindow(QMainWindow):
                     # two-sided sketch must not grow a one-sided
                     # sibling). Word and paper travel together, as
                     # they were born agreeing.
+                    # M201 R4: and so does the START - the door asked
+                    # the offset ONCE too; a sibling must not start at
+                    # the plane when its family starts off it.
                     extra.update(direction=src.direction,
                                  symmetric=src.symmetric,
                                  measurement=src.measurement,
-                                 height2=src.height2)
+                                 height2=src.height2,
+                                 offset=src.offset)
                     self.doc.add(ExtrudeFeature(height=src.height,
                                                 **extra))
         for f in group[len(profiles):]:     # regions shrank: drop stale features

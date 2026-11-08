@@ -748,6 +748,14 @@ class PropertiesPanel(QWidget):
             lines = [f"<b>{feature.name}</b>", f"operation: {feature.op}"]
         if isinstance(feature, ExtrudeFeature):
             lines.append(f"height: {units.L(feature.height, self.unit)}")
+            if abs(float(feature.offset)) > 1e-12:
+                # M201 R4 [SLD-REF-EXTRUDE]: the Start/Offset numeric
+                # moved the profile plane - the rail says so. At the
+                # 0.0 rest ("Profile Plane", what every pre-R4 record
+                # is) the rail's lines are the rung-era ones, untouched.
+                lines.append("start: "
+                             + units.L(feature.offset, self.unit)
+                             + " off the plane")
             if feature.fillet > 0:
                 lines.append("vertical fillet: "
                              + units.L(feature.fillet, self.unit))
