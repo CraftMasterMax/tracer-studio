@@ -4563,7 +4563,7 @@ class MainWindow(QMainWindow):
                      group="Extent"),
                 dict(key="angle", label="angle (degrees)", kind="double",
                      default=360.0, min=1.0, max=360.0, decimals=1,
-                     group="Angle"),
+                     suffix="°", group="Angle"),
                 dict(key="op", label="operation", kind="combo",
                      choices=("Join", "Cut", "Intersect"),
                      default="Join", group="Operation"),
