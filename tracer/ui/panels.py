@@ -14,7 +14,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QStyledItemDelegate,
 from ..core import units
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              CoilFeature, CombineFeature,
-                             Document, ExtrudeFeature, GeometricPatternFeature,
+                             Document, DraftFeature, ExtrudeFeature,
+                             GeometricPatternFeature,
                              HoleFeature,
                              ImportedFeature, LinearPatternFeature,
                              MoveFeature, ScaleFeature,
@@ -744,6 +745,14 @@ class PropertiesPanel(QWidget):
         if isinstance(feature, BodyFilletFeature):
             lines = [f"<b>{feature.name}</b>",
                      "operation: fillet body edges (OpenCascade)"]
+        elif isinstance(feature, DraftFeature):
+            # M201 R10 [SLD-REF-DRAFT]: a draft REPLACES the body
+            # (its `op` is unused, the kernel's own words), so the
+            # generic header printed every draft record's
+            # "operation: union" - a LIE. The fillet branch above is
+            # the precedent: a body op names what it DOES.
+            lines = [f"<b>{feature.name}</b>",
+                     "operation: draft body walls"]
         else:
             lines = [f"<b>{feature.name}</b>", f"operation: {feature.op}"]
         if isinstance(feature, ExtrudeFeature):
@@ -882,6 +891,34 @@ class PropertiesPanel(QWidget):
             baked = len(feature.res_faces)
             lines.append(f"baked triangles: {baked}" if baked
                          else "not yet computed")
+        elif isinstance(feature, DraftFeature):
+            # M201 R10 [SLD-REF-DRAFT]: the draft record speaks its
+            # OWN mouth on the rail (the op-lie fix above opens the
+            # branch). The angle wears degrees (R1b's unit law); one
+            # record one voice (M196's law): a fixed record names the
+            # plane it holds, a parting record names the line it
+            # crosses - and Angle 2 only when it spoke. THE MODE LINE:
+            # the page's own rest word ("Relative ... This is the
+            # default.") stays ABSENT (R4's rail law), and the line
+            # joins only for a fixed-plane record that says
+            # "Absolute" - a parting record's mode word is stored and
+            # INERT (the page gates the row "Fixed Plane draft type
+            # only"), and the rail keeps silent about inert words.
+            # The parenthetical is the MEASURED fact, not a hedge:
+            # on this kernel's straight walls the two readings lean
+            # the same number.
+            lines.append(f"draft: {feature.angle_deg:g}\u00b0")
+            if feature.parting is None:
+                lines.append(f"fixed: the {feature.fixed} plane")
+            else:
+                lines.append("parting line at "
+                             + units.L(feature.parting, self.unit))
+                if feature.angle2 is not None:
+                    lines.append(f"angle 2 above: {feature.angle2:g}\u00b0")
+            if (str(feature.angle_mode) == "Absolute"
+                    and feature.parting is None):
+                lines.append("angle mode: Absolute (both readings "
+                             "agree on straight walls)")
         elif isinstance(feature, LinearPatternFeature):
             lines.append(f"pattern: {feature.count}x at "
                          f"({units.val(feature.vector[0], self.unit):g}, "

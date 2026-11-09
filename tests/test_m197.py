@@ -241,7 +241,16 @@ def test_the_lever_speaks_degrees_and_a_fixed_plane(win, qapp):
     rows = {f["key"]: f for f in
             win._feature_params(DraftFeature(name="D", angle_deg=7.5,
                                              fixed="top"))}
-    assert list(rows) == ["angle_deg", "fixed"]
+    # M201 R10: the page's Angle Mode row - gated "(Fixed Plane draft
+    # type only)" - opens for THIS voice (the lever honours page
+    # gates, the M196 chamfer precedent) and stands BEFORE the Angle
+    # row, where the reference prints it (#3 vs #8). It rests at the
+    # record's own word; the apply mouth is GUARDED (R4's coin).
+    assert list(rows) == ["angle_mode", "angle_deg", "fixed"]
+    assert rows["angle_mode"]["kind"] == "combo"
+    assert tuple(rows["angle_mode"]["choices"]) == ("Relative",
+                                                    "Absolute")
+    assert rows["angle_mode"]["default"] == "Relative"
     assert rows["angle_deg"]["suffix"] == "\u00b0"
     assert "\u00b0" in rows["angle_deg"]["label"]      # both mouths agree
     assert rows["angle_deg"]["min"] == -89.9
@@ -252,6 +261,10 @@ def test_the_lever_speaks_degrees_and_a_fixed_plane(win, qapp):
     f = DraftFeature(name="D")
     win._apply_feature_params(f, {"angle_deg": -4.25, "fixed": "top"})
     assert f.angle_deg == -4.25 and f.fixed == "top"  # as typed
+    assert f.angle_mode == "Relative"     # guarded: not this script's word
+    win._apply_feature_params(f, {"angle_deg": -4.25, "fixed": "top",
+                                  "angle_mode": "Absolute"})
+    assert f.angle_mode == "Absolute"     # an explicit word writes
 
 
 def test_the_timeline_row_is_a_lean_not_a_plus(win, qapp):
@@ -289,8 +302,9 @@ def test_the_draft_door_asks_the_pages_rows(win, qapp, monkeypatch):
     height above the body's own bottom, then "Angle Specify the draft
     angle".  R2 pinned this door at TWO rows; the pin MOVED with the
     vendor when rung three grew the kernel (M196-R3 precedent: pins
-    move, laws survive) - the law holds: no Angle Mode, no face list,
-    no Tangent Chain, nothing that cannot bake.  Typed 15 from the
+    move, laws survive) - the law holds: no face list, no Tangent
+    Chain, nothing that cannot bake (Angle Mode joined at R10 - it
+    BAKES, as the page's measured-inert word).  Typed 15 from the
     bottom lands exactly and the parting row is NOTED AND NEVER
     WRITTEN for a fixed-plane record (one record one voice); the
     sentence speaks the lean AND the honest wall count, and the angle
@@ -308,9 +322,17 @@ def test_the_draft_door_asks_the_pages_rows(win, qapp, monkeypatch):
     win._body_draft()
     assert len(calls) == 1 and calls[0][0] == "Draft body walls"
     by = {f["key"]: f for f in calls[0][1]}
-    assert list(by) == ["type", "fixed", "parting", "angle_deg",
-                        "sides", "angle2"]
+    # M201 R10: the pin MOVED with the vendor again (R2's own words) -
+    # the page's Angle Mode (#3) stands after the Fixed Plane choice
+    # and before the Parting Tool (#4), exactly where the reference
+    # prints it. Still NO face list, NO Tangent Chain: the law holds,
+    # nothing that cannot bake is offered.
+    assert list(by) == ["type", "fixed", "angle_mode", "parting",
+                        "angle_deg", "sides", "angle2"]
     assert by["type"]["choices"] == ["Fixed Plane", "Parting Line"]
+    assert by["angle_mode"]["kind"] == "combo"
+    assert by["angle_mode"]["choices"] == ["Relative", "Absolute"]
+    assert by["angle_mode"]["default"] == "Relative"   # the PAGE's word
     assert by["angle_deg"]["suffix"] == "\u00b0"
     assert by["angle_deg"]["min"] == -89.9 and by["angle_deg"]["max"] == 89.9
     assert by["fixed"]["choices"] == ["bottom", "top"]
@@ -815,3 +837,195 @@ def test_the_door_drafts_two_sides_and_refuses_the_squeeze(win, qapp,
     assert "collapse" in win.status.currentMessage()
     assert len(win.doc.features) == n and len(win._undo) == u
     assert win.doc.result.volume == vol                # to the last digit
+
+
+# ---- M201 R10: the Angle Mode rung --------------------------------------
+# [SLD-REF-DRAFT, verbatim] "Angle Mode (Fixed Plane draft type only):
+# Select how the draft angle is measured. | Relative: Apply the draft
+# angle relative to the angle of the selected faces. This is the
+# default. | Absolute: Apply the draft angle from the Pull Direction,
+# regardless of any existing draft on the selected faces." THE FIRST
+# QUOTED VENDOR DEFAULT ON THIS BENCH - "default" counts 1 on the
+# reference page (belonging to RELATIVE) and 0 on the how-to - so the
+# door rests on the PAGE'S own word, and every other rest on this
+# bench stays named as a house fact. On this kernel the word is
+# MEASURED INERT (straight vertical walls, face angle zero: the two
+# readings name the same number), and the rail says so out loud.
+
+def _box_doc(mode="Relative", angle=10.0, **kw):
+    d = Document("m")
+    d.add(PrimitiveFeature(name="b", kind="box",
+                           dims={"dx": 20.0, "dy": 10.0, "dz": 40.0}))
+    d.add(DraftFeature(name="Draft1", angle_deg=angle,
+                       angle_mode=mode, **kw))
+    return d
+
+
+def test_the_angle_mode_rests_on_the_pages_own_default_word():
+    """The record's rest is the vendor's OWN sentence - the only such
+    quote on this bench: "Relative ... This is the default." And the
+    agreement is MEASURED, not asserted: the 20x10x40 box leaned 10
+    degrees bakes the SAME volume to the last float bit under both
+    readings (fixed plane and parting line alike), while the lean
+    itself is REAL (10 degrees stands apart from 0). The third word
+    is refused by name through the real fold - the page's list is
+    the whole mouth, whatever mouth speaks it."""
+    assert DraftFeature(name="D").angle_mode == "Relative"
+    rel = _box_doc("Relative").recompute().volume
+    ab = _box_doc("Absolute").recompute().volume
+    assert rel == ab                            # bit-for-bit, not approx
+    assert rel != _box_doc("Relative", angle=0.0).recompute().volume
+    prel = _box_doc("Relative", parting=15.0).recompute().volume
+    pab = _box_doc("Absolute", parting=15.0).recompute().volume
+    assert prel == pab
+    with pytest.raises(ValueError,
+                       match="the angle mode is 'Relative' or "
+                             "'Absolute'"):
+        _box_doc("Tapered").recompute()
+
+
+def test_the_door_bakes_the_mode_and_refuses_a_third_word(win, qapp,
+                                                          monkeypatch):
+    """Through the REAL door: a typed "Absolute" lands on the record;
+    a legacy reply WITHOUT the key (every remembered dict born before
+    today) speaks the page's "Relative" - zero rewrites, the R5/R7/
+    R8/R9 coin; and a third word is refused BEFORE the capture - no
+    feature, no undo step, no volume moved - the door's sentence and
+    the kernel's guard naming the same list."""
+    def reply(**over):
+        base = {"type": "Fixed Plane", "fixed": "bottom",
+                "parting": 15.0, "angle_deg": 10.0,
+                "sides": "Symmetric", "angle2": 10.0}
+        base.update(over)
+        return base
+
+    win.new_document()
+    _rod_win(win, qapp)
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: reply(angle_mode="Absolute"))
+    win._body_draft()
+    f = win.doc.features[-1]
+    assert f.angle_mode == "Absolute" and f.n_walls > 0
+    ab_vol = win.doc.result.volume
+
+    win.new_document()
+    _rod_win(win, qapp)
+    monkeypatch.setattr(cmddialog, "ask", lambda *a, **k: reply())
+    win._body_draft()
+    f2 = win.doc.features[-1]
+    assert f2.angle_mode == "Relative"          # the keyless legacy word
+    assert win.doc.result.volume == ab_vol      # the agreement, measured
+
+    win.new_document()
+    _rod_win(win, qapp)
+    n, u, vol = len(win.doc.features), len(win._undo), \
+        win.doc.result.volume
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: reply(angle_mode="Tapered"))
+    win._body_draft()
+    assert win.status.currentMessage() == (
+        "Draft refused: the angle mode is 'Relative' or 'Absolute', "
+        "not 'Tapered'")
+    assert len(win.doc.features) == n and len(win._undo) == u
+    assert win.doc.result.volume == vol
+
+
+def test_the_mode_word_never_moves_a_number_through_the_door(win, qapp,
+                                                             monkeypatch):
+    """The agreement walked end-to-end: same body, same typed numbers,
+    ONLY the mode word different - the volumes are the same float and
+    the sentence is BYTE-identical (a door may not claim a difference
+    the geometry never made; the word rides the record for the day
+    drafted faces exist). The parting voice agrees the same way."""
+    def reply(**over):
+        base = {"type": "Fixed Plane", "fixed": "bottom",
+                "parting": 15.0, "angle_deg": 10.0,
+                "sides": "Symmetric", "angle2": 10.0}
+        base.update(over)
+        return base
+
+    seen = []
+    for mode in ("Relative", "Absolute"):
+        win.new_document()
+        _rod_win(win, qapp)
+        monkeypatch.setattr(cmddialog, "ask",
+                            lambda *a, **k: reply(angle_mode=mode))
+        win._body_draft()
+        seen.append((win.doc.features[-1].angle_mode,
+                     win.doc.result.volume,
+                     win.status.currentMessage()))
+    assert [s[0] for s in seen] == ["Relative", "Absolute"]
+    assert seen[0][1] == seen[1][1]                  # the same float
+    assert seen[0][2] == seen[1][2]                  # byte-identical
+
+    for mode in ("Relative", "Absolute"):
+        win.new_document()
+        _rod_win(win, qapp)
+        monkeypatch.setattr(cmddialog, "ask",
+                            lambda *a, **k: reply(type="Parting Line",
+                                                  angle_mode=mode))
+        win._body_draft()
+        seen.append((win.doc.features[-1].angle_mode,
+                     win.doc.result.volume,
+                     win.status.currentMessage()))
+    assert seen[2][1] == seen[3][1] and seen[2][2] == seen[3][2]
+
+
+def test_the_mode_round_trips_and_old_files_keep_their_word():
+    """The word is a REAL FILE WORD: written after fixed (the page's
+    place), and deleting it CHANGES THE WORD the record speaks
+    (Absolute -> Relative) while every old file (born without it)
+    replays as the page's default - the geometry of a keyless legacy
+    record is its own, untouched (zero rewrites)."""
+    d = _box_doc("Absolute")
+    v = d.recompute().volume
+    raw = json.loads(json.dumps(d.to_dict()))
+    fd = [x for x in raw["features"] if x["type"] == "DraftFeature"][0]
+    assert fd["angle_mode"] == "Absolute"
+    back = Document.from_dict(raw)
+    assert back.features[1].angle_mode == "Absolute"
+    assert back.recompute().volume == v
+    del fd["angle_mode"]
+    old = Document.from_dict(raw)
+    assert old.features[1].angle_mode == "Relative"
+    assert old.recompute().volume == _box_doc("Relative").recompute().volume
+
+
+def test_the_rail_stops_lying_about_the_draft_and_speaks_agreement(win,
+                                                                   qapp):
+    """A draft REPLACES the body - its `op` is unused - and the rail
+    used to print every draft record's "operation: union", a LIE the
+    fillet branch's precedent fixes. The record now speaks its own
+    mouth, and ANGLE MODE rides the rail only when it is the page's
+    live word (a fixed-plane voice) AND off the page's own default:
+    the Relative rest stays absent (absence is honesty, R4's law) and
+    a parting record's Absolute word is stored-and-INERT (the page
+    gates the row "Fixed Plane draft type only") - the rail keeps
+    silent about inert words, and says OUT LOUD that the two readings
+    agree on straight walls."""
+    win.new_document()
+    _rod_win(win, qapp)
+    win.doc.add(DraftFeature(name="Draft1", angle_deg=10.0))
+    win.recompute()
+    win.rail.props.show_feature(win.doc.features[-1])
+    t = win.rail.props._body.text()
+    assert "operation: union" not in t
+    assert "operation: draft body walls" in t
+    assert "angle mode" not in t                     # the page's rest
+
+    win.doc.features[-1].angle_mode = "Absolute"
+    win.recompute()
+    win.rail.props.show_feature(win.doc.features[-1])
+    t = win.rail.props._body.text()
+    assert "angle mode: Absolute" in t
+    assert "agree on straight walls" in t            # the honesty note
+
+    win.new_document()
+    _rod_win(win, qapp)
+    win.doc.add(DraftFeature(name="Draft2", angle_deg=10.0,
+                             parting=15.0, angle_mode="Absolute"))
+    win.recompute()
+    win.rail.props.show_feature(win.doc.features[-1])
+    t = win.rail.props._body.text()
+    assert "operation: union" not in t
+    assert "angle mode" not in t        # inert under a parting line

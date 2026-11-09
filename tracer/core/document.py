@@ -1199,8 +1199,10 @@ class DraftFeature(Feature):
     or shrinks (negative) by height x tan(angle).  A body op like
     BodyFilletFeature: it REPLACES the body, so `op` is unused.  Pure
     mesh: no cache bake, no OpenCascade, works everywhere.  Parting
-    Line, Angle Mode and the face list are the page's other mouths and
-    wait for the rungs whose kernel cuts them."""
+    Line and the face list are the page's other mouths and wait for
+    the rungs whose kernel cuts them; Angle Mode landed at R10 as a
+    STORED word the verticals-only kernel measures INERT (its field
+    comment speaks the law)."""
     angle_deg: float = 10.0           # + widens AWAY from the fixed
                                       # plane (the house taper's sign
                                       # law, "taper: + widens as it
@@ -1209,6 +1211,38 @@ class DraftFeature(Feature):
                                       # of the body holds its exact
                                       # size - that is what "fixed"
                                       # means
+    angle_mode: str = "Relative"      # M201 R10 [SLD-REF-DRAFT,
+                                      #  verbatim]: "Angle Mode (Fixed
+                                      #  Plane draft type only):
+                                      #  Select how the draft angle is
+                                      #  measured. | Relative: Apply
+                                      #  the draft angle relative to
+                                      #  the angle of the selected
+                                      #  faces. This is the default.
+                                      #  | Absolute: Apply the draft
+                                      #  angle from the Pull Direction,
+                                      #  regardless of any existing
+                                      #  draft on the selected faces."
+                                      #  THE FIRST QUOTED VENDOR
+                                      #  DEFAULT ON THIS BENCH (ref
+                                      #  page count 1, how-to 0) - the
+                                      #  door rests on the PAGE'S own
+                                      #  word. STORED AND MEASURED
+                                      #  INERT: this kernel leans
+                                      #  STRAIGHT VERTICAL walls only
+                                      #  (draft.py refuses everything
+                                      #  else, M197's law), and a
+                                      #  vertical face's own angle is
+                                      #  ZERO - so "relative to the
+                                      #  faces" and "from the pull
+                                      #  direction" NAME THE SAME
+                                      #  NUMBER on every wall the
+                                      #  kernel can touch (measured
+                                      #  pair: Relative and Absolute
+                                      #  bake to the last digit). The
+                                      #  word rides the record for the
+                                      #  day drafted faces exist; the
+                                      #  rail says so while they do not
     parting: float | None = None      # M197 R3 [SLD-REF-DRAFT] Parting
                                       #  Line type, spoken plainly as a
                                       #  horizontal plane this many mm
@@ -1241,6 +1275,16 @@ class DraftFeature(Feature):
 
     def apply(self, src: Solid) -> Solid:
         from .draft import draft_parting, draft_solid
+        # M201 R10 [SLD-REF-DRAFT]: the page's Angle Mode combo has
+        # TWO voices; a mouth outside them (a scripted answer, a hand
+        # written file) is refused by name, not guessed - the same
+        # coin the extrude door spends on its third extent word. On
+        # the two voices the lean is MEASURED identical (straight
+        # vertical walls, face angle zero), so no word of this guard
+        # ever protects a lie: it protects the page's list.
+        if str(self.angle_mode) not in ("Relative", "Absolute"):
+            raise ValueError(f"the angle mode is 'Relative' or "
+                             f"'Absolute', not {self.angle_mode!r}")
         if self.parting is None:
             out, n = draft_solid(src, self.angle_deg, self.fixed)
         else:
@@ -4332,6 +4376,7 @@ class Document:
             elif isinstance(f, DraftFeature):
                 d.update(angle_deg=float(f.angle_deg),
                          fixed=str(f.fixed),
+                         angle_mode=str(f.angle_mode),
                          parting=(None if f.parting is None
                                   else float(f.parting)),
                          angle2=(None if f.angle2 is None
@@ -4706,6 +4751,7 @@ class Document:
                 doc.features.append(DraftFeature(
                     name=fd["name"], angle_deg=float(fd["angle_deg"]),
                     fixed=str(fd.get("fixed", "bottom")),
+                    angle_mode=str(fd.get("angle_mode", "Relative")),
                     parting=(None if fd.get("parting") is None
                              else float(fd["parting"])),
                     angle2=(None if fd.get("angle2") is None

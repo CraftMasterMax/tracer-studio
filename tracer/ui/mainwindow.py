@@ -1685,6 +1685,19 @@ class MainWindow(QMainWindow):
             # bottom.  It never opens the fixed-plane combo - under a
             # parting line that row is noticed and never written.
             if feature.parting is None:
+                # M201 R10 [SLD-REF-DRAFT, verbatim]: "Angle Mode
+                # (Fixed Plane draft type only)" - the page GATES the
+                # row to the fixed-plane voice, and the lever CAN
+                # honour page gates by the record's own voice (the
+                # M196 chamfer precedent: "the row exists only for
+                # the bevel record"). A parting record never opens
+                # it. Page order: Angle Mode (#3) stands BEFORE the
+                # Angle row (#8). Rests at the record's own word -
+                # the lever echoes, never contradicts; the two words
+                # MEASURE identical on straight walls (the kernel
+                # field speaks the law), so no difference is faked.
+                combo("angle_mode", "angle mode (fixed plane only)",
+                      ("Relative", "Absolute"), feature.angle_mode)
                 dbl("angle_deg", "draft angle from the fixed plane",
                     feature.angle_deg, dec=1, mn=-89.9, ang=True)
                 fld[-1]["max"] = 89.9
@@ -1952,6 +1965,14 @@ class MainWindow(QMainWindow):
             feature.angle_deg = float(v["angle_deg"])
             if "fixed" in v:
                 feature.fixed = str(v["fixed"])
+            if "angle_mode" in v:          # M201 R10: guarded write -
+                feature.angle_mode = str(v["angle_mode"])   #  a script
+                                                           #  driving
+                                                           #  the rung-
+                                                           #  era rows
+                                                           #  keeps the
+                                                           #  record's
+                                                           #  own word
             if "parting" in v:
                 feature.parting = float(v["parting"])
             if "angle2" in v:
@@ -8750,8 +8771,12 @@ class MainWindow(QMainWindow):
         three's exact behavior; Two Side = the note's Angle 1 below
         the parting line and Angle 2 above), and the Angle 2 row it
         displays.  "One Side" is NOT offered: which side IS the Faces
-        pick - a door may not promise what cannot bake.  Angle Mode,
-        the face list and Tangent Chain are still NOT offered."""
+        pick - a door may not promise what cannot bake.  Rung TEN
+        grows the page's Angle Mode row - the FIRST quoted vendor
+        default on this bench, resting on the page's own word
+        "Relative" and measured inert on this kernel's straight
+        walls (the door comment and the rail speak the law).  The
+        face list and Tangent Chain are still NOT offered."""
         if self.doc is None or self.doc.result is None:
             # M189 R4 [LAW-61(a)]: precondition in information clothing.
             self.status.showMessage("No body to draft — create a "
@@ -8763,6 +8788,31 @@ class MainWindow(QMainWindow):
                  default="Fixed Plane"),
             dict(key="fixed", label="Fixed plane", kind="combo",
                  choices=["bottom", "top"], default="bottom"),
+            # M201 R10 [SLD-REF-DRAFT, verbatim]: "Angle Mode (Fixed
+            # Plane draft type only): Select how the draft angle is
+            # measured. | Relative: Apply the draft angle relative to
+            # the angle of the selected faces. This is the default. |
+            # Absolute: Apply the draft angle from the Pull Direction,
+            # regardless of any existing draft on the selected faces."
+            # THE FIRST QUOTED VENDOR DEFAULT ON THIS BENCH ("default"
+            # counts 1 on the reference page, 0 on the how-to - it
+            # belongs to RELATIVE), so the door rests on the PAGE'S
+            # own word, not the house's. PAGE ORDER: the row stands
+            # where the page prints it (#3): after the Fixed Plane
+            # choice and before the Parting Tool (#4). The page
+            # GATES it "Fixed Plane draft type only" - the modal door
+            # cannot open and close rows mid-command (R2's
+            # conditional-row law), so under a Parting Line the word
+            # is asked, stored and INERT, and the rail keeps silent
+            # about it. THE AGREEMENT NOTE (honesty law): this kernel
+            # leans straight vertical walls only, and a vertical
+            # face's own angle is zero - the two readings NAME THE
+            # SAME NUMBER here (measured), so the row promises no
+            # difference and the rail speaks the agreement.
+            dict(key="angle_mode",
+                 label="Angle Mode (Fixed Plane only)",
+                 kind="combo", choices=["Relative", "Absolute"],
+                 default="Relative"),
             dict(key="parting", label="Parting line above the bottom",
                  kind="double", default=15.0, min=0.05),
             dict(key="angle_deg", label="Draft angle", kind="double",
@@ -8777,6 +8827,16 @@ class MainWindow(QMainWindow):
         ], remember_key="draft_body_walls")
         if v is None:
             return
+        # M201 R10 preflight (M197's law, angle-mode edition): a combo
+        # cannot speak a third word, a scripted answer can - refuse
+        # BEFORE the capture, naming the page's list (the door's words
+        # and the kernel's guard speak the same sentence).
+        amode = str(v.get("angle_mode", "Relative"))
+        if amode not in ("Relative", "Absolute"):
+            self.status.showMessage(
+                f"Draft refused: the angle mode is 'Relative' or "
+                f"'Absolute', not {amode!r}", 6000)
+            return
         self._capture()
         n = sum(isinstance(f, DraftFeature)
                 for f in self.doc.features) + 1
@@ -8787,6 +8847,7 @@ class MainWindow(QMainWindow):
         f = DraftFeature(name=f"Draft{n}",
                          angle_deg=float(v["angle_deg"]),
                          fixed=str(v["fixed"]),
+                         angle_mode=amode,
                          parting=parting,
                          angle2=(a2 if two and parting is not None
                                  else None))  # fixed voice: noticed
