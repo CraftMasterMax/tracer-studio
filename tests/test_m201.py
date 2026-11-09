@@ -48,7 +48,8 @@ pytest.importorskip("PySide6")
 from PySide6.QtWidgets import QApplication                           # noqa: E402
 
 from tracer.core.document import (Document, ExtrudeFeature,          # noqa: E402
-                                  MirrorFeature, PrimitiveFeature)
+                                  MirrorFeature, PrimitiveFeature,
+                                  RevolveFeature)
 from tracer.ui import cmddialog, cmdpanel                            # noqa: E402
 from tracer.ui.mainwindow import MainWindow                          # noqa: E402
 from tracer.ui.renderer import SceneRenderer                         # noqa: E402
@@ -1144,3 +1145,245 @@ def test_the_shared_answer_grows_to_the_operation_too(win):
     assert kids[1].offset == 2.0
     win.recompute()
     assert d.result.volume == pytest.approx(10200.0, rel=1e-6)
+
+
+# ---- R6: the revolve door speaks its own page ------------------------------
+
+def _tube():
+    """A profile a FULL turn makes a ring of: u 5..10, v 0..5 -> a
+    cylindrical shell r 5..10, height 5: pi*(100-25)*5 = 375*pi."""
+    return np.array([[5.0, 0.0], [10.0, 0.0], [10.0, 5.0], [5.0, 5.0]])
+
+
+def test_the_revolve_door_opens_the_page_rows_it_can_speak(
+        win, qapp, monkeypatch):
+    """[SLD-REF-REVOLVE, verbatim] "Extent Type: ... Partial: Revolves
+    the profile around the axis to an angle value that you specify.
+    To Object: Revolves to a body, face, or plane that you select.
+    Full: Revolves the profile 360 degrees around the axis." + "Angle:
+    Specifies the angle to revolve around the axis" + "Operation:
+    Select an operation to control how the feature affects the
+    design". The door traded its one getDouble for the page's THREE
+    honorable rows: Extent Partial|Full (To Object is PICKING -
+    UNPROMISED, R5's coin), the Angle numeric, and Operation - the
+    SAME three booleans as the extrude, which open EVERYWHERE here:
+    unlike the extrude, the revolve has NEVER had a contact probe, so
+    no plane owns its operation. Direction (One Side/Two Sides/
+    Symmetric) stays UNPROMISED: the page splits no angle across the
+    profile plane and the kernel sweeps one way - a row there would
+    INVENT a pairing rule. Rests are house facts (the page says
+    "default" ZERO times): Full = angle 360.0 = what this door has
+    ALWAYS birthed (getDouble's own rest), Join = what the fold has
+    always folded. The rest sentence - pinned for the first time in
+    this rung's gates - stays BYTE-IDENTICAL to the rung-era voice."""
+    win.new_document()
+    win.action_new_sketch("XY")
+    seen = {}
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask({}, seen))
+    win._on_profiles([(_tube(), [])], "sk", revolve=True)
+    qapp.processEvents()
+    assert seen["title"] == "Revolve"
+    assert seen["keys"] == ["extent", "angle", "op"]     # page order
+    assert seen["choices"]["extent"] == ("Partial", "Full")
+    assert seen["defaults"]["extent"] == "Full"   # the legacy 360 voice
+    assert seen["choices"]["op"] == ("Join", "Cut", "Intersect")
+    assert seen["defaults"]["op"] == "Join"
+    assert seen["defaults"]["angle"] == 360.0     # getDouble's rest
+    f = win.doc.features[-1]
+    assert f.angle == 360.0 and f.op == "union"
+    assert win.status.currentMessage() == \
+        "Revolved 1 region(s) from sk by 360°"    # byte-identical rest
+    assert win.doc.result.volume == pytest.approx(np.pi * 375, rel=2e-2)
+    win.rail.props.show_feature(f)
+    rail = win.rail.props._body.text()
+    assert "angle: 360°" in rail and "operation: union" in rail
+
+    # And the row opens off EVERY plane: a FACE revolve asks the op
+    # too (the M140 probe never spoke for revolves - not on FACE, not
+    # anywhere; a row opens where the tool has no other mouth).
+    win.new_document()
+    win.action_new_sketch("XY")
+    m = win.sketch.model
+    m.plane = "FACE"
+    m.axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+    m.origin = np.zeros(3)
+    seen2 = {}
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask({}, seen2))
+    win._on_profiles([(_tube(), [])], "f", revolve=True)
+    qapp.processEvents()
+    assert seen2["keys"] == ["extent", "angle", "op"]
+    assert win.doc.features[-1].op == "union"     # the asked Join rest
+
+
+def test_full_is_the_number_360_and_partial_is_the_typed_number(
+        win, qapp, monkeypatch):
+    """NUMERIC-ENCODES-EXTENT (R4's law, angular sibling): the page
+    ITSELF defines Full as "Revolves the profile 360 degrees", and
+    the kernel keeps no other word for a closed sweep (measured: 360
+    closes the ring; 361/400/720 clamp to the byte-same solid, so a
+    stored "extent" field would record a distinction the machine
+    cannot speak). So Full WRITES 360.0 and the typed number goes
+    stored-and-inert (M201 R2's conditional-row law, numeric
+    edition); Partial speaks the number as the page says: "to an
+    angle value that you specify". Rest-as-identity: the new door's
+    Full birth equals the direct kernel construction the old door
+    always made - same field, same solid, same sentence."""
+    win.new_document()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"extent": "Full", "angle": 90.0}, {}))
+    win._on_profiles([(_tube(), [])], "sk", revolve=True)
+    qapp.processEvents()
+    f = win.doc.features[-1]
+    assert f.angle == 360.0, "Full INERTS the typed number"
+    assert win.status.currentMessage() == \
+        "Revolved 1 region(s) from sk by 360°"
+    inert_vol = win.doc.result.volume
+    win.new_document()
+    d_direct = win.doc
+    d_direct.add(RevolveFeature(name="direct", outer=_tube(),
+                                angle=360.0))
+    d_direct.recompute()
+    assert d_direct.result.volume == pytest.approx(inert_vol, rel=1e-9)
+
+    win.new_document()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"extent": "Partial", "angle": 90.0}, {}))
+    win._on_profiles([(_tube(), [])], "sk", revolve=True)
+    qapp.processEvents()
+    f = win.doc.features[-1]
+    assert f.angle == 90.0
+    assert win.doc.result.volume == pytest.approx(np.pi * 375 / 4,
+                                                  rel=2e-2)
+    assert win.status.currentMessage() == \
+        "Revolved 1 region(s) from sk by 90°"
+
+
+def test_a_born_cut_and_a_born_intersect_speak_the_same_coin(
+        win, qapp, monkeypatch):
+    """The fold is feature-agnostic (it folds EVERY feature's op
+    against the accumulator of the body it streams into - the browser
+    menu has edited a revolve's operation since M11), so the revolve
+    door's Operation row rides R5's coin to the word: same kernel
+    mapping, same refusal set, same tails. Ring r 5..10 h 5 (375*pi)
+    revolves into the 50x30x10 slab (15,000 mm^3): a QUARTER of it
+    sits in the slab's octant (x>=0, z 0..10 - the r<=10 ring fits),
+    93.75*pi, so a born Cut leaves 15,000 - 93.75*pi and a born
+    Intersect IS that quarter ring (the page's verb again: "Creates a
+    body at the intersection")."""
+    win.new_document()
+    _base(win.doc)
+    win.recompute()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"op": "Cut"}, {}))
+    win._on_profiles([(_tube(), [])], "sk", revolve=True)
+    qapp.processEvents()
+    f = win.doc.features[-1]
+    assert f.op == "subtract"
+    assert win.doc.result.volume == pytest.approx(
+        15000.0 - np.pi * 375 / 4, rel=2e-2)
+    assert win.status.currentMessage() == \
+        "Revolved 1 region(s) from sk by 360° — cut out of what was " \
+        "already there"
+    win.rail.props.show_feature(f)
+    assert "operation: subtract" in win.rail.props._body.text()
+    raw = json.loads(json.dumps(win.doc.to_dict()))
+    assert Document.from_dict(raw).recompute().volume == \
+        pytest.approx(15000.0 - np.pi * 375 / 4, rel=2e-2)
+
+    win.new_document()
+    _base(win.doc)
+    win.recompute()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"op": "Intersect"}, {}))
+    win._on_profiles([(_tube(), [])], "sk", revolve=True)
+    qapp.processEvents()
+    f = win.doc.features[-1]
+    assert f.op == "intersect"
+    assert win.doc.result.volume == pytest.approx(np.pi * 375 / 4,
+                                                  rel=2e-2)
+    assert win.status.currentMessage() == \
+        "Revolved 1 region(s) from sk by 360° — intersected with " \
+        "what was already there"
+
+
+def test_revolve_refusals_come_before_the_capture(win, qapp,
+                                                  monkeypatch):
+    """R5's precheck law, revolve edition, at BOTH new words: a Cut
+    with no material refuses quoting the fold's own words BEFORE the
+    capture (no dead undo step); a third extent word refuses naming
+    the two this door speaks - and "To Object" is the pick the door
+    cannot honor, so it must not smuggle itself in as a word; a
+    fourth operation word refuses naming the three. The fold's
+    intersect quirk mirrors byte for byte: a first INTERSECT STANDS
+    (with nothing to intersect the feature itself is the body) and
+    the sentence stays the plain rest voice - silent, and honest."""
+    win.new_document()
+    win.action_new_sketch("XY")
+    n, u = len(win.doc.features), len(win._undo)
+
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask({"op": "Cut"}, {}))
+    win._on_profiles([(_tube(), [])], "sk", revolve=True)
+    qapp.processEvents()
+    assert win.status.currentMessage() == \
+        "Revolve refused: a cut needs material to cut - the first " \
+        "feature cannot be a subtract"
+    assert len(win.doc.features) == n and len(win._undo) == u
+
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"extent": "To Object"}, {}))
+    win._on_profiles([(_tube(), [])], "sk", revolve=True)
+    qapp.processEvents()
+    assert win.status.currentMessage() == \
+        "Revolve refused: the extent is 'Partial' or 'Full', not " \
+        "'To Object'"
+    assert len(win.doc.features) == n and len(win._undo) == u
+
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"op": "Shrink"}, {}))
+    win._on_profiles([(_tube(), [])], "sk", revolve=True)
+    qapp.processEvents()
+    assert win.status.currentMessage() == \
+        "Revolve refused: the operation is 'Join', 'Cut' or " \
+        "'Intersect', not 'Shrink'"
+    assert len(win.doc.features) == n and len(win._undo) == u
+
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"op": "Intersect"}, {}))
+    win._on_profiles([(_tube(), [])], "sk", revolve=True)
+    qapp.processEvents()
+    f = win.doc.features[-1]
+    assert f.op == "intersect"                     # the fold stands it
+    assert win.doc.result.volume == pytest.approx(np.pi * 375, rel=2e-2)
+    assert win.status.currentMessage() == \
+        "Revolved 1 region(s) from sk by 360°"     # SILENT, and honest
+
+
+def test_the_shared_answer_and_the_rest_voice_survive_the_grown_door(
+        win):
+    """The door asks ONCE for the whole sketch, and the growth path
+    ALREADY streamed op and angle from the sibling (the generic
+    extra.update - this gate PINS it for revolves for the first time:
+    a region born later into a cut family must cut like its kin).
+    The double-eaten ring quarter is eaten ONCE: 15,000 - 93.75*pi
+    stands; and the resting voice of the grown door is the OLD
+    door's, field for field (the axis key rides the payload, so an
+    undeclared sketch grows the legacy V-axis with axis=None)."""
+    d = win.doc
+    _base(d)
+    d.add(RevolveFeature(name="rv", outer=_tube(), angle=360.0,
+                         op="subtract", sid=8, region=0))
+    win._update_sketch_features(8, [(_tube(), []), (_tube(), [])],
+                                {"name": "rv"}, capture=False)
+    kids = [f for f in d.features
+            if isinstance(f, RevolveFeature) and f.sid == 8]
+    assert len(kids) == 2
+    assert kids[1].op == "subtract"                # the voice travels
+    assert kids[1].angle == 360.0                  # and the number
+    assert kids[1].axis is None                    # legacy V-axis
+    win.recompute()
+    assert d.result.volume == pytest.approx(
+        15000.0 - np.pi * 375 / 4, rel=2e-2)

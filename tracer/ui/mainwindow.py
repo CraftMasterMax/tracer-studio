@@ -67,6 +67,15 @@ from .timeline import TimelineHost
 from .viewport import Viewport
 from .cmddialog import Shell
 
+# M201 R5/R6: the operation tails - the fold reads and writes the
+# accumulator of the body a feature streams into, so "what was
+# already there" is the honest object for EVERY tool that asks the
+# page's Operation row (extrude R5, revolve R6). Join (and the
+# empty-body intersect, which intersects with NOTHING) grow no tail:
+# the rest sentences stay byte-identical to their rung-era voices.
+_OP_TAILS = {"Cut": " — cut out of what was already there",
+             "Intersect": " — intersected with what was already there"}
+
 
 def demo_document() -> Document:
     """Mounting bracket: plate + corner holes + boss + bore. Exercises
@@ -4520,10 +4529,81 @@ class MainWindow(QMainWindow):
                            "the origin) - Fusion revolves profiles about "
                            "it, so keep each one on a side"), 6000)
                     return
-            angle, ok = Shell.getDouble(
-                self, "Revolve", "Angle (degrees):", 360.0, 1.0, 360.0, 1)
-            if not ok:
+            # M201 R6 [SLD-REF-REVOLVE, verbatim] "Extent Type:
+            # Establishes the end point of the revolve. Partial:
+            # Revolves the profile around the axis to an angle value
+            # that you specify. To Object: Revolves to a body, face,
+            # or plane that you select. Full: Revolves the profile 360
+            # degrees around the axis." + "Angle: Specifies the angle
+            # to revolve around the axis. If the Extent Type is set to
+            # Partial, specify the angle value" + "Operation: Select
+            # an operation to control how the feature affects the
+            # design" (the SAME five voices as the extrude page - and
+            # the SAME three are ours to speak: the fold is feature-
+            # agnostic, and unlike the extrude the revolve has NEVER
+            # had a contact probe, so this row opens everywhere).
+            # To Object is PICKING - UNPROMISED (R5's coin: never
+            # offer a word the door cannot speak). Direction
+            # (One Side/Two Sides/Symmetric) stays UNPROMISED: the
+            # page SILENTLY splits no angle across the profile plane
+            # and our kernel sweeps one way from it (measured: build()
+            # is a single Solid.revolve call) - composing the row
+            # would INVENT a pairing rule, and inventing is forbidden.
+            # "default" appears ZERO times on the page: every rest
+            # here is the HOUSE's - Full (angle 360) is what this door
+            # has ALWAYS birthed (getDouble rested at 360.0), Join is
+            # what the fold has always folded, and the 1..360 bounds
+            # are the door's own spin history (the kernel measures:
+            # >360 clamps to 360, <=0 is silently EMPTY - the door
+            # speaks neither voice). Page order: Extent, Angle,
+            # (Direction skipped), Operation.
+            v = cmddialog.ask(self, "Revolve", [
+                dict(key="extent", label="extent", kind="combo",
+                     choices=("Partial", "Full"), default="Full",
+                     group="Extent"),
+                dict(key="angle", label="angle (degrees)", kind="double",
+                     default=360.0, min=1.0, max=360.0, decimals=1,
+                     group="Angle"),
+                dict(key="op", label="operation", kind="combo",
+                     choices=("Join", "Cut", "Intersect"),
+                     default="Join", group="Operation"),
+            ], remember_key="revolve")
+            if v is None:
                 return
+            eext = str(v["extent"])
+            if eext not in ("Partial", "Full"):
+                # The R5 fourth-word law, extent edition: refuse
+                # naming the words THIS door speaks - and "To Object"
+                # the picker must NOT smuggle itself in as a word.
+                self.status.showMessage(
+                    "Revolve refused: the extent is 'Partial' or "
+                    f"'Full', not {eext!r}", 6000)
+                return
+            # NUMERIC-ENCODES-EXTENT (R4's law, angular sibling): the
+            # page ITSELF defines Full as "360 degrees", the kernel
+            # keeps no other word for a closed sweep (measured: 360
+            # closes the ring and 361/400/720 clamp to the same
+            # solid) - so Full WRITES 360.0 and the typed number goes
+            # stored-and-inert (M201 R2's conditional-row law,
+            # numeric edition); Partial speaks the number. No new
+            # field, no file-mouth change: the number IS the voice.
+            angle = 360.0 if eext == "Full" else float(v["angle"])
+            eop = str(v["op"])
+            if eop not in ("Join", "Cut", "Intersect"):
+                self.status.showMessage(
+                    "Revolve refused: the operation is 'Join', 'Cut' "
+                    f"or 'Intersect', not {eop!r}", 6000)
+                return
+            if eop == "Cut" and self.doc.result is None:
+                self.status.showMessage(
+                    "Revolve refused: a cut needs material to cut - "
+                    "the first feature cannot be a subtract", 6000)
+                return
+            # The fold's quirk mirrors R5: a first INTERSECT is NOT
+            # refused (with nothing to intersect the feature stands)
+            # - so the sentence must stay silent about material that
+            # was never there.
+            eop_mat = self.doc.result is not None
         else:
             # M201 R3 [SLD-REF-EXTRUDE]: the page IS the EXTRUDE TOOL's
             # dialog - its rows are the CREATION voice, so the door grew
@@ -4708,9 +4788,20 @@ class MainWindow(QMainWindow):
         self.recompute()
         self.viewport.refresh(fit=True)
         if revolve:
+            # M201 R6: the operation tail rides the SAME coin as the
+            # extrude's R5 tail (the fold is feature-agnostic). Join
+            # is the rest: NO tail - the sentence stays BYTE-IDENTICAL
+            # to the rung-era "Revolved N region(s) from X by Y°"
+            # (this rung pins that voice: it was never pinned before).
+            # An intersect born on an empty body keeps silent too -
+            # the fold's quirk stands the feature, but nothing WAS
+            # already there to intersect with.
+            rtail = _OP_TAILS.get(eop) or ""
+            if eop == "Intersect" and not eop_mat:
+                rtail = ""
             self.status.showMessage(
                 f"Revolved {len(profiles)} region(s) from {name} "
-                f"by {angle:g}°", 6000)
+                f"by {angle:g}°{rtail}", 6000)
         else:
             fresh = self.doc.features[-len(profiles):]
             why = (" — cut: material sat on both sides of the face"
@@ -4745,9 +4836,7 @@ class MainWindow(QMainWindow):
             # the rest: no tail, the sentence byte-identical. The FACE
             # probe has its own why-sentence (the "why" above); the
             # row never opened there, so the tails never co-write.
-            optail = {"Cut": " — cut out of what was already there",
-                      "Intersect": " — intersected with what was "
-                                   "already there"}.get(eop) or ""
+            optail = _OP_TAILS.get(eop) or ""
             if eop == "Intersect" and not eop_mat:
                 optail = ""            # nothing WAS already there -
             #                          the fold keeps the feature

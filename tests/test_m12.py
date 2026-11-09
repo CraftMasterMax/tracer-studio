@@ -9,7 +9,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt                                # noqa: E402
 from PySide6.QtTest import QTest                             # noqa: E402
 from PySide6.QtWidgets import QApplication, QInputDialog     # noqa: E402
-from conftest import tree_texts                              # noqa: E402
+from conftest import tree_texts, script_revolve_door           # noqa: E402
 from tracer.ui.cmddialog import Shell                    # noqa: E402
 
 from tracer.core.document import (Document, ExtrudeFeature,      # noqa: E402
@@ -35,6 +35,14 @@ def win(qapp, monkeypatch):
 
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(fake_getdouble))
+    # M201 R6: the revolve DOOR grew up - Extent/Angle/Operation rows
+    # in one cmddialog (the page's own three honorable rows; Direction
+    # unpromised). The resting reply is the legacy voice: Full writes
+    # 360.0, Join is what the fold always folded, so the angle pin
+    # below (f.angle == 360.0) rides untouched. getDouble stays
+    # patched for the EDIT mouths (_set_angle) which keep their
+    # rung-era mouth.
+    script_revolve_door(monkeypatch)
     w = MainWindow(renderer=r)
     w.resize(1100, 720)
     w.show()

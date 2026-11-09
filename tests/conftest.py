@@ -94,6 +94,30 @@ def script_extrude_door(monkeypatch, height, direction="one",
     monkeypatch.setattr(cmddialog, "ask", routed)
 
 
+def script_revolve_door(monkeypatch, angle=360.0, extent="Full",
+                        op="Join"):
+    """M201 R6: answer the GROWN revolve creation door - ONE dialog
+    (title "Revolve", [SLD-REF-REVOLVE] Extent Type / Angle /
+    Operation rows; Direction stays UNPROMISED - the page splits no
+    angle across the profile plane and the kernel sweeps one way).
+    Same router law as script_extrude_door: wrap the door LAST, other
+    titles delegate to whatever ask was patched BEFORE this call. The
+    resting reply is the door's LEGACY voice: extent "Full" writes
+    angle 360.0 - what the old getDouble door always birthed (the
+    page itself defines Full as 360 degrees; NUMERIC-ENCODES-EXTENT) -
+    and op "Join" is what the fold has always folded. A typed angle
+    under "Full" is stored-and-inert, exactly as the real door reads
+    it."""
+    from tracer.ui import cmddialog
+    prior = cmddialog.ask
+
+    def routed(parent, title, fields, remember_key=None):
+        if title == "Revolve":
+            return dict(extent=extent, angle=float(angle), op=op)
+        return prior(parent, title, fields, remember_key=remember_key)
+    monkeypatch.setattr(cmddialog, "ask", routed)
+
+
 def settle_panels(app):
     """M163 harness law: processEvents() alone does NOT reap a panel's
     deleteLater(); a half-dead panel can keep a handler's QSettings alive
