@@ -38,6 +38,24 @@ def _cross_section(outer, holes) -> m3.CrossSection:
     return m3.CrossSection(contours, fillrule=m3.FillRule.EvenOdd)
 
 
+def offset_prism(outer, holes, d: float, height: float) -> "Solid":
+    """M201 R8 [SLD-REF-EXTRUDE, the Thin Extrude's wall coin]: the
+    extrusion of the profile's REGION offset by d - mitre joins, miter
+    limit 2.0, 32 circular segments (the house coin, MEASURED: a 40x20
+    rect offset +3 extrudes 10 to exactly 11,960 and -3 to exactly
+    4,760; the 90-degree corners mitre clean). A dilation (d > 0)
+    grows the outer loop and SHRINKS the holes - the EvenOdd region
+    offsets, not the contours one by one (measured: a 40x20 plate with
+    a 20x10 hole, band +1/-1, is exactly 3,600: both boundaries wall
+    themselves). d == 0 IS the plain extrude (identity - the rest of
+    every voice)."""
+    if d == 0.0:
+        return Solid.extrude(outer, holes, height)
+    cs = _cross_section(outer, holes).offset(float(d), m3.JoinType.Miter,
+                                             2.0, 32)
+    return Solid(m3.Manifold.extrude(cs, height))
+
+
 def round_corners(pts, radius: float = 0.0, chamfer: float = 0.0) -> np.ndarray:
     """Cut the convex corners of a closed 2D loop with arcs (``radius``) or
     straight legs (``chamfer``, equal legs).  Concave corners and near-

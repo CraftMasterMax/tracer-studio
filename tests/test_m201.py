@@ -549,7 +549,14 @@ def test_the_lever_opens_the_page_s_rows_and_the_mouth_is_guarded(win):
     rows = {f["key"]: f for f in win._feature_params(rec)}
     assert list(rows) == ["height", "fillet", "chamfer", "taper",
                           "symmetric", "offset", "direction",
-                          "measurement", "height2"]
+                          "measurement", "height2",
+                          # M201 R8: the wall rows join where the
+                          # page lists them - after the distance rows
+                          "wall", "wall_location"]
+    assert rows["wall"]["default"] == 0.0             # the record's own
+    assert rows["wall_location"]["default"] == "center"
+    assert tuple(rows["wall_location"]["choices"]) == \
+        ("side 1", "side 2", "center")                # the page's order
     assert rows["offset"]["default"] == 1.5           # the record's own
     # (R4: the Offset row sits BEFORE the Direction row - the page
     # lists Start above Direction - and it is a SIGNED row: dbl()
@@ -595,6 +602,10 @@ def _spy_ask(reply, store):
         store["defaults"] = {f["key"]: f.get("default") for f in fields}
         store["choices"] = {f["key"]: tuple(f.get("choices", ()))
                             for f in fields if f["kind"] == "combo"}
+        # M201 R8 (additive, zero rewrites): the ROW KINDS - a gate
+        # that must prove "the number IS the row, no combo re-asks it"
+        # reads them here.
+        store["kinds"] = {f["key"]: f["kind"] for f in fields}
         if reply is None:
             return None
         # M201 R4: a real modal answers EVERY row it opened - the OK
@@ -639,21 +650,31 @@ def test_the_creation_door_asks_the_page_s_rows_and_rests_at_one_side(
     assert seen["title"] == "Extrude"
     # R4: the door opens the Start/Offset numeric ABOVE the Direction
     # row (page order). R5: off a FACE sketch it also opens the page's
-    # Operation row LAST (Join|Cut|Intersect - the three voices the
+    # Operation row (Join|Cut|Intersect - the three voices the
     # fold can speak with NO target-picking; New Body/New Component
     # stay unpromised), resting at "Join", the voice this door has
     # ALWAYS birthed off-face (the page names no default).
+    # R8: the wall rows join between the distance rows and Operation
+    # (page order: Wall Thickness #14, Wall Location #15, Operation
+    # #16), resting at 0.0 - the whole area, the voice every record
+    # before today spoke - and "center" (the house's choice among the
+    # page's three words; the page names NO default).
     assert seen["keys"] == ["offset", "direction", "measurement",
-                            "height", "height2", "op"]
+                            "height", "height2", "wall",
+                            "wall_location", "op"]
     assert seen["choices"]["direction"] == ("one", "two", "symmetric")
     assert seen["choices"]["measurement"] == ("whole", "half")
     assert seen["choices"]["op"] == ("Join", "Cut", "Intersect")
+    assert seen["choices"]["wall_location"] == ("side 1", "side 2",
+                                                "center")
     assert seen["defaults"]["op"] == "Join"            # the legacy rest
     assert seen["defaults"]["offset"] == 0.0   # "Profile Plane" rest
     assert seen["defaults"]["direction"] == "one"      # the legacy rest
     assert seen["defaults"]["measurement"] == "whole"  # the pinned read
     assert seen["defaults"]["height"] == 5.0           # the HOUSE rest
     assert seen["defaults"]["height2"] == 0.0
+    assert seen["defaults"]["wall"] == 0.0    # 0 IS Type "Extrude"
+    assert seen["defaults"]["wall_location"] == "center"
     f = win.doc.features[-1]
     assert isinstance(f, ExtrudeFeature)
     assert (f.direction, f.symmetric, f.measurement, f.height2) == \
@@ -1018,7 +1039,10 @@ def test_the_operation_row_opens_only_where_the_tool_has_no_probe(
     assert "op" not in seen2["keys"], \
         f"the FACE door never asks what the probe owns ({seen2})"
     assert seen2["keys"] == ["offset", "direction", "measurement",
-                             "height", "height2"]
+                             "height", "height2",
+                             # M201 R8: the wall rows, page order:
+                             # after the distance rows
+                             "wall", "wall_location"]
     assert win.doc.features[-1].op == "union"      # the probe's word
 
 
@@ -1591,3 +1615,197 @@ def test_the_point_round_trips_and_the_lever_edits_it(win, qapp,
     win._apply_feature_params(f, {"radius": 3.0, "through": False,
                                   "depth": 10.0})      # legacy answer
     assert f.tip_angle == 118.0                  # the guarded write
+
+
+def test_the_wall_number_is_the_type_row_and_no_combo_re_asks_it(
+        win, qapp, monkeypatch):
+    """[SLD-REF-EXTRUDE, verbatim] Type: "Extrude: Extrudes the entire
+    area within selected closed profiles | Thin Extrude: Extrudes a
+    thin wall along selected open or closed profiles" + "Wall
+    Thickness (Thin Extrude type only): Specify wall thickness for
+    thin extrusion" + "Wall Location (Thin Extrude type only):
+    Side 1 | Side 2 | Center". THE NUMBER ENCODES THE TYPE ROW (R4's
+    law, Type edition): 0.0 IS "Extrude" - the whole area this door
+    has ALWAYS birthed - and any positive number IS the page's Thin
+    Extrude at that thickness; a Type combo would put TWO MOUTHS ON
+    ONE FACT, so the door grows NO such row. THE SIDE WORDS ARE THE
+    HOUSE'S: the page describes Side 1 and Side 2 IDENTICALLY and
+    never says which is which, and "default" counts ZERO on both
+    extrude pages - so the rests (0.0, "center") are house facts and
+    the combo order is the page's enumeration. Page order: the wall
+    rows sit AFTER the distance rows, BEFORE the Operation row."""
+    win.new_document()
+    win.action_new_sketch("XY")
+    seen = {}
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(None, seen))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    assert "type" not in seen["keys"] and "thin" not in seen["keys"]
+    i = seen["keys"].index("height2")
+    assert seen["keys"][i + 1:i + 3] == ["wall", "wall_location"]
+    assert seen["kinds"]["wall"] == "double"
+    assert seen["kinds"]["wall_location"] == "combo"
+    assert seen["choices"]["wall_location"] == ("side 1", "side 2",
+                                                "center")
+    assert seen["defaults"]["wall"] == 0.0        # 0 IS "Extrude"
+    assert seen["defaults"]["wall_location"] == "center"
+    assert win.doc.features == []                 # the cancels keeps
+
+
+def test_the_wall_stands_where_the_coin_measured_it():
+    """The MEASURED integers (the probe, m3.CrossSection(EvenOdd) +
+    .offset(Miter, 2.0, 32) + Manifold.extrude, a 40x20 rect at
+    height 10): the whole area is 8,000, a 3 mm wall OUTSIDE the
+    profile line ("side 1") is 3,960, INSIDE it ("side 2") is 3,240,
+    STRADDLING it ("center") is 3,600. THE PAGE NEVER SAYS WHICH SIDE
+    IS WHICH - it words the two sides identically - so the house
+    NAMES them from these witnesses. A hole walls itself from BOTH
+    boundaries (the region offsets, not the contours one by one):
+    the donut's 2 mm band is exactly 3,600 too. REST-AS-IDENTITY
+    (R4's law): a location word WITHOUT a wall changes nothing - the
+    volume is the same float down to the bit (==, not approx). The
+    kernel REFUSES what the coin cannot stand: a negative thickness,
+    a location word off the three (thin only - at rest the word is
+    stored and inert, R2's conditional-row coin), and a taper
+    standing on a thin wall (the page words no pairing; a tapered
+    thin wall is geometry this kernel has not measured - silence is
+    silence, so it is refused, never guessed)."""
+    base = _ex(height=10.0).recompute().volume
+    assert base == pytest.approx(8000.0, abs=1e-9)
+    for loc, want in (("side 1", 3960.0), ("side 2", 3240.0),
+                      ("center", 3600.0)):
+        assert _ex(height=10.0, wall=3.0,
+                   wall_location=loc).recompute().volume == \
+            pytest.approx(want, abs=1e-6)
+    assert _ex(height=10.0,
+               wall_location="side 1").recompute().volume == base
+    d = Document("donut")
+    hole = np.array([[10.0, 5.0], [30.0, 5.0],
+                     [30.0, 15.0], [10.0, 15.0]])
+    d.add(ExtrudeFeature(name="w", outer=_rect(), holes=[hole],
+                         height=10.0, wall=2.0))
+    assert d.recompute().volume == pytest.approx(3600.0, abs=1e-6)
+    with pytest.raises(ValueError, match=r"wall thickness is 0"):
+        _ex(height=10.0, wall=-2.0).recompute()
+    with pytest.raises(ValueError,
+                       match=r"wall location is 'side 1'"):
+        _ex(height=10.0, wall=3.0, wall_location="middle").recompute()
+    with pytest.raises(ValueError,
+                       match="thin wall stands straight"):
+        _ex(height=10.0, wall=3.0, taper=12.0).recompute()
+
+
+def test_a_thin_wall_through_the_real_door_speaks_the_measured_coin(
+        win, qapp, monkeypatch):
+    """The door ASKS the rows and the answer writes: a 40x20 profile
+    at height 10 with a 3 mm wall centered on the line leaves
+    exactly 3,600 - the wall number, the location word, THE PAGE'S
+    OWN READING in the sentence ("Centers the extrusion on the
+    profile") and the rail line "wall: 3 mm (center)" next to the
+    height line the record has always read."""
+    win.new_document()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"height": 10.0, "wall": 3.0}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    f = win.doc.features[-1]
+    assert isinstance(f, ExtrudeFeature)
+    assert (f.wall, f.wall_location) == (3.0, "center")
+    assert win.doc.result.volume == pytest.approx(3600.0, abs=1e-6)
+    assert win.status.currentMessage() == \
+        "Extruded 1 region(s) from sk by 10 mm — with a 3 mm wall " \
+        "centered on the profile"
+    win.rail.props.show_feature(f)
+    rail = win.rail.props._body.text()
+    assert "wall: 3 mm (center)" in rail
+    assert "height: 10 mm" in rail
+
+
+def test_the_word_at_rest_is_stored_and_inert_and_the_door_refuses(
+        win, qapp, monkeypatch):
+    """R2's conditional-row law at the wall: a location word TYPED
+    while the thickness rests at 0 is stored and INERT - the whole
+    area stands (8,000, the rest's own number) and the word rides
+    the record for the day a wall speaks. And R5's precheck law,
+    wall edition: the door refuses BEFORE the capture (no dead undo
+    step, no feature, the counts pinned) naming the house coin -
+    a negative thickness, and a location word off the three WHEN A
+    WALL SPEAKS (at rest the word is inert, so it cannot be
+    refused - the measurement's own precedent)."""
+    win.new_document()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"height": 10.0, "wall_location": "side 1"}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    f = win.doc.features[-1]
+    assert (f.wall, f.wall_location) == (0.0, "side 1")
+    assert win.doc.result.volume == pytest.approx(8000.0, abs=1e-9)
+    n, u = len(win.doc.features), len(win._undo)
+
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"height": 6.0, "wall": -2.0}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    assert win.status.currentMessage() == \
+        "Extrude refused: the wall thickness is 0 (the whole area) " \
+        "or a positive number, not -2"
+    assert len(win.doc.features) == n and len(win._undo) == u
+
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"height": 6.0, "wall": 3.0, "wall_location": "middle"}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    assert win.status.currentMessage() == \
+        "Extrude refused: the wall location is 'side 1', 'side 2' " \
+        "or 'center', not 'middle'"
+    assert len(win.doc.features) == n and len(win._undo) == u
+
+
+def test_the_wall_round_trips_and_the_lever_moves_the_wall(
+        win, qapp, monkeypatch):
+    """The file carries the wall (writer keys "wall"/"wall_location")
+    and the READER's keyless fallbacks are 0.0/"center" - a file
+    written before today replays THE WHOLE AREA, never a wall it
+    never spoke (del the keys and 3,600 becomes 8,000). THE LEVER
+    grows the wall rows after height2 (page order) and the writes
+    are GUARDED (R4): a legacy answer keeps the wall the record was
+    born with; a worded answer moves the wall from center to side 1
+    and the body RE-MEASURES - 3,600 becomes 3,960, the outside
+    witness, through the real fold."""
+    win.new_document()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"height": 10.0, "wall": 3.0}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    f = win.doc.features[-1]
+
+    raw = json.loads(json.dumps(win.doc.to_dict()))
+    fd = [d for d in raw["features"]
+          if d["type"] == "ExtrudeFeature"][0]
+    assert fd["wall"] == 3.0 and fd["wall_location"] == "center"
+    assert Document.from_dict(raw).recompute().volume == \
+        pytest.approx(3600.0, abs=1e-6)
+    del fd["wall"]
+    del fd["wall_location"]
+    assert Document.from_dict(raw).recompute().volume == \
+        pytest.approx(8000.0, abs=1e-9)
+
+    keys = [s["key"] for s in win._feature_params(f)]
+    assert keys[keys.index("height2") + 1] == "wall"
+    assert keys[keys.index("wall") + 1] == "wall_location"
+    win._apply_feature_params(f, {"height": 10.0, "fillet": 0.0,
+                                  "chamfer": 0.0, "taper": 0.0,
+                                  "symmetric": False})  # legacy
+    assert f.wall == 3.0                     # the guarded write
+    win._apply_feature_params(f, {"height": 10.0, "fillet": 0.0,
+                                  "chamfer": 0.0, "taper": 0.0,
+                                  "symmetric": False,
+                                  "wall_location": "side 1"})
+    assert f.wall_location == "side 1"
+    assert win.doc.recompute().volume == pytest.approx(3960.0,
+                                                       abs=1e-6)

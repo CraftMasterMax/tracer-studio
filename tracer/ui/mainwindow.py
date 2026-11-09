@@ -1606,6 +1606,17 @@ class MainWindow(QMainWindow):
                   ("whole", "half"), feature.measurement)
             dbl("height2", "height 2 (second side)", feature.height2,
                 mn=0.0)
+            # M201 R8 [SLD-REF-EXTRUDE]: the thin-wall family edits
+            # where it was born - PAGE ORDER puts the wall rows AFTER
+            # the distance rows (Wall Thickness #14, Wall Location
+            # #15). The location word opens for every record (the
+            # modal lever cannot gate rows - the conditional-row law,
+            # stored-and-inert at wall 0, R2's coin).
+            dbl("wall", "wall thickness (0 = whole area)",
+                feature.wall, mn=0.0)
+            combo("wall_location", "wall location",
+                  ("side 1", "side 2", "center"),
+                  feature.wall_location)
         elif isinstance(feature, RevolveFeature):
             dbl("angle", "angle", feature.angle, dec=1, ang=True)
         elif isinstance(feature, HoleFeature):
@@ -1870,6 +1881,11 @@ class MainWindow(QMainWindow):
                 # M201 R4: the same guarded coin - a script driving the
                 # rung-era rows never invents an offset.
                 feature.offset = mm("offset")
+            if "wall" in v:               # M201 R8: guarded writes -
+                feature.wall = mm("wall")  #  a lever scripted before
+            if "wall_location" in v:       #  the rows keeps the wall
+                feature.wall_location = str(v["wall_location"])
+                #                          the record was born with
         elif isinstance(feature, RevolveFeature):
             feature.angle = float(v["angle"])
         elif isinstance(feature, HoleFeature):
@@ -4665,6 +4681,41 @@ class MainWindow(QMainWindow):
                 dict(key="height2", label="height 2 (second side)",
                      kind="double", default=0.0, min=0.0, max=1e5,
                      decimals=2, group="Distance"),
+                # M201 R8 [SLD-REF-EXTRUDE, verbatim]: "Type: Extrude:
+                # Extrudes the entire area within selected closed
+                # profiles | Thin Extrude: Extrudes a thin wall along
+                # selected open or closed profiles" + "Wall Thickness
+                # (Thin Extrude type only): Specify wall thickness for
+                # thin extrusion" + "Wall Location (Thin Extrude type
+                # only): Determines how the wall thickness is extruded
+                # relative to the profile. Side 1: Offsets extrusion
+                # to one side of the profile. Side 2: Offsets
+                # extrusion to one side of the profile. Center:
+                # Centers the extrusion on the profile." THE NUMBER
+                # ENCODES THE TYPE ROW (R4's law, Type edition): 0.0
+                # IS "Extrude" - the whole area, what this door has
+                # ALWAYS birthed (and "default" counts ZERO on both
+                # pages, so every rest here is the house's) - and any
+                # positive number IS the page's "Thin Extrude" at that
+                # Wall Thickness. No Type combo re-asks what the
+                # number answers. THE SIDE WORDS ARE THE HOUSE'S: the
+                # page describes Side 1 and Side 2 IDENTICALLY and
+                # never says which is which (its own asset file is
+                # even named "outside" for Side 2) - our coin measures:
+                # side 1 stands OUTSIDE the profile line (the 3,960
+                # witness), side 2 INSIDE it (3,240), center straddles
+                # (3,600). PAGE ORDER: the wall rows sit AFTER the
+                # distance rows and BEFORE the Operation row. At rest
+                # they are asked, stored and INERT (the modal door
+                # cannot open and close rows mid-command - the
+                # conditional-row law, R3's coin).
+                dict(key="wall", label="wall thickness (0 = the "
+                                        "whole area)", kind="double",
+                     default=0.0, min=0.0, max=1e5, decimals=2,
+                     group="Wall"),
+                dict(key="wall_location", label="wall location",
+                     kind="combo", choices=("side 1", "side 2", "center"),
+                     default="center", group="Wall"),
             ]
             # M201 R5 [SLD-REF-EXTRUDE, verbatim] "Operation: Select
             # an operation to control how the feature affects the
@@ -4713,6 +4764,13 @@ class MainWindow(QMainWindow):
             #                                       the door's own coin
             emeas = str(v["measurement"])
             eheight2 = float(v["height2"])
+            # M201 R8 [SLD-REF-EXTRUDE]: the wall rows, READ THROUGH
+            # .get so every LEGACY scripted answer (m165's shared
+            # reply and every remembered dict born before today)
+            # speaks THE WHOLE AREA - 0.0 IS "Extrude", the voice this
+            # door has always birthed. Zero rewrites, R5/R7's coin.
+            ewall = float(v.get("wall", 0.0))
+            eloc = str(v.get("wall_location", "center"))
             # M201 R5: the Operation answer - None on a FACE sketch
             # (the M140 probe owns operation there; the row never
             # opened and this door writes no word it did not ask).
@@ -4756,6 +4814,23 @@ class MainWindow(QMainWindow):
                     "Extrude refused: the measurement is 'whole' or "
                     f"'half', not {emeas!r}", 6000)
                 return
+            if ewall < 0.0:
+                # The precheck law (M197): a spin resting at 0 cannot
+                # speak this word, a scripted answer can - and a door
+                # that lets it in leaves a dead undo step. Refuse
+                # BEFORE the capture, naming the house coin (the page
+                # words no bounds - silence is silence).
+                self.status.showMessage(
+                    "Extrude refused: the wall thickness is 0 (the "
+                    f"whole area) or a positive number, not "
+                    f"{ewall:g}", 6000)
+                return
+            if ewall > 0.0 and eloc not in ("side 1", "side 2",
+                                            "center"):
+                self.status.showMessage(
+                    "Extrude refused: the wall location is 'side 1', "
+                    f"'side 2' or 'center', not {eloc!r}", 6000)
+                return
         self._capture()
         for i, (outer, holes) in enumerate(profiles):
             tag = name if len(profiles) == 1 else f"{name} #{i + 1}"
@@ -4795,7 +4870,10 @@ class MainWindow(QMainWindow):
                                              symmetric=esym,
                                              measurement=emeas,
                                              height2=eheight2,
-                                             offset=eoffset, **common))
+                                             offset=eoffset,
+                                             wall=ewall,
+                                             wall_location=eloc,
+                                             **common))
         self.sketch.set_model(SketchModel())         # committed: clear editor
         self._show_page(self.viewport)
         self.recompute()
@@ -4842,6 +4920,17 @@ class MainWindow(QMainWindow):
             # sentence is the R3 one, byte for byte.
             start = (f" starting {eoffset:g} mm off the plane"
                      if eoffset != 0.0 else "")
+            # M201 R8: the wall tail says WHERE the wall stands when
+            # the number exists - the page's OWN readings: "Center:
+            # Centers the extrusion on the profile" and the side
+            # words (which the page describes as "Offsets extrusion
+            # to one side of the profile"). At 0.0 the sentence is
+            # the R5 one, byte for byte.
+            wtail = ""
+            if ewall > 0.0:
+                where = ("centered on the profile" if eloc == "center"
+                         else f"offset to one side ({eloc})")
+                wtail = f" — with a {ewall:g} mm wall {where}"
             # M201 R5: the operation tail says what the row ASKED the
             # feature does to the material it streams into - the fold
             # reads and writes the feature's OWN body accumulator, so
@@ -4858,7 +4947,7 @@ class MainWindow(QMainWindow):
             #                          did not do
             self.status.showMessage(
                 f"Extruded {len(profiles)} region(s) from {name} "
-                f"{voice}{start}{why}{optail}", 6000)
+                f"{voice}{start}{wtail}{why}{optail}", 6000)
 
     def action_hole(self):
         """Fusion Hole: each circle in the current sketch drills one hole —

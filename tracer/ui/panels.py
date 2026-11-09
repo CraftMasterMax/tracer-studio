@@ -748,6 +748,15 @@ class PropertiesPanel(QWidget):
             lines = [f"<b>{feature.name}</b>", f"operation: {feature.op}"]
         if isinstance(feature, ExtrudeFeature):
             lines.append(f"height: {units.L(feature.height, self.unit)}")
+            if float(feature.wall) > 0.0:
+                # M201 R8 [SLD-REF-EXTRUDE]: the wall line joins the
+                # rail ONLY when the wall exists (0 = the whole area,
+                # the voice every record before today is - absence is
+                # honesty, R4's rail law). The location word is the
+                # HOUSE coin (the page words Side 1 and Side 2
+                # identically and never says which is which).
+                lines.append(f"wall: {units.L(feature.wall, self.unit)}"
+                             f" ({feature.wall_location})")
             if abs(float(feature.offset)) > 1e-12:
                 # M201 R4 [SLD-REF-EXTRUDE]: the Start/Offset numeric
                 # moved the profile plane - the rail says so. At the

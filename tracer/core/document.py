@@ -16,7 +16,8 @@ from typing import Literal
 import numpy as np
 
 from . import params
-from .geometry import Solid, circle_contour, round_corners
+from .geometry import (Solid, circle_contour, offset_prism,
+                       round_corners)
 from .rimfillet import rim_fillet
 from .sketch.model import (face_axes, frame_matrix, plane_matrix,
                            plane_uv, revolve_matrix)
@@ -571,6 +572,27 @@ class ExtrudeFeature(Feature):
     #   pairing Start with Direction and none is invented: the profile
     #   plane MOVES by the number along the sketch normal and every
     #   voice speaks from that moved plane.
+    wall: float = 0.0        # M201 R8 [SLD-REF-EXTRUDE]: the Type
+    #   row's NUMBER. "Extrude: Extrudes the entire area within
+    #   selected closed profiles" | "Thin Extrude: Extrudes a thin
+    #   wall along selected open or closed profiles". The page names
+    #   NO default ("default" counts zero on both pages) and this
+    #   tool has ALWAYS birthed the whole area - so the number
+    #   ENCODES the row (the NUMERIC-ENCODES law, Type edition): 0.0
+    #   IS "Extrude", the rung-era call bit for bit, and any positive
+    #   number IS "Thin Extrude" at that "Wall Thickness: Specify
+    #   wall thickness for thin extrusion". One number speaks both
+    #   page rows - no combo re-asks what the number answers.
+    wall_location: str = "center"  # "Wall Location (Thin Extrude
+    #   type only)": "Side 1: Offsets extrusion to one side of the
+    #   profile | Side 2: Offsets extrusion to one side of the
+    #   profile | Center: Centers the extrusion on the profile". THE
+    #   PAGE WORDS THE TWO SIDES IDENTICALLY and never says which is
+    #   which - the house coin NAMES them, measured: "side 1" stands
+    #   the wall OUTSIDE the profile line (40x20, height 10, t3:
+    #   3,960), "side 2" INSIDE it (3,240), "center" STRADDLES it
+    #   (3,600). Thin-only: at wall 0 the word is stored and INERT
+    #   (the conditional-row law, R2's coin).
     handle: dict | None = None   # M142: {"feature", "part"} — the LIVE
     #   face this sketch attached to at pick; None = frozen snapshot
 
@@ -589,6 +611,30 @@ class ExtrudeFeature(Feature):
                              f"flag {bool(self.symmetric)!r} tell "
                              "different stories")
         return d
+
+    _WALLS = {"side 1": (1.0, 0.0),   # M201 R8: (out, in) multipliers
+              "side 2": (0.0, 1.0),   #   of the wall thickness - the
+              "center": (0.5, 0.5)}   #   measured house coin (see the
+    #                                  #   wall_location field: the page
+    #                                  #   words Side 1 and Side 2
+    #                                  #   IDENTICALLY and never says
+    #                                  #   which is which)
+
+    def _column(self, outer, holes, hh: float) -> Solid:
+        """This record's straight column of height hh at the local
+        origin: the WHOLE AREA (the rung-era Solid.extrude call,
+        untouched at the wall-0 rest - bit for bit) or the THIN WALL
+        strip: the outer loop offset +a·t MINUS the loop offset -b·t
+        (offset_prism's measured coin; a multiplier of 0 is the plain
+        profile line, identity). The strip is a cross-section fact -
+        every z voice (one, two, symmetric, the Start/Offset slide)
+        speaks it exactly as it spoke the full prism before."""
+        t = float(self.wall)
+        if t == 0.0:
+            return Solid.extrude(outer, holes, hh)
+        a, b = self._WALLS[str(self.wall_location)]
+        return offset_prism(outer, holes, a * t, hh).subtract(
+            offset_prism(outer, holes, -b * t, hh))
 
     def _profile(self):
         if self.fillet > 0 or self.chamfer > 0:
@@ -693,9 +739,12 @@ class ExtrudeFeature(Feature):
 
     def _one_side(self, outer, holes) -> Solid:
         """The rung-era build, VERBATIM: straight extrude or the
-        tapered loft, 0..height along local +z."""
+        tapered loft, 0..height along local +z. M201 R8: the straight
+        voice now runs through _column - at wall 0 that IS the
+        rung-era Solid.extrude call, bit for bit; a thin wall records
+        the wall strip of the same height."""
         if abs(float(self.taper)) < 1e-9:
-            return Solid.extrude(outer, holes, self.height)
+            return self._column(outer, holes, float(self.height))
         return self._loft_taper(outer, holes)
 
     def build(self) -> Solid:
@@ -714,6 +763,30 @@ class ExtrudeFeature(Feature):
         outer, holes = self._profile()
         d = self._effective_direction()
         h = float(self.height)
+        # M201 R8 [SLD-REF-EXTRUDE]: the thin-wall refusals, naming
+        # the HOUSE coin (the page words no bounds and no pairing
+        # with Taper - silence is silence, so what cannot be composed
+        # is REFUSED, not guessed): a negative thickness, a location
+        # word off the coin, and a taper standing on a thin wall (the
+        # measured strip rules the straight wall; a tapered thin wall
+        # is geometry this kernel has not measured and will not
+        # invent). At wall 0 none of this exists - the rung-era build
+        # answers untouched.
+        w = float(self.wall)
+        if w < 0.0:
+            raise ValueError(f"{self.name}: the wall thickness is 0 "
+                             "(the whole area) or a positive number, "
+                             f"not {w:g}")
+        if w > 0.0:
+            if str(self.wall_location) not in self._WALLS:
+                raise ValueError(
+                    f"{self.name}: the wall location is 'side 1', "
+                    f"'side 2' or 'center', not {self.wall_location!r}")
+            if abs(float(self.taper)) > 1e-9:
+                raise ValueError(
+                    f"{self.name}: a thin wall stands straight - the "
+                    "taper is 0 when a wall thickness speaks, not "
+                    f"{float(self.taper):g}")
         if d == "two":
             h2 = float(self.height2)
             if h2 <= 0.0:
@@ -723,7 +796,7 @@ class ExtrudeFeature(Feature):
                 return self._place(self._zoff(self._one_side(outer,
                                                              holes)))
             if abs(float(self.taper)) < 1e-9:
-                s = Solid.extrude(outer, holes, h + h2)
+                s = self._column(outer, holes, h + h2)
                 return self._place(self._zoff(s.translated((0.0, 0.0,
                                                             -h2))))
             s = Solid.batch_union([self._one_side(outer, holes),
@@ -741,7 +814,7 @@ class ExtrudeFeature(Feature):
                 return self._place(self._zoff(s))
             if m == "half":
                 if abs(float(self.taper)) < 1e-9:
-                    s = Solid.extrude(outer, holes, 2.0 * h)
+                    s = self._column(outer, holes, 2.0 * h)
                     s = s.translated((0.0, 0.0, -h))
                 else:
                     s = Solid.batch_union([
@@ -3987,6 +4060,8 @@ class Document:
                          measurement=str(f.measurement),
                          height2=float(f.height2),
                          offset=float(f.offset),
+                         wall=float(f.wall),
+                         wall_location=str(f.wall_location),
                          placement=list(map(float, f.placement)),
                          plane=f.plane, axes=f.axes, sketch=f.sketch,
                          sid=f.sid, region=f.region,
@@ -4244,6 +4319,8 @@ class Document:
                     measurement=str(fd.get("measurement", "whole")),
                     height2=float(fd.get("height2", 0.0)),
                     offset=float(fd.get("offset", 0.0)),
+                    wall=float(fd.get("wall", 0.0)),
+                    wall_location=str(fd.get("wall_location", "center")),
                     placement=tuple(fd["placement"]),
                     plane=fd.get("plane", "XY"), axes=fd.get("axes"),
                     sketch=fd.get("sketch"),

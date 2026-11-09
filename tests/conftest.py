@@ -67,7 +67,7 @@ def script_cmd_cancel(monkeypatch):
 
 def script_extrude_door(monkeypatch, height, direction="one",
                         measurement="whole", height2=0.0, offset=0.0,
-                        op="Join"):
+                        op="Join", wall=0.0, wall_location="center"):
     """M201 R3: answer the GROWN extrude creation door - ONE dialog
     (title "Extrude", [SLD-REF-EXTRUDE] Direction row + the house's
     one number + the page's two conditional siblings). Any OTHER
@@ -81,7 +81,12 @@ def script_extrude_door(monkeypatch, height, direction="one",
     with. M201 R5: and the Operation row - answered "Join" (what this
     door has always birthed off-face); a reply key the door did not
     open (a FACE sketch, where the probe owns operation) is simply
-    never read, so one coin serves both doors."""
+    never read, so one coin serves both doors. M201 R8: and the
+    thin-wall family (page order: Wall Thickness + Wall Location
+    after the distance rows) - the reply grows them at 0.0/"center",
+    and 0.0 IS the page's Type "Extrude", the whole area every
+    repaid test was born with (the reader's .get fallbacks make even
+    a reply dict WITHOUT the new keys speak it - zero rewrites)."""
     from tracer.ui import cmddialog
     prior = cmddialog.ask
 
@@ -89,7 +94,8 @@ def script_extrude_door(monkeypatch, height, direction="one",
         if title == "Extrude":
             return dict(height=float(height), direction=direction,
                         measurement=measurement, height2=float(height2),
-                        offset=float(offset), op=op)
+                        offset=float(offset), op=op,
+                        wall=float(wall), wall_location=wall_location)
         return prior(parent, title, fields, remember_key=remember_key)
     monkeypatch.setattr(cmddialog, "ask", routed)
 
