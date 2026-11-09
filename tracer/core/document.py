@@ -1583,6 +1583,44 @@ class InterferenceFeature(Feature):
 
 
 @dataclass
+class FluidVolumeFeature(Feature):
+    """M201 R13 [SLD fluid volume page, verbatim]: "Fluid Volume
+    creates a body that envelopes or fills the interior of the
+    selected tool bodies." The EXTERNAL procedure names its shapes
+    exactly - Box | Cylinder | Hemisphere - gates the direction row
+    ("This option is available when the Shape Type is Cylinder or
+    Hemisphere", words "X-Axis | Y-Axis | Z-Axis"), offers "Flip
+    Direction to invert the hemisphere", and one number: "This value
+    is the distance between the outer faces of the tool bodies and
+    the outer faces of the fluid volume."
+    This stream is a BODY of its own (the interference precedent):
+    the envelope MINUS the tools, recomputed live from the NAMED
+    tool streams - our bridge over the page's canvas PICKS is the
+    check-list of body names (names compose; the geometry follows).
+    INTERNAL is NOT offered: the page itself gates it ("You will not
+    be permitted to complete the fluid body creation until the
+    program detects a completely isolated interior volume") and
+    capping needs surfaces this kernel has none of - so the only
+    Volume word here is the one that composes, and a scripted other
+    word is refused by name, R10's coin. The Split Result row is a
+    tangent-EDGE story the mesh subtract cannot honour; the door
+    does not speak it (absence is honesty, R4's law). Rests:
+    direction Z-Axis, flip off, offset 0.0 - "default" counts ZERO
+    on the page, every one of them a HOUSE FACT, named as one. The
+    offset is a DISTANCE - unlike the coil's turn-count it keeps
+    the unit suffix on both mouths (UNIT-SUFFIX LAW, other edge)."""
+    tools: tuple = ()                          # tool BODY names
+    volume: str = "External"                   # the only word here
+    shape_type: str = "Box"                    # Box|Cylinder|Hemisphere
+    shape_direction: str = "Z-Axis"            # inert under Box
+    flip: bool = False                         # hemispheres only
+    offset: float = 0.0                        # face-to-face gap, mm
+
+    def build(self) -> Solid:                  # recompute special-cases it
+        raise RuntimeError("FluidVolumeFeature builds from its tools")
+
+
+@dataclass
 class FlatPatternFeature(Feature):
     """M147 (sheet metal SM2): the flat pattern as DATA — the outline
     and the bend centre-lines of ONE flat_outline() computation at one
@@ -3329,6 +3367,45 @@ class Document:
                                          body_a=body_a, body_b=body_b))
         return b, f
 
+    def add_fluid_volume(self, tools, shape_type="Box", *,
+                         volume="External", direction="Z-Axis",
+                         flip=False, offset=0.0, name=None):
+        """M201 R13 [SLD fluid volume page]: "Fluid Volume creates a
+        body that envelopes or fills the interior of the selected
+        tool bodies." - the EXTERNAL half of that sentence, honestly
+        composed: the new stream is the envelope (Box/Cylinder/
+        Hemisphere about the named global axis, grown by the face-to-
+        face Offset) MINUS the tool bodies. Tools are NAMED bodies
+        (the door's check-list; the page's canvas PICK is our named
+        bridge). The envelope re-solves on every recompute, so move
+        a tool and the fluid follows - the interference law. RESTS:
+        every one a HOUSE FACT ("default" counts ZERO on the page):
+        External, Box, Z-Axis, flip off, offset 0.0."""
+        for t in tools:
+            self._body(t)                    # honest KeyError early
+        shape_type = str(shape_type)
+        if shape_type not in ("Box", "Cylinder", "Hemisphere"):
+            raise ValueError("the shape type is 'Box', 'Cylinder' or "
+                             f"'Hemisphere', not {shape_type!r}")
+        if direction not in ("X-Axis", "Y-Axis", "Z-Axis"):
+            raise ValueError("the shape direction is 'X-Axis', "
+                             "'Y-Axis' or 'Z-Axis', not "
+                             f"{direction!r}")
+        label = name or f"Fluid {shape_type.lower()}"
+        taken = {b["name"] for b in self.body_list()}
+        k = 2
+        final = label
+        while final in taken:
+            final = f"{label} {k}"
+            k += 1
+        b = self.add_body(final)
+        f = self.add(FluidVolumeFeature(
+            name=final, body=final, tools=tuple(str(t) for t in tools),
+            volume=str(volume), shape_type=shape_type,
+            shape_direction=str(direction), flip=bool(flip),
+            offset=float(offset)))
+        return b, f
+
     FLAT_BODY = "_flat"                    # M147 SM2: the paper's name
 
     def flat_feature(self) -> FlatPatternFeature | None:
@@ -3981,6 +4058,40 @@ class Document:
                               if x["name"] == want), None)
                     sides.append(self._apply_placement(b, s))
                 solid = sides[0].intersect(sides[1])
+            elif isinstance(f, FluidVolumeFeature):
+                # M201 R13 [SLD fluid volume page]: "Fluid Volume
+                # creates a body that envelopes ... the selected tool
+                # bodies." The stream is the ENVELOPE MINUS THE TOOLS
+                # (the CFD domain); tool streams are read as their
+                # users see them (placement included - the
+                # interference coin). Guards refuse, by name, what
+                # the page itself gates away or what cannot bake:
+                # "Internal" (its isolation precondition needs
+                # surfaces this kernel has none of), no tools, and a
+                # negative offset (the page calls it a distance).
+                from .fluid import envelope_solid    # coil precedent
+                if str(f.volume) != "External":
+                    raise ValueError(
+                        f"{f.name!r}: the fluid volume is 'External', "
+                        f"not {f.volume!r} - 'Internal' is gated on "
+                        "detecting a completely isolated interior")
+                if not f.tools:
+                    raise ValueError(f"{f.name!r}: a fluid volume "
+                                     "needs at least one tool body")
+                tools = []
+                for want in f.tools:
+                    s = buckets.get(want)
+                    if s is None:
+                        raise ValueError(
+                            f"{f.name!r}: tool body {want!r} has "
+                            "nothing to envelope yet")
+                    b = next((x for x in self.bodies
+                              if x["name"] == want), None)
+                    tools.append(self._apply_placement(b, s))
+                solid = envelope_solid(
+                    tools, f.shape_type, f.shape_direction,
+                    bool(f.flip), float(f.offset)
+                ).subtract(Solid.batch_union(tools))
             elif isinstance(f, FlangeFeature):
                 # SM3/SM4: one walk PER SHEET BODY, in stream order —
                 # but the WALK'S ORDER is the flat (attach_walk turns
@@ -4496,6 +4607,12 @@ class Document:
                          params={k: float(v) for k, v in f.params.items()})
             elif isinstance(f, InterferenceFeature):
                 d.update(body_a=str(f.body_a), body_b=str(f.body_b))
+            elif isinstance(f, FluidVolumeFeature):
+                d.update(tools=[str(t) for t in f.tools],
+                         volume=str(f.volume),
+                         shape_type=str(f.shape_type),
+                         shape_direction=str(f.shape_direction),
+                         flip=bool(f.flip), offset=float(f.offset))
             d["bindings"] = dict(f.bindings)     # every lever, one line
             return d
         return {"format": "tracer/document", "version": 2,
@@ -4789,6 +4906,21 @@ class Document:
                 doc.features.append(InterferenceFeature(
                     name=fd["name"], body_a=str(fd["body_a"]),
                     body_b=str(fd["body_b"]), **base))
+            elif t == "FluidVolumeFeature":
+                doc.features.append(FluidVolumeFeature(
+                    name=fd["name"],
+                    tools=tuple(str(x) for x in fd.get("tools", ())),
+                    # the .get pair (R5's coin): every word rests on
+                    # the HOUSE rest (the page prints no default), so
+                    # a hand-written file that stays silent still
+                    # lands the page's first-named shape and the
+                    # face-to-face distance of nothing.
+                    volume=str(fd.get("volume", "External")),
+                    shape_type=str(fd.get("shape_type", "Box")),
+                    shape_direction=str(fd.get("shape_direction",
+                                               "Z-Axis")),
+                    flip=bool(fd.get("flip", False)),
+                    offset=float(fd.get("offset", 0.0)), **base))
             elif t == "BodyFilletFeature":
                 doc.features.append(BodyFilletFeature(
                     name=fd["name"], radius=float(fd["radius"]),

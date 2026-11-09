@@ -15,6 +15,7 @@ from ..core import units
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              CoilFeature, CombineFeature,
                              Document, DraftFeature, ExtrudeFeature,
+                             FluidVolumeFeature,
                              GeometricPatternFeature,
                              HoleFeature,
                              ImportedFeature, LinearPatternFeature,
@@ -542,6 +543,7 @@ class FeatureTree(QTreeWidget):
                                                     GeometricPatternFeature))
                     else "\u25f1" if isinstance(f, ScaleFeature)  # ◱
                     else "\u2307" if isinstance(f, CoilFeature)  # ⌇ bolt
+                    else "\u224b" if isinstance(f, FluidVolumeFeature)  # ≋ fluid
                     else "\u2935" if isinstance(f, PathPatternFeature)
                     else "\u25a1")
             nm = f.name
@@ -869,6 +871,29 @@ class PropertiesPanel(QWidget):
                          " tall")
             if str(feature.coil_type) != "Revolution And Pitch":
                 lines.append(f"type: {feature.coil_type}")
+        elif isinstance(feature, FluidVolumeFeature):
+            # M201 R13 [SLD fluid volume page]: the fluid record
+            # speaks its OWN envelope line - shape, the face-to-face
+            # offset (a DISTANCE, wearing the document's unit), and
+            # the NAMED tools it envelopes (the page's tool bodies,
+            # our named-body bridge). The gated pair rides only
+            # where the page lets it speak: direction "is available
+            # when the Shape Type is Cylinder or Hemisphere" - so
+            # under Box the rail stays silent even if the record
+            # stores a word (stored-and-inert; a rail that spoke an
+            # inert word would contradict the shape), and the flip
+            # line belongs to hemispheres alone ("click Flip
+            # Direction to invert the hemisphere"). "default" counts
+            # ZERO on the page: every rest here is a house fact, and
+            # the rail speaks only what stands off the rests.
+            lines.append(f"fluid: {feature.shape_type}, offset "
+                         + units.L(feature.offset, self.unit)
+                         + " around " + " + ".join(feature.tools))
+            if feature.shape_type in ("Cylinder", "Hemisphere") \
+                    and str(feature.shape_direction) != "Z-Axis":
+                lines.append(f"direction: {feature.shape_direction}")
+            if feature.shape_type == "Hemisphere" and feature.flip:
+                lines.append("hemisphere inverted")
         elif isinstance(feature, ThreadFeature):
             minor = 2 * (feature.radius - feature.pitch / 2)
             lines.append("external thread — pitch "

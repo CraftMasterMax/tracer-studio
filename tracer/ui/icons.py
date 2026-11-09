@@ -322,6 +322,25 @@ def _coil(p: QPainter):
         p.drawLine(pts[i], QPointF(pts[i].x(), 16 - (y - 16) * 0.55))
 
 
+def _fluid(p: QPainter):
+    """M201 R13 Fluid Volume: a DASHED envelope (the domain the flow
+    travels - the page's "body that envelopes ... the selected tool
+    bodies") holding TWO waves (the fluid's own surface)."""
+    import math as _m
+    pen = QPen(_COL)
+    pen.setWidthF(1.9)
+    pen.setStyle(Qt.PenStyle.DashLine)
+    p.setPen(pen)
+    p.drawRect(QRectF(4, 5, 24, 22))
+    pen.setStyle(Qt.PenStyle.SolidLine)
+    p.setPen(pen)
+    for base, amp in ((14.0, 2.2), (21.0, 2.2)):
+        pts = [QPointF(6 + 20 * i / 64.0,
+                       base + amp * _m.sin(2 * _m.pi * 1.5 * i / 64.0))
+               for i in range(65)]
+        p.drawPolyline(QPolygonF(pts))
+
+
 def _scale(p: QPainter):
     """Scale: a small square growing about its base point."""
     p.drawEllipse(QPointF(5, 26), 1.6, 1.6)
@@ -523,6 +542,7 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "construction": _construction, "plane": _plane,
               "axis": _axis, "geopattern": _geopattern, "scale": _scale,
               "coil": _coil,
+              "fluid": _fluid,
               "constrain": _constrain, "dimension": _dimension,
               "launcher": _launcher, "section": _section,
               "thread": _thread, "split": _split, "draft": _draft,

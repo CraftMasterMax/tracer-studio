@@ -31,7 +31,8 @@ from ..core.thread import ISO_COARSE
 from ..core.document import (BodyFilletFeature, CircularPatternFeature,
                              CoilFeature, CombineFeature,
                              Document, DraftFeature,
-                             ExtrudeFeature, GeometricPatternFeature,
+                             ExtrudeFeature, FluidVolumeFeature,
+                             GeometricPatternFeature,
                              HoleFeature, OffsetFaceFeature,
                              ImportedFeature, LinearPatternFeature,
                              LoftFeature, MirrorFeature, MoveFeature,
@@ -458,6 +459,9 @@ class MainWindow(QMainWindow):
           lambda checked=False: self.action_thread())
         d("coil", "Coil — helical ridge: spring or boss thread",
           lambda checked=False: self.action_coil())
+        d("fluid", "Fluid Volume — the body a flow would travel "
+                   "around: envelope minus its tool bodies",
+          lambda checked=False: self.action_fluid_volume())
         d("split", "Split body — trim the solid flush with a plane",
           lambda checked=False: self.action_split_body())
         d("draft", "Draft — lean the body's straight walls from a "
@@ -1850,6 +1854,34 @@ class MainWindow(QMainWindow):
             dbl("turns", "turns", feature.turns, dec=1, mn=0.5,
                 plain=True)
             dbl("size", "section size", feature.size, dec=3, mn=0.01)
+        elif isinstance(feature, FluidVolumeFeature):
+            # M201 R13 [SLD fluid volume page]: the fluid record
+            # speaks its OWN rows in PAGE ORDER - the Volume word
+            # (the only one here: Internal stays gated, refused by
+            # name at the door), the tool check-list with its own
+            # names ticked, the Shape word, the page's gated pair
+            # (direction rides STORED-AND-INERT under Box - the
+            # page's own gate cannot be enforced by a form, and a
+            # lying row is the old sin; the fold proves the shape's
+            # truth anyway), and the one distance. Offset is a
+            # DISTANCE ("the distance between the outer faces...")
+            # so it wears mm with the guarded mm() write - the
+            # UNIT-SUFFIX LAW's other edge (R12's turn count had
+            # none; this one must).
+            combo("volume", "volume", ("External",), feature.volume)
+            fld.append(dict(key="tools", kind="checks",
+                            label="tool bodies",
+                            choices=[b["name"]
+                                     for b in self.doc.body_list()],
+                            checked=list(feature.tools)))
+            combo("shape_type", "shape type",
+                  ("Box", "Cylinder", "Hemisphere"),
+                  feature.shape_type)
+            combo("shape_direction", "shape direction",
+                  ("X-Axis", "Y-Axis", "Z-Axis"),
+                  feature.shape_direction)
+            check("flip", "flip direction", feature.flip)
+            dbl("offset", "offset", feature.offset, dec=3, mn=0.0)
         elif isinstance(feature, MirrorFeature):
             combo("plane", "mirror plane",
                   ("YZ", "XZ", "XY") + tuple(p["name"]
@@ -2081,6 +2113,21 @@ class MainWindow(QMainWindow):
             feature.size = mm("size")
             if "coil_type" in v:          # M201 R12: guarded word
                 feature.coil_type = str(v["coil_type"])
+        elif isinstance(feature, FluidVolumeFeature):
+            # M201 R13: guarded writes. The tool list and the shape
+            # words ride the same guard the faces row taught (R3's
+            # plural law: a record that opened its checks row owns
+            # the answer); offset is a DISTANCE — mm() on this
+            # mouth, exactly the door's suffix (UNIT-SUFFIX LAW).
+            if "tools" in v:
+                feature.tools = tuple(str(t) for t in v["tools"])
+            if "shape_type" in v:
+                feature.shape_type = str(v["shape_type"])
+            if "shape_direction" in v:
+                feature.shape_direction = str(v["shape_direction"])
+            if "flip" in v:
+                feature.flip = bool(v["flip"])
+            feature.offset = mm("offset")
         elif isinstance(feature, MirrorFeature):
             feature.plane = str(v["plane"])
             feature.offset = mm("offset")
@@ -8711,6 +8758,105 @@ class MainWindow(QMainWindow):
             f"{f.name} — {f.turns:g} turns x {f.pitch:g} mm pitch "
             f"= {f.height:g} mm tall, {v['section'].lower()} section "
             f"{v['size']:g} mm, {v['hand'].lower()}-handed on {v['axis']}",
+            6000)
+
+    def action_fluid_volume(self):
+        """M201 R13 [SLD fluid volume page, verbatim]: "Fluid Volume
+        creates a body that envelopes or fills the interior of the
+        selected tool bodies." - the EXTERNAL half, honestly: the
+        body is the envelope MINUS the tools. The page's Volume row
+        offers External | Internal, but INTERNAL is a gate this
+        kernel cannot pass ("You will not be permitted to complete
+        the fluid body creation until the program detects a
+        completely isolated interior volume" - and capping needs
+        surface bodies we have none of), so the combo carries the
+        ONE word that composes and a scripted other word is refused
+        by name before the capture (R12's Spiral coin). The page's
+        tool selection is a canvas PICK - our bridge is the check-
+        list of NAMED bodies (names compose; geometry follows).
+        Shape words are the page's, in page order: Box | Cylinder |
+        Hemisphere, gated direction ("This option is available when
+        the Shape Type is Cylinder or Hemisphere", words "X-Axis
+        Y-Axis Z-Axis"), "Flip Direction to invert the hemisphere",
+        and one distance: Offset, "the distance between the outer
+        faces of the tool bodies and the outer faces of the fluid
+        volume" - a DISTANCE, so it wears mm on both mouths (UNIT-
+        SUFFIX LAW). Rests (External/Box/Z-Axis/flip off/offset 0)
+        are HOUSE FACTS: "default" counts ZERO on the page."""
+        if self.doc is None:
+            return
+        names = [b["name"] for b in self.doc.body_list()]
+        v = cmddialog.ask(self, "Fluid Volume", [
+            dict(key="volume", label="Volume", kind="combo",
+                 choices=("External",), default="External",
+                 group="Fluid"),
+            dict(key="tools", label="Tool bodies", kind="checks",
+                 choices=names, group="Fluid"),
+            dict(key="shape", label="Shape Type", kind="combo",
+                 choices=("Box", "Cylinder", "Hemisphere"),
+                 default="Box", group="Shape"),
+            dict(key="direction", label="Shape Direction",
+                 kind="combo",
+                 choices=("X-Axis", "Y-Axis", "Z-Axis"),
+                 default="Z-Axis", group="Shape"),
+            dict(key="flip", label="Flip Direction", kind="check",
+                 default=False, group="Shape"),
+            dict(key="offset", label="Offset", kind="double",
+                 default=0.0, min=0.0, max=1e5, group="Shape"),
+        ], remember_key="fluid")
+        if v is None:
+            return
+        vol = str(v.get("volume", "External"))
+        if vol != "External":
+            # refused by name, quoting the page's own precondition
+            self.status.showMessage(
+                f"Fluid Volume refused: the volume is 'External', "
+                f"not {vol!r} - the page: \"You will not be "
+                "permitted to complete the fluid body creation "
+                "until the program detects a completely isolated "
+                "interior volume\"", 9000)
+            return
+        tools = [str(t) for t in (v.get("tools") or [])]
+        if not tools:
+            self.status.showMessage(
+                "Fluid Volume refused: the page envelopes the "
+                "selected tool bodies - select at least one", 6000)
+            return
+        from ..core import fluid                    # coil precedent
+        shape = str(v["shape"])
+        if shape not in fluid.SHAPES:
+            self.status.showMessage(
+                "Fluid Volume refused: the shape type is 'Box', "
+                f"'Cylinder' or 'Hemisphere', not {shape!r}", 6000)
+            return
+        direction = str(v["direction"])
+        if direction not in fluid.DIRECTIONS:
+            self.status.showMessage(
+                "Fluid Volume refused: the shape direction is "
+                f"'X-Axis', 'Y-Axis' or 'Z-Axis', not {direction!r}",
+                6000)
+            return
+        offset = float(v["offset"])
+        if offset < 0.0:
+            self.status.showMessage(
+                "Fluid Volume refused: the offset is the distance "
+                "between outer faces - it cannot be negative", 6000)
+            return
+        self._capture()
+        b, f = self.doc.add_fluid_volume(
+            tools, shape, volume=vol,
+            direction=direction, flip=bool(v["flip"]), offset=offset)
+        self.recompute()
+        ff = getattr(self.doc, "failed_feature", None)
+        if ff is not None and ff[1] == f.name:
+            return                          # M118 badge + modal already
+        self.viewport.refresh(fit=True)
+        solid = self.doc.body_solids().get(f.name)
+        vol_mm = solid.volume if solid is not None else 0.0
+        self.status.showMessage(
+            f"{f.name} — {shape} envelope around "
+            + " + ".join(tools)
+            + f", offset {offset:g} mm — {vol_mm:,.0f} mm³ of fluid",
             6000)
 
     def action_mirror(self):
