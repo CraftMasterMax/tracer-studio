@@ -1836,6 +1836,15 @@ class MainWindow(QMainWindow):
                 dbl(f"b{i}", f"anchor {axl}", feature.base[i], dec=3,
                     mn=None)
         elif isinstance(feature, CoilFeature):
+            # M201 R12 [SLD-REF-COIL]: the Type word opens too - it
+            # is the record's OWN mouth about which two numbers the
+            # door was asked for (the numbers below are what stands
+            # either way: the record keeps the classic pair and
+            # height stays derived). The lever echoes, never
+            # contradicts; page order: Type is row one.
+            combo("coil_type", "coil type (two of three)",
+                  ("Revolution And Height", "Revolution And Pitch",
+                   "Height And Pitch"), feature.coil_type)
             dbl("diam", "centre diameter", feature.diameter)
             dbl("pitch", "pitch", feature.pitch, dec=3)
             dbl("turns", "turns", feature.turns, dec=1, mn=0.5,
@@ -2070,6 +2079,8 @@ class MainWindow(QMainWindow):
             feature.pitch = mm("pitch")
             feature.turns = float(v["turns"])
             feature.size = mm("size")
+            if "coil_type" in v:          # M201 R12: guarded word
+                feature.coil_type = str(v["coil_type"])
         elif isinstance(feature, MirrorFeature):
             feature.plane = str(v["plane"])
             feature.offset = mm("offset")
@@ -8590,16 +8601,52 @@ class MainWindow(QMainWindow):
             return
         dirs = ["X", "Y", "Z"] + [a["name"] for a in self.doc.axes]
         v = cmddialog.ask(self, "Coil", [
+            # M201 R12 [SLD-REF-COIL, verbatim]: "Type: Select the
+            # type of coil to create. | Revolution And Height: Creates
+            # a coil with a specific number of revolutions and a
+            # specific height. | Revolution And Pitch: ... | Height
+            # And Pitch: ..." - the page's TWO-OF-THREE contract:
+            # every mode takes exactly two of {Revolutions, Height,
+            # Pitch} and the third stands derived. Ours stores the
+            # classic pair (turns, pitch) and derives height, so the
+            # modes are SOLVER words: Revolution And Height divides
+            # height by revolutions, Height And Pitch divides height
+            # by pitch - arithmetic only, the kernel never moves.
+            # THREE of the page's four words are offered: SPIRAL (the
+            # page's fourth, a coil whose radius winds outward) is NOT
+            # what coil_solid sweeps - a door may not promise what
+            # cannot bake - and a scripted Spiral is refused before
+            # the capture, by name (R10's coin). REST "Revolution And
+            # Pitch" is NAMED AS A HOUSE FACT: "default" counts ZERO
+            # on both pages (R10's quoted-default bounty drew blanks
+            # here); the house rests on the mode whose pair the record
+            # already keeps unwounded. The REF page prints capital
+            # "And" (the how-to's lowercase "and" is the minority
+            # voice) - the door copies REF. Page order: Type is row
+            # ONE; the page's Radius-vs-Diameter naming split (REF
+            # "Radius ... to the center of the profile", the how-to
+            # says Diameter) is answered honestly by NAMING the
+            # convention we copy: our number is the how-to's DIAMETER
+            # of the center circle the REF's Radius measures.
+            dict(key="type", label="Type", kind="combo",
+                 choices=("Revolution And Height",
+                          "Revolution And Pitch", "Height And Pitch"),
+                 default="Revolution And Pitch", group="Helix"),
             dict(key="axis", label="Helix axis", kind="combo",
                  choices=dirs, default="Z", group="Axis"),
             dict(key="base", label="Start point", kind="text",
                  default="0,0,0", group="Axis"),
-            dict(key="diam", label="Centre diameter", kind="double",
+            dict(key="diam",
+                 label="Centre diameter (of the profile's center "
+                       "circle)", kind="double",
                  default=8.0, min=0.001, max=1e5, group="Helix"),
-            dict(key="pitch", label="Pitch", kind="double", default=1.5,
-                 min=0.01, max=1e4, group="Helix"),
-            dict(key="turns", label="Turns", kind="double", default=6.0,
-                 min=0.5, max=2000.0, decimals=1, group="Helix"),
+            dict(key="turns", label="Revolutions", kind="double",
+                 default=6.0, min=0.5, max=2000.0, decimals=1,
+                 suffix="", group="Helix"),      # a COUNT, unit-free
+            dict(key="height", label="Height", kind="double",
+                 default=9.0, min=0.01, max=1e5, group="Helix"),
+            dict(key="pitch", label="Pitch", kind="double",
+                 default=1.5, min=0.01, max=1e4, group="Helix"),
             dict(key="hand", label="Hand", kind="combo",
                  choices=("Right", "Left"), group="Helix"),
             dict(key="section", label="Section", kind="combo",
@@ -8609,24 +8656,59 @@ class MainWindow(QMainWindow):
         ], remember_key="coil")
         if v is None:
             return
+        ctype = str(v.get("type", "Revolution And Pitch"))
+        if ctype not in ("Revolution And Height", "Revolution And Pitch",
+                         "Height And Pitch"):
+            self.status.showMessage(
+                f"Coil refused: the type is 'Revolution And Height', "
+                f"'Revolution And Pitch' or 'Height And Pitch', not "
+                f"{ctype!r}", 6000)
+            return
         try:
             base = self._pt(v["base"])
         except params.ParamError as exc:
             self.status.showMessage(f"Coil refused: {exc}", 6000)
             return
+        turns = float(v.get("turns", 6.0))
+        pitch = float(v.get("pitch", 1.5))
+        # the .get law (R5's coin): a remembered dict born before this
+        # rung has no height row - it speaks the classic pair, under
+        # which height is DERIVED, so its absence is the rest, not a
+        # crash. Under a height mode a missing height divides to zero
+        # and the refusal below names it.
+        height = float(v.get("height", 0.0))
+        # THE SOLVER (arithmetic only - the record keeps the classic
+        # pair and the fold's own coil_solid refuses what it cannot
+        # sweep; the door's preflight catches the DIVISIONS before
+        # the capture, naming what would not stand).
+        if ctype == "Revolution And Height":
+            if not turns > 0.0 or not height > 0.0:
+                self.status.showMessage(
+                    "Coil refused: Revolution And Height needs "
+                    "positive revolutions and height to divide", 6000)
+                return
+            pitch = height / turns
+        elif ctype == "Height And Pitch":
+            if not pitch > 0.0 or not height > 0.0:
+                self.status.showMessage(
+                    "Coil refused: Height And Pitch needs positive "
+                    "height and pitch to divide", 6000)
+                return
+            turns = height / pitch
         self._capture()
         f = self.doc.add_coil(
-            f"Coil {v['turns']:g}x{v['pitch']:g}", axis=v["axis"],
-            base=base, diameter=v["diam"], pitch=v["pitch"],
-            turns=v["turns"], hand=v["hand"].lower(),
-            section=v["section"].lower(), size=v["size"])
+            f"Coil {turns:g}x{pitch:g}", axis=v["axis"],
+            base=base, diameter=v["diam"], pitch=pitch,
+            turns=turns, hand=v["hand"].lower(),
+            section=v["section"].lower(), size=v["size"],
+            coil_type=ctype)
         self.recompute()
         ff = getattr(self.doc, "failed_feature", None)
         if ff is not None and ff[1] == f.name:
             return                          # M118 badge + modal already
         self.viewport.refresh(fit=True)
         self.status.showMessage(
-            f"{f.name} — {v['turns']:g} turns x {v['pitch']:g} mm pitch "
+            f"{f.name} — {f.turns:g} turns x {f.pitch:g} mm pitch "
             f"= {f.height:g} mm tall, {v['section'].lower()} section "
             f"{v['size']:g} mm, {v['hand'].lower()}-handed on {v['axis']}",
             6000)

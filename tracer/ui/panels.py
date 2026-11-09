@@ -850,6 +850,25 @@ class PropertiesPanel(QWidget):
             if any(abs(float(b)) > 1e-12 for b in feature.base):
                 lines.append("anchor: (" + ", ".join(
                     f"{float(b):g}" for b in feature.base) + ")")
+        elif isinstance(feature, CoilFeature):
+            # M201 R12 [SLD-REF-COIL]: the coil record speaks the
+            # two-of-three story in its OWN arithmetic line - every
+            # coil IS revolutions x pitch = height (the page's "Pitch:
+            # elevation gain of each revolution" times its "Number of
+            # revolutions", equal to its "Height" end-center to end-
+            # center). THE TYPE WORD rides only OFF the house rest
+            # (which two the door was ASKED for is worth one line;
+            # the rest word is ours - the page prints no default -
+            # and absence is honesty, R4's law). The generic op
+            # header is TRUE for a coil: its op really rides the
+            # fold (m127's union story) - not the draft's unused
+            # field that R10's fix named.
+            lines.append(f"helix: {feature.turns:g} x "
+                         + units.L(feature.pitch, self.unit)
+                         + f" = {units.L(feature.height, self.unit)}"
+                         " tall")
+            if str(feature.coil_type) != "Revolution And Pitch":
+                lines.append(f"type: {feature.coil_type}")
         elif isinstance(feature, ThreadFeature):
             minor = 2 * (feature.radius - feature.pitch / 2)
             lines.append("external thread — pitch "

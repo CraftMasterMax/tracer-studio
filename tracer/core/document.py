@@ -430,6 +430,25 @@ class CoilFeature(Feature):
     hand: str = "right"              # or "left"
     section: str = "circular"        # or "square"
     size: float = 1.0                # section circumscribed diameter
+    coil_type: str = "Revolution And Pitch"
+    # M201 R12 [SLD-REF-COIL, verbatim]: "Type: Select the type of
+    # coil to create. | Revolution And Height: Creates a coil with a
+    # specific number of revolutions and a specific height. |
+    # Revolution And Pitch: ... a specific number of revolutions and
+    # a specific pitch. | Height And Pitch: ... a specific height and
+    # a specific pitch. | Spiral: ... using the same settings as the
+    # Revolution And Pitch coil type, without an Angle value." THE
+    # TWO-OF-THREE CONTRACT over {Revolutions, Height, Pitch}: the
+    # third is always derived, and OUR kernel already stores the
+    # classic pair (turns, pitch) with height = turns x pitch - so
+    # the modes are SOLVER words the DOOR applies at birth; the
+    # record keeps numbers that stand on their own. REST = "Revolution
+    # And Pitch" NAMED AS A HOUSE FACT ("default" counts ZERO on both
+    # pages - R10's quoted-default bounty drew blanks here). SPIRAL
+    # IS NOT OFFERED: a flat conical sweep is not in this kernel
+    # (a door may not promise what cannot bake); a scripted Spiral is
+    # refused by name, the R10 coin. The word rides the record for
+    # the rail and the file; the numbers never lie about it.
 
     @property
     def height(self) -> float:
@@ -3709,13 +3728,14 @@ class Document:
 
     def add_coil(self, name, *, axis="Z", base=(0.0, 0.0, 0.0),
                  diameter=8.0, pitch=1.25, turns=6.0, hand="right",
-                 section="circular", size=1.0, op="union"):
+                 section="circular", size=1.0, op="union",
+                 coil_type="Revolution And Pitch"):
         return self.add(CoilFeature(
             name=name, op=op, axis=axis,
             base=tuple(float(v) for v in base),
             diameter=float(diameter), pitch=float(pitch),
             turns=float(turns), hand=str(hand), section=str(section),
-            size=float(size)))
+            size=float(size), coil_type=str(coil_type)))
 
     @staticmethod
     def _rotz_about(cx, cy, t) -> "np.ndarray":
@@ -3927,6 +3947,22 @@ class Document:
                 solid = src.transformed(_scale_about(f.base, k))
             elif isinstance(f, CoilFeature):
                 ao, ad = self.axis_frame(f.axis or "Z")
+                # M201 R12 [SLD-REF-COIL]: the Type word names WHICH
+                # TWO of {Revolutions, Height, Pitch} the door was
+                # asked for; the pair stored below always bakes the
+                # same helix, so the guard protects the PAGE'S LIST
+                # (R10's coin), not a number: a mouth outside the
+                # three words is refused by name. SPIRAL is outside
+                # them ON PURPOSE - a spiralling radius is not what
+                # coil_solid sweeps, and a door may not promise what
+                # cannot bake.
+                if str(f.coil_type) not in ("Revolution And Height",
+                                            "Revolution And Pitch",
+                                            "Height And Pitch"):
+                    raise ValueError(
+                        f"the coil type is 'Revolution And Height', "
+                        f"'Revolution And Pitch' or 'Height And "
+                        f"Pitch', not {f.coil_type!r}")
                 from .coil import coil_solid
                 solid = coil_solid(ao, ad, float(f.diameter) / 2.0,
                                    f.pitch, f.turns, f.section, f.size,
@@ -4364,7 +4400,7 @@ class Document:
                          diameter=float(f.diameter),
                          pitch=float(f.pitch), turns=float(f.turns),
                          hand=f.hand, section=f.section,
-                         size=float(f.size))
+                         size=float(f.size), coil_type=f.coil_type)
             elif isinstance(f, BodyFilletFeature):
                 d.update(radius=float(f.radius), chamfer=bool(f.chamfer),
                          angle_deg=(None if f.angle_deg is None
@@ -4646,7 +4682,14 @@ class Document:
                     pitch=float(fd["pitch"]), turns=float(fd["turns"]),
                     hand=fd.get("hand", "right"),
                     section=fd.get("section", "circular"),
-                    size=float(fd["size"]), **base))
+                    # M201 R12: the .get pair - every coil file born
+                    # before today never speaks the Type word and
+                    # rests on the house pair (the two numbers it
+                    # carries ARE that mode's pair), zero rewrites.
+                    size=float(fd["size"]),
+                    coil_type=str(fd.get("coil_type",
+                                         "Revolution And Pitch")),
+                    **base))
             elif t == "LoftFeature":
                 doc.features.append(LoftFeature(
                     name=fd["name"], closed=bool(fd.get("closed", False)),

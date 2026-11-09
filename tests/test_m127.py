@@ -205,3 +205,182 @@ def test_change_parameters_reteams_the_coil(win, monkeypatch):
     c = win.doc.features[-1]
     assert (c.pitch, c.turns, c.size) == (3.0, 4.0, 2.0)
     assert win.doc.result.volume > before
+
+
+# ---- M201 R12: the Type two-of-three rung --------------------------------
+# [SLD-REF-COIL, verbatim] "Type: Select the type of coil to create. |
+# Revolution And Height: Creates a coil with a specific number of
+# revolutions and a specific height. | Revolution And Pitch: ... |
+# Height And Pitch: ... | Spiral: ... using the same settings as the
+# Revolution And Pitch coil type, without an Angle value." THE
+# TWO-OF-THREE CONTRACT: each mode names which TWO of {Revolutions,
+# Height, Pitch} the door is asked for; the third stands derived. Our
+# kernel keeps the classic pair (turns, pitch) with height = turns x
+# pitch, so the modes are SOLVER WORDS - arithmetic at the door, the
+# fold never learns a new number. SPIRAL IS NOT OFFERED (a winding
+# radius is not what coil_solid sweeps; a door may not promise what
+# cannot bake) and is refused by name. "default" counts ZERO on both
+# pages: every rest here is the house's, named as one.
+
+def _full(**over):
+    base = {"type": "Revolution And Pitch", "axis": "Z",
+            "base": "0,0,0", "diam": 10.0, "turns": 6.0,
+            "height": 0.0, "pitch": 1.5, "hand": "Right",
+            "section": "Circular", "size": 1.0}
+    base.update(over)
+    return base
+
+
+def test_the_door_offers_three_of_the_pages_four_words(win, monkeypatch):
+    """Type is row ONE (page order), spelled with the reference's
+    capital "And", resting on the mode whose pair the record already
+    keeps - "Revolution And Pitch" NAMED AS A HOUSE FACT (the pages
+    print no default). Spiral is the page's fourth word and the door
+    does not offer it: what cannot bake is not promised. The
+    Revolutions row is a COUNT and wears NO unit (the UNIT-SUFFIX LAW
+    R11's film caught: ask() defaults doubles to " mm"; a ratio or a
+    count may not). A legacy remembered dict (no type, no height -
+    every remembered coil born before today) still lands the classic
+    pair - zero rewrites, R5's coin."""
+    seen = []
+
+    def spy(parent, title, fields, remember_key=None):
+        seen.append({f["key"]: f for f in fields})
+        return _full(turns=4.0, pitch=3.0)
+    from tracer.ui import cmddialog
+    monkeypatch.setattr(cmddialog, "ask", spy)
+    win.action_coil()
+    rows = seen[0]
+    assert list(rows) == ["type", "axis", "base", "diam", "turns",
+                          "height", "pitch", "hand", "section", "size"]
+    assert rows["type"]["kind"] == "combo"
+    assert list(rows["type"]["choices"]) == ["Revolution And Height",
+                                             "Revolution And Pitch",
+                                             "Height And Pitch"]   # no Spiral
+    assert rows["type"]["default"] == "Revolution And Pitch"
+    assert "Revolutions" == rows["turns"]["label"]   # the page's word
+    assert rows["turns"]["suffix"] == ""             # a count, unit-free
+    c = win.doc.features[-1]
+    assert (c.turns, c.pitch, c.height) == (4.0, 3.0, 12.0)
+    assert c.coil_type == "Revolution And Pitch"
+
+    _dialog_answers(monkeypatch, {"axis": "Z", "base": "0,0,0",
+                                  "diam": 10.0, "pitch": 3.0,
+                                  "turns": 3.0, "hand": "Left",
+                                  "section": "Square", "size": 2.0})
+    win.action_coil()
+    legacy = win.doc.features[-1]
+    assert legacy.coil_type == "Revolution And Pitch"   # the rest word
+    assert legacy.height == 9.0
+
+
+def test_the_solver_divides_height_both_ways(win, monkeypatch):
+    """The page's contract MEASURED: "Revolution And Height" with 4
+    revolutions and 12 mm of height DIVIDES the pitch to 3 (and the
+    record's own height stands 12 - the pair multiplies back to the
+    typed height, exactly); "Height And Pitch" with 12 over 3 DIVIDES
+    the revolutions to 4. And under the classic word the height row
+    is INERT - typed 50 changes nothing: the record is its pair and
+    the pair rules (R2's stored-and-inert law, here not even stored:
+    height is a property, not a field)."""
+    _dialog_answers(monkeypatch, _full(type="Revolution And Height",
+                                       turns=4.0, height=12.0,
+                                       pitch=99.0))
+    win.action_coil()
+    c = win.doc.features[-1]
+    assert c.pitch == 3.0 and c.height == 12.0
+    assert c.name == "Coil 4x3" and "3 mm pitch = 12 mm tall" in \
+        win.status.currentMessage()
+
+    _dialog_answers(monkeypatch, _full(type="Height And Pitch",
+                                       height=12.0, pitch=3.0,
+                                       turns=99.0))
+    win.action_coil()
+    c = win.doc.features[-1]
+    assert c.turns == 4.0 and c.height == 12.0
+
+    _dialog_answers(monkeypatch, _full(height=50.0, turns=6.0,
+                                       pitch=1.5))
+    win.action_coil()
+    c = win.doc.features[-1]
+    assert c.height == 9.0                     # the pair, not the row
+
+
+def test_spiral_and_the_zero_divide_are_refused_before_the_capture(
+        win, monkeypatch):
+    """Three refusals, NOTHING captured (no feature, no undo step):
+    the page's fourth word "Spiral" - the door cannot bake it, so a
+    scripted Spiral is refused BY NAME with the three it does offer;
+    a word the page never prints ("Tapered") the same sentence; and
+    "Revolution And Height" with a ZERO height would divide to a
+    pitch that cannot stand - refused before the capture, not after
+    the badge. The kernel's OWN guard closes the last mouth: a
+    hand-written file's fourth word raises through the real fold."""
+    n0, u0 = len(win.doc.features), len(win._undo)
+    for word in ("Spiral", "Tapered"):
+        _dialog_answers(monkeypatch, _full(type=word))
+        win.action_coil()
+        msg = win.status.currentMessage()
+        assert msg == ("Coil refused: the type is 'Revolution And "
+                       "Height', 'Revolution And Pitch' or "
+                       "'Height And Pitch', not " + repr(word))
+    assert len(win.doc.features) == n0 and len(win._undo) == u0
+
+    _dialog_answers(monkeypatch, _full(type="Revolution And Height",
+                                       turns=4.0, height=0.0))
+    win.action_coil()
+    assert "positive revolutions and height" in \
+        win.status.currentMessage()
+    assert len(win.doc.features) == n0
+
+    d = Document("g")
+    d.add(CoilFeature(name="C", coil_type="Spiral"))
+    with pytest.raises(ValueError,
+                       match="the coil type is 'Revolution And "
+                             "Height', 'Revolution And Pitch' or "
+                             "'Height And Pitch', not 'Spiral'"):
+        d.recompute()
+
+
+def test_the_word_rides_the_file_and_old_files_keep_theirs():
+    """The Type word is a REAL FILE WORD (written beside its numbers,
+    round-trips to the last character) - and a coil file born before
+    today, which never speaks it, replays on the HOUSE rest with its
+    geometry untouched (the .get pair, R5's coin: zero rewrites; the
+    numbers such a file carries ARE the rest mode's pair)."""
+    import json
+    d = Document("f")
+    d.add_coil("spring", diameter=10.0, pitch=3.0, turns=4.0,
+               coil_type="Height And Pitch")
+    v = d.recompute().volume
+    raw = json.loads(json.dumps(d.to_dict()))
+    fd = [x for x in raw["features"] if x["type"] == "CoilFeature"][0]
+    assert fd["coil_type"] == "Height And Pitch"
+    back = Document.from_dict(raw)
+    assert back.features[0].coil_type == "Height And Pitch"
+    assert back.recompute().volume == v        # the same float
+    del fd["coil_type"]
+    old = Document.from_dict(raw)
+    assert old.features[0].coil_type == "Revolution And Pitch"
+    assert old.recompute().volume == v         # inert: same helix
+
+
+def test_the_rail_speaks_the_helix_and_the_word_only_when_moved(win):
+    """The coil record finally speaks its OWN arithmetic on the rail
+    - revolutions x pitch = tall, the two-of-three truth in one line
+    (the generic op header is HONEST here: a coil's op really rides
+    the fold, unlike the draft's unused word R10's fix named). The
+    TYPE line joins only OFF the house rest, and a word the solver
+    moved stays named: what the door divided for you is the one word
+    the record owes you."""
+    c = win.doc.add_coil("spring", diameter=10.0, pitch=3.0, turns=4.0)
+    win.recompute()
+    win.rail.props.show_feature(c)
+    t = win.rail.props._body.text()
+    assert "helix: 4 x 3 mm = 12 mm tall" in t
+    assert "type:" not in t                     # the rest stays unsaid
+    c.coil_type = "Height And Pitch"
+    win.recompute()
+    win.rail.props.show_feature(c)
+    t = win.rail.props._body.text()
+    assert "type: Height And Pitch" in t
