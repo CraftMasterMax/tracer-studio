@@ -1424,10 +1424,40 @@ class CombineFeature(Feature):
     """Combine (M64): Join / Cut / Intersect the whole body with a
     placed primitive tool — Fusion's Combine, tool built on the spot.
     `center` is the tool's bounding-box centre; the op picks the
-    boolean.  Parametric: Change Parameters speaks for it too."""
+    boolean.  Parametric: Change Parameters speaks for it too.
+
+    M201 R14 [SLD-REF-COMBINE, verbatim]: "Combine joins, cuts, or
+    intersects the selected bodies." - the page's TOOLS are BODIES:
+    "Target Body: Enables the selection of the body being acted
+    upon." (SINGULAR - the feature's own stream is our target) and
+    "Tool Bodies: Enables the selection of the bodies that change
+    the model." (the PLURAL the page licenses - named bodies, the
+    check-list bridge). `tool_bodies` empty is the legacy primitive
+    voice (the map calls it a valid subset). "Keep Tools: Retains
+    the tool bodies after the combine results." - ON is that
+    sentence; the page is SILENT on the OFF fate (machine-grepped:
+    no "consumed/removed/deleted" sentence exists), so the drop is
+    OURS, named as ours at every mouth - never dressed as vendor
+    wording. "default" counts 0 on the reference and how-to pages:
+    the primitive rest and keep_tools=True are HOUSE FACTS."""
     tool: str = "box"
     dims: dict = field(default_factory=dict)
     center: tuple = (0.0, 0.0, 0.0)
+    tool_bodies: tuple = ()          # R14: named Tool Bodies ("")
+    keep_tools: bool = True          # house rest (page prints none)
+
+    def boolean(self, src: "Solid", tool: "Solid") -> "Solid":
+        """The page's three Operations, one arithmetic mouth (R14:
+        the primitive tool and the body tools ride the SAME
+        op - one record, one boolean)."""
+        if self.op == "subtract":
+            return src.subtract(tool)
+        if self.op == "intersect":
+            return src.intersect(tool)
+        return src.union(tool)
+
+    def apply(self, src: "Solid") -> "Solid":
+        return self.boolean(src, self.build_tool())
 
     def build_tool(self) -> Solid:
         d = self.dims
@@ -4236,10 +4266,58 @@ class Document:
                 buckets[key] = solid
                 by_uid[f.uid] = solid
                 continue
+            elif isinstance(f, CombineFeature):
+                # M201 R14 [SLD-REF-COMBINE, verbatim]: "Combine
+                # joins, cuts, or intersects the selected bodies."
+                # The TARGET is the stream the feature rides ("the
+                # body being acted upon" - SINGULAR on the page);
+                # f.tool_bodies are its "bodies that change the
+                # model" (the licensed PLURAL), read as their users
+                # see them - placement included (the interference
+                # coin). No named tools: the legacy primitive voice
+                # (the map's valid subset). Keep Tools ON is the
+                # page's own sentence ("Retains the tool bodies
+                # after the combine results"); OFF the tools'
+                # streams are DROPPED - a HOUSE fate the page never
+                # prints (its silence is machine-grepped), so it is
+                # named as ours wherever it speaks.
+                if acc is None:
+                    raise ValueError(
+                        f"{f.name!r} has no body to combine yet")
+                if f.tool_bodies:
+                    if str(f.op) not in ("union", "subtract",
+                                         "intersect"):
+                        raise ValueError(
+                            f"{f.name!r}: the operation is 'Join', "
+                            "'Cut' or 'Intersect', not {f.op!r}")
+                    sides = []
+                    for want in f.tool_bodies:
+                        if want == key:
+                            raise ValueError(
+                                f"{f.name!r}: the Target Body is "
+                                "the body being acted upon - it "
+                                "cannot also change the model")
+                        s = buckets.get(want)
+                        if s is None:
+                            raise ValueError(
+                                f"{f.name!r}: tool body {want!r} "
+                                "has nothing to combine with yet")
+                        b = next((x for x in self.bodies
+                                  if x["name"] == want), None)
+                        sides.append(self._apply_placement(b, s))
+                    tool = Solid.batch_union(sides)
+                    buckets[key] = f.boolean(acc, tool)
+                    if not f.keep_tools:
+                        for want in f.tool_bodies:
+                            if buckets.get(want) is not None:
+                                buckets[want] = None
+                else:
+                    buckets[key] = f.apply(acc)
+                by_uid[f.uid] = buckets[key]
+                continue          # replaces the body; not a boolean operand
             elif isinstance(f, (BodyFilletFeature, DraftFeature,
                                 OffsetFaceFeature, ShellFeature,
-                                SplitFeature, MoveFeature, RotateFeature,
-                                CombineFeature)):
+                                SplitFeature, MoveFeature, RotateFeature)):
                 if acc is None:
                     verb = ("fillet" if isinstance(f, BodyFilletFeature)
                             else "draft" if isinstance(f, DraftFeature)
@@ -4248,8 +4326,7 @@ class Document:
                             else "shell" if isinstance(f, ShellFeature)
                             else "split" if isinstance(f, SplitFeature)
                             else "move" if isinstance(f, MoveFeature)
-                            else "rotate" if isinstance(f, RotateFeature)
-                            else "combine")
+                            else "rotate")
                     raise ValueError(f"{f.name!r} has no body to {verb} yet")
                 buckets[key] = f.apply(acc)
                 by_uid[f.uid] = buckets[key]
@@ -4574,7 +4651,9 @@ class Document:
                          copy=bool(f.copy))
             elif isinstance(f, CombineFeature):
                 d.update(tool=str(f.tool), dims=dict(f.dims),
-                         center=list(map(float, f.center)))
+                         center=list(map(float, f.center)),
+                         tool_bodies=[str(t) for t in f.tool_bodies],
+                         keep_tools=bool(f.keep_tools))
             elif isinstance(f, HoleFeature):
                 d.update(center=list(map(float, f.center)),
                          normal=list(map(float, f.normal)),
@@ -4862,6 +4941,9 @@ class Document:
                     name=fd["name"], tool=str(fd.get("tool", "box")),
                     dims=dict(fd.get("dims", {})),
                     center=tuple(fd.get("center", (0.0, 0.0, 0.0))),
+                    tool_bodies=tuple(str(x) for x in
+                                      fd.get("tool_bodies", ())),
+                    keep_tools=bool(fd.get("keep_tools", True)),
                     **base))
             elif t == "HoleFeature":
                 doc.features.append(HoleFeature(

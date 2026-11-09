@@ -1028,7 +1028,9 @@ class PropertiesPanel(QWidget):
                          f"{feature.center[2]:g})")
             if feature.copy:
                 lines.append("copy: twin joined")
-        elif isinstance(feature, CombineFeature):
+        elif isinstance(feature, CombineFeature) and not feature.tool_bodies:
+            # legacy M64 primitive voice (R14: a named-Tool-Bodies
+            # record speaks its own voice in the branch below)
             d = feature.dims
             shape = {"union": "join", "subtract": "cut",
                      "intersect": "intersect"}.get(feature.op,
@@ -1057,6 +1059,23 @@ class PropertiesPanel(QWidget):
                          f"({feature.center[0]:g}, "
                          f"{feature.center[1]:g}, "
                          f"{feature.center[2]:g}) mm")
+        elif isinstance(feature, CombineFeature):
+            # M201 R14 [SLD-REF-COMBINE, verbatim]: "Combine joins,
+            # cuts, or intersects the selected bodies." - the BODY
+            # voice: the page's Operation word over the named Tool
+            # Bodies ("the bodies that change the model").  Keep
+            # Tools ON is the page's own sentence ("Retains the
+            # tool bodies") and needs no line of its own; OFF is
+            # OUR fate (the page prints none - machine-grepped) and
+            # says whose word it is.
+            opw = {"union": "Join", "subtract": "Cut",
+                   "intersect": "Intersect"}.get(feature.op,
+                                                 feature.op)
+            lines.append(f"combine \u2295 {opw} with "
+                         + " + ".join(feature.tool_bodies))
+            if not feature.keep_tools:
+                lines.append("tools not retained (ours: the page "
+                             "prints no fate)")
         placement = getattr(feature, "placement", None)
         if placement is not None:                    # patterns have none
             px, py, pz = placement

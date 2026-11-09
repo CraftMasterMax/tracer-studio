@@ -1904,30 +1904,52 @@ class MainWindow(QMainWindow):
                 ang=True)
             check("copy", "copy (join the twin)", feature.copy)
         elif isinstance(feature, CombineFeature):
-            combo("tool", "tool shape", ("Box", "Cylinder", "Cone",
-                                         "Torus", "Sphere"),
-                  {"box": "Box", "cylinder": "Cylinder", "cone": "Cone",
-                   "torus": "Torus",
-                   "sphere": "Sphere"}.get(feature.tool, "Box"))
-            combo("op", "operation", ("Join", "Cut", "Intersect"),
-                  {"union": "Join", "subtract": "Cut",
-                   "intersect": "Intersect"}.get(feature.op, "Join"))
-            dbl("dx", "length X", feature.dims.get("dx", 20.0))
-            dbl("dy", "length Y", feature.dims.get("dy", 20.0))
-            dbl("dz", "length Z", feature.dims.get("dz", 20.0))
-            dbl("radius", "radius", feature.dims.get("radius", 8.0),
-                dec=3)
-            dbl("r1", "bottom radius",
-                feature.dims.get("radius_bottom", 12.0), dec=3)
-            dbl("r2", "top radius", feature.dims.get("radius_top", 4.0),
-                dec=3, mn=0.0)
-            dbl("major", "ring radius", feature.dims.get("major", 15.0),
-                dec=3)
-            dbl("minor", "tube radius", feature.dims.get("minor", 4.0),
-                dec=3, mn=0.01)
-            dbl("height", "height", feature.dims.get("height", 30.0))
-            for i, k in enumerate("xyz"):
-                dbl(f"c{i}", f"centre {k}", feature.center[i], mn=None)
+            if feature.tool_bodies:
+                # M201 R14 [SLD-REF-COMBINE]: the body-tool record
+                # speaks its OWN voice in the lever - the page's
+                # Operation word, the named Tool Bodies check-list
+                # ("the bodies that change the model") and the Keep
+                # Tools flag ("Retains the tool bodies after the
+                # combine results").  The primitive rows belong to
+                # the legacy voice and never open on this record.
+                fld.append(dict(key="tools", kind="checks",
+                                label="tool bodies",
+                                choices=[b["name"] for b in
+                                         self.doc.body_list()],
+                                checked=list(feature.tool_bodies)))
+                combo("op", "operation", ("Join", "Cut", "Intersect"),
+                      {"union": "Join", "subtract": "Cut",
+                       "intersect": "Intersect"}.get(feature.op,
+                                                     "Join"))
+                check("keep", "keep tools", feature.keep_tools)
+            else:
+                combo("tool", "tool shape", ("Box", "Cylinder", "Cone",
+                                             "Torus", "Sphere"),
+                      {"box": "Box", "cylinder": "Cylinder",
+                       "cone": "Cone", "torus": "Torus",
+                       "sphere": "Sphere"}.get(feature.tool, "Box"))
+                combo("op", "operation", ("Join", "Cut", "Intersect"),
+                      {"union": "Join", "subtract": "Cut",
+                       "intersect": "Intersect"}.get(feature.op,
+                                                     "Join"))
+                dbl("dx", "length X", feature.dims.get("dx", 20.0))
+                dbl("dy", "length Y", feature.dims.get("dy", 20.0))
+                dbl("dz", "length Z", feature.dims.get("dz", 20.0))
+                dbl("radius", "radius",
+                    feature.dims.get("radius", 8.0), dec=3)
+                dbl("r1", "bottom radius",
+                    feature.dims.get("radius_bottom", 12.0), dec=3)
+                dbl("r2", "top radius",
+                    feature.dims.get("radius_top", 4.0), dec=3, mn=0.0)
+                dbl("major", "ring radius",
+                    feature.dims.get("major", 15.0), dec=3)
+                dbl("minor", "tube radius",
+                    feature.dims.get("minor", 4.0), dec=3, mn=0.01)
+                dbl("height", "height",
+                    feature.dims.get("height", 30.0))
+                for i, k in enumerate("xyz"):
+                    dbl(f"c{i}", f"centre {k}", feature.center[i],
+                        mn=None)
         return fld
 
     def _apply_feature_params(self, feature, v):
@@ -2147,27 +2169,37 @@ class MainWindow(QMainWindow):
             feature.angle_deg = float(v["angle"])
             feature.copy = bool(v["copy"])
         elif isinstance(feature, CombineFeature):
-            feature.tool = {"Box": "box", "Cylinder": "cylinder",
-                            "Cone": "cone", "Torus": "torus",
-                            "Sphere": "sphere"}[str(v["tool"])]
             feature.op = {"Join": "union", "Cut": "subtract",
                           "Intersect": "intersect"}[str(v["op"])]
-            if feature.tool == "box":
-                feature.dims = {"dx": mm("dx"), "dy": mm("dy"),
-                                "dz": mm("dz")}
-            elif feature.tool == "cylinder":
-                feature.dims = {"radius": mm("radius"),
-                                "height": mm("height")}
-            elif feature.tool == "cone":
-                feature.dims = {"radius_bottom": mm("r1"),
-                                "radius_top": mm("r2"),
-                                "height": mm("height")}
-            elif feature.tool == "torus":
-                feature.dims = {"major": mm("major"),
-                                "minor": mm("minor")}
-            else:
-                feature.dims = {"radius": mm("radius")}
-            feature.center = tuple(mm(f"c{i}") for i in range(3))
+            if feature.tool_bodies:
+                # M201 R14: the body voice answers with the Tool
+                # Bodies check-list and the Keep Tools flag; the
+                # primitive rows never opened, so never read them.
+                if "tools" in v:
+                    feature.tool_bodies = tuple(
+                        str(t) for t in (v.get("tools") or []))
+                if "keep" in v:
+                    feature.keep_tools = bool(v["keep"])
+            elif "tool" in v:
+                feature.tool = {"Box": "box", "Cylinder": "cylinder",
+                                "Cone": "cone", "Torus": "torus",
+                                "Sphere": "sphere"}[str(v["tool"])]
+                if feature.tool == "box":
+                    feature.dims = {"dx": mm("dx"), "dy": mm("dy"),
+                                    "dz": mm("dz")}
+                elif feature.tool == "cylinder":
+                    feature.dims = {"radius": mm("radius"),
+                                    "height": mm("height")}
+                elif feature.tool == "cone":
+                    feature.dims = {"radius_bottom": mm("r1"),
+                                    "radius_top": mm("r2"),
+                                    "height": mm("height")}
+                elif feature.tool == "torus":
+                    feature.dims = {"major": mm("major"),
+                                    "minor": mm("minor")}
+                else:
+                    feature.dims = {"radius": mm("radius")}
+                feature.center = tuple(mm(f"c{i}") for i in range(3))
         self.doc.dirty = True
 
     # ---- Drawings (M93) --------------------------------------------------------
@@ -6646,9 +6678,25 @@ class MainWindow(QMainWindow):
             f"{'s' if len(regs) > 1 else ''}", 5000)
 
     def action_combine(self):
-        """Fusion's Combine (M64): Join / Cut / Intersect the body with
-        a placed primitive tool — bosses, gussets and trims without a
-        single sketch line."""
+        """Fusion's Combine, grown into the page's OWN door (M201
+        R14 [SLD-REF-COMBINE, verbatim]): "Combine joins, cuts, or
+        intersects the selected bodies." The page prints a SINGULAR
+        Target Body - "the body being acted upon" - so the target
+        is ONE combo, never a check-list; the Tool Bodies row is
+        the licensed PLURAL ("the bodies that change the model")
+        and rides the named-body check-list (R13's bridge). The
+        Operation enum is the page's closed three words (Join | Cut
+        | Intersect - no Separate, no Merge on the solid tool).
+        "Keep Tools: Retains the tool bodies after the combine
+        results." - ON is that sentence; the page is machine-
+        grepped SILENT on what OFF does, so the drop is OURS and
+        says so (never "consumed": that word is the vendor's
+        silence). No tool bodies ticked, the door keeps its legacy
+        M64 voice: a placed primitive tool (the map calls it a
+        valid subset) with the same three Operations. "default"
+        counts ZERO on both pages: keep-tools ON and the primitive
+        rests are HOUSE FACTS, and every refusal stands BEFORE the
+        capture (the window owns the only undo stack)."""
         if self.doc is None or self.doc.result is None:
             # M189 R3 [LAW-61(a)]: precondition -> tier (a) voice.
             self.status.showMessage("Nothing to combine into yet — "
@@ -6661,11 +6709,23 @@ class MainWindow(QMainWindow):
         u = self.doc.units if self.doc.units in units.LABEL else "mm"
         f = units.PER_MM[u]
         lab = units.LABEL[u]
+        names = [b["name"] for b in self.doc.body_list()]
 
         def num(key, label, mm, dec=2):
             return dict(key=key, label=f"{label} ({lab})", kind="double",
                         default=round(mm / f, 6), decimals=dec)
         v = cmddialog.ask(self, "Combine", [
+            dict(key="target", label="Target Body", kind="combo",
+                 choices=names,
+                 default=self.doc.active_body or names[0],
+                 group="Bodies"),
+            dict(key="tools", label="Tool Bodies", kind="checks",
+                 choices=names, group="Bodies"),
+            dict(key="op", label="Operation", kind="combo",
+                 choices=["Join", "Cut", "Intersect"], default="Join",
+                 group="Bodies"),
+            dict(key="keep", label="Keep Tools", kind="check",
+                 default=True, group="Bodies"),
             dict(key="tool", label="Tool shape", kind="combo",
                  choices=["Box", "Cylinder", "Cone", "Torus", "Sphere"],
                  default="Box", group=f"Tool ({lab})"),
@@ -6677,14 +6737,59 @@ class MainWindow(QMainWindow):
             num("major", "ring radius", 15.0, 3),
             num("minor", "tube radius", 4.0, 3),
             num("height", "height", 30.0),
-            dict(key="op", label="Operation", kind="combo",
-                 choices=["Join", "Cut", "Intersect"], default="Join",
-                 group="Boolean"),
             num("cx", "centre X", float(c[0])),
             num("cy", "centre Y", float(c[1])),
             num("cz", "centre Z", float(c[2])),
         ], remember_key="combine")
         if v is None:
+            return
+        opw = str(v["op"])
+        if opw not in ("Join", "Cut", "Intersect"):
+            self.status.showMessage(
+                f"Combine refused: the operation is 'Join', 'Cut' "
+                f"or 'Intersect', not {opw!r}", 6000)
+            return
+        op = {"Join": "union", "Cut": "subtract",
+              "Intersect": "intersect"}[opw]
+        target = str(v.get("target") or (self.doc.active_body
+                                         or names[0]))
+        tools = [str(t) for t in (v.get("tools") or [])]
+        keep = bool(v.get("keep", True))
+        if target not in names:
+            self.status.showMessage(
+                f"Combine refused: the Target Body is 'the body being "
+                f"acted upon' and {target!r} is not a body", 6000)
+            return
+        for t in tools:
+            if t == target:
+                self.status.showMessage(
+                    f"Combine refused: {t!r} is the body being acted "
+                    "upon - it cannot also change the model", 6000)
+                return
+            if t not in names:
+                self.status.showMessage(
+                    f"Combine refused: tool body {t!r} is not a "
+                    "body", 6000)
+                return
+        if tools:
+            self._capture()
+            feat = CombineFeature(name=f"Combine {target}", op=op,
+                                  tool_bodies=tuple(tools),
+                                  keep_tools=keep, body=target)
+            self.doc.add(feat)
+            self.recompute()
+            ff = getattr(self.doc, "failed_feature", None)
+            if ff is not None and ff[1] == feat.name:
+                return                      # M118 badge + modal
+            self.viewport.refresh(fit=True)
+            sol = self.doc.body_solids().get(target)
+            vol_mm = sol.volume if sol is not None else 0.0
+            self.status.showMessage(
+                f"Combined ({opw}) {target} with "
+                + " + ".join(tools)
+                + ("" if keep else " — the tools are not retained "
+                                   "(ours: the page prints no fate)")
+                + f" — {vol_mm:,.0f} mm³", 6000)
             return
         tool = {"Box": "box", "Cylinder": "cylinder", "Cone": "cone",
                 "Torus": "torus",
@@ -6702,11 +6807,10 @@ class MainWindow(QMainWindow):
                 if tool == "torus"
                 else {"dx": float(v["dx"]) * f, "dy": float(v["dy"]) * f,
                       "dz": float(v["dz"]) * f})
-        op = {"Join": "union", "Cut": "subtract",
-              "Intersect": "intersect"}[str(v["op"])]
         self._capture()
         self.doc.add(CombineFeature(
             name=f"Combine {tool}", tool=tool, dims=dims, op=op,
+            body=target,
             center=tuple(float(v[k]) * f for k in ("cx", "cy", "cz"))))
         self.recompute()
         self.status.showMessage(
