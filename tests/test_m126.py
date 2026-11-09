@@ -319,6 +319,16 @@ def test_the_scale_door_speaks_the_pages_type_words(win, monkeypatch):
     assert "Scale Factor" in rows["k"]["label"]
     assert "X Distance" in rows["kx"]["label"]            # the page's name
     assert "scale value" in rows["kx"]["label"]           # and our truth
+    # M201 R11 UNIT-SUFFIX LAW (film-caught): ask() defaults doubles to
+    # " mm"; a scale VALUE wears no unit - the door rows clear it, and
+    # the lever's plain rows clear it at their single source.
+    assert rows["k"]["suffix"] == "" and rows["kx"]["suffix"] == ""
+    assert rows["ky"]["suffix"] == "" and rows["kz"]["suffix"] == ""
+    lever = {f["key"]: f for f in win._feature_params(
+        ScaleFeature(name="S"))}
+    assert lever["k0"]["suffix"] == ""          # the lever heals at the
+    assert lever["k1"]["suffix"] == ""          # SAME source (plain=True)
+    assert lever["k2"]["suffix"] == ""
     sc = win.doc.features[-1]
     assert isinstance(sc, ScaleFeature)
     assert sc.factors == pytest.approx((2.0, 1.0, 1.0))   # legacy word,
@@ -422,3 +432,28 @@ def test_the_rail_speaks_the_scale_numbers(win):
     t = win.rail.props._body.text()
     assert "scale: 1 x 2 x 3 per axis" in t
     assert "anchor: (5, 0, 0)" in t
+
+
+def test_the_lever_anchors_are_distances_and_guarded(win):
+    """M201 R11 (film-caught law, second edge): the anchor rows are
+    mm DISTANCES - they ride the unit-spoken write (in millimetre
+    documents the number lands as typed) - while the factor rows stay
+    unit-FREE at the dialog's own mouth (plain rows clear the suffix
+    ask() would otherwise default). And the anchor write is GUARDED:
+    a script that never speaks the b keys leaves the record's anchor
+    exactly where it stood (R4's coin)."""
+    win.doc.add(PrimitiveFeature(name="lug", kind="box",
+                                 dims={"dx": 2.0, "dy": 2.0, "dz": 2.0}))
+    win.recompute()
+    sc = win.doc.add_scale("grown", win.doc.features[0],
+                           base=(1.0, 0.0, 0.0), factors=2.0)
+    rows = {f["key"]: f for f in win._feature_params(sc)}
+    assert rows["b0"]["default"] == 1.0        # echoes the record
+    assert "mm" in rows["b0"]["label"]         # a DISTANCE wears units
+    assert rows["k0"].get("suffix") == ""      # a RATIO wears none
+    win._apply_feature_params(sc, {"k0": 2.0, "k1": 2.0, "k2": 2.0,
+                                   "b0": 5.0, "b1": 1.0, "b2": 0.0})
+    assert sc.base == pytest.approx((5.0, 1.0, 0.0))
+    win._apply_feature_params(sc, {"k0": 3.0, "k1": 3.0, "k2": 3.0})
+    assert sc.base == pytest.approx((5.0, 1.0, 0.0))   # guarded: kept
+    assert sc.factors == pytest.approx((3.0, 3.0, 3.0))

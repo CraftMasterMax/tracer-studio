@@ -1525,8 +1525,16 @@ class MainWindow(QMainWindow):
 
         def dbl(key, label, mm, dec=2, mn=0.0, ang=False, plain=False):
             if plain:                 # dimensionless factor: no unit story
+                # M201 R11 [UNIT-SUFFIX LAW, film-caught]: ask() DEFAULTS
+                # every double to a " mm" suffix, so clearing it must be
+                # EXPLICIT or a ratio wears millimetres - the R1b lesson
+                # ("no millimetre suffix on an angle, anywhere") general-
+                # ised: NO unit suffix on a dimensionless row, anywhere.
+                # One fix here heals every plain row in the house (the
+                # scale factors, the geometric pattern's scale-per-step,
+                # the coil's turns) at its single source.
                 spec = dict(key=key, kind="double", decimals=dec,
-                            label=label, default=float(mm))
+                            label=label, default=float(mm), suffix="")
                 if mn is not None:
                     spec["min"] = mn
                 fld.append(spec)
@@ -1820,9 +1828,13 @@ class MainWindow(QMainWindow):
             # k2 shape this lever has always had). They echo the
             # record's own anchor (the lever never contradicts the
             # rail) and the writes below are GUARDED (R4's coin).
+            # UNIT-SUFFIX LAW, other edge: an anchor IS a millimetre
+            # DISTANCE, so it wears the house unit like every length
+            # row (plain=True would strip an honest "mm" - the law
+            # clears units only from DIMENSIONLESS rows).
             for i, axl in enumerate("XYZ"):
                 dbl(f"b{i}", f"anchor {axl}", feature.base[i], dec=3,
-                    mn=None, plain=True)
+                    mn=None)
         elif isinstance(feature, CoilFeature):
             dbl("diam", "centre diameter", feature.diameter)
             dbl("pitch", "pitch", feature.pitch, dec=3)
@@ -2049,7 +2061,10 @@ class MainWindow(QMainWindow):
         elif isinstance(feature, ScaleFeature):
             feature.factors = tuple(float(v[f"k{i}"]) for i in range(3))
             if "b0" in v:               # M201 R11: guarded anchor write
-                feature.base = tuple(float(v[f"b{i}"]) for i in range(3))
+                # anchors are DISTANCES - they ride the unit-spoken
+                # mm() path (the factors above stay raw: a ratio has
+                # no unit to convert).
+                feature.base = tuple(mm(f"b{i}") for i in range(3))
         elif isinstance(feature, CoilFeature):
             feature.diameter = mm("diam")
             feature.pitch = mm("pitch")
@@ -8520,17 +8535,23 @@ class MainWindow(QMainWindow):
                  default="0,0,0", group="Frame"),
             dict(key="mode", label="Scale Type", kind="combo",
                  choices=("Uniform", "Non Uniform"), group="Size"),
+            # THE UNIT-SUFFIX LAW (R11, film-caught): ask() defaults
+            # every double to " mm"; a scale VALUE is dimensionless -
+            # the page prints no units - so the suffix is cleared BY
+            # HAND here (the lever's plain=True clears it at its own
+            # source). A ratio may not wear millimetres any more than
+            # an angle may (R1b's lesson, generalised).
             dict(key="k", label="Scale Factor (negative mirrors too)",
-                 kind="double",
+                 kind="double", suffix="",
                  default=1.5, min=-1000.0, max=1000.0, group="Size"),
             dict(key="kx", label="X Distance (a scale value)",
-                 kind="double", default=1.0,
+                 kind="double", suffix="", default=1.0,
                  min=-1000.0, max=1000.0, group="Size"),
             dict(key="ky", label="Y Distance (a scale value)",
-                 kind="double", default=1.0,
+                 kind="double", suffix="", default=1.0,
                  min=-1000.0, max=1000.0, group="Size"),
             dict(key="kz", label="Z Distance (a scale value)",
-                 kind="double", default=1.0,
+                 kind="double", suffix="", default=1.0,
                  min=-1000.0, max=1000.0, group="Size"),
         ], remember_key="scale")
         if v is None:
