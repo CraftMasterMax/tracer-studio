@@ -829,6 +829,27 @@ class PropertiesPanel(QWidget):
             if feature.cs_radius > feature.radius:
                 lines.append(f"countersink: Ø{2 * feature.cs_radius:g} at "
                              f"{feature.cs_angle:g}°")
+        elif isinstance(feature, ScaleFeature):
+            # M201 R11 [GUID-D3F6F79B...]: the scale record speaks its
+            # OWN numbers on the rail. The header stays the generic
+            # "operation: {op}" and that op word is the record's OWN
+            # fold word here - a scale INHERITS its source's op (the
+            # kernel docstring, m126's law), so unlike the draft's
+            # unused field (R10's fixed lie) nothing here misprints.
+            # A UNIFORM record says one number; a per-axis record
+            # says all three (the page's "Scale along the X, Y, and Z
+            # axes separately"). THE ANCHOR LINE joins only when the
+            # anchor MOVED - (0,0,0) is what every resting record
+            # holds and the rail keeps silent at rests (absence is
+            # honesty, R4's law; the page names origin NO default -
+            # this rest is ours, and stays unsaid).
+            k = tuple(float(x) for x in feature.factors)
+            lines.append(f"scale: {k[0]:g}"
+                         + ("" if k == (k[0], k[0], k[0])
+                            else f" x {k[1]:g} x {k[2]:g} per axis"))
+            if any(abs(float(b)) > 1e-12 for b in feature.base):
+                lines.append("anchor: (" + ", ".join(
+                    f"{float(b):g}" for b in feature.base) + ")")
         elif isinstance(feature, ThreadFeature):
             minor = 2 * (feature.radius - feature.pitch / 2)
             lines.append("external thread — pitch "

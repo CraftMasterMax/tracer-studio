@@ -4623,10 +4623,21 @@ class Document:
                     n2=int(fd["n2"]), t2=float(fd["t2"]),
                     r2=float(fd["r2"]), k2=float(fd["k2"]), **base))
             elif t == "ScaleFeature":
+                # M201 R11: the .get pair the file law demands - a
+                # hand-written file that never speaks source_uid gets
+                # the class default ("" - and the fold ALREADY skips
+                # a scale whose source is unknown, the existing
+                # honest clause at its eval site), and one that never
+                # speaks factors gets the IDENTITY (1,1,1) - the
+                # volume-preserving nothing, measured to the last
+                # float bit. m126-era files always rode these keys;
+                # zero rewrites, R5's coin.
                 doc.features.append(ScaleFeature(
-                    name=fd["name"], source_uid=fd["source_uid"],
+                    name=fd["name"],
+                    source_uid=str(fd.get("source_uid", "")),
                     base=tuple(fd.get("base", (0.0, 0.0, 0.0))),
-                    factors=tuple(fd["factors"]), **base))
+                    factors=tuple(fd.get("factors", (1.0, 1.0, 1.0))),
+                    **base))
             elif t == "CoilFeature":
                 doc.features.append(CoilFeature(
                     name=fd["name"], axis=fd.get("axis", "Z"),

@@ -276,3 +276,149 @@ def test_change_parameters_scale_factors_are_unit_free(win, monkeypatch):
     assert sc.factors == pytest.approx((2.0, 1.0, 1.0))  # not unit-scaled
     win.recompute()
     assert win.doc.result.volume == pytest.approx(16.0, abs=1e-6)
+
+
+# ---- M201 R11: the Scale page's own words --------------------------------
+# [GUID-D3F6F79B-1498-48B3-B98C-7D57B620005A, verbatim] "Scale Type:
+# Uniform: Scales the selected bodies uniformly on all axes. For
+# example, enter -0.5 to halve the size or 2 to double it. | Non
+# Uniform: Scale along the X, Y, and Z axes separately." + "Scale
+# Factor: Specify the proportional value to scale the bodies." + the
+# per-axis rows the page NAMES "X Distance" ("Specifies the value to
+# scale in the X direction." - a value, no units printed). "default"
+# counts ZERO on the page: every rest is the house's (and the house
+# rests on the identity). The anchor is the page's "pick a fixed
+# anchor point for the scaling" spoken plainly; origin is NOT
+# documented as the vendor's default - that rest is ours too.
+
+def test_the_scale_door_speaks_the_pages_type_words(win, monkeypatch):
+    """The door's rows wear the page's names: "Scale Type" resting
+    over the page's own spellings - "Uniform" and "Non Uniform" (NO
+    hyphen, the page's own) - "Scale Factor" and the three
+    "X Distance"-class rows our label notes as scale VALUES (the
+    page's odd name kept, the truth kept too). A LEGACY remembered
+    dict (the m126-era "Per axis" word every saved session carries)
+    still resolves PER AXIS - zero rewrites, R5's coin - and the
+    new word walks the same path."""
+    seen = []
+
+    def spy(parent, title, fields, remember_key=None):
+        seen.append({f["key"]: f for f in fields})
+        return dict(src="lug", base="0,0,0", mode="Per axis", k=1.0,
+                    kx=2.0, ky=1.0, kz=1.0)
+    from tracer.ui import cmddialog
+    monkeypatch.setattr(cmddialog, "ask", spy)
+    win.doc.add(PrimitiveFeature(name="lug", kind="box",
+                                 dims={"dx": 2.0, "dy": 2.0, "dz": 2.0}))
+    win.recompute()
+    win.action_scale()
+    rows = seen[0]
+    assert list(rows) == ["src", "base", "mode", "k", "kx", "ky", "kz"]
+    assert rows["mode"]["label"] == "Scale Type"          # the page's row
+    assert tuple(rows["mode"]["choices"]) == ("Uniform", "Non Uniform")
+    assert "Scale Factor" in rows["k"]["label"]
+    assert "X Distance" in rows["kx"]["label"]            # the page's name
+    assert "scale value" in rows["kx"]["label"]           # and our truth
+    sc = win.doc.features[-1]
+    assert isinstance(sc, ScaleFeature)
+    assert sc.factors == pytest.approx((2.0, 1.0, 1.0))   # legacy word,
+    win.recompute()                                        # same behavior
+    assert win.doc.result.volume == pytest.approx(16.0, abs=1e-6)
+
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: dict(src="lug", base="0,0,0",
+                                             mode="Uniform", k=2.0,
+                                             kx=1.0, ky=1.0, kz=1.0))
+    win.action_scale()
+    assert win.doc.features[-1].factors == pytest.approx((2.0, 2.0, 2.0))
+    win.recompute()      # box [0,2]^3 inside its doubled twin [0,4]^3
+    assert win.doc.result.volume == pytest.approx(64.0, abs=1e-6)
+
+
+def test_the_pages_halving_example_halves_and_mirrors():
+    """The page's one numeric sentence - "enter -0.5 to halve the
+    size or 2 to double it" - measured on our kernel: the 4x2x1 box
+    four off the origin scaled -0.5 about the origin comes back HALF
+    (eight eighths to one: volume 8 -> 9 total) and BEHIND (bbox's
+    far corner at -4 - the page words no sign law, our negative has
+    always mirrored too, m126's pinned house fact). The copy stands
+    disjoint from its source, so the arithmetic is exact: 8 + 1 = 9,
+    the union to the last digit."""
+    import numpy as np
+    d = Document("h")
+    d.add(PrimitiveFeature(name="b", kind="box",
+                           dims={"dx": 4.0, "dy": 2.0, "dz": 1.0},
+                           placement=(4.0, 0.0, 0.0)))
+    assert d.result.volume == pytest.approx(8.0, abs=1e-9)
+    d.add(ScaleFeature(name="S", source_uid=d.features[0].uid,
+                       factors=(-0.5, -0.5, -0.5)))
+    d.recompute()
+    assert d.result.volume == pytest.approx(9.0, abs=1e-6)
+    lo, hi = np.asarray(d.result.bounding_box, float)
+    assert lo[0] == pytest.approx(-4.0, abs=1e-6)   # the mirrored half
+    assert lo[1] == pytest.approx(-1.0, abs=1e-6)
+    assert hi[0] == pytest.approx(8.0, abs=1e-6)    # the source stands
+
+
+def test_the_scale_reader_gets_its_pairs_and_speaks_the_identity():
+    """The .get pair the file law demands, MEASURED: a file that
+    never speaks factors loads as the IDENTITY (1,1,1) and replays
+    the source volume BIT FOR BIT (the identity scale is not an
+    "equal" rebuild - it is the same float, measured); a file that
+    never speaks source_uid loads too, and the fold's OWN existing
+    honest clause skips a scale whose source is unknown - the body
+    stands as it stood. m126-era files carry both keys and replay
+    untouched."""
+    import json
+    d = Document("g")
+    d.add(PrimitiveFeature(name="b", kind="box",
+                           dims={"dx": 4.0, "dy": 2.0, "dz": 1.0}))
+    src_vol = d.result.volume
+    d.add(ScaleFeature(name="S", source_uid=d.features[0].uid,
+                       factors=(2.0, 2.0, 2.0)))
+    raw = json.loads(json.dumps(d.to_dict()))
+    fd = [x for x in raw["features"] if x["type"] == "ScaleFeature"][0]
+    assert fd["factors"] == [2.0, 2.0, 2.0]
+    del fd["factors"]
+    back = Document.from_dict(raw)
+    assert back.features[1].factors == (1.0, 1.0, 1.0)
+    assert back.recompute().volume == src_vol        # bit-for-bit, not approx
+
+    raw2 = json.loads(json.dumps(d.to_dict()))
+    fd2 = [x for x in raw2["features"] if x["type"] == "ScaleFeature"][0]
+    del fd2["source_uid"]
+    back2 = Document.from_dict(raw2)
+    assert back2.features[1].source_uid == ""
+    assert back2.recompute().volume == src_vol       # the fold skips it
+
+
+def test_the_rail_speaks_the_scale_numbers(win):
+    """The scale record finally speaks its OWN numbers: one word for
+    a uniform record, three for a per-axis one ("per axis" - the
+    page's story, our plain words), and the ANCHOR line joins only
+    when the anchor MOVED (the (0,0,0) rest stays unsaid, absence is
+    honesty). The header's op word is TRUE here - a scale INHERITS
+    its source's op (m126's law), so the generic line prints the
+    record's own fold word, not a stranger's (the draft's unused-op
+    lie that R10 fixed is structurally impossible here)."""
+    win.doc.add(PrimitiveFeature(name="lug", kind="box",
+                                 dims={"dx": 2.0, "dy": 2.0, "dz": 2.0}))
+    win.recompute()
+    uni = win.doc.add_scale("grown", win.doc.features[0], factors=1.5)
+    win.recompute()
+    win.rail.props.show_feature(uni)
+    t = win.rail.props._body.text()
+    assert "scale: 1.5" in t
+    assert "per axis" not in t and "anchor" not in t   # one number, no move
+    assert "operation: union" in t                     # the INHERITED word
+
+    win.doc.add(PrimitiveFeature(name="lug2", kind="box",
+                                 dims={"dx": 2.0, "dy": 2.0, "dz": 2.0}))
+    win.recompute()
+    per = win.doc.add_scale("grown2", win.doc.features[0],
+                            base=(5.0, 0.0, 0.0), factors=(1.0, 2.0, 3.0))
+    win.recompute()
+    win.rail.props.show_feature(per)
+    t = win.rail.props._body.text()
+    assert "scale: 1 x 2 x 3 per axis" in t
+    assert "anchor: (5, 0, 0)" in t

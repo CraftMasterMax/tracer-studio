@@ -1812,6 +1812,17 @@ class MainWindow(QMainWindow):
             for i, axl in enumerate("XYZ"):
                 dbl(f"k{i}", f"factor {axl}", feature.factors[i], dec=3,
                     mn=None, plain=True)
+            # M201 R11 [GUID-D3F6F79B...]: the page's "pick a fixed
+            # anchor point for the scaling" spoken plainly as three
+            # numbers (the door's Base point row is the same plain
+            # speech - DOUBLES here, not text: a lever formula never
+            # raises mid-write, and three axis rows match the k0/k1/
+            # k2 shape this lever has always had). They echo the
+            # record's own anchor (the lever never contradicts the
+            # rail) and the writes below are GUARDED (R4's coin).
+            for i, axl in enumerate("XYZ"):
+                dbl(f"b{i}", f"anchor {axl}", feature.base[i], dec=3,
+                    mn=None, plain=True)
         elif isinstance(feature, CoilFeature):
             dbl("diam", "centre diameter", feature.diameter)
             dbl("pitch", "pitch", feature.pitch, dec=3)
@@ -2037,6 +2048,8 @@ class MainWindow(QMainWindow):
             feature.k1, feature.k2 = float(v["k1"]), float(v["k2"])
         elif isinstance(feature, ScaleFeature):
             feature.factors = tuple(float(v[f"k{i}"]) for i in range(3))
+            if "b0" in v:               # M201 R11: guarded anchor write
+                feature.base = tuple(float(v[f"b{i}"]) for i in range(3))
         elif isinstance(feature, CoilFeature):
             feature.diameter = mm("diam")
             feature.pitch = mm("pitch")
@@ -8470,7 +8483,27 @@ class MainWindow(QMainWindow):
     def action_scale(self):
         """Fusion's Scale (M126): resize one feature's solid about a
         base point — uniform or per axis; a negative factor mirrors
-        that axis (left-hand parts from right-hand models)."""
+        that axis (left-hand parts from right-hand models).
+
+        M201 R11 [GUID-D3F6F79B... verbatim]: the door now wears the
+        page's OWN row names - "Scale Type" ("Uniform: Scales the
+        selected bodies uniformly on all axes. For example, enter
+        -0.5 to halve the size or 2 to double it." / "Non Uniform:
+        Scale along the X, Y, and Z axes separately." - the page
+        spells "Non Uniform" WITHOUT a hyphen), "Scale Factor:
+        Specify the proportional value to scale the bodies." and the
+        three per-axis rows the page names "X Distance" / "Y
+        Distance" / "Z Distance" ("Specifies the value to scale in
+        the X direction." - a VALUE, no units anywhere on the page,
+        so each label says what it is: a scale value). The page's
+        -0.5 example HALVES; on our kernel a negative also MIRRORS
+        (m126's pinned law) - so the factor label carries the house
+        fact the page is silent about. "default" counts ZERO on the
+        page: every rest here is the house's, and the house rests on
+        the identity (factor 1, Non-Uniform rests at 1,1,1). The
+        anchor is the page's "pick a fixed anchor point" spoken
+        plainly as XYZ numbers - origin is NOT documented as the
+        vendor's default, the (0,0,0) rest is ours."""
         if self.doc is None:
             return
         cands = self._pattern_candidates()
@@ -8485,15 +8518,19 @@ class MainWindow(QMainWindow):
                  choices=names, group="Object"),
             dict(key="base", label="Base point", kind="text",
                  default="0,0,0", group="Frame"),
-            dict(key="mode", label="Mode", kind="combo",
-                 choices=("Uniform", "Per axis"), group="Size"),
-            dict(key="k", label="Uniform factor", kind="double",
+            dict(key="mode", label="Scale Type", kind="combo",
+                 choices=("Uniform", "Non Uniform"), group="Size"),
+            dict(key="k", label="Scale Factor (negative mirrors too)",
+                 kind="double",
                  default=1.5, min=-1000.0, max=1000.0, group="Size"),
-            dict(key="kx", label="Factor X", kind="double", default=1.0,
+            dict(key="kx", label="X Distance (a scale value)",
+                 kind="double", default=1.0,
                  min=-1000.0, max=1000.0, group="Size"),
-            dict(key="ky", label="Factor Y", kind="double", default=1.0,
+            dict(key="ky", label="Y Distance (a scale value)",
+                 kind="double", default=1.0,
                  min=-1000.0, max=1000.0, group="Size"),
-            dict(key="kz", label="Factor Z", kind="double", default=1.0,
+            dict(key="kz", label="Z Distance (a scale value)",
+                 kind="double", default=1.0,
                  min=-1000.0, max=1000.0, group="Size"),
         ], remember_key="scale")
         if v is None:
