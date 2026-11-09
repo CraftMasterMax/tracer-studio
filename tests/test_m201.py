@@ -48,9 +48,11 @@ pytest.importorskip("PySide6")
 from PySide6.QtWidgets import QApplication                           # noqa: E402
 
 from tracer.core.document import (Document, ExtrudeFeature,          # noqa: E402
+                                  HoleFeature,
                                   MirrorFeature, PrimitiveFeature,
                                   RevolveFeature)
 from tracer.ui import cmddialog, cmdpanel                            # noqa: E402
+from tracer.ui.hole import HoleDialog                                # noqa: E402
 from tracer.ui.mainwindow import MainWindow                          # noqa: E402
 from tracer.ui.renderer import SceneRenderer                         # noqa: E402
 
@@ -1387,3 +1389,205 @@ def test_the_shared_answer_and_the_rest_voice_survive_the_grown_door(
     win.recompute()
     assert d.result.volume == pytest.approx(
         15000.0 - np.pi * 375 / 4, rel=2e-2)
+
+
+# ---- R7: the hole tool's drill point ---------------------------------------
+
+import math                                                          # noqa: E402
+
+
+def _opts7(**kw):
+    """The door's answer dict, RESTING at the page's flat point (0.0).
+    Mirrors m31's legacy _opts (which never carries the key - that
+    path is pinned separately): a real modal answers EVERY row the
+    dialog opened, so the resting reply carries tip_angle."""
+    o = {"type": "simple", "depth": 6.0, "through": False,
+         "cb_dia": 10.0, "cb_depth": 4.0, "cs_dia": 12.0,
+         "cs_angle": 90.0, "tip_angle": 0.0}
+    o.update(kw)
+    return o
+
+
+def _hole_stage(win, qapp, r=3.0):
+    """The R5 slab (50x30x10, 15,000 mm^3) and a fresh XY sketch with
+    one circle over its footprint; the probe drills UP (m31's law)."""
+    win.new_document()
+    _base(win.doc)
+    win.recompute()
+    win.action_new_sketch("XY")
+    qapp.processEvents()
+    m = win.sketch.model
+    m.add_circle(m.point(25.0, 15.0), r)
+    return m
+
+
+def test_the_dialog_wears_the_page_s_tip_angle_row_resting_flat(qapp):
+    """"Drill Point: Select Flat, or Angle." + "Tip Angle: Specifies
+    the angle of the drill point for the hole." [SLD-REF-HOLE-DIALOG,
+    verbatim]. THE NUMBER ENCODES THE ROW (R4's law, point edition):
+    one spin, not a combo plus a spin - 0.00° IS "Flat", what this
+    tool has ALWAYS cut (the plain cylinder; the page names NO
+    default - "default" appears zero times on all three pages), any
+    positive angle is the page's "Angle" at that value. The row rides
+    the answer dict right after "through" (page order: Tip Angle sits
+    with the Depth rows; the sketch circle is our Diameter, so the
+    page's Diameter row is nothing to place). The 0..179.99 spin
+    bounds are the HOUSE coin (the page words none; the kernel refuses
+    what it cannot sweep)."""
+    dlg = HoleDialog(None, [6.0])
+    assert dlg.tip_angle.value() == 0.0        # FLAT = the legacy voice
+    assert dlg.tip_angle.suffix() == "°"       # degrees wear degrees
+    assert dlg.tip_angle.minimum() == 0.0 and \
+        dlg.tip_angle.maximum() == 179.99
+    keys = list(dlg.values())
+    assert keys[keys.index("through") + 1] == "tip_angle"
+    assert dlg.values()["tip_angle"] == 0.0
+    dlg.deleteLater()
+
+
+def test_the_point_is_the_number_it_always_cut():
+    """Kernel coin, measured against the analytic: a flat Ø6 hole
+    10 deep removes pi·9·10 = 90·pi; a 90° point shortens the
+    cylinder to L-h and closes with a cone (h = r/tan(t/2) = 3, the
+    cb_depth=min(cb_depth, L) clamp law already in the kernel's own
+    hand), so it removes 72·pi - four fifths of the flat cut, to the
+    tessellation's last facet. REST-AS-IDENTITY (R4's law): the flat
+    path skips the cone ENTIRELY (no extra operation, not an equal
+    one) - the volume is the same float down to the bit. And the
+    kernel REFUSES what a point cannot be by name (the page is silent
+    on bounds - the refusal states the house coin, it does not
+    quote the vendor)."""
+    def vol(tip, kw=True):
+        d = Document()
+        _base(d)
+        f = dict(name="h", op="subtract", center=(25.0, 15.0, 10.0),
+                 normal=(0.0, 0.0, -1.0), radius=3.0, depth=10.0)
+        if kw:
+            f["tip_angle"] = tip
+        d.add(HoleFeature(**f))
+        return d.recompute().volume
+
+    flat = vol(0.0)
+    assert flat == vol(None, kw=False)          # bit for bit (identity)
+    assert flat == pytest.approx(15000.0 - 90 * math.pi, abs=1.5)
+    assert vol(90.0) == pytest.approx(15000.0 - 72 * math.pi, abs=1.5)
+    with pytest.raises(ValueError,
+                       match=r"drill point angle is 0 \(flat\) or "
+                             r"between 0 and 180"):
+        d = Document()
+        d.add(HoleFeature(name="bad", center=(25.0, 15.0, 10.0),
+                          radius=3.0, depth=10.0, tip_angle=200.0))
+        d.recompute()
+
+
+def test_a_born_point_drills_the_page_s_sentence(win, qapp,
+                                                 monkeypatch):
+    """The door ASKS the row and the answer writes: a Ø6 hole 10 deep
+    with a 90° point leaves 15,000 - 72·pi, the record carries the
+    number, the sentence grows the page's own words " — with a 90°
+    drill point" AFTER the depth clause, and the rail says
+    "drill point: 90°" - next to the diameter line that has read
+    "(simple)" all along (the kind word is the rail's own, unchanged).
+    """
+    _hole_stage(win, qapp)
+    monkeypatch.setattr(HoleDialog, "ask", staticmethod(
+        lambda p, d: _opts7(depth=10.0, tip_angle=90.0)))
+    win.action_hole()
+    qapp.processEvents()
+    f = [x for x in win.doc.features if isinstance(x, HoleFeature)][-1]
+    assert f.tip_angle == 90.0
+    assert win.doc.result.volume == pytest.approx(
+        15000.0 - 72 * math.pi, abs=1.5)
+    assert win.status.currentMessage() == \
+        "Drilled 1 simple hole(s) — 10 mm deep — with a 90° drill " \
+        "point"
+    win.rail.props.show_feature(f)
+    rail = win.rail.props._body.text()
+    assert "drill point: 90°" in rail
+
+
+def test_the_flat_rest_is_byte_identical_and_a_wrong_angle_refuses(
+        win, qapp, monkeypatch):
+    """Two honesty laws at once. THE FLAT REST: an answer dict WITHOUT
+    the key (every m31/m49/m107/m128 scripted dialog in the suite is
+    exactly this dict) drills flat through opts.get - the birth is the
+    rung-era one, sentence BYTE-IDENTICAL, rail SILENT about the
+    point (absence is honesty, R4's rail law), 112 hole tests green
+    with zero rewrites. THE PRECHECK LAW (M197): a scripted answer
+    can speak what no spin box can (200°) - and the door refuses
+    BEFORE the capture, naming the coin; features and undo measured
+    bit-still, no dead step."""
+    _hole_stage(win, qapp)
+    legacy = {"type": "simple", "depth": 10.0, "through": False,
+              "cb_dia": 10.0, "cb_depth": 4.0, "cs_dia": 12.0,
+              "cs_angle": 90.0}                  # m31's _opts, verbatim
+    monkeypatch.setattr(HoleDialog, "ask", staticmethod(
+        lambda p, d: dict(legacy)))
+    win.action_hole()
+    qapp.processEvents()
+    f = [x for x in win.doc.features if isinstance(x, HoleFeature)][-1]
+    assert f.tip_angle == 0.0
+    assert win.doc.result.volume == pytest.approx(
+        15000.0 - 90 * math.pi, abs=1.5)
+    assert win.status.currentMessage() == \
+        "Drilled 1 simple hole(s) — 10 mm deep"   # byte-identical rest
+    win.rail.props.show_feature(f)
+    assert "drill point" not in win.rail.props._body.text()
+
+    # the commit cleared the sketch (the door speaks from live circles):
+    # re-stage one so the SECOND answer reaches the dialog at all, then
+    # let it speak what no spin box can.
+    win.action_new_sketch("XY")
+    qapp.processEvents()
+    mm = win.sketch.model
+    mm.add_circle(mm.point(25.0, 15.0), 3.0)
+    n, u = len(win.doc.features), len(win._undo)
+    monkeypatch.setattr(HoleDialog, "ask", staticmethod(
+        lambda p, d: _opts7(depth=10.0, tip_angle=200.0)))
+    win.action_hole()
+    qapp.processEvents()
+    assert win.status.currentMessage() == \
+        "Hole refused: the drill point angle is 0 (flat) or between 0 " \
+        "and 180 degrees, not 200"
+    assert len(win.doc.features) == n and len(win._undo) == u
+
+
+def test_the_point_round_trips_and_the_lever_edits_it(win, qapp,
+                                                      monkeypatch):
+    """The file carries the number (writer key "tip_angle") and the
+    READER's keyless fallback is 0.0 - a file written before today
+    cannot suddenly grow a point it never spoke. THE LEVER grows the
+    row AFTER depth (page order; degrees wear degrees - the M196
+    unit law) and the write is GUARDED (R4): a lever answer scripted
+    without the row keeps the point the hole was born with. Editing
+    90 to 118 re-measures: h = 3/tan(59°), removed = pi·9·(10-h) +
+    (1/3)·pi·9·h - the analytic to the last facet."""
+    _hole_stage(win, qapp)
+    monkeypatch.setattr(HoleDialog, "ask", staticmethod(
+        lambda p, d: _opts7(depth=10.0, tip_angle=90.0)))
+    win.action_hole()
+    qapp.processEvents()
+    f = [x for x in win.doc.features if isinstance(x, HoleFeature)][-1]
+
+    raw = json.loads(json.dumps(win.doc.to_dict()))
+    hd = [d for d in raw["features"] if d["type"] == "HoleFeature"][0]
+    assert hd["tip_angle"] == 90.0
+    del hd["tip_angle"]                          # pre-R7 file
+    replayed = Document.from_dict(raw)
+    rh = [x for x in replayed.features if isinstance(x, HoleFeature)][0]
+    assert rh.tip_angle == 0.0                   # legacy files drill FLAT
+
+    keys = [s["key"] for s in win._feature_params(f)]
+    assert keys[-1] == "tip_angle"               # after depth (page)
+    win._apply_feature_params(f, {"radius": 3.0, "through": False,
+                                  "depth": 10.0, "tip_angle": 118.0})
+    win.recompute()
+    h = 3.0 / math.tan(math.radians(118.0) / 2.0)
+    want = 15000.0 - (math.pi * 9 * (10.0 - h)
+                      + math.pi * 9 * h / 3.0)
+    assert win.doc.result.volume == pytest.approx(want, abs=1.5)
+    win.rail.props.show_feature(f)
+    assert "drill point: 118°" in win.rail.props._body.text()
+    win._apply_feature_params(f, {"radius": 3.0, "through": False,
+                                  "depth": 10.0})      # legacy answer
+    assert f.tip_angle == 118.0                  # the guarded write

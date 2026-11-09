@@ -867,6 +867,22 @@ class HoleFeature(Feature):
     depth: float = 5.0
     through: bool = False
     cut_length: float = 0.0       # actual tool length (through = oversized)
+    tip_angle: float = 0.0        # M201 R7 [SLD-REF-HOLE-DIALOG, verbatim]
+    #                             "Drill Point: Select Flat, or Angle." +
+    #                             "Tip Angle: Specifies the angle of the
+    #                             drill point for the hole." THE NUMBER
+    #                             ENCODES THE ROW (R4's law): 0.0 is the
+    #                             page's "Flat" - what this tool has
+    #                             ALWAYS cut (the plain cylinder; the
+    #                             page names NO default - "default"
+    #                             appears zero times). The cone is the
+    #                             INCLUDED angle at the point; depth
+    #                             h = r/tan(t/2) clamps to the drilled
+    #                             length by the kernel's OWN precedent
+    #                             (cb_depth = min(cb_depth, L)); the
+    #                             page is SILENT on bounds - the door's
+    #                             spin is the house coin, the kernel
+    #                             refuses what it cannot sweep.
     cb_radius: float = 0.0        # counterbore outer radius (0 = none)
     cb_depth: float = 0.0
     cs_radius: float = 0.0        # countersink outer radius (0 = none)
@@ -898,7 +914,26 @@ class HoleFeature(Feature):
         u = u / np.linalg.norm(u)
         m = frame_matrix(u, np.cross(n, u), self.center)   # local +z = INTO material
         L = self.cut_length if self.through else self.depth
-        parts = [Solid.cylinder(self.radius, L)]           # 0..L along normal
+        if self.tip_angle == 0.0:
+            # REST-AS-IDENTITY (R4's law): the flat point is not an
+            # equal extra operation - there IS no extra operation.
+            parts = [Solid.cylinder(self.radius, L)]       # 0..L along
+            #                                                 normal
+        else:
+            if not (0.0 < self.tip_angle < 180.0):
+                raise ValueError(
+                    f"{self.name}: the drill point angle is 0 (flat) "
+                    f"or between 0 and 180 degrees, not "
+                    f"{self.tip_angle:g}")
+            h = min(self.radius / math.tan(math.radians(self.tip_angle)
+                                           / 2.0), L)
+            # the cone point at the FAR end: cylinder to L-h, then the
+            # included-angle cone closing to the axis (Solid.cone with
+            # a hair-thin top is the kernel's own cone coin).
+            parts = ([Solid.cylinder(self.radius, L - h)]
+                     if L - h > 1e-9 else [])
+            parts.append(Solid.cone(self.radius, 0.0, h)
+                         .translated((0.0, 0.0, L - h)))
         if self.cb_radius > self.radius + 1e-9 and self.cb_depth > 0:
             d = min(self.cb_depth, L)
             parts.append(Solid.cylinder(self.cb_radius, d))
@@ -4121,6 +4156,7 @@ class Document:
                          radius=float(f.radius), depth=float(f.depth),
                          through=bool(f.through),
                          cut_length=float(f.cut_length),
+                          tip_angle=float(f.tip_angle),   # M201 R7
                          cb_radius=float(f.cb_radius),
                          cb_depth=float(f.cb_depth),
                          cs_radius=float(f.cs_radius),
@@ -4381,6 +4417,11 @@ class Document:
                     radius=float(fd["radius"]), depth=float(fd["depth"]),
                     through=bool(fd.get("through", False)),
                     cut_length=float(fd.get("cut_length", 0.0)),
+                    tip_angle=float(fd.get("tip_angle",
+                                    0.0)),   # M201 R7: keyless
+#                                         legacy files drill
+#                                         FLAT - the voice
+#                                         they were born with
                     cb_radius=float(fd.get("cb_radius", 0.0)),
                     cb_depth=float(fd.get("cb_depth", 0.0)),
                     cs_radius=float(fd.get("cs_radius", 0.0)),

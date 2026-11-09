@@ -69,6 +69,19 @@ class HoleDialog(QDialog):
                               "Cosmetic — decal ring"))
         self.depth = _spin(5.0)
         self.through = QCheckBox("Through all")
+        # M201 R7 [SLD-REF-HOLE-DIALOG, verbatim] "Drill Point: Select
+        # Flat, or Angle." + "Tip Angle: Specifies the angle of the
+        # drill point for the hole." THE NUMBER ENCODES THE ROW (R4's
+        # law): 0.00° IS the page's "Flat" - what this tool has always
+        # cut - and no second widget re-asks the choice. The page
+        # names NO default ("default" appears zero times): 0.0 rests
+        # because it is the LEGACY voice, not a quoted vendor fiat.
+        # The page words no bounds; the spin's 0..179.99 is the house
+        # coin (the kernel refuses what it cannot sweep, and the door
+        # prechecks the same set before the capture). Page order: the
+        # Tip Angle row sits with the Depth rows (no Diameter row is
+        # ours to place: the sketch circle is our diameter).
+        self.tip_angle = _spin(0.0, 0.0, 179.99, "°")
         self.cb_dia = _spin(max(diameters) + 4.0)
         self.cb_depth = _spin(4.0)
         self.cs_dia = _spin(max(diameters) + 5.0)
@@ -87,6 +100,7 @@ class HoleDialog(QDialog):
         self._thread_rows = (tr, tr + 1)        # M128: hidden unless tapped
         form.addRow("Depth", self.depth)
         form.addRow(" ", self.through)
+        form.addRow("Tip angle", self.tip_angle)
         r = form.rowCount()
         form.addRow("Cbore Ø", self.cb_dia)
         form.addRow("Cbore depth", self.cb_depth)
@@ -221,6 +235,7 @@ class HoleDialog(QDialog):
                 "drill": self._drill,
                 "depth": float(self.depth.value()),
                 "through": bool(self.through.isChecked()),
+                "tip_angle": float(self.tip_angle.value()),   # M201 R7
                 "cb_dia": float(self.cb_dia.value()),
                 "cb_depth": float(self.cb_depth.value()),
                 "cs_dia": float(self.cs_dia.value()),

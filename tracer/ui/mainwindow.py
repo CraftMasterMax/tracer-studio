@@ -1612,6 +1612,13 @@ class MainWindow(QMainWindow):
             dbl("radius", "radius", feature.radius, dec=3, mn=0.05)
             check("through", "through all", feature.through)
             dbl("depth", "depth", feature.depth, mn=0.05)
+            # M201 R7: the drill point edits where it was born (page
+            # order after the depth rows; degrees wear degrees - the
+            # M196 unit law). A value the point cannot be (>= 180)
+            # meets the kernel's named refusal at recompute, the same
+            # honest channel the revolve's angle has always used.
+            dbl("tip_angle", "tip angle", feature.tip_angle, dec=1,
+                mn=0.0, ang=True)
         elif isinstance(feature, BodyFilletFeature):
             dbl("radius", "radius", feature.radius)
             check("chamfer", "chamfer, not fillet", feature.chamfer)
@@ -1869,6 +1876,12 @@ class MainWindow(QMainWindow):
             feature.radius = mm("radius")
             feature.through = bool(v["through"])
             feature.depth = mm("depth")
+            if "tip_angle" in v:          # M201 R7: guarded write -
+                #                            a lever scripted before
+                #                            the row existed keeps
+                #                            the point it was born
+                #                            with (R4's law)
+                feature.tip_angle = float(v["tip_angle"])
         elif isinstance(feature, BodyFilletFeature):
             feature.radius = mm("radius")
             feature.chamfer = bool(v["chamfer"])
@@ -4871,6 +4884,23 @@ class MainWindow(QMainWindow):
         opts = HoleDialog.ask(self, [2 * c.r for c in circles])
         if opts is None:
             return
+        # M201 R7 [SLD-REF-HOLE-DIALOG] "Tip Angle: Specifies the angle
+        # of the drill point for the hole" - read through .get so every
+        # LEGACY answer dict (m31/m49/m107/m128 scripted a values()
+        # without this word) drills FLAT, the voice it was born with:
+        # zero rewrites, the same coin R5 paid the extrude router.
+        tip = float(opts.get("tip_angle", 0.0))
+        if not (0.0 <= tip < 180.0):
+            # The precheck law (M197), PAID BY THE GATE THAT CAUGHT
+            # THIS CODE BREAKING IT: the first draft refused AFTER the
+            # capture, leaving the dead undo step the law forbids -
+            # the refusal must sit BEFORE anything is captured. The
+            # spin box cannot speak this word (its range is the house
+            # coin); a scripted answer can, and the door says no.
+            self.status.showMessage(
+                "Hole refused: the drill point angle is 0 (flat) or "
+                f"between 0 and 180 degrees, not {tip:g}", 6000)
+            return
         self._capture()
         u, v = plane_uv(m.plane, m.axes)
         u, v = np.asarray(u, float), np.asarray(v, float)
@@ -4908,6 +4938,10 @@ class MainWindow(QMainWindow):
                 f = owned[i]
                 f.center, f.radius = tuple(w), rad
                 f.depth, f.through, f.cut_length = depth, through, float(L)
+                f.tip_angle = tip              # M201 R7: re-drill speaks
+                #                                 the fresh answer (the
+                #                                 params-replaced-not-
+                #                                 merged law, m31)
                 f.cb_radius, f.cb_depth = cb_r, float(opts["cb_depth"])
                 f.cs_radius, f.cs_angle = cs_r, float(opts["cs_angle"])
                 f.thread_pitch, f.thread_len = tap_pitch, tlen
@@ -4927,6 +4961,7 @@ class MainWindow(QMainWindow):
                 name=nm + kind, op="subtract",
                 center=tuple(w), normal=tuple(inward), radius=rad,
                 depth=depth, through=through, cut_length=float(L),
+                tip_angle=tip,
                 cb_radius=cb_r, cb_depth=float(opts["cb_depth"]),
                 cs_radius=cs_r, cs_angle=float(opts["cs_angle"]),
                 thread_pitch=tap_pitch, thread_len=tlen,
@@ -4944,6 +4979,11 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             f"Drilled {len(circles)} {opts['type']} hole(s)"
             + (" — through all" if through else f" — {depth:g} mm deep")
+            # M201 R7: the drill point joins the sentence ONLY when it
+            # is not flat - the page's own words ("Drill Point: Select
+            # Flat, or Angle"); the flat rest sentence is the rung-era
+            # one, byte for byte.
+            + (f" — with a {tip:g}° drill point" if tip else "")
             + (f"  ·  {thread}"
                f"[{opts.get('thread_class', '') or '6H'}, "
                f"{opts.get('thread_mode', 'modeled')}]"

@@ -780,6 +780,11 @@ class PropertiesPanel(QWidget):
                          f" ({kind})")
             lines.append("depth: through all" if feature.through
                          else f"depth: {units.L(feature.depth, self.unit)}")
+            # M201 R7: the drill point line joins the rail ONLY when
+            # the point exists (0 = flat = the implicit legacy the
+            # tool has always cut - absence is honesty, R4's rail law).
+            if feature.tip_angle:
+                lines.append(f"drill point: {feature.tip_angle:g}°")
             if feature.thread_pitch > 0:
                 lines.append(
                     f"threaded: pitch "
