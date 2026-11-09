@@ -593,6 +593,39 @@ class ExtrudeFeature(Feature):
     #   3,960), "side 2" INSIDE it (3,240), "center" STRADDLES it
     #   (3,600). Thin-only: at wall 0 the word is stored and INERT
     #   (the conditional-row law, R2's coin).
+    extent: str = "distance"   # M201 R9 [SLD-REF-EXTRUDE, verbatim]
+    #   "Extent Type: Establishes the end point of the extrusion" -
+    #   "Distance: Extrudes to a distance that you specify" | "All:
+    #   Extrudes through all visible bodies along the extrusion
+    #   direction". "To Object: Extrudes to a body, face, or plane
+    #   that you SELECT" is a pick and stays UNPROMISED (the door
+    #   speaks names and numbers it owns - the Object-start law, R4's
+    #   coin). The NUMERIC voice is the rest: "distance" is what this
+    #   tool has ALWAYS birthed ("default" counts ZERO on both pages,
+    #   so the rest is the house's - and it is the every-file voice).
+    #   At "all" the typed number is stored and INERT (the page's own
+    #   Distance row is gated "(Distance extent type only)"): the
+    #   FOLD re-measures the reach from the body SO FAR on every pass
+    #   (_resolved) - All REPLACES ONLY THE NUMBER, so every voice
+    #   (one, two, the flip, the wall strip) rides it unchanged
+    #   (measured: the 3 mm wall and the donut reach flush like the
+    #   whole area does).
+    flip: bool = False         # M201 R9 [SLD-REF-EXTRUDE, verbatim]
+    #   "Flip (All extent type only): Flips the extrusion over the
+    #   selected profile plane" + the how-to's verb "Click Flip to
+    #   reverse the extrusion direction over the profile plane" - the
+    #   reach RE-AIMS: one+flip reaches through everything BEHIND the
+    #   start plane (measured pair: a plane 8 up the 10 slab cuts 2
+    #   ahead (13,400) unflipped and 8 behind (8,600) flipped - the
+    #   mirror readings are dead in that pair). The two-side voice
+    #   ALREADY carries both per-side reaches, so for it the flip
+    #   hands the same numbers to the same sides: INERT (measured
+    #   equal). Gated to "all" by its OWN page qualifier, so at the
+    #   distance rest the word is stored and inert (R2's conditional-
+    #   row coin). THE WIDGET IS THE HOUSE'S: the page never says
+    #   checkbox or icon for Flip (its one "Check to" idiom belongs
+    #   to Tangent Chain) - the door offers the house checkbox and
+    #   claims nothing about the vendor's control.
     handle: dict | None = None   # M142: {"feature", "part"} — the LIVE
     #   face this sketch attached to at pick; None = frozen snapshot
 
@@ -611,6 +644,86 @@ class ExtrudeFeature(Feature):
                              f"flag {bool(self.symmetric)!r} tell "
                              "different stories")
         return d
+
+    def _extent_guard(self):
+        """M201 R9: the extent word is refused BY NAME - 'distance'
+        and 'all' are the two voices this tool speaks, and "To
+        Object" is the page's PICK that stays unpromised, so it must
+        never smuggle itself in as a word (R5's third-word coin,
+        extent edition). And the page gives All ONE direction
+        ("along THE extrusion direction") and words no straddle law
+        for it: symmetric x all is a record whose two rows tell
+        different stories - refused, not guessed (the thin+taper
+        law, extent edition)."""
+        e = str(self.extent)
+        if e not in ("distance", "all"):
+            raise ValueError(f"the extent is 'distance' or 'all', "
+                             f"not {e!r}")
+        if e == "all" and self._effective_direction() == "symmetric":
+            raise ValueError("extent 'all' and the symmetric straddle "
+                             "tell different stories - All rides ONE "
+                             "extrusion direction and the page words "
+                             "no straddle")
+
+    def _resolved(self, acc):
+        """THE FOLD'S ANSWER to "All: Extrudes through all visible
+        bodies along the extrusion direction" [SLD-REF-EXTRUDE]: the
+        reach is a fact of the WORLD, not of the record, so only the
+        fold - which holds the body SO FAR - can speak it. Measured
+        from the (offset) START plane (the R4 law: every voice
+        speaks from the moved plane) along the placed normal, the
+        reach is the farthest MATERIAL plane that way (the acc's
+        bounding-box corners projected - DIRECTION-wise, not
+        column-wise; measured witness: a column beside the slab
+        still reaches its full height and unions 15,250). A side the
+        voice RULES with NO material on it is REFUSED (see the
+        zero-reach clause): the page words nothing for it, and the
+        degenerate zero solid it would speak eats a body under
+        subtract. The record KEEPS its word: this clone serves the
+        build of THIS pass only, so a moved wall re-measures on the
+        next. Two-sided reaches are per-side and direction-free: the
+        flip cannot change the straddle (the measured inert)."""
+        self._extent_guard()
+        d = self._effective_direction()
+        M = plane_matrix(self.plane, tuple(self.placement), self.axes)
+        n = M[:3, 2]
+        s = M[:3, 3] + n * float(self.offset)
+        if acc is None:
+            reach = behind = 0.0
+        else:
+            bb = np.asarray(acc.bounding_box, float)
+            corners = np.array([[bb[i & 1, 0], bb[(i >> 1) & 1, 1],
+                                 bb[(i >> 2) & 1, 2]]
+                                for i in range(8)])
+            t = (corners - s) @ n
+            reach = max(0.0, float(t.max()))
+            behind = max(0.0, float(-t.min()))
+        # M201 R9 (the zero-reach clause, MEASURED): a side the voice
+        # RULES that holds no material resolves to the degenerate flat
+        # solid - and a subtract of that degenerate returned the EMPTY
+        # body (0.0 where 15,000 stood: manifold chokes on a
+        # zero-thickness cutter). The page says All goes "through all
+        # visible bodies" and words NOTHING for a direction with none
+        # to reach through - silence is silence, so it is REFUSED,
+        # not guessed, and no word of this door ever erases a body.
+        gone = (reach + behind == 0.0 if d == "two"
+                else (behind if bool(self.flip) else reach) == 0.0)
+        if gone:
+            raise ValueError(f"{self.name}: the extent 'all' found no "
+                             "material along the extrusion direction "
+                             "- there is nothing to reach through")
+        if d == "two":
+            return replace(self, extent="distance", height=reach,
+                           height2=behind)
+        if bool(self.flip):
+            # "reverse the extrusion direction": the reach re-aims
+            # BEHIND the start plane - the two-side voice speaks a
+            # backward prism as height 0 forward, the second side's
+            # reach behind it.
+            return replace(self, extent="distance", direction="two",
+                           symmetric=False, height=0.0,
+                           height2=behind)
+        return replace(self, extent="distance", height=reach)
 
     _WALLS = {"side 1": (1.0, 0.0),   # M201 R8: (out, in) multipliers
               "side 2": (0.0, 1.0),   #   of the wall thickness - the
@@ -761,6 +874,16 @@ class ExtrudeFeature(Feature):
         plane; tapered: two mirror-law lofts, since the page words no
         rule for a symmetric draft and none is invented)."""
         outer, holes = self._profile()
+        self._extent_guard()
+        if str(self.extent) == "all":
+            # "through all visible bodies" is the FOLD's word: the
+            # reach is a fact of the body so far, which a lone record
+            # does not hold. The fold resolves it every pass
+            # (_resolved); a bare build of an all-record would type
+            # the inert number and lie, so it is refused, not guessed.
+            raise ValueError(f"{self.name}: the extent 'all' reaches "
+                             "through the body so far - build the "
+                             "document, not the lone feature")
         d = self._effective_direction()
         h = float(self.height)
         # M201 R8 [SLD-REF-EXTRUDE]: the thin-wall refusals, naming
@@ -2572,6 +2695,27 @@ class Document:
             # off+-h/2; half: off+-h).
             o = o + n * float(f.offset)
             d = f._effective_direction()
+            f._extent_guard()
+            if str(f.extent) == "all":
+                # M201 R9 [SLD-REF-EXTRUDE, verbatim] "All: Extrudes
+                # through all visible bodies along the extrusion
+                # direction" - WHERE the solid ends is the WORLD's
+                # fact (the fold measures it every pass), so the end
+                # faces are planes this record does not DECLARE: they
+                # carry no handle (the honest snapshot law). The
+                # START plane is the record's OWN number (the
+                # offset), and it is a real face where the voice
+                # leaves one: the one-side reach STARTS there
+                # (cap-bottom); a re-aimed flip ENDS there (cap-top);
+                # the two voice's straddle holds it INSIDE the solid
+                # - it publishes nothing that way.
+                if d == "two":
+                    return
+                if bool(f.flip):
+                    yield ("cap-top", o, n)
+                else:
+                    yield ("cap-bottom", o, -n)
+                return
             m = str(f.measurement)
             if d == "symmetric" and m not in ("whole", "half"):
                 raise ValueError(f"the measurement is 'whole' or "
@@ -3920,9 +4064,21 @@ class Document:
                 by_uid[f.uid] = buckets[key]
                 continue          # replaces the body; not a boolean operand
             else:
-                solid = (self._follow_face(f, acc).build()
-                         if isinstance(f, ExtrudeFeature)
-                         else f.build())
+                if isinstance(f, ExtrudeFeature):
+                    fe = self._follow_face(f, acc)
+                    # M201 R9 [SLD-REF-EXTRUDE, verbatim] "All:
+                    # Extrudes through all visible bodies along the
+                    # extrusion direction" - the reach is a fact of
+                    # the body SO FAR, so only the fold can speak it:
+                    # the clone _resolved(acc) serves THIS pass (the
+                    # record keeps its word and re-measures on every
+                    # rebuild); the distance route below stays the
+                    # rung-era call, bit for bit.
+                    if str(fe.extent) == "all":
+                        fe = fe._resolved(acc)
+                    solid = fe.build()
+                else:
+                    solid = f.build()
             by_uid[f.uid] = solid
             if acc is None:
                 if f.op == "subtract":
@@ -4058,7 +4214,9 @@ class Document:
                          symmetric=bool(f.symmetric),
                          direction=str(f.direction),
                          measurement=str(f.measurement),
+                         extent=str(f.extent),
                          height2=float(f.height2),
+                         flip=bool(f.flip),
                          offset=float(f.offset),
                          wall=float(f.wall),
                          wall_location=str(f.wall_location),
@@ -4317,7 +4475,9 @@ class Document:
                     symmetric=bool(fd.get("symmetric", False)),
                     direction=str(fd.get("direction", "")),
                     measurement=str(fd.get("measurement", "whole")),
+                    extent=str(fd.get("extent", "distance")),
                     height2=float(fd.get("height2", 0.0)),
+                    flip=bool(fd.get("flip", False)),
                     offset=float(fd.get("offset", 0.0)),
                     wall=float(fd.get("wall", 0.0)),
                     wall_location=str(fd.get("wall_location", "center")),

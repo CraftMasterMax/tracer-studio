@@ -549,10 +549,20 @@ def test_the_lever_opens_the_page_s_rows_and_the_mouth_is_guarded(win):
     rows = {f["key"]: f for f in win._feature_params(rec)}
     assert list(rows) == ["height", "fillet", "chamfer", "taper",
                           "symmetric", "offset", "direction",
-                          "measurement", "height2",
+                          "measurement",
+                          # M201 R9: the extent rows join where the
+                          # page lists them - Extent Type (#9) AFTER
+                          # Measurement (#8), Flip (#14) AFTER the
+                          # distance rows and BEFORE Wall (#16)
+                          "extent", "height2", "flip",
                           # M201 R8: the wall rows join where the
                           # page lists them - after the distance rows
                           "wall", "wall_location"]
+    assert tuple(rows["extent"]["choices"]) == ("distance", "all")
+    assert rows["extent"]["default"] == "distance"   # the record's own
+    assert rows["flip"]["default"] is False          # ditto
+    assert rows["flip"]["kind"] == "check"           # the HOUSE widget
+    #                                             # (the page names none)
     assert rows["wall"]["default"] == 0.0             # the record's own
     assert rows["wall_location"]["default"] == "center"
     assert tuple(rows["wall_location"]["choices"]) == \
@@ -659,9 +669,21 @@ def test_the_creation_door_asks_the_page_s_rows_and_rests_at_one_side(
     # #16), resting at 0.0 - the whole area, the voice every record
     # before today spoke - and "center" (the house's choice among the
     # page's three words; the page names NO default).
+    # R9: the extent rows join in PAGE ORDER - Extent Type (#9) after
+    # Measurement (#8), BEFORE the distance numeric it gates (#10), and
+    # Flip (#14) after the distance rows, BEFORE Wall (#16). "To
+    # Object" is the page's PICK and never opens (the door speaks
+    # names and numbers it owns); the flip WIDGET is the house's (the
+    # page names none) and its rest is inert by its own qualifier.
     assert seen["keys"] == ["offset", "direction", "measurement",
-                            "height", "height2", "wall",
-                            "wall_location", "op"]
+                            "extent", "height", "height2", "flip",
+                            "wall", "wall_location", "op"]
+    assert seen["choices"]["extent"] == ("distance", "all")
+    assert seen["defaults"]["extent"] == "distance"  # the legacy rest
+    assert seen["kinds"]["flip"] == "check"          # the house widget
+    assert seen["defaults"]["flip"] is False
+    assert "to object" not in [c for cc in seen["choices"].values()
+                               for c in cc]
     assert seen["choices"]["direction"] == ("one", "two", "symmetric")
     assert seen["choices"]["measurement"] == ("whole", "half")
     assert seen["choices"]["op"] == ("Join", "Cut", "Intersect")
@@ -1039,7 +1061,9 @@ def test_the_operation_row_opens_only_where_the_tool_has_no_probe(
     assert "op" not in seen2["keys"], \
         f"the FACE door never asks what the probe owns ({seen2})"
     assert seen2["keys"] == ["offset", "direction", "measurement",
-                             "height", "height2",
+                             # M201 R9: extent after measurement, flip
+                             # after the distance rows (page order).
+                             "extent", "height", "height2", "flip",
                              # M201 R8: the wall rows, page order:
                              # after the distance rows
                              "wall", "wall_location"]
@@ -1642,7 +1666,10 @@ def test_the_wall_number_is_the_type_row_and_no_combo_re_asks_it(
     qapp.processEvents()
     assert "type" not in seen["keys"] and "thin" not in seen["keys"]
     i = seen["keys"].index("height2")
-    assert seen["keys"][i + 1:i + 3] == ["wall", "wall_location"]
+    # M201 R9: the flip check joins the family between the distance
+    # rows and the wall rows (page order Flip #14, Wall Thickness #16).
+    assert seen["keys"][i + 1:i + 4] == ["flip", "wall",
+                                         "wall_location"]
     assert seen["kinds"]["wall"] == "double"
     assert seen["kinds"]["wall_location"] == "combo"
     assert seen["choices"]["wall_location"] == ("side 1", "side 2",
@@ -1796,7 +1823,10 @@ def test_the_wall_round_trips_and_the_lever_moves_the_wall(
         pytest.approx(8000.0, abs=1e-9)
 
     keys = [s["key"] for s in win._feature_params(f)]
-    assert keys[keys.index("height2") + 1] == "wall"
+    # M201 R9: the flip check joined the family in page order -
+    # Flip (#14) AFTER the distance rows, BEFORE Wall Thickness (#16).
+    assert keys[keys.index("height2") + 1] == "flip"
+    assert keys[keys.index("flip") + 1] == "wall"
     assert keys[keys.index("wall") + 1] == "wall_location"
     win._apply_feature_params(f, {"height": 10.0, "fillet": 0.0,
                                   "chamfer": 0.0, "taper": 0.0,
@@ -1809,3 +1839,323 @@ def test_the_wall_round_trips_and_the_lever_moves_the_wall(
     assert f.wall_location == "side 1"
     assert win.doc.recompute().volume == pytest.approx(3960.0,
                                                        abs=1e-6)
+
+
+# ---- M201 R9: the Extent rung ------------------------------------------
+# [SLD-REF-EXTRUDE, verbatim] "Extent Type: Establishes the end point
+# of the extrusion. Distance: Extrudes to a distance that you specify
+# | All: Extrudes through all visible bodies along the extrusion
+# direction" + "Flip (All extent type only): Flips the extrusion over
+# the selected profile plane" (the how-to's verb: "reverse the
+# extrusion direction"). "To Object" is the page's PICK and stays
+# UNPROMISED; "default" counts ZERO on both extrude pages, so every
+# rest here is the house's - and the house's rest is the voice every
+# file already holds ("distance", flip False).
+
+def test_the_extent_refusals_fire_before_the_capture(win, qapp,
+                                                     monkeypatch):
+    """The door refuses WHAT IT CANNOT HONOUR before it captures
+    (M197's law): a scripted answer can speak the page's PICK word,
+    so the combo's two voices are the whole mouth - and symmetric x
+    All is a record whose rows tell different stories (the page
+    gives All ONE direction, "along THE extrusion direction", and
+    words NO straddle law for it: refused, not guessed, R8's
+    thin+taper coin spent again). A refused door leaves NOTHING:
+    no feature, no undo step. One layer down the kernel speaks the
+    SAME refusals by name, and a LONE all-record cannot build at
+    all - the reach belongs to the FOLD, which holds the body."""
+    win.new_document()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"height": 5.0, "extent": "to object"}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    assert win.doc.features == []
+    assert win.status.currentMessage() == (
+        "Extrude refused: the extent is 'distance' or 'all', "
+        "not 'to object'")
+
+    win.new_document()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"height": 5.0, "extent": "all", "direction": "symmetric"}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    assert win.doc.features == []
+    assert win.status.currentMessage() == (
+        "Extrude refused: the extent 'all' and the symmetric straddle "
+        "tell different stories - All rides ONE extrusion direction "
+        "and the page words no straddle")
+
+    with pytest.raises(ValueError,
+                       match="the extent is 'distance' or 'all'"):
+        _ex(height=3.0, extent="to object").recompute()
+    with pytest.raises(ValueError, match="tell different stories"):
+        _ex(height=3.0, symmetric=True, direction="symmetric",
+            extent="all").recompute()
+    with pytest.raises(ValueError,
+                       match="build the document, not the lone feature"):
+        ExtrudeFeature(name="x", outer=_rect(), extent="all").build()
+
+
+def test_the_all_reach_measures_the_world_and_refuses_a_world_with_nothing():
+    """THE MEASURED WORLD (real fold, == law on every integer): a
+    20x10 profile inside the 50x30x10 slab eats it FLUSH at extent
+    all - 13,000 stands and the bounding box is the slab's own, to
+    the last digit; a donut (hole 20x10) reaches 9,000; the 3 mm
+    wall strip x all answers 11,400 EXACTLY what the same wall
+    typed at height 10 answers (All REPLACES ONLY THE NUMBER - the
+    wall's voice rides the measured reach). Rest-as-identity: the
+    word "distance" SPOKEN and the word SILENT are the same
+    arithmetic bit for bit, taper and offset included. Where the
+    ruled side holds no material the fold REFUSES by name - the
+    degenerate zero solid it would build MEASURED the body eaten
+    (0.0 where 15,000 stood), and the page words nothing for
+    "nothing to reach through", so nothing is guessed. And the
+    reach is DIRECTION-wise, not column-wise: a 5x5 column beside
+    the slab still unions the slab's 10 mm of world along n (250
+    of its own, 15,250 total)."""
+    small = np.array([[5.0, 5.0], [25.0, 5.0], [25.0, 15.0], [5.0, 15.0]])
+    d = _base(Document("ex"))
+    d.add(ExtrudeFeature(name="w", outer=small, extent="all",
+                         op="subtract"))
+    assert d.recompute().volume == pytest.approx(13000.0, abs=1e-6)
+    assert np.array_equal(d.result.bounding_box,
+                          np.array([[0.0, 0.0, 0.0], [50.0, 30.0, 10.0]]))
+
+    hole = np.array([[10.0, 5.0], [30.0, 5.0], [30.0, 15.0], [10.0, 15.0]])
+    d = _base(Document("ex"))
+    d.add(ExtrudeFeature(name="w", outer=_rect(), holes=[hole],
+                         extent="all", op="subtract"))
+    assert d.recompute().volume == pytest.approx(9000.0, abs=1e-6)
+
+    d = _base(Document("ex"))
+    d.add(ExtrudeFeature(name="w", outer=_rect(), placement=(5.0, 5.0, 0.0),
+                         wall=3.0, extent="all", op="subtract"))
+    all_v = d.recompute().volume
+    d = _base(Document("ex"))
+    d.add(ExtrudeFeature(name="w", outer=_rect(), placement=(5.0, 5.0, 0.0),
+                         wall=3.0, height=10.0, op="subtract"))
+    assert all_v == pytest.approx(11400.0, abs=1e-6)
+    assert all_v == d.recompute().volume
+
+    assert _ex(height=7.0, taper=12.0, offset=2.0).recompute().volume == \
+        _ex(height=7.0, taper=12.0, offset=2.0,
+            extent="distance").recompute().volume
+
+    with pytest.raises(ValueError, match="nothing to reach through"):
+        _ex(height=5.0, extent="all").recompute()        # no world yet
+    d = _base(Document("ex"))
+    d.add(ExtrudeFeature(name="w", outer=_rect(), offset=15.0,
+                         extent="all", op="subtract"))
+    with pytest.raises(ValueError, match="nothing to reach through"):
+        d.recompute()                                    # nothing ahead
+
+    five = np.array([[0.0, 0.0], [5.0, 0.0], [5.0, 5.0], [0.0, 5.0]])
+    d = _base(Document("ex"))
+    d.add(ExtrudeFeature(name="w", outer=five, placement=(60.0, 0.0, 0.0),
+                         extent="all"))
+    assert d.recompute().volume == pytest.approx(15250.0, abs=1e-6)
+
+
+def test_the_flip_re_aims_measured_and_the_two_voice_is_inert(win):
+    """THE MEASURED PAIR: the start plane 8 mm up the 10 mm slab -
+    unflipped eats the 2 mm AHEAD (13,400), flipped reaches the 8 mm
+    BEHIND it (8,600). The mirror readings are DEAD in this pair:
+    over the profile plane a flip would cut NOTHING (15,000), over
+    the start plane the SAME 2 mm (13,400) - only "reverse the
+    extrusion direction" (the how-to's own verb) answers 8,600. The
+    two-sided All ALREADY carries both per-side reaches, so flip x
+    two hands the same numbers to the same sides: INERT, 7,000 the
+    same true. Flip at the distance rest is stored and inert (the
+    page's own gate, "(All extent type only)"). Flip with NOTHING
+    behind the plane is refused - the zero-reach clause checks the
+    side the flip RULES. The lever writes both rows GUARDED (R4's
+    coin) and the flip checkbox alone RE-MEASURES the body through
+    the real fold: 13,400 becomes 8,600 with no other word moved."""
+    d = _base(Document("ex"))
+    d.add(ExtrudeFeature(name="w", outer=_rect(), offset=8.0,
+                         extent="all", op="subtract"))
+    assert d.recompute().volume == pytest.approx(13400.0, abs=1e-6)
+    d = _base(Document("ex"))
+    d.add(ExtrudeFeature(name="w", outer=_rect(), offset=8.0, flip=True,
+                         extent="all", op="subtract"))
+    assert d.recompute().volume == pytest.approx(8600.0, abs=1e-6)
+
+    d = _base(Document("ex"))
+    d.add(ExtrudeFeature(name="w", outer=_rect(), direction="two",
+                         symmetric=False, extent="all", op="subtract"))
+    two_v = d.recompute().volume
+    d = _base(Document("ex"))
+    d.add(ExtrudeFeature(name="w", outer=_rect(), direction="two",
+                         symmetric=False, extent="all", flip=True,
+                         op="subtract"))
+    assert two_v == pytest.approx(7000.0, abs=1e-6)
+    assert two_v == d.recompute().volume                 # the inert law
+
+    d = _base(Document("ex"))
+    d.add(ExtrudeFeature(name="w", outer=_rect(), direction="two",
+                         symmetric=False, height=4.0, height2=2.0,
+                         flip=True))                      # distance rest
+    v_rest = d.recompute().volume
+    d = _base(Document("ex"))
+    d.add(ExtrudeFeature(name="w", outer=_rect(), direction="two",
+                         symmetric=False, height=4.0, height2=2.0))
+    assert v_rest == d.recompute().volume                # stored-and-inert
+
+    d = _base(Document("ex"))
+    d.add(ExtrudeFeature(name="w", outer=_rect(), extent="all",
+                         flip=True, op="subtract"))
+    with pytest.raises(ValueError, match="nothing to reach through"):
+        d.recompute()                                    # nothing behind
+
+    win.new_document()
+    _base(win.doc)
+    win.doc.add(ExtrudeFeature(name="w", outer=_rect(), offset=8.0,
+                               extent="all", op="subtract"))
+    win.recompute()
+    assert win.doc.result.volume == pytest.approx(13400.0, abs=1e-6)
+    f = win.doc.features[-1]
+    win._apply_feature_params(f, {"height": 5.0, "fillet": 0.0,
+                                  "chamfer": 0.0, "taper": 0.0,
+                                  "symmetric": False})   # legacy script
+    assert (f.extent, f.flip) == ("all", False)          # guarded words
+    win._apply_feature_params(f, {"height": 5.0, "fillet": 0.0,
+                                  "chamfer": 0.0, "taper": 0.0,
+                                  "symmetric": False,
+                                  "extent": "all", "flip": True})
+    assert win.doc.recompute().volume == pytest.approx(8600.0, abs=1e-6)
+
+
+def test_the_all_sentences_say_reach_not_millimetres(win, qapp,
+                                                     monkeypatch):
+    """At All the typed number is INERT - the page gates its OWN
+    Distance row "(Distance extent type only)" - so the sentence
+    speaks the REACH, never millimetres it did not use: "through
+    every body ahead", flipped "behind the start plane", the two
+    voice "on both sides". Measured through the door onto the
+    15,000 slab: all+Cut leaves 7,000 (the full 8,000 column),
+    flip at offset 8 leaves 8,600, two+Join grows 23,000. The rail
+    (absence is honesty, R4's law) says "extent: all" / "extent:
+    all (flipped)" ONLY at all - and at the distance rest the
+    sentence and the rail are the rung-era ones, BYTE-IDENTICAL."""
+    win.new_document()
+    _base(win.doc)
+    win.recompute()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"height": 5.0, "extent": "all", "op": "Cut"}, {}))
+    win._on_profiles([(_stage_rect(), [])], "sk")
+    qapp.processEvents()
+    assert win.doc.result.volume == pytest.approx(7000.0, abs=1e-6)
+    assert win.status.currentMessage() == (
+        "Extruded 1 region(s) from sk through every body ahead — "
+        "cut out of what was already there")
+    win.rail.props.show_feature(win.doc.features[-1])
+    assert "extent: all" in win.rail.props._body.text()
+
+    win.new_document()
+    _base(win.doc)
+    win.recompute()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"height": 5.0, "extent": "all", "flip": True, "offset": 8.0,
+         "op": "Cut"}, {}))
+    win._on_profiles([(_stage_rect(), [])], "fl")
+    qapp.processEvents()
+    assert win.doc.result.volume == pytest.approx(8600.0, abs=1e-6)
+    assert win.status.currentMessage() == (
+        "Extruded 1 region(s) from fl through every body behind the "
+        "start plane starting 8 mm off the plane — cut out of what "
+        "was already there")
+    win.rail.props.show_feature(win.doc.features[-1])
+    assert "extent: all (flipped)" in win.rail.props._body.text()
+
+    win.new_document()
+    _base(win.doc)
+    win.recompute()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask(
+        {"height": 5.0, "extent": "all", "direction": "two",
+         "height2": 4.0}, {}))
+    win._on_profiles([(_stage_rect(), [])], "tw")
+    qapp.processEvents()
+    # The two-sided All from z=0 measures reach 10 AHEAD and 0
+    # BEHIND - the straddle lies INSIDE the slab, so the Join
+    # honestly stands at 15,000. Had the typed height2 (4.0) been
+    # honored it would reach below the plane and union 18,200: the
+    # unchanged body IS the proof that All replaces the number.
+    assert win.doc.result.volume == pytest.approx(15000.0, abs=1e-6)
+    assert win.doc.features[-1].height2 == 4.0        # stored, INERT
+    assert win.status.currentMessage() == (
+        "Extruded 1 region(s) from tw through every body on both sides")
+
+    win.new_document()
+    win.action_new_sketch("XY")
+    monkeypatch.setattr(cmddialog, "ask", _spy_ask({"height": 6.0}, {}))
+    win._on_profiles([(_stage_rect(), [])], "rest")
+    qapp.processEvents()
+    assert win.status.currentMessage() == \
+        "Extruded 1 region(s) from rest by 6 mm"          # byte-identical
+    win.rail.props.show_feature(win.doc.features[-1])
+    assert "extent: all" not in win.rail.props._body.text()
+
+
+def test_the_extent_words_are_real_file_words_and_the_caps_stay_honest():
+    """The words ROUND-TRIP (writer/reader, page order: extent after
+    measurement, flip after height2), and they are REAL: delete them
+    and the record CHANGES VOICE - a born flip x all @ offset 8
+    replays 8,600 with its words and 13,400 without them (the
+    keyless legacy reading is "distance"/False, the voice every old
+    file holds - R5/R7/R8's zero-rewrite coin). THE HONEST SNAPSHOT
+    law: an all-record publishes NO cap-top - the world decides
+    where it ends, and a face no feature DECLARES carries no
+    handle; the START plane (the record's own offset) is the one
+    face it owns: cap-bottom for the forward reach, cap-top for the
+    re-aimed flip, and NOTHING for the two-sided straddle (its
+    start plane lies INSIDE the material - it declares no face
+    there). The distance record's pair stands untouched, geometry
+    pinned: offset 8 rides the start plane to the last digit."""
+    d = _base(Document("ex"))
+    d.add(ExtrudeFeature(name="w", outer=_rect(), offset=8.0, height=5.0,
+                         extent="all", flip=True, op="subtract"))
+    v = d.recompute().volume
+    assert v == pytest.approx(8600.0, abs=1e-6)
+    raw = json.loads(json.dumps(d.to_dict()))
+    fd = [x for x in raw["features"]
+          if x["type"] == "ExtrudeFeature"][1]
+    assert fd["extent"] == "all" and fd["flip"] is True
+    assert Document.from_dict(raw).recompute().volume == \
+        pytest.approx(8600.0, abs=1e-6)
+    del fd["extent"]
+    del fd["flip"]
+    back = Document.from_dict(raw)
+    assert back.features[1].extent == "distance"
+    assert back.features[1].flip is False
+    assert back.recompute().volume == pytest.approx(13400.0, abs=1e-6)
+
+    def parts(feat):
+        return [p for p, _, _ in d._published_planes(feat)]
+
+    plain = ExtrudeFeature(name="a", outer=_rect(), height=5.0,
+                           offset=8.0)
+    assert parts(plain) == ["cap-top", "cap-bottom"]
+    assert parts(_ex_fwd_all := ExtrudeFeature(name="b", outer=_rect(),
+                                               extent="all")) == \
+        ["cap-bottom"]
+    assert [tuple(np.round(pt, 9)) for pt in
+            [p for _, p, _ in d._published_planes(_ex_fwd_all)]] == \
+        [(0.0, 0.0, 0.0)]
+    fwd = ExtrudeFeature(name="c", outer=_rect(), offset=8.0,
+                         extent="all")
+    assert [(p, tuple(np.round(pt, 9)), tuple(np.round(nn, 9)))
+            for p, pt, nn in d._published_planes(fwd)] == \
+        [("cap-bottom", (0.0, 0.0, 8.0), (0.0, 0.0, -1.0))]
+    flip = ExtrudeFeature(name="d", outer=_rect(), offset=8.0,
+                          extent="all", flip=True)
+    assert [(p, tuple(np.round(pt, 9)), tuple(np.round(nn, 9)))
+            for p, pt, nn in d._published_planes(flip)] == \
+        [("cap-top", (0.0, 0.0, 8.0), (0.0, 0.0, 1.0))]
+    tw = ExtrudeFeature(name="e", outer=_rect(), extent="all",
+                        direction="two", symmetric=False)
+    assert parts(tw) == []

@@ -1604,8 +1604,28 @@ class MainWindow(QMainWindow):
                   feature._effective_direction())
             combo("measurement", "measurement (symmetric)",
                   ("whole", "half"), feature.measurement)
+            # M201 R9 [SLD-REF-EXTRUDE, verbatim] "Extent Type:
+            # Establishes the end point of the extrusion. Distance:
+            # Extrudes to a distance that you specify | All: Extrudes
+            # through all visible bodies along the extrusion
+            # direction." PAGE ORDER: Extent Type (#9) sits AFTER
+            # Measurement (#8) and BEFORE the distance rows. "To
+            # Object" is the page's PICK and stays unpromised (R4's
+            # coin). A legacy record shows the "distance" it always
+            # spoke - the lever echoes, never contradicts.
+            combo("extent", "extent", ("distance", "all"),
+                  feature.extent)
             dbl("height2", "height 2 (second side)", feature.height2,
                 mn=0.0)
+            # M201 R9 [SLD-REF-EXTRUDE, verbatim] "Flip (All extent
+            # type only): Flips the extrusion over the selected
+            # profile plane" - the RE-AIM house coin (measured pair
+            # 13,400/8,600). The WIDGET IS THE HOUSE'S (the page
+            # never says checkbox or icon). Gated to All by its OWN
+            # qualifier: at the distance rest the word is stored and
+            # INERT (R2's conditional-row coin) - the modal lever
+            # cannot open and close rows mid-command.
+            check("flip", "flip (all extent only)", feature.flip)
             # M201 R8 [SLD-REF-EXTRUDE]: the thin-wall family edits
             # where it was born - PAGE ORDER puts the wall rows AFTER
             # the distance rows (Wall Thickness #14, Wall Location
@@ -1875,8 +1895,12 @@ class MainWindow(QMainWindow):
                 feature.symmetric = (feature.direction == "symmetric")
             if "measurement" in v:
                 feature.measurement = str(v["measurement"])
-            if "height2" in v:
-                feature.height2 = mm("height2")
+            if "extent" in v:             # M201 R9: guarded writes -
+                feature.extent = str(v["extent"])   #  a lever scripted
+            if "height2" in v:                       #  before the rows
+                feature.height2 = mm("height2")      #  keeps the words
+            if "flip" in v:                          #  the record was
+                feature.flip = bool(v["flip"])       #  born with
             if "offset" in v:
                 # M201 R4: the same guarded coin - a script driving the
                 # rung-era rows never invents an offset.
@@ -4675,12 +4699,48 @@ class MainWindow(QMainWindow):
                 dict(key="measurement", label="measurement (symmetric)",
                      kind="combo", choices=("whole", "half"),
                      default="whole", group="Direction"),
+                # M201 R9 [SLD-REF-EXTRUDE, verbatim] "Extent Type:
+                # Establishes the end point of the extrusion. Distance:
+                # Extrudes to a distance that you specify | All:
+                # Extrudes through all visible bodies along the
+                # extrusion direction." "To Object: Extrudes to a body,
+                # face, or plane that you SELECT" is a PICK and stays
+                # UNPROMISED (R4's Object-start coin - this door
+                # speaks names and numbers it owns). NUMERIC ENCODES
+                # EXTENT (R4's law, Extent edition): the row speaks
+                # the two voices this tool honours; "distance" is the
+                # rest - what this door has ALWAYS birthed (the page
+                # names no default: "default" counts ZERO on both
+                # pages, so every rest is the house's). Page order:
+                # Extent Type sits AFTER Measurement (#9) and BEFORE
+                # the Distance numeric (#10) - the number it gates.
+                dict(key="extent", label="extent", kind="combo",
+                     choices=("distance", "all"), default="distance",
+                     group="Distance"),
                 dict(key="height", label="height", kind="double",
                      default=5.0, min=0.01, max=1e5, decimals=2,
                      group="Distance"),
                 dict(key="height2", label="height 2 (second side)",
                      kind="double", default=0.0, min=0.0, max=1e5,
                      decimals=2, group="Distance"),
+                # M201 R9 [SLD-REF-EXTRUDE, verbatim] "Flip (All
+                # extent type only): Flips the extrusion over the
+                # selected profile plane" + the how-to's verb "Click
+                # Flip to reverse the extrusion direction over the
+                # profile plane" - RE-AIM is the house coin (measured
+                # pair: a start plane 8 up the 10 slab cuts the 2 mm
+                # ahead unflipped, 13,400, and the 8 behind flipped,
+                # 8,600). THE WIDGET IS THE HOUSE'S: the page never
+                # says checkbox or icon (its one "Check to" idiom
+                # belongs to Tangent Chain), so the door offers the
+                # house checkbox and claims nothing about the vendor's
+                # control. Gated "All extent type only" by its OWN
+                # qualifier, so at the distance rest the word is
+                # asked, stored and INERT (R2's conditional-row coin).
+                # Page order: Flip (#14) sits AFTER the distance rows
+                # (#10/#11) and BEFORE Wall Thickness (#16).
+                dict(key="flip", label="flip (all extent only)",
+                     kind="check", default=False, group="Distance"),
                 # M201 R8 [SLD-REF-EXTRUDE, verbatim]: "Type: Extrude:
                 # Extrudes the entire area within selected closed
                 # profiles | Thin Extrude: Extrudes a thin wall along
@@ -4764,6 +4824,13 @@ class MainWindow(QMainWindow):
             #                                       the door's own coin
             emeas = str(v["measurement"])
             eheight2 = float(v["height2"])
+            # M201 R9 [SLD-REF-EXTRUDE]: the extent rows, READ THROUGH
+            # .get so every LEGACY scripted answer (m165's shared
+            # reply and every remembered dict born before today)
+            # speaks THE DISTANCE it always spoke - "distance" is the
+            # voice every file holds. Zero rewrites, R5/R7/R8's coin.
+            eextent = str(v.get("extent", "distance"))
+            eflip = bool(v.get("flip", False))
             # M201 R8 [SLD-REF-EXTRUDE]: the wall rows, READ THROUGH
             # .get so every LEGACY scripted answer (m165's shared
             # reply and every remembered dict born before today)
@@ -4813,6 +4880,30 @@ class MainWindow(QMainWindow):
                 self.status.showMessage(
                     "Extrude refused: the measurement is 'whole' or "
                     f"'half', not {emeas!r}", 6000)
+                return
+            if eextent not in ("distance", "all"):
+                # M201 R9 preflight (the same law, extent edition): a
+                # combo cannot speak a wrong word, a scripted answer
+                # can - and the page's THIRD voice, "To Object", is
+                # the PICK this tool does not promise, so it must
+                # never smuggle itself in as a word. Refuse BEFORE the
+                # capture: a refused door leaves no undo step.
+                self.status.showMessage(
+                    "Extrude refused: the extent is 'distance' or "
+                    f"'all', not {eextent!r}", 6000)
+                return
+            if eextent == "all" and edirection == "symmetric":
+                # The page gives All ONE direction - "along THE
+                # extrusion direction" - and words NO straddle law
+                # for it: symmetric x all is a record whose rows tell
+                # different stories. Refused, not guessed (the
+                # thin+taper law, extent edition; the kernel speaks
+                # the same words - the door only moves them earlier).
+                self.status.showMessage(
+                    "Extrude refused: the extent 'all' and the "
+                    "symmetric straddle tell different stories - All "
+                    "rides ONE extrusion direction and the page "
+                    "words no straddle", 6000)
                 return
             if ewall < 0.0:
                 # The precheck law (M197): a spin resting at 0 cannot
@@ -4869,7 +4960,9 @@ class MainWindow(QMainWindow):
                                              direction=edirection,
                                              symmetric=esym,
                                              measurement=emeas,
+                                             extent=eextent,
                                              height2=eheight2,
+                                             flip=eflip,
                                              offset=eoffset,
                                              wall=ewall,
                                              wall_location=eloc,
@@ -4905,7 +4998,21 @@ class MainWindow(QMainWindow):
             # swapped words MEAN as this tool does them - whole h
             # straddles h/2 each side, half h reaches h EACH side
             # (the vendor's words, obeyed as written, never fixed).
-            if edirection == "two":
+            if eextent == "all":
+                # M201 R9 [SLD-REF-EXTRUDE]: at All the typed number
+                # is INERT - the page gates its OWN Distance row
+                # "(Distance extent type only)" - so the sentence
+                # speaks what the fold REACHES, not millimetres it
+                # did not use (the wall and start tails still ride:
+                # they are live words at all, measured).
+                if edirection == "two":
+                    voice = "through every body on both sides"
+                elif eflip:
+                    voice = ("through every body behind the start "
+                             "plane")
+                else:
+                    voice = "through every body ahead"
+            elif edirection == "two":
                 voice = (f"by {height:g} mm and {eheight2:g} mm "
                          "the other side")
             elif edirection == "symmetric" and emeas == "half":

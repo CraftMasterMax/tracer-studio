@@ -775,6 +775,19 @@ class PropertiesPanel(QWidget):
                 lines.append(f"taper: {feature.taper:+.1f}\u00b0")
             if feature.symmetric:
                 lines.append("extent: symmetric")
+            if str(feature.extent) == "all":
+                # M201 R9 [SLD-REF-EXTRUDE, verbatim] "All: Extrudes
+                # through all visible bodies along the extrusion
+                # direction" - the line joins the rail ONLY at all
+                # (absence is honesty, R4's rail law: "distance" is
+                # what every record before today is). The flip rides
+                # the same line because the page GATES it to All -
+                # a flip at the distance rest is stored-and-inert
+                # and the rail does not print inert words (R2's
+                # coin). symmetric x all cannot exist (the refusal),
+                # so the two lines never co-write.
+                lines.append("extent: all (flipped)"
+                             if bool(feature.flip) else "extent: all")
             lines.append(f"outer vertices: {len(np.asarray(feature.outer))}")
             lines.append(f"holes: {len(feature.holes)}")
         elif isinstance(feature, RevolveFeature):
