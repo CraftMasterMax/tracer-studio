@@ -985,14 +985,37 @@ class PropertiesPanel(QWidget):
                 lines.append("angle mode: Absolute (both readings "
                              "agree on straight walls)")
         elif isinstance(feature, LinearPatternFeature):
-            lines.append(f"pattern: {feature.count}x at "
+            # M201 R15 [SLD-REF-PATTERN]: the rail READS its record
+            # now.  An Extent record spreads its copies over the
+            # vector as the FULL EXTENT ("evenly along the FULL
+            # EXTENT of the distance value"), so saying "at" for one
+            # lied by omission; spacing records (the rung-era voice,
+            # every legacy file's default) keep "at" byte for byte.
+            at = (" over the full extent"
+                  if str(feature.distribution) == "extent" else " at")
+            lines.append(f"pattern: {feature.count}x{at} "
                          f"({units.val(feature.vector[0], self.unit):g}, "
                          f"{units.val(feature.vector[1], self.unit):g}, "
                          f"{units.val(feature.vector[2], self.unit):g}) "
                          f"{units.LABEL[self.unit]}")
         elif isinstance(feature, CircularPatternFeature):
-            lines.append(f"pattern: {feature.count}x over {feature.angle:g}° "
-                         f"about ({feature.center[0]:g}, {feature.center[1]:g})")
+            # M201 R15 [SLD-REF-PATTERN]: the page's circular dialog
+            # prints EXACTLY the Axis and Distribution rows, and it
+            # spells Full's turn IN WORDS ("Distributes pattern
+            # instances 360 degrees around the axis") - so an
+            # explicit full record speaks the page's own spelled 360
+            # degrees, while the rung-era "auto" derivation and the
+            # typed Partial/Symmetric voices keep their number byte
+            # for byte (one record one voice; no legacy file moves).
+            if str(feature.distribution) == "full":
+                lines.append(f"pattern: {feature.count}x over 360 "
+                             f"degrees about ({feature.center[0]:g}, "
+                             f"{feature.center[1]:g})")
+            else:
+                lines.append(f"pattern: {feature.count}x over "
+                             f"{feature.angle:g}\u00b0 about "
+                             f"({feature.center[0]:g}, "
+                             f"{feature.center[1]:g})")
         elif isinstance(feature, PathPatternFeature):
             import numpy as _np
             from ..core.sweep import sample_polyline

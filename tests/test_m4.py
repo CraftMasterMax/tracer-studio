@@ -85,14 +85,14 @@ def test_pattern_dialog_and_undo(win, monkeypatch):
     win.recompute()
     script_cmd(monkeypatch, {"src": "h", "dx": 10.0, "dy": 0.0,
                              "dz": 0.0, "count": 3,
-                             "dist": "Spacing", "dir": "One Direction",
+                             "dist": "Spacing", "dir": "One direction",
                              # M201: the door now ASKS the page's second
                              # direction too, and a fake answers every
                              # row the door reads. Quantity 2 = 1 is the
                              # page's own "only one direction" case.
                              "count2": 1, "dx2": 0.0, "dy2": 0.0,
                              "dz2": 0.0, "dist2": "Spacing",
-                             "dir2": "One Direction"})
+                             "dir2": "One direction"})
     win.action_linear_pattern()
     pats = [f for f in win.doc.features
             if isinstance(f, LinearPatternFeature)]

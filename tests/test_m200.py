@@ -5,11 +5,14 @@ Distributes pattern instances evenly along the FULL EXTENT of the
 distance value that you specify | Spacing - ...spaced at the distance
 value" and "Direction: One Direction - ...in one direction from the
 source | Symmetric - ...symmetrically in two directions FROM THE
-SOURCE OBJECT along this axis".
+SOURCE OBJECT along this axis".  M201 R15 [rectangular REFERENCE
+page]: that page prints the row sentence-case - "One direction" -
+and the REFERENCE page's casing WINS the dialog voice (the title-
+case quote above stays the SLD page's own print, verbatim).
 
 Rung one cuts the two typed rows. The house's rung-era voice (count
 INCLUDING the source, offsets k x vector) is EXACTLY the page's
-Spacing + One Direction, so that route lands BIT-IDENTICAL and old
+Spacing + One direction, so that route lands BIT-IDENTICAL and old
 files replay untouched. Extent re-reads the vector as the full
 end-to-end extent - the page's own "the meaning flips with the
 Distribution row". Symmetric centers the count ON the source: an ODD
@@ -76,7 +79,7 @@ V = (10.0, 0.0, 0.0)
 # ---- the placement law ------------------------------------------------------
 
 def test_spacing_one_is_the_ladder_bit_unchanged():
-    """The legacy voice IS the page's Spacing + One Direction: the
+    """The legacy voice IS the page's Spacing + One direction: the
     count includes the source (k=0) and the step is the vector.
     Measured BIT-IDENTICAL to the rung-era arithmetic (the exact
     multiplication k x v), the n<1 guard lands a single source copy,
@@ -215,7 +218,7 @@ def test_the_door_lands_the_two_new_voices_and_refuses_the_even(
     full extent, the source middle HOLE stays - the plate loses
     THREE holes, volume measured); the sentence speaks the voice
     ("over the full extent ... symmetrically from the source");
-    Spacing + One Direction still rides the rung-era words BYTE-
+    Spacing + One direction still rides the rung-era words BYTE-
     IDENTICAL ("3x at (10, 0, 0) mm"); and an even count with
     Symmetric is refused the M197 door law whole: NO record, no undo
     step that undoes nothing, the body untouched to the last digit,
@@ -229,7 +232,7 @@ def test_the_door_lands_the_two_new_voices_and_refuses_the_even(
                                          "count2": 1, "dx2": 0.0,
                                          "dy2": 0.0, "dz2": 0.0,
                                          "dist2": "Spacing",
-                                         "dir2": "One Direction"})
+                                         "dir2": "One direction"})
     _plate_hole(win)
     win.action_linear_pattern()
     f = win.doc.features[-1]
@@ -244,11 +247,11 @@ def test_the_door_lands_the_two_new_voices_and_refuses_the_even(
                         lambda *a, **k: {"src": "h", "dx": 10.0,
                                          "dy": 0.0, "dz": 0.0,
                                          "count": 3, "dist": "Spacing",
-                                         "dir": "One Direction",
+                                         "dir": "One direction",
                                          "count2": 1, "dx2": 0.0,
                                          "dy2": 0.0, "dz2": 0.0,
                                          "dist2": "Spacing",
-                                         "dir2": "One Direction"})
+                                         "dir2": "One direction"})
     _plate_hole(win)
     win.action_linear_pattern()
     assert win.status.currentMessage() == \
@@ -261,7 +264,7 @@ def test_the_door_lands_the_two_new_voices_and_refuses_the_even(
                                          "count2": 1, "dx2": 0.0,
                                          "dy2": 0.0, "dz2": 0.0,
                                          "dist2": "Spacing",
-                                         "dir2": "One Direction"})
+                                         "dir2": "One direction"})
     _plate_hole(win)
     n, u, vol = len(win.doc.features), len(win._undo), \
         win.doc.result.volume
@@ -447,7 +450,7 @@ def test_the_circular_door_lands_the_three_voices(win, qapp, monkeypatch):
     f = win.doc.features[-1]
     assert f.distribution == "full" and f.angle == 360.0    # NOTICED only
     assert win.status.currentMessage() == \
-        "Patterned h: 6x over 360\u00b0 about (30, 5)"      # byte-legacy
+        "Patterned h: 6x over 360 degrees about (30, 5)"   # R15: page words
     # Partial 30x3: the outer hole hangs half off the plate edge
     plate_hole()
     monkeypatch.setattr(cmddialog, "ask",
@@ -864,9 +867,9 @@ def test_the_linear_door_asks_the_pages_second_direction_and_lands_both(
     step that undoes nothing, the body untouched to the last digit."""
     def answers(**over):
         base = dict(src="h", dx=10.0, dy=0.0, dz=0.0, count=3,
-                    dist="Spacing", dir="One Direction",
+                    dist="Spacing", dir="One direction",
                     count2=1, dx2=0.0, dy2=3.0, dz2=0.0,
-                    dist2="Spacing", dir2="One Direction")
+                    dist2="Spacing", dir2="One direction")
         base.update(over)
         return base
 
@@ -888,7 +891,7 @@ def test_the_linear_door_asks_the_pages_second_direction_and_lands_both(
     assert keys == ["src", "dx", "dy", "dz", "count", "dist", "dir",
                     "count2", "dx2", "dy2", "dz2", "dist2", "dir2"]
     assert defaults["count2"] == 1 and defaults["dist2"] == "Spacing" \
-        and defaults["dir2"] == "One Direction" \
+        and defaults["dir2"] == "One direction" \
         and (defaults["dx2"], defaults["dy2"], defaults["dz2"]) == \
         (0.0, 0.0, 0.0)
     f = win.doc.features[-1]

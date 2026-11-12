@@ -150,8 +150,10 @@ class LinearPatternFeature(Feature):
     Distributes pattern instances evenly along the FULL EXTENT of the
     distance value that you specify" (the vector is then the FULL
     EXTENT vector, the page's own "meaning flips with Distribution");
-    and Direction - "One Direction: ...in one direction from the
-    source" (legacy, offsets 0..(n-1) steps) | "Symmetric:
+    and Direction - "One direction: ...in one direction from the
+    source" (legacy, offsets 0..(n-1) steps; the rectangular REFERENCE
+    page's sentence-case "direction" wins over the title-case how-to
+    print, M201 R15) | "Symmetric:
     ...symmetrically in two directions FROM THE SOURCE OBJECT" (the
     source holds the middle - an ODD count is law-derivable, an even
     one has no middle to hold and REFUSES with the cure: the page
@@ -183,7 +185,7 @@ def _linear_offsets_one(vector, count, distribution, direction):
     The count INCLUDES the source (the house's rung-era law: k=0 is
     the source itself); the vector speaks the page's Distance row in
     its plain-speech voice (axis and magnitude together).
-    Spacing + One Direction is the legacy route and lands BIT-
+    Spacing + One direction is the legacy route and lands BIT-
     IDENTICAL to it (k x vector, k in range(n)).  Extent re-reads
     the vector as the full end-to-end extent: step = vector/(n-1)
     ("evenly along the full extent" - ends exactly vector apart).
@@ -235,7 +237,8 @@ def linear_offsets(vector, count: int, distribution: str = "spacing",
     vendor's rows say - "Quantity: Specify the number of pattern
     instances to create along or around an axis or path" per axis, each
     axis reading its own Distance / Distribution (Spacing | Extent) and
-    Direction (One Direction | Symmetric) - so an offset is (first leg
+    Direction (One direction | Symmetric, the REFERENCE page's casing)
+    - so an offset is (first leg
     + second leg) with the FIRST direction walking outermost (rows:
     one row of the second direction per step of the first).  Each
     direction keeps its own laws and its own refusals: an even

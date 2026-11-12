@@ -673,7 +673,7 @@ class MainWindow(QMainWindow):
                          self.act_loft, self.act_plane, self.act_axis])
 
         m_cr = self.menuBar().addMenu("C&reate")
-        self.act_linpat = QAction("&Linear pattern…", self,
+        self.act_linpat = QAction("&Rectangular pattern…", self,
                                   triggered=lambda checked=False: self.action_linear_pattern())
         self.act_cirpat = QAction("C&ircular pattern…", self,
                                   triggered=lambda checked=False: self.action_circular_pattern())
@@ -1797,6 +1797,13 @@ class MainWindow(QMainWindow):
             # around the axis"), so its angle speaks nothing (one
             # record one voice, the draft law); auto/partial/
             # symmetric all speak theirs.
+            # M201 R15 [audit stamp]: the page prints THREE words
+            # {Full | Partial | Symmetric}; "auto" is a FOURTH CHOICE
+            # THAT IS OURS - the rung-era legacy record voice for a
+            # plain N*angle sweep, kept because old records wear it
+            # and the lever shows a record its own face.  The lever's
+            # "one"/"symmetric" spellings are likewise the record's
+            # house voice, not the door's printed rows.
             combo("dist", "distribution", ("auto", "full", "partial",
                                            "symmetric"),
                   feature.distribution)
@@ -8340,6 +8347,17 @@ class MainWindow(QMainWindow):
         axes = ["+Z (through center)"] + ["X (origin)", "Y (origin)",
                                           "Z (origin)"] \
             + [a["name"] for a in self.doc.axes]
+        # M201 R15 [SLD-REF-PATTERN]: the page's circular dialog
+        # carries EXACTLY the Axis and Distribution rows - an angle
+        # row belongs ONLY to the two words that say "to an angle
+        # value that you specify" (Partial, Symmetric).  A modal door
+        # cannot gate rows (the lever can, and does - R2), so the
+        # Angle row rides the house's conditional-row law: under
+        # FULL it is NOTICED and NEVER WRITTEN (the record carries
+        # the page's own 360: "Distributes pattern instances 360
+        # degrees around the axis"), and the sentence and the rail
+        # speak the page's Full words, never the row's value.  One
+        # dialog, as always.
         v = cmddialog.ask(self, "Circular Pattern", [
             dict(key="src", label="Feature to pattern", kind="combo",
                  choices=names, group="Object"),
@@ -8391,8 +8409,16 @@ class MainWindow(QMainWindow):
         self.recompute()
         self.viewport.refresh(fit=True)
         pivot = f"axis {axis!r}" if axis else f"({cx:g}, {cy:g})"
+        # M201 R15 [SLD-REF-PATTERN]: a Full pick speaks the page's
+        # OWN number - "Full: Distributes pattern instances 360
+        # degrees around the axis" - never the Angle row's value,
+        # which was never asked of it (the row rides noticed-and-
+        # unwritten, the conditional-row law).  Partial and Symmetric
+        # are the page's two angle-speakers and keep "over Ng".
+        spoke = ("over 360 degrees" if dist == "full"
+                 else f"over {ang:g}\u00b0")
         self.status.showMessage(
-            f"Patterned {src.name}: {count}x over {ang:g}° about "
+            f"Patterned {src.name}: {count}x {spoke} about "
             f"{pivot}"
             + (", symmetrically from the source" if dist == "symmetric"
                else ""), 6000)
@@ -8402,7 +8428,7 @@ class MainWindow(QMainWindow):
         the page's two typed rows: Distribution - "Spacing: ...spaced
         at the distance value" | "Extent: Distributes pattern
         instances evenly along the FULL EXTENT of the distance value
-        that you specify" - and Direction - "One Direction: ...in one
+        that you specify" - and Direction - "One direction: ...in one
         direction from the source" | "Symmetric: ...symmetrically in
         two directions from the source object".  The X/Y/Z rows are
         the page's Distance row in the house's plain-speech voice;
@@ -8410,7 +8436,18 @@ class MainWindow(QMainWindow):
         "distance", the page's own word ("the meaning flips with the
         Distribution row").  Suppression (canvas checkboxes) and
         Compute Type (feature-face BRep) are NOT offered: doors do
-        not promise what cannot bake."""
+        not promise what cannot bake.
+
+        M201 R15 [SLD-REF-PATTERN, the naming pass]: the door and the
+        Create menu now wear the PAGE's name - "Rectangular Pattern" -
+        the word "linear" lives only in the CAM book, and the ribbon
+        tooltip already spoke "Rectangular pattern" while the menu
+        said Linear: the house's OWN mouth-conflict, healed.  The two
+        count rows are labeled "Occurrences"/"Occurrences 2" - OURS:
+        the page's row is "Quantity" ("Specify the number of pattern
+        instances to create along or around an axis or path"), kept
+        under the rung-era label on purpose.  The Direction row's
+        words follow the REFERENCE page's casing, "One direction"."""
         if self.doc is None:
             return
         cands = self._pattern_candidates()
@@ -8421,7 +8458,7 @@ class MainWindow(QMainWindow):
                                     "feature first", 5000)
             return
         names = [f.name for f in cands]
-        v = cmddialog.ask(self, "Linear Pattern", [
+        v = cmddialog.ask(self, "Rectangular Pattern", [
             dict(key="src", label="Feature to pattern", kind="combo",
                  choices=names, group="Object"),
             dict(key="dx", label="X distance", kind="double", default=10.0,
@@ -8436,8 +8473,8 @@ class MainWindow(QMainWindow):
                  choices=["Spacing", "Extent"], default="Spacing",
                  group="Pattern"),
             dict(key="dir", label="Direction", kind="combo",
-                 choices=["One Direction", "Symmetric"],
-                 default="One Direction", group="Pattern"),
+                 choices=["One direction", "Symmetric"],
+                 default="One direction", group="Pattern"),
             # M201 [SLD-REF-PATTERN + rectangular how-to, verbatim]:
             # the vendor's ONE tool carries a second direction - the
             # Quantity row reads "Specify the number of pattern
@@ -8463,8 +8500,8 @@ class MainWindow(QMainWindow):
                  choices=["Spacing", "Extent"], default="Spacing",
                  group="Second direction"),
             dict(key="dir2", label="Direction 2", kind="combo",
-                 choices=["One Direction", "Symmetric"],
-                 default="One Direction", group="Second direction"),
+                 choices=["One direction", "Symmetric"],
+                 default="One direction", group="Second direction"),
         ], remember_key="linear_pattern")
         if v is None:
             return
@@ -8592,7 +8629,18 @@ class MainWindow(QMainWindow):
         transforms, each translate + rotate about a named axis + scale
         about a base point, raised to grid indices. Directions and the
         pivot are NAMES when the datum store should drive them (M125);
-        count 2 = 1 keeps it a single-direction spiral."""
+        count 2 = 1 keeps it a single-direction spiral.
+
+        M201 R15 [audit stamp]: this door is DECLARED HOUSE-NAMED
+        WHOLESALE.  The vendor's Geometric Pattern lives behind the
+        Plastic extension (Create > Geometric Pattern) and the only
+        page the family sweep ever found is a HOW-TO - no reference
+        page prints its row words - so EVERY word this door speaks
+        (rows, choices, statuses) is OURS by declaration, not a
+        clone: "Direction 1/2", "Rotate about", "Scale about",
+        "Grid", and the T·R·S law in the kernel.  Nothing here
+        claims a page; if a reference page surfaces later, the door
+        answers to it rung by rung."""
         if self.doc is None:
             return
         cands = self._pattern_candidates()

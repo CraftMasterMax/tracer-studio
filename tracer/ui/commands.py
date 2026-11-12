@@ -65,7 +65,7 @@ MODEL_KEYS: dict[str, tuple[str, str]] = {
 # "allow-list gates junk".  Toggles/views were never candidates.
 REPEATABLE_LABELS = frozenset({
     "Fillet body edges…", "Chamfer body edges…", "Shell…", "Hole…",
-    "Linear pattern…", "Circular pattern…", "Mirror…",
+    "Rectangular pattern…", "Circular pattern…", "Mirror…",
 })
 # MODEL_KEYS targets that BYPASS the QAction (method names): the recorder
 # pass owns every triggered route, so _run_command's method branch owns
