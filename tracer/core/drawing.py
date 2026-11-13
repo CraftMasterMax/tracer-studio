@@ -469,6 +469,40 @@ def project_hidden(solid, view: str = "top", eps: float = 1e-6,
     return project_edges(solid, view, eps)["hidden"]
 
 
+def detail_cookie(solid, view, centre, radius: float):
+    """M201 R36 [Create a detail view, verbatim] "Click a point on
+    the parent view to place the center point of the detail boundary"
+    / "Drag the cursor away from the center point to adjust the size
+    of the detail boundary" - the boundary is INTERACTIVE (the page
+    prints no radius field, no circle-word), so the honest clip lives
+    in 3D, not on paper: intersect the solid with a cylinder whose
+    AXIS is the parent view's sight line through the boundary centre.
+    `centre` is parent-view coordinates (the same (dot(c,X), dot(c,Y))
+    convention hole_marks and every chain already speak); the view's
+    own orthonormal (X, Y, d) triple is the column basis that turns
+    the +z cylinder toward the sight - so an ISO parent clips exactly
+    as well as an axis-aligned one (R34's lesson: grow the honest
+    hop, refuse the dishonest one - and this hop is honest for every
+    parent the projection pipeline can name).
+    The 2000 mm depth is the section slab's own working number: parts
+    are far smaller; the cookie must swallow all sight-depth, or the
+    crop would show a lid. An empty cookie is HONEST (a boundary on
+    bare paper clips nothing) - the caller paints nothing, never a
+    lie."""
+    from .geometry import Solid
+    r = float(radius)
+    if r <= 0.0:
+        raise ValueError("detail boundary needs a positive radius")
+    d, X, Y = _basis(view)
+    u, v = float(centre[0]), float(centre[1])
+    p0 = u * X + v * Y                       # any depth on the axis
+    m4 = np.eye(4)
+    m4[:3, :3] = np.column_stack([X, Y, d])  # maps +z -> sight
+    m4[:3, 3] = p0 - 1000.0 * d
+    return solid.intersect(
+        Solid.cylinder(r, 2000.0).transformed(m4))
+
+
 def fit_circle(chain):
     """M95: ((cx, cy), r) when a projected closed chain is (near) a
     circle — a face-on circular edge under an orthographic view:
