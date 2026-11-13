@@ -182,7 +182,7 @@ def test_the_menu_mouth_stays_house():
     src = open(inspect.getsourcefile(MainWindow), encoding="utf-8").read()
     assert "Construction plane" in src                 # menu/ribbon word lives
     assert "Work axis" in src                          # ditto the axis twin
-    n_page = src.count('"Construction Geometry"')
+    n_page = src.count('ask(self, "Construction Geometry"')
     assert n_page == 2                                 # exactly the two doors
     for fn in (MainWindow.action_construction_plane,
                MainWindow.action_work_axis):
@@ -216,7 +216,10 @@ def test_both_through_words_dispatch_to_their_own_methods(win, qapp,
     win.action_work_axis()
     qapp.processEvents()
     assert len(win.doc.axes) == 1 and win.doc.axes[0]["method"] == "two-points"
-    z = win.doc.add_plane("XY", 4.0)                   # parallel partner
+    # A seam wants NON-parallel partners (the door honestly refuses
+    # parallel planes — no silent best-fit lie): XY z=0 and an XZ-offset
+    # plane y=4 meet in the line {y 4, z 0}.
+    z = win.doc.add_plane("XZ", 4.0)                   # seam-able partner
     monkeypatch.setattr(cmddialog, "ask", lambda *a, **k: {
         "gtype": "Axis", "how": "Through Two Planes",
         "p1": "0,0,0", "p2": "0,0,10", "pa": "XY", "pb": z["name"]})
