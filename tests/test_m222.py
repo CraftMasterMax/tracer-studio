@@ -165,7 +165,7 @@ def test_the_base_door_still_refuses_from_parent_by_name(win, qapp,
     the BASE dialog never wears it - not even by scripted answer."""
     cv = win.drawing
     monkeypatch.setattr(cv, "_view_dialog",
-                        lambda cur: {"style": VIEW_STYLE_INHERIT,
+                        lambda cur, view=None: {"style": VIEW_STYLE_INHERIT,
                                      "scale": "1:2"})
     cv.view_scale_requested.emit("top")
     qapp.processEvents()

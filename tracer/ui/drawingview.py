@@ -1276,16 +1276,27 @@ class DrawingCanvas(QWidget):
             fr = placed.get(view)
             if fr is None:
                 continue
+            # M201 R35 [DWG-REF-DRAWING-VIEW-DLG, verbatim] "Automated
+            # Center Marks and Center Lines: Automatically create center
+            # lines and center marks for all holes in a view." / "Hole:
+            # Creates a center mark for hole features." - the page puts
+            # that control IN THIS DIALOG ("...or later by double-clicking
+            # the view"), so the cross answers the view's own answer.
+            # Rest is ON (the page prints zero defaults; M129 shipped the
+            # cross ON). Only the MARK retires: the item bubble and the
+            # hole table are different families' ink and stay put.
+            on = (self.sheet().get("hmarks") or {}).get(view, True)
             for m in items:
                 a = self.s2p(*self._m2p(fr, (m["x"], m["y"])))
                 rp = m["r"] * fr["sc"] * self._zoom
                 L = rp + max(4.0, 1.2 * self._zoom)   # run out past
-                p.setPen(QPen(_SHEET, max(0.8, 0.25 * self._zoom),
-                              Qt.DashDotLine))         # the rim, as
-                p.drawLine(QPointF(a.x() - L, a.y()),  # centrelines do
-                           QPointF(a.x() + L, a.y()))
-                p.drawLine(QPointF(a.x(), a.y() - L),
-                           QPointF(a.x(), a.y() + L))
+                if on:                                    # the rim, as
+                    p.setPen(QPen(_SHEET, max(0.8, 0.25 * self._zoom),
+                                  Qt.DashDotLine))         # centrelines do
+                    p.drawLine(QPointF(a.x() - L, a.y()),
+                               QPointF(a.x() + L, a.y()))
+                    p.drawLine(QPointF(a.x(), a.y() - L),
+                               QPointF(a.x(), a.y() + L))
                 cx, cy = a.x() - 2 * rb, a.y() - 2 * rb
                 c = QPointF(cx, cy)                     # bubble up-LEFT:
                 p.setPen(QPen(_SHEET,                   # balloons own
@@ -1933,7 +1944,7 @@ class DrawingCanvas(QWidget):
                  for b in group]
         return max(items, default=0) + 1
 
-    def _view_dialog(self, cur):
+    def _view_dialog(self, cur, view=None):
         """M201 R32: the page's own dialog. [DWG-REF-DRAWING-VIEW-DLG,
         verbatim] "In the Drawing View dialog, you can edit the
         properties of a drawing view" - the TITLE is page-printed -
@@ -1961,12 +1972,39 @@ class DrawingCanvas(QWidget):
         if cur.get("scale"):
             lab = scale_label(float(cur["scale"]))
             word = lab if lab in SCALE_CHOICES else "Fit (auto)"
-        return cmddialog.ask(self, "Drawing View", [
+        fields = [
             dict(key="style", kind="combo", label="Style",
                  choices=list(VIEW_STYLES),
                  default=cur.get("style") or VIEW_STYLE_DEFAULT),
             dict(key="scale", kind="combo", label="Scale",
-                 choices=list(SCALE_CHOICES), default=word)])
+                 choices=list(SCALE_CHOICES), default=word),
+        ]
+        # M201 R35 [DWG-REF-DRAWING-VIEW-DLG, verbatim] the group AFTER
+        # Appearance: "Automated Center Marks and Center Lines:
+        # Automatically create center lines and center marks for all
+        # holes in a view." with "Center Marks: Choose the hole types
+        # that receive automated center marks." -> "Hole: Creates a
+        # center mark for hole features." The task page says the group
+        # is reached "while creating the view, or later by
+        # double-clicking the view" - THIS door. OFFERED BY THE INK:
+        # the row appears only where hole_marks() really stands a cross
+        # for this view (an ISO view shows no true circle, a bore across
+        # the sight shows none - the row would be decoration).
+        # UNOFFERED BY NAME, each one because this kernel owns no such
+        # record: "Round Extrudes", "Round Cuts", "Pattern", "Fillet"
+        # and their "Minimum/Maximum fillet radius" fields (no feature
+        # classification to read), and the whole "Center Lines" sub-group
+        # (no automated centre-LINE ink exists - the page's own words
+        # would then be a lie). Rest is CHECKED: the page prints zero
+        # defaults and M129 shipped the cross ON (the declared rest).
+        if view and self.doc is not None and \
+                view in drawing.hole_marks(self.doc):
+            hm = (self.sheet().get("hmarks") or {}).get(view, True)
+            fields.append(dict(
+                key="hmarks", kind="checks", label="Center Marks",
+                group="Automated Center Marks and Center Lines",
+                choices=["Hole"], checked=["Hole"] if hm else []))
+        return cmddialog.ask(self, "Drawing View", fields)
 
     def view_style(self, name: str) -> str:
         """The view's style member; absent means the OURS-declared

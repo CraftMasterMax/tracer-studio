@@ -2582,7 +2582,7 @@ class MainWindow(QMainWindow):
             return
         cur = {"style": self.drawing.view_style(view),
                "scale": (g.get("vscale") or {}).get(view)}
-        v = self.drawing._view_dialog(cur)
+        v = self.drawing._view_dialog(cur, view)
         if v is None:
             return
         style = v.get("style")
@@ -2624,6 +2624,21 @@ class MainWindow(QMainWindow):
                 from .drawingview import scale_label
                 label = scale_label(float(factor))
             bits.append(f"scale {label}")
+        if "hmarks" in v:
+            # M201 R35: the page's "Center Marks / Hole" member answers
+            # this view's automated cross. DEVIATIONS ONLY (the vscale
+            # coin): the page prints no default and M129 shipped the
+            # cross ON, so only "off" is stored and ticking it back
+            # pops the key - the file returns to carrying nothing.
+            hm = g.setdefault("hmarks", {})
+            if v["hmarks"]:
+                hm.pop(view, None)
+                if not hm:
+                    g.pop("hmarks", None)
+            else:
+                hm[view] = False
+            bits.append("hole centre marks: "
+                        + ("on" if v["hmarks"] else "off"))
         self.doc.dirty = True
         self.drawing.update()
         self.status.showMessage(", ".join(bits), 4000)
