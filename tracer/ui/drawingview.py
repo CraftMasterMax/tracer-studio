@@ -745,6 +745,42 @@ class DrawingCanvas(QWidget):
         return ((pos.x() - w / 2) / self._zoom + self._center.x(),
                 (h / 2 - pos.y()) / self._zoom + self._center.y())
 
+    def _paint_zones(self, p: QPainter):
+        """M201 R31 [DWG-REF-SHEET-SIZE, verbatim] the zone pair: 'To
+        specify horizontal zones, type in a positive even number. The
+        maximum value is 1000.'  The book is PROVEN silent on how zones
+        look (164/164 crawl, cache/size31/live.md), so this ruler is
+        OURS and says so: letters across the top, numbers up the left,
+        short ticks at the cell breaks, no full gridlines.  Zones are
+        Custom-only, exactly as the row heading prints it - a family
+        member sheet shows none whatever its stored values."""
+        zones = self.sheet().get("zones") or (0, 0)
+        if not (zones[0] or zones[1]):
+            return
+        if not str(self.page).startswith("Custom"):
+            return
+        W, H = drawing.sheet_size(self.page)
+        g = drawing.zone_grid(W, H, *zones)
+        p.setPen(QPen(_BORDER, self._w(0.35)))
+        for x in g["xs"]:
+            p.drawLine(self.s2p(x, H), self.s2p(x, H - 3.0))
+        for y in g["ys"]:
+            p.drawLine(self.s2p(0, y), self.s2p(3.0, y))
+        f = QFont(p.font())
+        f.setPixelSize(max(9, int(4.0 * self._zoom)))
+        p.setFont(f)
+        # The label rects ride PIXELS, not millimetres: a mm-thick
+        # rect is sub-pixel at fit zoom and Qt silently clips the
+        # text away (the trap this gate's first run measured).
+        for xc, lab in g["top"]:
+            c = self.s2p(xc, H - 1.9)
+            p.drawText(QRectF(c.x() - 9, c.y() - 9, 18, 18),
+                       Qt.AlignCenter, lab)
+        for yc, lab in g["left"]:
+            c = self.s2p(2.1, yc)
+            p.drawText(QRectF(c.x() - 9, c.y() - 9, 18, 18),
+                       Qt.AlignCenter, lab)
+
     def paintEvent(self, ev):
         p = QPainter(self)
         self.paintPage(p)
@@ -765,6 +801,7 @@ class DrawingCanvas(QWidget):
         p.setBrush(_PAPER)                        # the paper
         p.drawRect(sheet)
         p.setBrush(Qt.NoBrush)
+        self._paint_zones(p)                                 # M201 R31
         self._paint_block(p)                                 # M108 title block
         self._paint_bom(p)                                   # M110 parts list
         # views + section hatch + hidden ink + bubbles (one pass)

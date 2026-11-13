@@ -2308,6 +2308,16 @@ class MainWindow(QMainWindow):
                        "and sheet number are added for you)")
         tbb.clicked.connect(self.action_title_block)
         bl.addWidget(tbb)
+        ssb = QPushButton("Sheet Size…")            # M201 R31 sheet resize
+        ssb.setProperty("tb", True)
+        ssb.setToolTip("Resize the current sheet - the page's Sheet Size "
+                       "dialog: ISO and ASME members in the page's own "
+                       "words, Custom width and height (the 5000 mm cap), "
+                       "Orientation, and the Custom-only zone counts (the "
+                       "ruler's look is ours: the book draws no picture "
+                       "of zones)")
+        ssb.clicked.connect(self.action_sheet_size)
+        bl.addWidget(ssb)
         rotb = QPushButton("Rotate\u2026")                # M109 view spin
         rotb.setProperty("tb", True)
         rotb.setToolTip("Rotate one view about its centre (display only — "
@@ -2852,6 +2862,126 @@ class MainWindow(QMainWindow):
         self.doc.dirty = True
         self.drawing.update()
         self.status.showMessage("Title block updated", 3000)
+
+    def action_sheet_size(self):
+        """Fusion ▸ Sheet Size [DWG-REF-SHEET-SIZE, verbatim; live-
+        verified lane D 2026-11-13, page identical to the dwg29 bank]:
+        "the Sheet Size dialog displays." - the TITLE is page-printed
+        and the door wears it.  "Select a sheet size for the current
+        sheet from the dropdown menu." - ONE combo prints both families
+        (ISO first, then ASME, each member in the page's own words
+        "A4 (297mm x 210mm)" / "A (11in x 8.5in)" - no-space unit
+        strings are the book's voice, dwg29 census) and Custom; the
+        page prints Custom under EACH family as one word, so ONE
+        Custom member is ours-declared honest.  Width and Height
+        "Display[] the ... of the sheet. You can change the value when
+        you select the Custom sheet size option." - shown for members,
+        honoured only under Custom: asked, stored and INERT otherwise
+        (the conditional-row law).  The cap rides R20's honoured
+        "maximum value is 200in or 5000mm" (mm member; the pair's
+        inequality is the flagged vendor defect).  Orientation is the
+        page's pair at the sheet's CURRENT rest ("Default:" counts 0).
+        Horizontal/Vertical Zones are "(Custom sheet size only)":
+        "type in a positive even number. The maximum value is 1000."
+        - the CONSTRAINTS are the page's, the DRAWING of zones is
+        OURS (the whole book is proven silent on how zones look,
+        lane D 164/164 crawl) and rides drawing.zone_grid; a family
+        member discards zone values (the row heading says Custom-only,
+        so inert is honest).  A zero zone count means NO zones -
+        our declared reading of a row the page prints no default for.
+        ACCESS, declared ours: the page's route ("In the Sheet Bar...
+        expand the Sheet Settings node, then click the icon") is a
+        browser we do not have; the mouth is the Drawing toolbar.
+        The result sentence is the task page's verbatim: "The new
+        sheet size applies to the current sheet in the drawing." -
+        Cancel rides the book-wide silence (Cancel counts 0 in 164
+        pages)."""
+        if self.doc is None or not self.doc.drawings:
+            self.status.showMessage("Create a drawing first", 3000)
+            return
+        from ..core import drawing
+        g = self.drawing.sheet() or self.doc.drawings[-1]
+        page = str(g.get("page", "A3"))
+        cur_W, cur_H = drawing.sheet_size(page)
+        custom = page.startswith("Custom")
+        orient = ("Portrait" if page.endswith("Portrait")
+                  else "Landscape")
+        zlist = list(g.get("zones") or [0, 0])
+
+        def words(m):
+            W, H = drawing.PAGES[m]
+            if m in drawing.SHEET_FAMILIES["ISO"]:
+                return f"{m} ({W:g}mm x {H:g}mm)"
+            return (f"{m} ({W / drawing.IN_MM:g}in x "
+                    f"{H / drawing.IN_MM:g}in)")
+        choices = [words(m) for m in drawing.SHEET_FAMILIES["ISO"]]
+        choices += [words(m) for m in drawing.SHEET_FAMILIES["ASME"]]
+        choices.append("Custom")
+        try:
+            cur_word = "Custom" if custom else words(page.split()[0])
+        except KeyError:            # sheet_size's own forgiving voice:
+            cur_word = words("A3")  #   an unknown key draws as A3
+        v = cmddialog.ask(self, "Sheet Size", [
+            dict(key="size", label="Sheet Size", kind="combo",
+                 choices=choices, default=cur_word),
+            dict(key="w", label="Width (mm)", kind="double",
+                 default=round(cur_W, 6), decimals=2, min=0.0,
+                 max=drawing.SHEET_MAX_MM),
+            dict(key="h", label="Height (mm)", kind="double",
+                 default=round(cur_H, 6), decimals=2, min=0.0,
+                 max=drawing.SHEET_MAX_MM),
+            dict(key="orient", label="Orientation", kind="combo",
+                 choices=list(drawing.ORIENTATIONS), default=orient),
+            dict(key="hz", label="Horizontal Zones", kind="int",
+                 default=int(zlist[0]), min=0, max=drawing.ZONE_CAP),
+            dict(key="vz", label="Vertical Zones", kind="int",
+                 default=int(zlist[1]), min=0, max=drawing.ZONE_CAP)],
+            remember_key="sheet-size")
+        if v is None:
+            return
+        word = str(v["size"])
+        try:
+            if word == "Custom":
+                W, H = float(v["w"]), float(v["h"])
+                if not (0.0 < W <= drawing.SHEET_MAX_MM
+                        and 0.0 < H <= drawing.SHEET_MAX_MM):
+                    raise ValueError(
+                        f"custom width/height {W:g} x {H:g} mm breaks "
+                        "the page: 'The maximum value is 200in or "
+                        f"{drawing.SHEET_MAX_MM:g} mm' - and a sheet "
+                        "must have positive measure")
+                new_page = f"Custom {W:g}x{H:g}"
+                fam = g.get("standard", "ISO")
+                zones = [drawing.zone_count(v["hz"], "Horizontal"),
+                         drawing.zone_count(v["vz"], "Vertical")]
+            else:
+                new_page = word.split(" (")[0]
+                fam = ("ISO" if new_page in drawing.SHEET_FAMILIES["ISO"]
+                       else "ASME")
+                zones = [0, 0]      # "(Custom sheet size only)" - a
+                #                      member DISCARDS zone values
+            if str(v["orient"]) == "Portrait":
+                new_page += " Portrait"
+            drawing.sheet_size(new_page)          # the grammar gate
+        except ValueError as e:
+            self.status.showMessage(f"Sheet Size refused: {e}", 7000)
+            return
+        self._capture()
+        g["page"] = new_page
+        g["standard"] = fam
+        if any(zones):                 # NOT 'if zones': a [0, 0] list
+            g["zones"] = zones         #   is TRUTHY - members discard
+        else:
+            g.pop("zones", None)
+        self.doc.dirty = True
+        W, H = drawing.sheet_size(new_page)
+        self.drawing.page = new_page
+        self.drawing.set_document(self.doc)
+        self.status.showMessage(
+            f"The new sheet size applies to the current sheet in the "
+            f"drawing - {new_page}, {W:g} x {H:g} mm"
+            + (f", zones {zones[0]} x {zones[1]} (Custom only)"
+               if any(zones) else ""), 6000)
 
     def action_rotate_view(self):
         """M109: spin one view on the sheet about its own centre.  This is

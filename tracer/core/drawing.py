@@ -88,6 +88,66 @@ def sheet_size(page) -> tuple:
             else tuple(reversed(PAGES["A3"]))
     return (W, H) if orient == "Landscape" else (H, W)
 
+
+# [DWG-REF-SHEET-SIZE, verbatim] the zone rows: "To specify horizontal
+# zones, type in a positive even number. The maximum value is 1000."
+# (and the Vertical twin).  The cap prints ONLY on this reference page;
+# the same rows on DWG-REF-CREATE-DRAWING drift without it (vendor
+# defect, lane D ledger) - we honour the cap.  HOW zones look is proven
+# absent from the whole Fusion-Drawing book (164/164 crawl,
+# cache/size31/live.md): the tick placement, letters-on-top, numbers-
+# on-the-left, bottom-up numbering and the standards' letter exclusions
+# are OURS-declared (M27 + the silence-stamp law), riding the same
+# reserved-letter pool M136/M144 already keep for sections and datums.
+ZONE_CAP = 1000
+
+
+def zone_count(v, name):
+    """Validate one zone count in the page's own voice; 0 (or None)
+    means NO zones - our declared reading of a row the page never
+    prints a default for.  Returns int."""
+    if v is None:
+        return 0
+    n = int(v)
+    if n == 0:
+        return 0
+    if n < 0:
+        raise ValueError(f"{name} zones: the page prints 'type in a "
+                         "positive even number' - {n} is not positive")
+    if n % 2:
+        raise ValueError(f"{name} zones: the page prints 'type in a "
+                         f"positive even number' - {n} is odd")
+    if n > ZONE_CAP:
+        raise ValueError(f"{name} zones: the page prints 'The maximum "
+                         f"value is 1000.' - {n} exceeds it")
+    return n
+
+
+def zone_grid(W, H, hz, vz):
+    """The sheet zone ruler, OURS-drawn (the book proves no vendor
+    appearance is documented): hz COLUMNS labelled from
+    RESERVED_LETTERS-excluded A,B,C... left to right along the TOP,
+    vz ROWS labelled 1,2,3... bottom to top along the LEFT.  Returns
+    {"xs","ys","top","left"} in sheet-mm: xs/ys the interior tick
+    positions, top/left [(centre, label)] the printed cells."""
+    hz, vz = zone_count(hz, "Horizontal"), zone_count(vz, "Vertical")
+    letters = [c for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+               if c not in RESERVED_LETTERS]
+    if hz > len(letters):
+        raise ValueError(f"horizontal zones: {hz} columns want more "
+                         f"labels than the {len(letters)} letters this "
+                         "kernel's standards exclude (I O Q S X Z)")
+    out = {"xs": [], "ys": [], "top": [], "left": []}
+    if hz:
+        cw = W / hz
+        out["xs"] = [i * cw for i in range(1, hz)]
+        out["top"] = [((i + 0.5) * cw, letters[i]) for i in range(hz)]
+    if vz:
+        ch = H / vz
+        out["ys"] = [i * ch for i in range(1, vz)]
+        out["left"] = [((i + 0.5) * ch, str(i + 1)) for i in range(vz)]
+    return out
+
 RESERVED_LETTERS = "IOQSXZ"   # the standards' exclusions (M136/M144):
 #                              sections AND datums letter from here
 
