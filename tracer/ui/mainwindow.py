@@ -2738,51 +2738,86 @@ class MainWindow(QMainWindow):
         self.status.showMessage(msg, 7000)
 
     def _on_section_edit(self, name):
-        """M137: the section's own properties dialog (rung two of the
-        vendor's grammar): the tri-modal DEPTH — full half, slice (the
-        wound alone), distance slab — the kept side, hidden lines (OFF
-        is how a section reads, and the default; an entry can opt back
-        in), and the per-view scale the M100 double-click already
-        knew. Cancelling changes nothing; every edit rides _capture
-        exactly like the line that made the section."""
+        """M137's route, R33's dialog: a section child's double-click
+        answers [DWG-REF-DRAWING-VIEW-DLG]'s own Drawing View dialog -
+        the creation page's grammar is explicit ("Select a base view,
+        ... The Drawing View dialog displays"). Rows ride the page's
+        groups and order: Appearance (Style, Scale), Section Depth
+        (Depth, Distance, Set Distance), Objects to Cut. The Style
+        pair answers the entry's M137 "hidden" flag - the page
+        controls back ink with STYLE, so the old hidden-lines check
+        retires and one knob rules; the storage key and the kernel
+        law are untouched. Depth keeps M137's tri-modal semantics in
+        the page's bare member words. Cancelling changes nothing;
+        every edit rides _capture exactly like the line that made the
+        section. Unoffered by name (declared): From Parent (awaits
+        parent-chain resolution), Name (A-A scheme is ours; renaming
+        is identity surgery), Orientation/Reference/Representation
+        (creation-only per the page's own Notes), the Edge-Visibility
+        and Center-Mark rows (no kernel records)."""
         sec = next((s for s in self.drawing.sections()
                     if s["name"] == name), None)
         if sec is None:
             return
         from . import cmddialog
+        from .drawingview import VIEW_STYLES, VIEW_STYLE_DEFAULT
         from ..core.drawing import parse_scale
         line = "parent" in sec
         g = self.drawing.sheet()
         cur_sc = (g.get("vscale") or {}).get(name)
-        modes = ["Full (everything behind the line)",
-                 "Slice (the cut face alone)",
-                 "Distance (a slab from the line)"]
-        to_key = {modes[0]: "full", modes[1]: "slice",
-                  modes[2]: "distance"}
+        # [DWG-REF-DRAWING-VIEW-DLG, verbatim] "Double-click a base
+        # view, projected view, section view..." + the creation page's
+        # own grammar: choose a parent and "The Drawing View dialog
+        # displays" - a section's dialog IS this dialog. Rows ride the
+        # page's groups and order: Appearance (Style, Scale), then
+        # Section Depth (Depth, Distance, Set Distance), then Objects
+        # to Cut. DEVIATIONS FROM THE PAGE, NAMED: Orientation/
+        # Reference/Representation are creation-only rows ("You cannot
+        # modify this setting for an existing view" x3) - unoffered;
+        # "From Parent" waits for parent-chain resolution (one honest
+        # later slice); "Name" the page itself softens ("if needed") -
+        # our identifiers are the declared A-A scheme (renaming is
+        # identity surgery, deferred by name); Tangent/Interference/
+        # Thread/Center rows - the kernel owns no such records.
+        # The M137 hidden-lines CHECK retires here: the PAGE controls
+        # back ink with the STYLE row, and one knob beats two -
+        # "Visible Edges and Hidden Edges" answers the entry's
+        # tested "hidden" flag True, "Visible Edges" answers it False
+        # (the storage law and the file format are UNTOUCHED).
+        modes = ["Full", "Slice", "Distance"]     # page members, bare
+        to_key = {"Full": "full", "Slice": "slice",
+                  "Distance": "distance"}
         to_name = {v: k for k, v in to_key.items()}
-        fields = []
-        if line:
-            fields += [
-                dict(key="mode", kind="combo", label="Depth",
-                     choices=modes,
-                     default=to_name.get(str(sec.get("mode", "full")))),
-                dict(key="dist", kind="double",
-                     label="Slab depth (Distance only)",
-                     default=float(sec.get("dist") or 10.0),
-                     min=0.01, max=1e4, decimals=2),
-                dict(key="flip", kind="check",
-                     label="Flip the kept side",
-                     default=bool(sec.get("flip"))),
-            ]
-        fields += [
-            dict(key="hidden", kind="check",
-                 label="Show hidden lines (sections omit them)",
-                 default=bool(sec.get("hidden"))),
-            dict(key="scale", kind="text",
-                 label="Scale (blank = fit with the sheet)",
+        fields = [
+            dict(key="style", kind="combo", label="Style", group="Appearance",
+                 choices=list(VIEW_STYLES),
+                 # the section's rest is ITS OWN ink truth (page
+                 # prints zero defaults): the M137 answer of the entry
+                 # - no back lines is "Visible Edges"
+                 default=(VIEW_STYLE_DEFAULT if sec.get("hidden")
+                          else "Visible Edges")),
+            dict(key="scale", kind="text", label="Scale", group="Appearance",
                  default=("" if not cur_sc else
                           f"1:{1 / float(cur_sc):g}")),
         ]
+        if line:
+            fields += [
+                dict(key="mode", kind="combo", label="Depth",
+                     group="Section Depth", choices=modes,
+                     default=to_name.get(str(sec.get("mode", "full")))),
+                dict(key="dist", kind="double", label="Distance",
+                     group="Section Depth",
+                     # the book prints " mm" ZERO times and no numeric
+                     # example on any section page - the suffix, the
+                     # range and this rest value are OURS, declared
+                     default=float(sec.get("dist") or 10.0),
+                     min=0.01, max=1e4, decimals=2),
+                dict(key="setdist", kind="button", label="Set Distance",
+                     group="Section Depth", target="dist", value=10.0),
+                dict(key="flip", kind="check", group="Section Depth",
+                     label="Flip the kept side",
+                     default=bool(sec.get("flip"))),
+            ]
         names = sorted(self.doc.body_solids())
         if len(names) > 1:
             # M139: the vendor's "Objects to Cut" tree, at our scale —
@@ -2794,7 +2829,7 @@ class MainWindow(QMainWindow):
                 choices=names,
                 checked=[n for n in names
                          if n not in (sec.get("exclude") or [])]))
-        v = cmddialog.ask(self, f"Section {name}", fields)
+        v = cmddialog.ask(self, "Drawing View", fields)   # PAGE title
         if v is None:
             return
         exc = sorted(set(names) - set(v["cut"])) if "cut" in v else None
@@ -2802,6 +2837,14 @@ class MainWindow(QMainWindow):
             self.status.showMessage("A section must cut at least one "
                                     "body — nothing would hatch", 5000)
             return                       # refuse BEFORE the capture
+        if "style" in v and str(v["style"]) not in VIEW_STYLES:
+            # defense in depth (the R32 coin): refuse BEFORE the
+            # capture, so a rejected answer leaves no undo dent
+            self.status.showMessage(
+                f"Drawing View refused: '{v['style']}' is unoffered "
+                "by name - the sheet painter is line art and owns "
+                "no fills", 7000)
+            return
         self._capture()
         bits = []
         if line:
@@ -2826,10 +2869,16 @@ class MainWindow(QMainWindow):
             bits.append({"full": "full depth",
                          "slice": "slice \u2014 the wound alone"
                          }.get(mode, shown))
-        if bool(v["hidden"]) != bool(sec.get("hidden")):
-            sec["hidden"] = bool(v["hidden"])
-            bits.append("hidden lines " + ("on" if v["hidden"]
-                                           else "off"))
+        # the page's Style row drives the entry's tested "hidden"
+        # flag - one knob, the storage law untouched (M137); an
+        # answer without a style key (legacy scripted reply) leaves
+        # the flag ALONE
+        if "style" in v:
+            want_hidden = str(v["style"]) == VIEW_STYLE_DEFAULT
+            if want_hidden != bool(sec.get("hidden")):
+                sec["hidden"] = want_hidden
+                bits.append("hidden lines " + ("on" if want_hidden
+                                               else "off"))
         try:
             factor = parse_scale(str(v["scale"]))
         except ValueError as e:

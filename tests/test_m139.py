@@ -96,8 +96,9 @@ def win(qapp):
 def _dialog(qapp, monkeypatch, cut, **over):
     """Answer the M137 props dialog with the picker set to `cut`."""
     from tracer.ui import cmddialog
-    vals = dict(mode="Full (everything behind the line)", dist=10.0,
-                flip=False, hidden=False, scale="", cut=cut)
+    vals = dict(mode="Full", dist=10.0,
+                flip=False, style="Visible Edges", scale="",
+                cut=cut)
     vals.update(over)
     monkeypatch.setattr(cmddialog, "ask",
                         lambda *a, **k: dict(vals))
@@ -169,14 +170,14 @@ def test_modes_compose_with_the_exclusion(win, qapp, monkeypatch):
     cv = win.drawing
     win._on_section_line(dict(LINE))
     _dialog(qapp, monkeypatch, ["Body 1"],
-            mode="Slice (the cut face alone)")
+            mode="Slice")
     win._on_section_edit("A-A")
     qapp.processEvents()
     res = cv._sec_cut(cv.sections()[0])
     assert res["half"] is None               # a slice has no body to
     assert cap_area(cv, "A-A") == 240.0      #  stand in: wound only
     _dialog(qapp, monkeypatch, ["Body 1"],
-            mode="Distance (a slab from the line)", dist=4.0)
+            mode="Distance", dist=4.0)
     win._on_section_edit("A-A")
     qapp.processEvents()
     assert cap_area(cv, "A-A") == 240.0      # slab cuts plate only…
@@ -219,9 +220,9 @@ def test_the_picker_only_shows_when_there_is_a_choice(
     def spy(parent, title, fields):
         captured.append(fields)
         names = sorted(win.doc.body_solids())
-        return dict(mode="Full (everything behind the line)",
-                    dist=10.0, flip=False, hidden=False, scale="",
-                    cut=names)
+        return dict(mode="Full",
+                    dist=10.0, flip=False, style="Visible Edges",
+                    scale="", cut=names)
     monkeypatch.setattr(cmddialog, "ask", spy)
     win._on_section_line(dict(LINE))
     win._on_section_edit("A-A")              # two bodies: a picker

@@ -12,7 +12,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog,
                                QDialogButtonBox, QDoubleSpinBox, QFormLayout,
                                QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-                               QPlainTextEdit,
+                               QPlainTextEdit, QPushButton,
                                QSpinBox, QVBoxLayout, QWidget)
 
 from .theme import DARK
@@ -204,6 +204,31 @@ class CommandDialog(QDialog):
         self._fields[key] = w
         return self
 
+    def add_button(self, label, target, value, group=""):
+        """M201 R33: a real push row for the page's CLICK verbs
+        [DWG-REF-DRAWING-VIEW-DLG] "Set Distance (Distance only):
+        Click to reset Distance." - where the page says CLICK the
+        door is a BUTTON, never a checkbox pretending.  Clicking
+        re-arms the TARGET field with VALUE immediately (the vendor's
+        button edits the dialog, not the document); it joins NO
+        _fields entry, so the answer dict cannot be polluted - a
+        button has nothing to answer."""
+        b = QPushButton(label)
+
+        def _click():
+            w = self._fields.get(target)
+            if isinstance(w, (QDoubleSpinBox, QSpinBox)):
+                w.setValue(float(value))
+            elif isinstance(w, QLineEdit):
+                w.setText(str(value))
+            elif isinstance(w, QComboBox):
+                i = w.findText(str(value))
+                if i >= 0:
+                    w.setCurrentIndex(i)
+        b.clicked.connect(_click)
+        self._form(group).addRow(b)
+        return self
+
     def add_checks(self, key, label, choices, checked=(), group=""):
         w = ChecksField(label, choices, checked)
         self._form(group).addRow(w)
@@ -276,9 +301,12 @@ def ask(parent, title, fields, remember_key=None) -> dict | None:
 
     fields: list of dicts {key, label, kind, group?, default?, choices?,
     min?, max?, decimals?, suffix?} with kind in
-    {"combo","double","int","check","checks","text","multiline"}; returns
-    {key: value} or None on Cancel. A "checks" field (choices + checked)
-    values as the list of checked names.
+    {"combo","double","int","check","checks","text","multiline","button"};
+    returns {key: value} or None on Cancel. A "checks" field (choices +
+    checked) values as the list of checked names. A "button" field
+    (label + target + value, M201 R33) is the page's CLICK verb made
+    real - it resets its target field on click and contributes NO
+    answer value.
     """
     d = CommandDialog(title, parent, remember_key)
     combo_keys = [f["key"] for f in fields if f["kind"] == "combo"]
@@ -313,6 +341,8 @@ def ask(parent, title, fields, remember_key=None) -> dict | None:
             d.add_text(f["key"], f["label"], f.get("default", ""), g)
         elif kind == "multiline":
             d.add_multiline(f["key"], f["label"], f.get("default", ""), g)
+        elif kind == "button":
+            d.add_button(f["label"], f["target"], f.get("value", ""), g)
         else:
             raise ValueError(f"unknown field kind {kind!r}")
     d._prefill()

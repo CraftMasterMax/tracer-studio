@@ -189,9 +189,11 @@ def test_the_dialog_carries_the_triad_and_cancels_clean(win,
     monkeypatch.setattr(cmddialog, "ask", cancel)
     before = {k: v for k, v in _sec(win).items()}
     win._on_section_edit("A-A")
-    assert seen["title"] == "Section A-A"
-    assert {"mode", "dist", "flip", "hidden", "scale"} <= set(
-        seen["keys"])
+    assert seen["title"] == "Drawing View"        # R33: the
+    #   page's OWN dialog (the creation page shows it for sections)
+    assert {"style", "scale", "mode", "dist", "setdist",
+            "flip"} <= set(seen["keys"])   # R33 re-pin: page
+    #   words ride the door
     assert len(seen["modes"]) == 3                   # Full|Slice|
     assert _sec(win) == before                       # Cancel: nothing
 
@@ -201,9 +203,10 @@ def test_distance_and_scale_edits_land_and_undo(win, qapp,
     from tracer.ui import cmddialog
     monkeypatch.setattr(
         cmddialog, "ask",
-        lambda *a, **k: {"mode": "Distance (a slab from the line)",
+        lambda *a, **k: {"mode": "Distance",
                          "dist": 4.0, "flip": False,
-                         "hidden": True, "scale": "1:2"})
+                         "style": "Visible Edges and Hidden Edges",
+                         "scale": "1:2"})
     v_before = win.drawing._sec_cut(_sec(win))["half"].volume
     win._on_section_edit("A-A")
     s = _sec(win)
@@ -221,17 +224,16 @@ def test_distance_and_scale_edits_land_and_undo(win, qapp,
 def test_going_back_to_full_forgets_the_slab(win, qapp, monkeypatch):
     from tracer.ui import cmddialog
     monkeypatch.setattr(cmddialog, "ask",
-                        lambda *a, **k: {"mode": "Slice (the cut face "
-                                                "alone)",
+                        lambda *a, **k: {"mode": "Slice",
                                          "dist": 7.0, "flip": False,
-                                         "hidden": False, "scale": ""})
+                                         "style": "Visible Edges", "scale": ""})
     win._on_section_edit("A-A")
     assert _sec(win).get("mode") == "slice" and "dist" not in _sec(win)
     monkeypatch.setattr(
         cmddialog, "ask",
-        lambda *a, **k: {"mode": "Full (everything behind the line)",
+        lambda *a, **k: {"mode": "Full",
                          "dist": 7.0, "flip": False,
-                         "hidden": False, "scale": ""})
+                         "style": "Visible Edges", "scale": ""})
     win._on_section_edit("A-A")
     assert "mode" not in _sec(win) and "dist" not in _sec(win)
 

@@ -294,9 +294,9 @@ def test_the_props_dialog_speaks_to_a_jogged_child(win, qapp,
                           "p0": (2, 15), "p1": (38, 25)})
     monkeypatch.setattr(
         cmddialog, "ask",
-        lambda *a, **k: {"mode": "Slice (the cut face alone)",
+        lambda *a, **k: {"mode": "Slice",
                          "dist": 10.0, "flip": True,
-                         "hidden": False, "scale": "1:2"})
+                         "style": "Visible Edges", "scale": "1:2"})
     win._on_section_edit("A-A")
     qapp.processEvents()
     s = cv.sections()[0]
