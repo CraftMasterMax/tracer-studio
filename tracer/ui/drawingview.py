@@ -76,6 +76,11 @@ class DrawingCanvas(QWidget):
     view_scale_requested = Signal(str)           # M100: Scale dialog ask
     section_added = Signal(dict)                 # M136: {parent,p0,p1,flip}
     detail_added = Signal(dict)                  # M201 R36: {parent,c,r,at}
+    breakout_added = Signal(dict)                # M201 R37: {view,loop}
+    breakout_edit_requested = Signal(int)        # R37: dbl-click a profile
+    #   (the INDEX into sheet()["breakouts"] - a Signal(dict] would hand
+    #   the handler a QVariant-marshalled COPY, and an edit that mutates
+    #   a copy is the loudest kind of lie)
     section_edit_requested = Signal(str)         # M137: dbl-click a child
     tool_note = Signal(str)                      # M136: canvas says, status
 
@@ -104,6 +109,11 @@ class DrawingCanvas(QWidget):
         self._det_a = 0.7853981633974483       # identifier angle (the
         #   drag's direction; 45° is only the untouched-rest default)
         self._det_hover = None                 # page xy of the rubber tip
+        self._bk_mode = False                  # M201 R37: breakout armed?
+        self._bk_view = None                   # the view holding the loop
+        self._bk_pts: list = []                # loop pts, view MODEL xy
+        self._bk_hover = None                  # page xy of the rubber tip
+        self._pre_breakout: dict = {}          # R37: sources BEFORE the cuts
         self._printing = False                 # M143: publishing to paper
         self._fit_mode = False                 # M114: fit-callout armed?
         self._gdt_mode = False                 # M144: FCF editor armed?
@@ -149,6 +159,19 @@ class DrawingCanvas(QWidget):
         plus any user Name. COPY semantics ride (the sections()
         trap): write through sheet()["details"] for real edits."""
         return list(self.sheet().get("details") or [])
+
+    def breakouts(self) -> list:
+        """M201 R37 [Breakout section views, verbatim] "a breakout
+        section is part of an existing drawing view" - the sheet's
+        stored profiles: {view (the name it cuts), loop (closed
+        polyline in that view's MODEL xy - it rides a nudged view
+        like every other furniture), depth (typed distance; ABSENT
+        means the page's own default, "half of your design's depth",
+        held LIVE so a grown design deepens the cut)}. One entry per
+        view - [verbatim] "A drawing view can contain only one
+        breakout section." COPY semantics ride: write through
+        sheet()["breakouts"] for real edits."""
+        return list(self.sheet().get("breakouts") or [])
 
     def _sec_src(self, sec):
         """M139: which bodies a cut reads, and what stands in whole.
@@ -252,6 +275,32 @@ class DrawingCanvas(QWidget):
             except Exception:
                 continue
             out[det["name"]] = (cook, src[1])
+        # M201 R37 [Breakout section views, verbatim] a breakout "is
+        # PART OF AN EXISTING DRAWING VIEW" - it adds no source, it
+        # CUTS one: the same name now projects the solid with the
+        # drawn profile removed to depth. The pre-cut sources are kept
+        # (_pre_breakout) so the edit door can re-check a new depth
+        # against the WHOLE solid, never against its own cut. Drawn
+        # once, re-derived every repaint; the page's Reset Start Point
+        # is our non-feature - the front of the design is read LIVE
+        # from the solid, there is no stale anchor to reset. A stored
+        # depth a later model shrink swallowed (a section, not a
+        # breakout) cuts NOTHING: the view reverts to whole ink, the
+        # entry survives for the drafter to fix - absence, not
+        # invention.
+        pre = dict(out)
+        for bk in self.breakouts():
+            src = out.get(bk.get("view"))
+            if src is None or src[0] is None:
+                continue
+            try:
+                cut, _ = drawing.breakout_solid(src[0], src[1],
+                                                bk["loop"],
+                                                bk.get("depth"))
+            except Exception:
+                continue
+            out[bk["view"]] = (cut, src[1])
+        self._pre_breakout = pre
         fp = self.doc.flat_feature()               # M147: the flat
         if fp is not None:                         # pattern rides EVERY
             sol = self.doc.body_solids().get("_flat")   # sheet (v1);
@@ -568,6 +617,7 @@ class DrawingCanvas(QWidget):
             self._sec_mode = False            # M136
             self._gdt_mode = False            # M144
             self._det_mode = False            # M201 R36: one tool
+            self._bk_mode = False            # M201 R37: one tool
         self.update()
 
     def set_balloon_mode(self, on: bool):
@@ -582,6 +632,7 @@ class DrawingCanvas(QWidget):
             self._sec_mode = False            # M136
             self._gdt_mode = False            # M144
             self._det_mode = False            # M201 R36
+            self._bk_mode = False            # M201 R37: one tool
         self.update()
 
     def set_fit_mode(self, on: bool):
@@ -595,6 +646,7 @@ class DrawingCanvas(QWidget):
             self._sec_mode = False            # M136
             self._gdt_mode = False            # M144
             self._det_mode = False            # M201 R36
+            self._bk_mode = False            # M201 R37: one tool
         self.update()
 
     def set_gdt_mode(self, on: bool):
@@ -610,6 +662,7 @@ class DrawingCanvas(QWidget):
             self._fit_mode = False
             self._sec_mode = False
             self._det_mode = False            # M201 R36
+            self._bk_mode = False            # M201 R37: one tool
         self.update()
 
     def set_section_mode(self, on: bool):
@@ -629,6 +682,7 @@ class DrawingCanvas(QWidget):
             self._fit_mode = False
             self._gdt_mode = False            # M144
             self._det_mode = False            # M201 R36
+            self._bk_mode = False            # M201 R37: one tool
             self.tool_note.emit("Section line: click where the cut "
                                 "BEGINS on the top, front or right "
                                 "view")
@@ -658,9 +712,46 @@ class DrawingCanvas(QWidget):
             self._fit_mode = False
             self._gdt_mode = False
             self._sec_mode = False
+            self._bk_mode = False            # M201 R37: one tool
             self.tool_note.emit("Detail: click the CENTER of the "
                                 "area to enlarge, on a base or "
                                 "section view")
+        self.update()
+
+    def set_breakout_mode(self, on: bool):
+        """M201 R37 [Create breakout section views, verbatim] "Click to
+        place the first point of the breakout section profile" / "Click
+        to place the next point" / "Continue placing points as needed.
+        The Check icon displays after you place at least 3 points" -
+        the profile is the TOOL, not a dialog. The page's "Select the
+        drawing view on which you want to create the breakout section"
+        is answered by the FIRST CLICK being inside the view; every
+        later click must stay on it. A double-click closes the profile
+        (M138's own law: "a double-click is the FINISHING gesture - the
+        vendor's polyline grammar") and so does a click back ON the
+        first point once three stand - that marker ring is the page's
+        Check made visible on paper. The dialog then asks the page's
+        Section Depth: blank is the page's default, half of the
+        design's depth, held live. The page names NO parent
+        restriction (the detail's page did name one), so every view
+        WITH MATERIAL answers - the iso included, which the core's
+        gates prove cuts as true. One breakout per view, verbatim.
+        The tool stays armed for the next view; click the button again
+        to stand down."""
+        self._bk_mode = bool(on)
+        self._bk_pts, self._bk_view, self._bk_hover = [], None, None
+        if on:
+            self._dim_mode = False
+            self._dim_first = None
+            self._balloon_mode = False
+            self._fit_mode = False
+            self._gdt_mode = False
+            self._sec_mode = False
+            self._det_mode = False
+            self.tool_note.emit("Breakout: click INSIDE the view to "
+                                "break out, then place the profile's "
+                                "points - double-click closes it once "
+                                "it holds three")
         self.update()
 
     def _dim_disp(self, d) -> str:
@@ -1065,6 +1156,7 @@ class DrawingCanvas(QWidget):
         self._draw_datum_ids(p, placed)              # M150 letters
         self._draw_section_lines(p, placed)          # M136 cutting lines
         self._draw_details(p, placed)                # M201 R36 boundaries
+        self._draw_breakouts(p, placed)              # M201 R37 profiles
 
     # ---- publish (M143) ---------------------------------------------------
     _Q_PAGE = {"A3": QPageSize.A3, "A4": QPageSize.A4}
@@ -1105,7 +1197,8 @@ class DrawingCanvas(QWidget):
         saved = (self.sheet_idx, self.page, self._zoom, self._center,
                  self._printing, self._dim_first, self._sec_pts,
                  self._sec_view, self._sec_hover, self._det_c, self._det_r,
-                 self._det_hover, self._det_view)
+                 self._det_hover, self._det_view,
+                 self._bk_pts, self._bk_view, self._bk_hover)
         try:
             for k, idx in enumerate(order):
                 self.sheet_idx = idx              # _block_meta reads it
@@ -1132,6 +1225,9 @@ class DrawingCanvas(QWidget):
                 self._det_r = None                #   pick the same
                 self._det_hover = None            #   ghost state back
                 self._det_view = None             #   when they do
+                self._bk_pts = []                 # R37: the breakout
+                self._bk_view = None              #   ghost stays off
+                self._bk_hover = None             #   the sheet too
                 if painter is None:
                     painter = QPainter(writer)
                 else:
@@ -1144,7 +1240,8 @@ class DrawingCanvas(QWidget):
             (self.sheet_idx, self.page, self._zoom, self._center,
              self._printing, self._dim_first, self._sec_pts,
              self._sec_view, self._sec_hover, self._det_c, self._det_r,
-             self._det_hover, self._det_view) = saved
+             self._det_hover, self._det_view,
+             self._bk_pts, self._bk_view, self._bk_hover) = saved
             for gone in ("width", "height", "rect"):
                 self.__dict__.pop(gone, None)     # unshadow the widget
         return len(order)
@@ -1205,6 +1302,53 @@ class DrawingCanvas(QWidget):
                 rr = float(np.hypot(*(tip - ctr))) * self._zoom
                 p.drawEllipse(self.s2p(*ctr), rr, rr)
                 p.drawLine(self.s2p(*ctr), self.s2p(*tip))
+        p.restore()
+
+    def _draw_breakouts(self, p, placed):
+        """M201 R37: the CLOSED profile rides its view (stored in that
+        view's MODEL xy - a nudged view carries the cut with it, the
+        prism re-sinks where the part now sits). The boundary is the
+        only furniture on paper: [Create breakout section views] "The
+        view displays a defined area of removed material" - the removed
+        area's ink is the PROJECTION'S OWN (the cut floor and walls
+        arrive as live edges through _sources), never a painted fake.
+        While the tool holds points the polyline draws open to the
+        cursor, and once three stand a ring marks the first point: the
+        page's Check, made clickable on the paper itself."""
+        bks = self.breakouts()
+        if not bks and not self._bk_pts:
+            return
+        p.save()
+        pen = QPen(_VIEW_EDGE, max(0.8, 0.24 * self._zoom))
+        p.setBrush(Qt.NoBrush)
+        for bk in bks:
+            fr = placed.get(bk.get("view"))
+            if fr is None or len(bk.get("loop") or []) < 3:
+                continue
+            qs = [self.s2p(*np.asarray(self._m2p(fr, q), float))
+                  for q in bk["loop"]]
+            p.setPen(pen)
+            for a, b in zip(qs, qs[1:] + qs[:1]):
+                p.drawLine(a, b)
+        if self._bk_mode and self._bk_pts and self._bk_view in placed:
+            fr = placed[self._bk_view]
+            qs = [self.s2p(*np.asarray(self._m2p(fr, q), float))
+                  for q in self._bk_pts]
+            p.setPen(QPen(_DETAIL, max(0.8, 0.2 * self._zoom),
+                          Qt.DashLine))
+            for a, b in zip(qs, qs[1:]):
+                p.drawLine(a, b)
+            if self._bk_hover is not None and qs:
+                p.drawLine(qs[-1], self.s2p(*np.asarray(self._bk_hover,
+                                                        float)))
+            if len(qs) >= 3:                    # the Check, on the ring
+                c = qs[0]
+                rpx = max(6, int(1.6 * self._zoom))
+                p.setBrush(_PAPER)
+                p.drawEllipse(c, rpx, rpx)
+                p.setPen(pen)
+                p.setBrush(Qt.NoBrush)
+                p.drawEllipse(c, rpx, rpx)
         p.restore()
 
     def _draw_section_lines(self, p, placed):
@@ -1882,6 +2026,9 @@ class DrawingCanvas(QWidget):
         if self._det_mode and ev.button() == Qt.LeftButton:
             self._det_click(ev)              # M201 R36: boundary beats
             return
+        if self._bk_mode and ev.button() == Qt.LeftButton:
+            self._bk_click(ev)               # M201 R37: profile beats
+            return
         if self._balloon_mode and ev.button() == Qt.LeftButton:
             self._balloon_click(ev)          # M110: pin, don't pan
             return
@@ -2008,6 +2155,95 @@ class DrawingCanvas(QWidget):
         self._sec_pts, self._sec_view, self._sec_hover = [], None, None
         self.update()
 
+    def _bk_click(self, ev):
+        """M201 R37: the breakout profile's beats (the page clicks
+        points, the Check closes - ours closes on the double-click,
+        handled by mouseDoubleClickEvent, or on a click that lands on
+        the first point once three stand)."""
+        placed = self.placed()
+        if not placed:
+            return
+        page = self.p2s(ev.position())
+        view = self._view_at(page, placed, slack=6.0)
+        if not self._bk_pts:                        # the first point
+            if view is None:
+                self.tool_note.emit(
+                    "Breakout: click INSIDE the view to break out - "
+                    "the page's dialog says select the drawing view "
+                    "on which you want to create the breakout section")
+                return
+            src = self._sources().get(view)
+            if src is None or src[0] is None:
+                self.tool_note.emit(
+                    f"{view} cannot host a breakout - a slice shows "
+                    "the cut face alone, with no material left to "
+                    "remove to depth")
+                return
+            if any(b.get("view") == view for b in self.breakouts()):
+                self.tool_note.emit(
+                    f"{view} already carries a breakout - the page's "
+                    "own note: a drawing view can contain only one "
+                    "breakout section")
+                return
+            self._bk_view = view
+            self._bk_pts = [self._p2m(placed[view], page)]
+            self._bk_hover = page
+            self.tool_note.emit(
+                f"Breakout on {view}: click to place the next point - "
+                "double-click, or click the first point, closes the "
+                "profile once it holds three")
+            self.update()
+            return
+        if view != self._bk_view:
+            self.tool_note.emit("Stay inside the view - the profile "
+                                "is drawn ON it")
+            return
+        q = self._p2m(placed[self._bk_view], page)
+        if len(self._bk_pts) >= 3 and math.dist(q, self._bk_pts[0]) < 2.0:
+            self._bk_close()                        # closed on its start
+            return
+        if math.dist(q, self._bk_pts[-1]) < 0.5:
+            self.tool_note.emit("That point lands on the last one - "
+                                "give the profile room to read")
+            return
+        self._bk_pts.append(q)
+        self._bk_hover = page
+        n = len(self._bk_pts)
+        self.tool_note.emit(
+            "Breakout: double-click, or click the first point, to "
+            "close the profile" if n >= 3 else
+            f"Breakout: point {n} placed - the page's Check appears "
+            f"after at least three (now {n})")
+        self.update()
+
+    def restart_breakout_profile(self) -> bool:
+        """M136's Esc ladder, R37 rung: the FIRST Esc erases a
+        half-drawn breakout profile and the tool keeps its seat."""
+        if not self._bk_mode or not self._bk_pts:
+            return False
+        self._bk_pts, self._bk_view, self._bk_hover = [], None, None
+        self.tool_note.emit("Breakout: profile cleared - the tool "
+                            "keeps its seat")
+        self.update()
+        return True
+
+    def _bk_close(self):
+        """The Check made real: [verbatim] "A closed profile defines
+        the breakout section", so closing is the moment the entry
+        exists - it goes to the window for the page's Breakout Section
+        View dialog (Section Depth), and the tool stands its loop down
+        but keeps its seat."""
+        if len(self._bk_pts) < 3:
+            self.tool_note.emit("Breakout: the Check icon displays "
+                                "after you place at least 3 points - "
+                                "this profile is not closeable yet")
+            return
+        self.breakout_added.emit(
+            {"view": self._bk_view,
+             "loop": [[float(u), float(v)] for u, v in self._bk_pts]})
+        self._bk_pts, self._bk_view, self._bk_hover = [], None, None
+        self.update()
+
     def _det_click(self, ev):
         """M201 R36: the three beats of the detail boundary, verbatim
         off [Create a detail view] - and every refusal speaks the
@@ -2099,6 +2335,10 @@ class DrawingCanvas(QWidget):
             self._det_hover = self.p2s(ev.position())
             self.update()
             return
+        if self._bk_mode and self._bk_pts:          # R37 rubber profile
+            self._bk_hover = self.p2s(ev.position())
+            self.update()
+            return
         if self._sec_mode and self._sec_pts:          # M136 rubber band
             self._sec_hover = self.p2s(ev.position())
             self.update()
@@ -2158,6 +2398,14 @@ class DrawingCanvas(QWidget):
                 self.tool_note.emit("Double-click finishes the cut — "
                                     "give it at least two points first")
             return
+        if self._bk_mode and ev.button() == Qt.LeftButton:
+            if len(self._bk_pts) >= 3:
+                self._bk_close()               # R37: the Check gesture
+            else:
+                self.tool_note.emit("Breakout: the Check icon displays "
+                                    "after at least three points - this "
+                                    "profile cannot close yet")
+            return
         if self._dim_mode or ev.button() != Qt.LeftButton:
             return
         placed = self.placed()
@@ -2166,6 +2414,32 @@ class DrawingCanvas(QWidget):
         view = self._view_at(self.p2s(ev.position()), placed, slack=0.0)
         if view is None:
             return
+        # M201 R37: double-click ON a stored breakout profile answers
+        # ITS door - [Edit breakout sections, verbatim] "Double-click
+        # the breakout section to edit it"; the click must land near
+        # the outline itself (the page grabs the OUTLINE: "hover
+        # highlights the cut outline"), and a double-click anywhere
+        # else in the view keeps the view's own door untouched.
+        page = self.p2s(ev.position())
+        for i, bk in enumerate(self.breakouts()):
+            if bk.get("view") != view:
+                continue
+            fr = placed.get(view)
+            if fr is None or len(bk.get("loop") or []) < 3:
+                continue
+            qs = [np.asarray(self._m2p(fr, q), float) for q in bk["loop"]]
+            n = len(qs)
+
+            def _d2seg(x, a, b):
+                ab = b - a
+                t = float(np.clip((x - a) @ ab / max(ab @ ab, 1e-12),
+                                  0.0, 1.0))
+                return float(np.hypot(*(x - (a + t * ab))))
+
+            if min(_d2seg(page, qs[k], qs[(k + 1) % n])
+                   for k in range(n)) <= 2.0:
+                self.breakout_edit_requested.emit(i)
+                return
         if any(s["name"] == view for s in self.sections()):
             self.section_edit_requested.emit(view)
         else:

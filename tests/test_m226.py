@@ -170,8 +170,13 @@ def test_j_a_self_crossing_profile_is_refused(slab):
 
 def test_k_a_depth_of_the_whole_design_is_a_section(slab):
     """The page's breakout is a PARTIAL removal; sink to the full sight-depth
-    and it is really a section - refuse it by name rather than fake a lid."""
+    and it is really a section - refuse it by name rather than fake a lid.
+    And a refusal that only speaks where material happens to sit is not a
+    refusal: the same depth over BARE PAPER must be refused identically."""
     _, back = _sight_extent(slab.result, "top")
     _, front = _sight_extent(slab.result, "top")
     with pytest.raises(ValueError):
         drawing.breakout_solid(slab.result, "top", RECT, depth=(front - back))
+    far = [(200.0, 200.0), (240.0, 200.0), (240.0, 240.0), (200.0, 240.0)]
+    with pytest.raises(ValueError):
+        drawing.breakout_solid(slab.result, "top", far, depth=4 * front)

@@ -496,6 +496,13 @@ def _poly_self_intersects(pts) -> bool:
     return False
 
 
+_breakout_cache: dict = {}      # M201 R37: a breakout is TWO solid ops
+#   (the column probe and the cut) and _sources() re-derives on every
+#   repaint - the _section_on_cache precedent, same identity law: a hit
+#   counts only while the SAME Solid object answers, so a recompute
+#   (which mints a new one) misses and the cut follows the model live.
+
+
 def breakout_solid(solid, view, loop, depth=None):
     """M201 R37 [Create breakout section views] a breakout section "is
     part of an existing drawing view, that is used to remove material to
@@ -526,6 +533,13 @@ def breakout_solid(solid, view, loop, depth=None):
         raise ValueError("the breakout profile crosses itself - draw a "
                          "simple closed loop")
     d, X, Y = _basis(view)
+    vkey = view if isinstance(view, str) else tuple(
+        tuple(np.round(np.asarray(a, float), 9)) for a in (d, X, Y))
+    key = (vkey, tuple(np.round(P.ravel(), 9)),
+           None if depth is None else round(float(depth), 9))
+    hit = _breakout_cache.get(key)
+    if hit is not None and hit[0] is solid:
+        return hit[1], hit[2]
     # The page measures depth "from the front of the design" UNDER the
     # profile, not off a far bounding-box corner - so for an iso parent the
     # near surface that matters is the material actually inside the loop's
@@ -546,12 +560,23 @@ def breakout_solid(solid, view, loop, depth=None):
 
     column = solid.intersect(prism(sd.min() - L, 3.0 * L))   # the sight-column
     if column.volume <= 1e-6:
-        # a profile on bare paper cuts nothing - honest, paint the uncut parent
+        # a profile on bare paper cuts nothing - honest, paint the uncut
+        # parent; the REFUSALS still speak (a refusal that depends on
+        # where material happens to sit is not a refusal).
         dep = float(depth) if depth is not None else 0.5 * L
-        if depth is not None and dep <= 0.0:
-            raise ValueError("breakout depth must be positive")
-        return solid, {"depth_used": dep, "floor": float(sd.max()) - dep,
-                       "front": float(sd.max()), "default": depth is None}
+        if depth is not None:
+            if dep <= 0.0:
+                raise ValueError("breakout depth must be positive")
+            if dep >= L:
+                raise ValueError("a breakout depth of the whole design "
+                                 "is a section, not a breakout - choose "
+                                 "a shallower cut")
+        info = {"depth_used": dep, "floor": float(sd.max()) - dep,
+                "front": float(sd.max()), "default": depth is None}
+        if len(_breakout_cache) > 128:
+            _breakout_cache.clear()
+        _breakout_cache[key] = (solid, solid, info)
+        return solid, info
     # THE column's own vertices, not its world AABB: an iso column is a
     # rotated wedge whose bounding box reaches sight-depth far BEYOND any
     # real material, and sinking from that phantom front shaves nothing.
@@ -568,6 +593,9 @@ def breakout_solid(solid, view, loop, depth=None):
     cut = solid.subtract(prism(front - dep, dep + L))   # sink dep from front
     info = {"depth_used": dep, "floor": front - dep, "front": front,
             "default": depth is None}
+    if len(_breakout_cache) > 128:
+        _breakout_cache.clear()
+    _breakout_cache[key] = (solid, cut, info)
     return cut, info
 
 

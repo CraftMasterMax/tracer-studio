@@ -2315,6 +2315,22 @@ class MainWindow(QMainWindow):
         dtb.toggled.connect(lambda on: self.drawing.set_detail_mode(on))
         bl.addWidget(dtb)
         self._det_btn = dtb
+        bkb = QPushButton("Breakout")                   # M201 R37 tool
+        bkb.setProperty("tb", True)
+        bkb.setCheckable(True)
+        bkb.setToolTip("Break out a pocket: click INSIDE a view and "
+                       "place the profile's points - double-click, or "
+                       "click the first point, closes it once it holds "
+                       "three. Material inside the closed profile is "
+                       "removed to a depth you type, or to the page's "
+                       "default: half of the design's depth, held LIVE "
+                       "- grow the model and an undimensioned cut "
+                       "deepens with it. One breakout per view; every "
+                       "view with material answers, the iso included. "
+                       "Double-click the profile to change the depth")
+        bkb.toggled.connect(lambda on: self.drawing.set_breakout_mode(on))
+        bl.addWidget(bkb)
+        self._bk_btn = bkb
         tbb = QPushButton("Title\u2026")                 # M108 title block
         tbb.setProperty("tb", True)
         tbb.setToolTip("Fill the drawing title block — number, title, "
@@ -2425,6 +2441,10 @@ class MainWindow(QMainWindow):
             self._on_section_line)
         self.drawing.detail_added.connect(               # M201 R36 tool
             self._on_detail_place)
+        self.drawing.breakout_added.connect(             # M201 R37 tool
+            self._on_breakout_place)
+        self.drawing.breakout_edit_requested.connect(    # R37 depth door
+            self._on_breakout_edit)
         self.drawing.section_edit_requested.connect(     # M137 props
             self._on_section_edit)
         self.drawing.tool_note.connect(                  # M136 guidance
@@ -2452,9 +2472,11 @@ class MainWindow(QMainWindow):
         ladder lives HERE, where the key actually lands.)"""
         if self.drawing.restart_section_line():
             return
+        if self.drawing.restart_breakout_profile():   # M201 R37 rung
+            return
         for b in (self._dim_btn, self._balloon_btn, self._fit_btn,
                   self._sec_btn, self._gdt_btn,
-                  self._det_btn):                      # M136/M144/R36 join
+                  self._det_btn, self._bk_btn):       # M136/M144/R36/R37 join
             if b.isChecked():
                 b.setChecked(False)
 
@@ -2951,6 +2973,141 @@ class MainWindow(QMainWindow):
             f"Detail {letter} on {entry['parent']} (r = "
             f"{float(entry['r']):.1f} mm, 2:1) — drag it like any view, "
             "double-click it for style, scale and name", 7000)
+
+    def _breakout_depth_dialog(self, default):
+        """[DWG-REF-BREAKOUT-SECTION-VIEW-DLG, verbatim rows] Section
+        Depth / Distance / the page's own CLICK verb: [Create breakout
+        section views, verbatim] "If you set the depth to a different
+        value than the default and you want to go back to the default,
+        use Measure Half Depth" — a button row that clears the field
+        back to the page default. Blank means the default: [verbatim]
+        "The depth is set to half of your design's depth by default".
+        Extent Type is NOT a combo: Distance is the page's only
+        printed member, and a one-member list would be decoration.
+        UNOFFERED by name (declared): Cut Profile's Spline (the
+        profile is the drawn polyline - the boundary is the tool),
+        Objects to Cut (one component - nothing to exclude), Reset
+        Start Point (no stale anchor exists to reset: the front of
+        the design is read LIVE from the solid)."""
+        from . import cmddialog
+        fields = [dict(key="depth", kind="text", label="Distance",
+                       default=("" if default is None
+                                else f"{float(default):g}")),
+                  dict(key="half", kind="button",
+                       label="Measure Half Depth", target="depth",
+                       value="")]
+        return cmddialog.ask(self, "Breakout Section View", fields)
+
+    def _on_breakout_place(self, entry):
+        """M201 R37: the closed profile becomes one stored entry
+        {view, loop} plus the typed depth only if the drafter typed
+        one (deviations only - blank stays absent, so the page's
+        half-depth default remains LIVE). The depth is VALIDATED
+        against the WHOLE solid first (_pre_breakout, never the
+        view's own cut): the core's own refusals - a depth that
+        swallows the design is a section, not a breakout - answer in
+        the status line and NOTHING is stored."""
+        if self.doc is None or self.doc.result is None:
+            return
+        g = self.drawing.sheet()
+        if not g:
+            return
+        from ..core import drawing as _dr
+        view = entry["view"]
+        if any(b.get("view") == view for b in g.get("breakouts") or []):
+            return                       # the tool refused this already
+        self.drawing._sources()          # fresh: _pre_breakout must
+        #   speak of THIS model, never of the last paint's
+        src = self.drawing._pre_breakout.get(view)
+        if src is None or src[0] is None:
+            return
+        v = self._breakout_depth_dialog(None)
+        if v is None:
+            return                       # "Cancelling changes nothing"
+        w = str(v.get("depth") or "").strip()
+        depth = None
+        if w:
+            try:
+                depth = float(w)
+            except ValueError:
+                self.status.showMessage("That distance is not a number "
+                                        "- leave it empty for half the "
+                                        "design's depth", 7000)
+                return
+        try:
+            _, info = _dr.breakout_solid(src[0], src[1], entry["loop"],
+                                         depth)
+        except ValueError as e:
+            self.status.showMessage(f"Breakout Section View refused: {e}",
+                                    7000)
+            return
+        self._capture()
+        bk = {"view": view, "loop": entry["loop"]}
+        if depth is not None:
+            bk["depth"] = float(depth)
+        g.setdefault("breakouts", []).append(bk)
+        self.doc.dirty = True
+        self.drawing.update()
+        self.status.showMessage(
+            f"Breakout on {view}: material removed to "
+            f"{info['depth_used']:.1f} mm from the front"
+            + (" (half of the design, live)" if info["default"] else "")
+            + " — double-click the profile to change the depth", 7000)
+
+    def _on_breakout_edit(self, idx):
+        """[Edit breakout sections, verbatim] "double-click ... to edit
+        it" - the SAME dialog the creation asked, rest is the stored
+        answer (R34's door law), blank or Measure Half Depth returns
+        the cut to the page's live default. The gesture carries the
+        entry's INDEX (a Signal(dict) would deliver a marshalled COPY
+        - and an edit that mutates a copy mutates nothing). Cancelling
+        changes nothing; every edit rides _capture."""
+        if self.doc is None or self.doc.result is None:
+            return
+        bks = self.drawing.sheet().get("breakouts") or []
+        if not (0 <= int(idx) < len(bks)):
+            return
+        bk = bks[idx]
+        v = self._breakout_depth_dialog(bk.get("depth"))
+        if v is None:
+            return
+        w = str(v.get("depth") or "").strip()
+        depth = None
+        if w:
+            try:
+                depth = float(w)
+            except ValueError:
+                self.status.showMessage("That distance is not a number "
+                                        "- leave it empty for half the "
+                                        "design's depth", 7000)
+                return
+        self.drawing._sources()          # fresh mirror (same law as the
+        #   creation handler: validate against THIS model's whole solid)
+        src = self.drawing._pre_breakout.get(bk.get("view"))
+        if src is not None and src[0] is not None:
+            try:
+                from ..core import drawing as _dr
+                _dr.breakout_solid(src[0], src[1], bk["loop"], depth)
+            except ValueError as e:
+                self.status.showMessage(
+                    f"Breakout Section View refused: {e}", 7000)
+                return
+        self._capture()
+        if depth is None:
+            bk.pop("depth", None)
+        else:
+            bk["depth"] = float(depth)
+        self.doc.dirty = True
+        self.drawing.update()
+        self.status.showMessage("Breakout Section View: depth "
+                                + ("returned to the page's live half-"
+                                   "depth default" if depth is None else
+                                   f"set to {depth:g} mm"), 5000)
+
+    def action_breakout_section(self):
+        """Menu/task-page verb: takes the Breakout TOOL's seat (the
+        page starts with the tool, exactly like the detail's)."""
+        self._bk_btn.click()
 
     def action_detail_view(self):
         """Menu/task-page verb: takes the Detail TOOL's seat (the page
