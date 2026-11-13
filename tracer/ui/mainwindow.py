@@ -3947,24 +3947,67 @@ class MainWindow(QMainWindow):
         return vals
 
     def action_construction_plane(self):
-        """Fusion's Construct ▸ Plane, unified dialog (M125): offset, at
-        angle, through three points, or midplane between two planes."""
+        """Fusion's Construct > Plane, unified dialog (M125): offset, at
+        angle, through three points, or midplane between two planes.
+
+        M201 R27 [SLD-CONSTRUCT-* pages, verbatim] the door wears the
+        dialog the pages NAME: every plane task prints "The
+        Construction Geometry dialog displays, Type is set to Plane
+        and Method is set to <METHOD>." (the sentence ends at its
+        period - a bank-era quote carrying " ." was an extraction
+        artifact, constr28 live verify) - so the title is
+        "Construction Geometry", the FIRST row is the page's own
+        "Type" carried by the honest member this mouth builds (Plane;
+        the page's Type member Axis is worn at the OTHER entrance -
+        action_work_axis prints Type is set to Axis - and the page's
+        Point Type stays UNOFFERED: this kernel constructs no
+        construction point).  The Method choices now speak the
+        pages' four bakeable members - "Offset" (SLD-CONSTRUCT-
+        OFFSET-PLANE), "At Angle" (SLD-CONSTRUCT-PLANE-AT-ANGLE),
+        "Through Three Points" (SLD-CONSTRUCT-PLANE-THROUGH-THREE-
+        POINTS), "Midplane" (SLD-CONSTRUCT-MIDPLANE) - while "Tangent",
+        "Through Two Edges", "Perpendicular Plane" and "Along Path"
+        stay UNOFFERED: every one of them opens "In the canvas,
+        select ..." and this door asks nothing of the canvas.  The
+        Offset page's second row is "Select an Extent option:" -
+        {Distance: "Offsets the face or plane to a distance that you
+        specify.", To Object: "Offsets the face or plane to a sketch
+        point or vertex that you select."} - the door carries the ONE
+        member it bakes, Distance; To Object wants a picked vertex
+        (UNOFFERED).  The number row wears the page phrase "Offset
+        value" ("Optional: Enter an Offset value to offset the plane
+        from its computed position.").  RESIZE STAYS UNOFFERED:
+        "Resize :" {Default: "Size the plane to fit the selected
+        geometry.", Extended: "Size the plane to fill the current
+        view."} is the ONLY page-printed rest default in the whole
+        Construct set - and neither member bakes here: planes wear
+        the house size; no selection-driven or view-fill sizing
+        exists in this kernel.  A row that would change NOTHING is a
+        promise this door will not make - the printed default is
+        HONORED BY CITATION, never by decoration that lies.  The
+        menu mouth stays the house's ("Construction plane..."): the
+        vendor menu is PER TOOL (eight mouths), this door is ONE
+        mouth - a house shape, so its name stays a house fact."""
         if self.doc is None:
             return
         names = ["XY", "XZ", "YZ"] + [p["name"] for p in self.doc.planes]
-        v = cmddialog.ask(self, "Construction Plane", [
+        v = cmddialog.ask(self, "Construction Geometry", [
+            dict(key="gtype", label="Type", kind="combo",
+                 choices=["Plane"], group="Type"),
             dict(key="how", label="Method", kind="combo", group="Method",
-                 choices=("Offset from origin plane", "At angle about hinge",
-                          "Through three points", "Midplane between two")),
+                 choices=("Offset", "At Angle", "Through Three Points",
+                          "Midplane")),
+            dict(key="extent", label="Extent", kind="combo",
+                 choices=["Distance"], group="Method"),
             dict(key="base", label="Offset from / rotate", kind="combo",
                  choices=["XY", "XZ", "YZ"], group="Plane"),
-            dict(key="dist", label="Distance (offset)", kind="double",
+            dict(key="dist", label="Offset value", kind="double",
                  default=10.0, min=-1e5, max=1e5, group="Plane"),
             dict(key="angle", label="Angle (at angle)", kind="double",
-                 default=45.0, min=-359.9, max=359.9, suffix="°",
+                 default=45.0, min=-359.9, max=359.9, suffix="\u00b0",
                  group="Plane"),
             dict(key="hinge", label="Hinge (at angle)", kind="combo",
-                 choices=("u — plane's own X", "v — plane's own Y"),
+                 choices=("u \u2014 plane's own X", "v \u2014 plane's own Y"),
                  group="Plane"),
             dict(key="p1", label="Point 1", kind="text", default="0,0,0",
                  group="Three points"),
@@ -3984,12 +4027,12 @@ class MainWindow(QMainWindow):
             if how.startswith("Offset"):
                 p = self.doc.add_plane(v["base"], v["dist"])
                 say = f"{p['name']} at {v['dist']:+g} mm from {v['base']}"
-            elif how.startswith("At angle"):
+            elif how.lower().startswith("at angle"):
                 p = self.doc.add_plane_angle(
                     v["base"], v["angle"],
                     "u" if v["hinge"].startswith("u") else "v")
-                say = (f"{p['name']} — {v['base']} tipped {v['angle']:g}° "
-                       f"about its {p['hinge']}")
+                say = (f"{p['name']} \u2014 {v['base']} tipped "
+                       f"{v['angle']:g}\u00b0 about its {p['hinge']}")
             elif how.startswith("Through"):
                 p = self.doc.add_plane_3pt(self._pt(v["p1"]),
                                            self._pt(v["p2"]),
@@ -4008,16 +4051,40 @@ class MainWindow(QMainWindow):
             f"{say} — double-click it in the browser to sketch on it", 6000)
 
     def action_work_axis(self):
-        """Fusion's Construct ▸ Axis, the cheap-half v1 (M125): through
+        """Fusion's Construct > Axis, the cheap-half v1 (M125): through
         two points, or where two planes meet. Axes are named, first-class
-        datums — patterns and mirrors take them by name at recompute."""
+        datums - patterns and mirrors take them by name at recompute.
+
+        M201 R27 [SLD-CONSTRUCT-AXIS-* pages, verbatim] this mouth is
+        the OTHER entrance to the same dialog the pages name: the axis
+        tasks print "The Construction Geometry dialog displays, Type is
+        set to Axis and Method is set to Through Two Points."
+        (SLD-CONSTRUCT-AXIS-THROUGH-TWO-POINTS) and "... Method is set
+        to Through Two Planes." (SLD-CONSTRUCT-AXIS-THROUGH-TWO-
+        PLANES) - so the title is "Construction Geometry", the Type row
+        carries its ONE honest member (Axis - the kernel constructs no
+        construction POINT: the page's Point Type and its vertex- and
+        intersection-picking methods are UNOFFERED, declared), and the
+        Method choices wear the pages' two bakeable members in page
+        casing.  "Through Cylinder/Cone/Torus", "Through Edge" and
+        "Perpendicular To Face" stay UNOFFERED: all three open with a
+        canvas face pick this door never asks.  The axis pages print
+        "Select an Extent Type option to establish the end point of
+        the axis." but NEVER print its members - a door does not invent
+        members for a row the book leaves blank: UNOFFERED by silence.
+        Resize stays UNOFFERED too - and the axis wording differs from
+        the plane wording (defect banked constr26): "Default : Size the
+        axis to fit the selected geometry." / "Extended : Size the axis
+        to fill the current view." - neither bakes; honored by
+        citation.  The menu mouth stays the house's ("Work axis...")."""
         if self.doc is None:
             return
         names = ["XY", "XZ", "YZ"] + [p["name"] for p in self.doc.planes]
-        v = cmddialog.ask(self, "Work Axis", [
+        v = cmddialog.ask(self, "Construction Geometry", [
+            dict(key="gtype", label="Type", kind="combo",
+                 choices=["Axis"], group="Type"),
             dict(key="how", label="Method", kind="combo", group="Method",
-                 choices=("Through two points",
-                          "Intersection of two planes")),
+                 choices=("Through Two Points", "Through Two Planes")),
             dict(key="p1", label="Point 1", kind="text", default="0,0,0",
                  group="Two points"),
             dict(key="p2", label="Point 2", kind="text", default="0,0,10",
@@ -4029,14 +4096,25 @@ class MainWindow(QMainWindow):
         ], remember_key="work_axis")
         if v is None:
             return
+        # WORD law: in the pages' casing BOTH members begin "Through"
+        # ("Through Two Points" | "Through Two Planes") - a prefix test
+        # would misroute the plane seam, so the door compares full words
+        # (lowercased) and keeps the rung-era voices as legacy belts:
+        # "Through two points" and "Intersection of two planes".
+        hl = str(v["how"]).lower()
         try:
-            if v["how"].startswith("Through"):
+            if hl in ("through two points",):
                 a = self.doc.add_axis_2pt(self._pt(v["p1"]),
                                           self._pt(v["p2"]))
                 say = f"{a['name']} from ({v['p1']}) to ({v['p2']})"
-            else:
+            elif hl in ("through two planes",
+                        "intersection of two planes"):
                 a = self.doc.add_axis_2planes(v["pa"], v["pb"])
                 say = f"{a['name']} — where {v['pa']} and {v['pb']} meet"
+            else:
+                raise params.ParamError(
+                    f"the axis method is Through Two Points or Through "
+                    f"Two Planes, not {v['how']!r}")
         except params.ParamError as exc:
             self.status.showMessage(f"Axis refused: {exc}", 6000)
             return
