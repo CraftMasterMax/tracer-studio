@@ -4,12 +4,42 @@ The drilled diameter comes from the sketch circle; this dialog sets the
 depth and the optional counterbore / countersink, exactly the three hole
 types a maker reaches for (clearance holes, socket-head cap screws, flat
 wood-screw seats).  ``HoleDialog.ask`` returns a values dict or None.
+
+M201 R25 [Hole reference, GUID-3A76B269-8C8D-437B-8F4A-85D0B2BBA492,
+verbatim] the door wears the page's row words at the rows it owns:
+"Placement: Select At Point (Single Hole) or From Sketch (Multiple
+Holes)." - our mouth drills at the EDITOR'S circles, so it wears the
+one member it can bake; "Extents: Select Distance, To, or All." -
+Distance and All land (the born "Through all" check was All in
+under-dressed clothes), "To" is unoffered (no terminate-on-face
+kernel); "Hole Type: Select Simple, Counterbore, or Countersink." -
+the page's word for the born "Type" row; "Tip Angle: Specifies the
+angle of the drill point for the hole."; "Counterbore Depth",
+"Counterbore Diameter", "Countersink Diameter", "Countersink Angle"
+- in the page's printed order (Depth BEFORE Diameter on the bore).
+[Thread reference, GUID-C37E8172-DE94-4EB0-AFE3-9D3172328441] lends
+its rows to the tapped path: "Modeled" and "Class" (verbatim gloss
+"Specify whether the threads a cosmetic or modeled on the geometry."
+- DEFECT H2, the vendor dropped a word; flagged not cloned, our
+members say what the kernel does: a real groove or a decal.  DEFECT
+H6: the HOLE reference prints no Modeled row at all, though its own
+task page says "Check the Modeled checkbox to preview the thread." -
+the door wears the Thread reference's word rather than an incomplete
+enum).
+Unoffered, declared: References ("Available when At Point is
+active." - no At Point here), Flip Direction, "Objects to cut"
+(casing drift H5: the task prints "Objects to Cut"; a single-body
+doc has nothing to choose), Taper Tapped (gate "(Only available for
+Simple and Countersink hole types.)" rides only the TASK page, H8,
+and no kernel tapers a tap anyway). The task page's "To edit a hole,
+use the Press Pull comment" is DEFECT H3 - "comment" for "command" -
+flagged, not cloned.
 """
 from __future__ import annotations
 
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog,
-                               QDialogButtonBox, QDoubleSpinBox, QFormLayout,
-                               QLabel, QVBoxLayout)
+from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
+                               QDoubleSpinBox, QFormLayout, QLabel,
+                               QVBoxLayout)
 
 from ..core.thread import ISO_COARSE, designation
 from ..core import fasteners as _F
@@ -58,6 +88,17 @@ class HoleDialog(QDialog):
         self.std = QComboBox()
         self.std.addItems(STDS)
         self.std.setCurrentIndex(0)        # Custom → identical to today
+        self.placement = QComboBox()
+        # M201 R25 [Hole reference, verbatim] "Placement: Select At
+        # Point (Single Hole) or From Sketch (Multiple Holes)." - this
+        # mouth drills at the SKETCH EDITOR's circles (the door's own
+        # sentence since birth: "each circle becomes one drilled
+        # hole"), which IS the page's second member.  At Point wants a
+        # face/point picker on the canvas ("References: Available when
+        # At Point is active.") - no such picker feeds this dialog, so
+        # the row carries ONE member and the kernel never promises a
+        # placement it cannot see.
+        self.placement.addItems(("From Sketch (Multiple Holes)",))
         self.type = QComboBox()
         self.type.addItems(TYPES)
         self.thread = QComboBox()
@@ -68,7 +109,16 @@ class HoleDialog(QDialog):
         self.t_mode.addItems(("Modeled — real groove",
                               "Cosmetic — decal ring"))
         self.depth = _spin(5.0)
-        self.through = QCheckBox("Through all")
+        # M201 R25 [Hole reference, verbatim] "Extents: Select
+        # Distance, To, or All." - the born "Through all" checkbox was
+        # the page's All in under-dressed clothes; the row now wears
+        # the page's word.  "To" stays UNOFFERED: it terminates a hole
+        # on a picked face and no kernel here computes a termination.
+        # The VALUES KEY stays "through" (label is UI law, key is file
+        # law: every scripted era answer and every HoleFeature field
+        # speaks through=True/False; zero migration).
+        self.extents = QComboBox()
+        self.extents.addItems(("Distance", "All"))
         # M201 R7 [SLD-REF-HOLE-DIALOG, verbatim] "Drill Point: Select
         # Flat, or Angle." + "Tip Angle: Specifies the angle of the
         # drill point for the hole." THE NUMBER ENCODES THE ROW (R4's
@@ -90,24 +140,39 @@ class HoleDialog(QDialog):
         for a in (82.0, 90.0, 120.0):
             self.cs_angle.addItem(f"{a:g}°", a)
         self.cs_angle.setCurrentIndex(1)          # 90° default
+        # M201 R25 [Hole reference, verbatim row words in printed
+        # order]: "Placement", "Extents", "Hole Type", ..., "Depth",
+        # "Tip Angle", "Counterbore Depth" BEFORE "Counterbore
+        # Diameter" (the born dialog had the bore pair reversed),
+        # "Countersink Diameter", "Countersink Angle".  Fastener/Size/
+        # Thread/Class/Modeled are OUR rows and the tapped path's:
+        # Class and Modeled are the Thread reference's own words
+        # (verbatim "Class: Select the thread class." / "Modeled");
+        # "Hole Tap Type" (Simple|Clearance|Tapped|Taper Tapped) is
+        # the page's row we DO have, worn by the Fastener preset +
+        # Thread machinery rather than cloned as a fourth combo: the
+        # vendor's four members split across our two honest doors
+        # (Custom Ø = Simple, the presets = Clearance/Tapped; Taper
+        # Tapped unoffered - no kernel tapers a tap, H8).
+        form.addRow("Placement", self.placement)
         form.addRow("Fastener", self.std)
         form.addRow("Size", self.size)
-        form.addRow("Type", self.type)
+        form.addRow("Extents", self.extents)
+        form.addRow("Hole Type", self.type)
         form.addRow("Thread", self.thread)
         tr = form.rowCount()
         form.addRow("Class", self.t_class)
-        form.addRow("Thread form", self.t_mode)
+        form.addRow("Modeled", self.t_mode)
         self._thread_rows = (tr, tr + 1)        # M128: hidden unless tapped
         form.addRow("Depth", self.depth)
-        form.addRow(" ", self.through)
-        form.addRow("Tip angle", self.tip_angle)
+        form.addRow("Tip Angle", self.tip_angle)
         r = form.rowCount()
-        form.addRow("Cbore Ø", self.cb_dia)
-        form.addRow("Cbore depth", self.cb_depth)
+        form.addRow("Counterbore Depth", self.cb_depth)
+        form.addRow("Counterbore Diameter", self.cb_dia)
         self._cb_rows = (r, r + 1)
         r = form.rowCount()
-        form.addRow("Csink Ø", self.cs_dia)
-        form.addRow("Csink angle", self.cs_angle)
+        form.addRow("Countersink Diameter", self.cs_dia)
+        form.addRow("Countersink Angle", self.cs_angle)
         self._cs_rows = (r, r + 1)
         lay.addLayout(form)
 
@@ -122,7 +187,11 @@ class HoleDialog(QDialog):
         lay.addWidget(bb)
 
         self.type.currentIndexChanged.connect(self._sync_rows)
-        self.through.toggled.connect(self.depth.setDisabled)
+        # the page's Extents row keeps the born law: All disables the
+        # Depth number (one voice in the record - the distance row
+        # falls silent when the hole runs through everything).
+        self.extents.currentTextChanged.connect(
+            lambda t: self.depth.setDisabled(t == "All"))
         self.thread.currentIndexChanged.connect(self._sync_head)
         self.thread.currentIndexChanged.connect(self._sync_rows)
         self.t_class.currentIndexChanged.connect(self._sync_head)
@@ -234,7 +303,11 @@ class HoleDialog(QDialog):
                 else "modeled",
                 "drill": self._drill,
                 "depth": float(self.depth.value()),
-                "through": bool(self.through.isChecked()),
+                # label is UI law, key is file law: the page's word is
+                # Extents {Distance | All}, the FILE's word stays
+                # through - every scripted era answer and HoleFeature
+                # field speaks it, zero migration.
+                "through": self.extents.currentText() == "All",
                 "tip_angle": float(self.tip_angle.value()),   # M201 R7
                 "cb_dia": float(self.cb_dia.value()),
                 "cb_depth": float(self.cb_depth.value()),
