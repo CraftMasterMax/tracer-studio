@@ -469,6 +469,108 @@ def project_hidden(solid, view: str = "top", eps: float = 1e-6,
     return project_edges(solid, view, eps)["hidden"]
 
 
+def _poly_self_intersects(pts) -> bool:
+    """True when a closed polyline crosses itself (non-adjacent edges
+    meet). A breakout profile must bound a simple region: the page draws
+    a closed loop the material is removed within, and a figure-eight has
+    no honest inside to cut."""
+    P = np.asarray(pts, float)
+    n = len(P)
+    if n < 3:
+        return False                       # caller's <3 check owns that
+    for i in range(n):
+        a, b = P[i], P[(i + 1) % n]
+        for j in range(i + 1, n):
+            if j == i or (j + 1) % n == i or (i + 1) % n == j:
+                continue                   # skip shared-endpoint edges
+            c, d = P[j], P[(j + 1) % n]
+            r = b - a
+            s = d - c
+            denom = r[0] * s[1] - r[1] * s[0]
+            if abs(denom) < 1e-12:
+                continue                   # parallel (collinear overlap
+            t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / denom
+            u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / denom
+            if 1e-9 < t < 1 - 1e-9 and 1e-9 < u < 1 - 1e-9:
+                return True
+    return False
+
+
+def breakout_solid(solid, view, loop, depth=None):
+    """M201 R37 [Create breakout section views] a breakout section "is
+    part of an existing drawing view, that is used to remove material to
+    a specified depth in order to expose inner details of a design";
+    [verbatim] "A closed profile defines the breakout section" and "The
+    depth is set to half of your design's depth by default, but you can
+    type in any depth value."  So the cut lives in 3D, never on paper:
+    extrude the CLOSED PROFILE loop (drawn in the parent's own model-page
+    (u,v) coords, the same dot-with-(X,Y) convention hole_marks and every
+    chain speak) into a prism and SUBTRACT it from the parent solid. The
+    prism rides the parent view's (d, X, Y) triple - identical to the
+    detail cookie, so an iso parent cuts as honestly as an axis-aligned
+    one - but where the cookie INTERSECTS (keep the crop) the breakout
+    SUBTRACTS (remove the slab) and it sinks to a DEPTH instead of
+    swallowing all sight-depth. depth=None means the page's own default,
+    half the design's extent along the sight, measured from the FRONT of
+    the design [reference dialog: "move the start point to the front of
+    the design for depth calculation"]. Returns (solid, info) where info
+    carries the RESOLVED depth and the floor plane's sight-depth so the
+    caller stores them (deviations only) and the film prints a measured
+    number; a solid that touches no material under the loop is HONEST
+    (nothing removed) - the caller shows the uncut parent, never a lie."""
+    from .geometry import Solid
+    P = np.asarray(loop, float)
+    if P.shape[0] < 3:
+        raise ValueError("a breakout profile needs at least three points")
+    if _poly_self_intersects(P):
+        raise ValueError("the breakout profile crosses itself - draw a "
+                         "simple closed loop")
+    d, X, Y = _basis(view)
+    # The page measures depth "from the front of the design" UNDER the
+    # profile, not off a far bounding-box corner - so for an iso parent the
+    # near surface that matters is the material actually inside the loop's
+    # sight-column, which we find by intersecting with an infinite prism.
+    lo, hi = np.asarray(solid.bounding_box, float)
+    corners = np.array([[a, b, c] for a in (lo[0], hi[0])
+                        for b in (lo[1], hi[1]) for c in (lo[2], hi[2])])
+    sd = corners @ d
+    L = float(sd.max() - sd.min())                 # design sight-extent
+    if L <= 0.0:
+        raise ValueError("the parent has no depth to break out along")
+
+    def prism(z0, h):
+        m = np.eye(4)
+        m[:3, :3] = np.column_stack([X, Y, d])     # +z -> toward the eye
+        m[:3, 3] = z0 * d                          # local (u,v) ride X,Y
+        return Solid.extrude(P, height=h).transformed(m)
+
+    column = solid.intersect(prism(sd.min() - L, 3.0 * L))   # the sight-column
+    if column.volume <= 1e-6:
+        # a profile on bare paper cuts nothing - honest, paint the uncut parent
+        dep = float(depth) if depth is not None else 0.5 * L
+        if depth is not None and dep <= 0.0:
+            raise ValueError("breakout depth must be positive")
+        return solid, {"depth_used": dep, "floor": float(sd.max()) - dep,
+                       "front": float(sd.max()), "default": depth is None}
+    # THE column's own vertices, not its world AABB: an iso column is a
+    # rotated wedge whose bounding box reaches sight-depth far BEYOND any
+    # real material, and sinking from that phantom front shaves nothing.
+    tm = column.to_trimesh()
+    csd = np.asarray(tm.vertices, float) @ d
+    front, cbottom = float(csd.max()), float(csd.min())
+    extent = front - cbottom                       # the column's own depth
+    dep = float(depth) if depth is not None else 0.5 * extent
+    if dep <= 0.0:
+        raise ValueError("breakout depth must be positive")
+    if dep >= extent:
+        raise ValueError("a breakout depth of the whole design is a "
+                         "section, not a breakout - choose a shallower cut")
+    cut = solid.subtract(prism(front - dep, dep + L))   # sink dep from front
+    info = {"depth_used": dep, "floor": front - dep, "front": front,
+            "default": depth is None}
+    return cut, info
+
+
 def detail_cookie(solid, view, centre, radius: float):
     """M201 R36 [Create a detail view, verbatim] "Click a point on
     the parent view to place the center point of the detail boundary"
