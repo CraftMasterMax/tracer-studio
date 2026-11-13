@@ -176,7 +176,7 @@ def test_sketches_folder_mirrors_embedded_sketches(win, qapp):
 
 
 def test_construction_planes_park_in_construction_folder(win, monkeypatch):
-    script_cmd(monkeypatch, {"how": "Offset from origin plane",
+    script_cmd(monkeypatch, {"how": "Offset",
                              "base": "XY", "dist": 12.0})
     win.action_construction_plane()
     constr = _folder(win, "Construction")
@@ -191,7 +191,7 @@ def test_construction_planes_park_in_construction_folder(win, monkeypatch):
 # ---- proof of life ---------------------------------------------------------------
 
 def test_screenshot_proof(win, qapp, monkeypatch):
-    script_cmd(monkeypatch, {"how": "Offset from origin plane",
+    script_cmd(monkeypatch, {"how": "Offset",
                              "base": "XY", "dist": 12.0})
     win.action_construction_plane()
     win._show_page(win.viewport)

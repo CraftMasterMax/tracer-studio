@@ -187,21 +187,21 @@ def _dialog_answers(monkeypatch, values):
 
 
 def test_plane_dialog_creates_each_method(win, monkeypatch):
-    _dialog_answers(monkeypatch, {"how": "Offset from origin plane",
+    _dialog_answers(monkeypatch, {"how": "Offset",
                                   "base": "XY", "dist": 10.0})
     win.action_construction_plane()
     assert win.doc.planes[0]["method"] == "offset"
-    _dialog_answers(monkeypatch, {"how": "At angle about hinge",
+    _dialog_answers(monkeypatch, {"how": "At Angle",
                                   "base": "XY", "angle": 45.0,
                                   "hinge": "v — plane's own Y"})
     win.action_construction_plane()
     assert win.doc.planes[1]["method"] == "angle"
-    _dialog_answers(monkeypatch, {"how": "Through three points",
+    _dialog_answers(monkeypatch, {"how": "Through Three Points",
                                   "p1": "1,0,0", "p2": "0,1,0",
                                   "p3": "0,0,1"})
     win.action_construction_plane()
     assert win.doc.planes[2]["method"] == "three-points"
-    _dialog_answers(monkeypatch, {"how": "Midplane between two",
+    _dialog_answers(monkeypatch, {"how": "Midplane",
                                   "pa": "XY", "pb": "Plane 1"})   # parallel
     win.action_construction_plane()
     assert win.doc.planes[3]["method"] == "midplane"
@@ -211,7 +211,7 @@ def test_plane_dialog_creates_each_method(win, monkeypatch):
 
 def test_plane_dialog_refuses_garbage_points_loudly_not_by_crash(
         win, monkeypatch):
-    _dialog_answers(monkeypatch, {"how": "Through three points",
+    _dialog_answers(monkeypatch, {"how": "Through Three Points",
                                   "p1": "left,0,0", "p2": "0,1,0",
                                   "p3": "0,0,1"})
     win.action_construction_plane()                # must not raise
@@ -220,12 +220,12 @@ def test_plane_dialog_refuses_garbage_points_loudly_not_by_crash(
 
 
 def test_axis_dialog_two_points_and_two_planes(win, monkeypatch):
-    _dialog_answers(monkeypatch, {"how": "Through two points",
+    _dialog_answers(monkeypatch, {"how": "Through Two Points",
                                   "p1": "0,0,0", "p2": "1,0,1"})
     win.action_work_axis()
     assert np.allclose(win.doc.axes[0]["dir"],
                        [1 / math.sqrt(2), 0, 1 / math.sqrt(2)])
-    _dialog_answers(monkeypatch, {"how": "Intersection of two planes",
+    _dialog_answers(monkeypatch, {"how": "Through Two Planes",
                                   "pa": "XY", "pb": "XZ"})
     win.action_work_axis()
     assert abs(abs(win.doc.axes[1]["dir"][0]) - 1.0) < 1e-12  # the X line
