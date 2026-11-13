@@ -260,9 +260,13 @@ def test_toolbar_extrude_from_model_prompts_for_profile(win, qapp):
 
 def test_toolbar_fillet_needs_no_occt(win, qapp, monkeypatch):
     from tracer.ui.mainwindow import demo_document
+    from tracer.ui import cmddialog
     monkeypatch.setattr(step, "available", lambda: False)
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *a, **k: (1.0, True)))
+    # M201 R23 heal (m18/m19 pattern): the door grew the reference's
+    # rows, so the script answers the DIALOG now - one radius row is
+    # all this era test ever asked the born getDouble lever for.
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda *a, **k: {"radius": 1.0})
     win.new_document(demo_document())
     qapp.processEvents()
     _toolbutton(win, "Fillet").menu().actions()[0].trigger()
