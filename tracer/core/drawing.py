@@ -1513,3 +1513,99 @@ def hole_table(rows, page: str = "A3", margin: float = 10.0,
             put(ci, r.get(key, ""), ytop - (i + 1.5) * hh)
     return {"rect": (x0, ybot, bw, h_used), "lines": lines,
             "cells": cells, "overflow": overflow, "reversed": False}
+
+
+# ---- M201 R38: the hole table's ORIGIN -------------------------------------
+# [Create a hole table, verbatim] "In the canvas, select a drawing view to
+# associate with the hole table and click to place the origin." / [Tables
+# overview, verbatim] "Hole tables require an origin." / "Each view require
+# its own origin." (the grammar error is the page's, printed exactly). The
+# origin is the table's measuring stick: "[Origin] Specifies the origin used
+# to measure hole X and Y coordinates." The page prints TWO arrange members
+# and nothing else: "by Position: Holes are located and labeled according to
+# their physical location to the origin" / "by Size: ... according to their
+# size from the smallest to largest" (lower-case "by" is page-printed).
+ARRANGE_MODES = ("by Position", "by Size")
+# [verbatim, P1/P2 order] four styles - the help NEVER prints "ANSI".
+ORIGIN_STYLES = ("Datum Target", "ISO Origin", "ASME Origin",
+                 "Alternate Origin")
+
+
+def require_origin(shop: dict, view: str) -> tuple:
+    """The origin store is keyed BY VIEW and that keying IS the page's law
+    - a table never measures from a NEIGHBOUR's origin ("Each view require
+    its own origin.") and never silently from (0, 0) ("Hole tables require
+    an origin."). A miss is a NAMED refusal carrying the page's own
+    sentences; the refusal NAME is ours (the page prints no error text)."""
+    try:
+        return tuple(shop[view])
+    except KeyError:
+        raise ValueError(
+            "HOLE_TABLE_NO_ORIGIN: Hole tables require an origin - and "
+            "each view require its own origin (the page's two sentences, "
+            "grammar verbatim; the refusal name is ours)") from None
+
+
+def place_origin(shop: dict, view: str, pt) -> dict:
+    """ONE origin per view, by CONSTRUCTION: the store is a mapping keyed
+    by view, so a second placement REPLACES - it cannot leave a second
+    origin to disagree with the first. That is our reading of the page's
+    reuse sentence "Hole Table utilizes the Ordinate Dimensions origin if
+    available, and vice versa.": with no second family of origins to
+    share with (Tracer has no ordinate dimensions yet), reuse can only
+    mean never-duplicate. OURS-STAMP, named."""
+    shop[view] = (float(pt[0]), float(pt[1]))
+    return shop
+
+
+def require_style(style: str) -> str:
+    """The four page-printed members, and ONLY those - a request for
+    "ANSI Origin" (what the vendor's BLOG says while the help says ASME)
+    is refused by name, never quietly mapped."""
+    if style not in ORIGIN_STYLES:
+        raise ValueError(f"ORIGIN_STYLE_UNKNOWN {style!r} - the help "
+                         f"prints only {ORIGIN_STYLES}")
+    return style
+
+
+def view_hole_rows(doc, view: str, origin, arrange: str = "by Position"):
+    """The table FOR ONE VIEW: "The hole table displays on the sheet and
+    is populated with information about the holes in the view you
+    selected." - a bore across the sight shows no true circle in that
+    view (hole_marks already answers nothing for it) and so gets NO row;
+    the iso answers nothing at all, and its table is EMPTY, not refused
+    (page silence on host views: any view answers, like the breakout).
+    Arrange re-labels the counted rows: "by Size" sorts "from smallest to
+    largest"; "by Position" reads DOWN from the origin first, then right.
+    THE READING ORDER AND EVERY TIE-BREAK ARE TRACER STAMPS - the page
+    names the two orders but prints no detail beyond them. Returns
+    (rows, xy): rows carry the renumbered "item"; xy is each row's first
+    member measured FROM THE ORIGIN, the page's X and Y coordinates."""
+    if arrange not in ARRANGE_MODES:
+        raise ValueError(f"ARRANGE_UNKNOWN {arrange!r} - the page prints "
+                         f"only {ARRANGE_MODES}")
+    ox, oy = (float(origin[0]), float(origin[1]))
+    rows_all, _items = _hole_groups(doc)
+    marks = hole_marks(doc).get(view, [])
+    pos: dict = {}                       # group -> reading-first (y, x)
+    size: dict = {}                      # group -> smallest tagged radius
+    for m in marks:
+        g = m["item"]
+        if (g not in pos or
+                (m["y"], -m["x"]) > (pos[g][0], -pos[g][1])):
+            pos[g] = (m["y"], m["x"])
+        if g not in size or m["r"] < size[g]:
+            size[g] = m["r"]
+
+    def key(g):
+        gx, gy = pos[g][1] - ox, pos[g][0] - oy
+        return (size[g], -gy, gx) if arrange == "by Size" else (-gy, gx)
+
+    rows, xy = [], []
+    for i, g in enumerate(sorted(pos, key=key)):
+        r = dict(rows_all[g - 1])
+        r["item"] = i + 1                # renumbered by the page's order
+        rows.append(r)
+        xy.append({"item": i + 1, "x": pos[g][1] - ox,
+                   "y": pos[g][0] - oy})
+    return rows, xy
