@@ -2301,6 +2301,20 @@ class MainWindow(QMainWindow):
         slb.toggled.connect(lambda on: self.drawing.set_section_mode(on))
         bl.addWidget(slb)
         self._sec_btn = slb
+        dtb = QPushButton("Detail")                      # M201 R36 tool
+        dtb.setProperty("tb", True)
+        dtb.setCheckable(True)
+        dtb.setToolTip("Enlarge a spot: click the CENTER of the area "
+                       "to enlarge on a base or section view, drag the "
+                       "circle open and click again, then click bare "
+                       "paper - the lettered detail view (D, E...) "
+                       "arrives at an enlarged scale, live: move the "
+                       "parent and the boundary travels, the crop "
+                       "re-derives. Double-click the child to change "
+                       "its style, scale or name")
+        dtb.toggled.connect(lambda on: self.drawing.set_detail_mode(on))
+        bl.addWidget(dtb)
+        self._det_btn = dtb
         tbb = QPushButton("Title\u2026")                 # M108 title block
         tbb.setProperty("tb", True)
         tbb.setToolTip("Fill the drawing title block — number, title, "
@@ -2409,6 +2423,8 @@ class MainWindow(QMainWindow):
             self._on_view_scale)                         #  R32 view dialog
         self.drawing.section_added.connect(              # M136 cut line
             self._on_section_line)
+        self.drawing.detail_added.connect(               # M201 R36 tool
+            self._on_detail_place)
         self.drawing.section_edit_requested.connect(     # M137 props
             self._on_section_edit)
         self.drawing.tool_note.connect(                  # M136 guidance
@@ -2419,7 +2435,10 @@ class MainWindow(QMainWindow):
         # drawing keys; page-scoped so they sleep outside the sheet)
         for seq, fn in (("D", dimb.click), ("B", balb.click),
                         ("F", fitb.click), ("S", slb.click),
-                        ("G", gtb.click)):
+                        ("G", gtb.click),
+                        ("E", dtb.click)):     # M201 R36: E for the
+            #   detail (Enlarge) tool - the detail page prints no key;
+            #   OURS-declared, this block's own coin (D/B/F/S/G ran first)
             QShortcut(QKeySequence(seq), page, activated=fn)
         QShortcut(QKeySequence(Qt.Key_Escape), page,
                   activated=self._stand_down_drawing)
@@ -2434,7 +2453,8 @@ class MainWindow(QMainWindow):
         if self.drawing.restart_section_line():
             return
         for b in (self._dim_btn, self._balloon_btn, self._fit_btn,
-                  self._sec_btn, self._gdt_btn):       # M136/M144 join
+                  self._sec_btn, self._gdt_btn,
+                  self._det_btn):                      # M136/M144/R36 join
             if b.isChecked():
                 b.setChecked(False)
 
@@ -2576,9 +2596,18 @@ class MainWindow(QMainWindow):
         vscale coin: Fit pops the key, the default style pops too),
         so files stay minimal and the undo rides for free."""
         from ..core.drawing import parse_scale
-        from .drawingview import VIEW_STYLES, VIEW_STYLE_DEFAULT
+        from .drawingview import (VIEW_STYLE_INHERIT, VIEW_STYLE_DEFAULT,
+                                  VIEW_STYLES)
         g = self.drawing.sheet()
         if not g:
+            return
+        det = self.drawing._dets_by_name().get(view)
+        if det is not None:             # M201 R36 [DWG-REF-DRAWING-VIEW-DLG]
+            #   the door a detail wears is NOT the base door: the page
+            #   scopes the Name row to "section view and detail view
+            #   only" and the Scale row of an ENLARGED crop cannot
+            #   honestly carry an auto member. Its own handler answers.
+            self._on_detail_scale(view, det)
             return
         cur = {"style": self.drawing.view_style(view),
                "scale": (g.get("vscale") or {}).get(view)}
@@ -2587,7 +2616,17 @@ class MainWindow(QMainWindow):
             return
         style = v.get("style")
         scale_word = v.get("scale")
-        if style is not None and style not in VIEW_STYLES:
+        # M201 R36 SEAM FIX (declaring an R34 miss honestly): R34 grew
+        # the section door's combo to print "From Parent" FIRST, but
+        # this handler still refused everything outside the base pair -
+        # answering the door's own top member wore the clothes of an
+        # unoffered answer. The page grants From Parent to children
+        # WITH a parent (sections R34, details R36); for those it is
+        # legal here, for a base view it stays refused.
+        legal = tuple(VIEW_STYLES) + (
+            (VIEW_STYLE_INHERIT,) if view in self.drawing._secs_by_name()
+            else ())
+        if style is not None and style not in legal:
             # defense in depth: the offered combo cannot produce it,
             # but a programmatic answer must never fake a Shaded view.
             self.status.showMessage(
@@ -2642,6 +2681,111 @@ class MainWindow(QMainWindow):
         self.doc.dirty = True
         self.drawing.update()
         self.status.showMessage(", ".join(bits), 4000)
+
+    def _detail_view_dialog(self, det):
+        """M201 R36 [DWG-REF-DRAWING-VIEW-DLG, live-read lane F]: the
+        detail's door carries the page's rows in the page's ORDER -
+        Style first (and [verbatim] the page PRINTS \"From Parent\"
+        FIRST in that combo), then Scale, then the Name row the page
+        scopes \"section view and detail view only\". UNOFFERED BY
+        NAME: the Scale combo drops \"Fit (auto)\" - [Create a detail
+        view, verbatim] a detail is \"another drawing view at an
+        enlarged scale\", and an ENLARGED crop whose size the drafter
+        drew with the mouse has no honest auto answer (the assistant
+        fit would fight the boundary radius); the R35 centre-mark
+        group is unoffered too - its rows ride the base view's door,
+        and a detail's ink is its parent's crop, marks included.
+        Style's rest re-displays the STORED answer (R34's door law);
+        Scale's rest is the stored ratio or the creation 2:1; Name's
+        rest is the stored word or empty (auto-identified by letter
+        alone until the drafter names it)."""
+        from . import cmddialog
+        from .drawingview import (VIEW_STYLE_INHERIT, VIEW_STYLE_DEFAULT,
+                                  VIEW_STYLES, scale_label)
+        # the door re-displays ITS OWN stored answer (R34's door law:
+        # an explicit "From Parent" shows, else the effective member)
+        stored = (self.drawing.sheet().get("vstyle") or {}).get(det["name"])
+        f = (self.drawing.sheet().get("vscale") or {}).get(det["name"], 2.0)
+        fields = [dict(key="style", kind="combo", label="Style",
+                       choices=[VIEW_STYLE_INHERIT] + list(VIEW_STYLES),
+                       default=stored if stored in VIEW_STYLES + (
+                           VIEW_STYLE_INHERIT,) else VIEW_STYLE_DEFAULT),
+                  dict(key="scale", kind="combo", label="Scale",
+                       choices=["1:1", "1:2", "1:5", "1:10", "2:1", "5:1"],
+                       default=scale_label(float(f))),
+                  dict(key="name", kind="text", label="Name",
+                       default=str(det.get("label", "")))]
+        return cmddialog.ask(self, "Detail View", fields)
+
+    def _on_detail_scale(self, view, det):
+        """The detail door's answer: Style rides the R34 coin (the
+        pair/default pop the key, From Parent stores), Scale rides
+        the vscale coin, and the Name row is the page's word made
+        real - a NAME is stored the moment it differs from the auto
+        letter, and emptying it pops the key so the letter stands
+        alone again. The IDENTIFIER (the letter) is never answered
+        here: the page shows it as an arrow field the tool assigned,
+        not the drafter's keyboard. Clearing the row is honest erasure:
+        the key pops and the identifier letter stands alone again -
+        the view is never renamed to nothing, its letter is its name."""
+        from ..core.drawing import parse_scale
+        from .drawingview import (VIEW_STYLE_INHERIT, VIEW_STYLE_DEFAULT,
+                                  VIEW_STYLES, scale_label)
+        v = self._detail_view_dialog(det)
+        if v is None:
+            return
+        g = self.drawing.sheet()
+        style = v.get("style")
+        if style is not None and style not in VIEW_STYLES + (
+                VIEW_STYLE_INHERIT,):
+            self.status.showMessage(
+                f"Detail View refused: '{style}' is unoffered by name "
+                "- the sheet painter is line art and owns no fills", 7000)
+            return
+        scale_word = v.get("scale")
+        factor = None
+        if scale_word is not None:
+            try:
+                factor = parse_scale(str(scale_word))
+            except ValueError as e:
+                self.status.showMessage(f"Scale no good: {e}", 4000)
+                return
+        self._capture()
+        bits = []
+        if style is not None:
+            if style == VIEW_STYLE_DEFAULT:
+                st = g.get("vstyle") or {}
+                st.pop(view, None)
+                if not st:
+                    g.pop("vstyle", None)
+            else:
+                g.setdefault("vstyle", {})[view] = style
+            bits.append(f"{view} style: {style.lower()}")
+        if factor is not None:
+            # a detail ALWAYS carries its scale: answer by answer, the
+            # stored ratio rides - there is no pop-to-rest here, because
+            # an entry WITHOUT a scale renders at the assistant's fit
+            # and the page calls this view "enlarged" (the creation 2:1
+            # is itself the deviation the entry stores; Fit is no
+            # member of this door, and a programmatic Fit answer dies
+            # in parse_scale's hands above).
+            g.setdefault("vscale", {})[view] = float(factor)
+            bits.append(f"scale {scale_label(float(factor))}")
+        old = str(det.get("label", ""))          # entry["name"] is the
+        #   LETTER identifier; the door's word lands under "label" (the
+        #   two live in different pockets, so no rename can eat the id)
+        word2 = str(v.get("name") or "").strip()
+        if v.get("name") is not None and word2 != old:
+            if word2:
+                det["label"] = word2
+            else:
+                det.pop("label", None)
+            bits.append(f"detail {view} renamed: "
+                        + (word2 if word2 else "letter alone"))
+        self.doc.dirty = True
+        self.drawing.update()
+        self.status.showMessage(", ".join(bits) if bits else
+                                "Detail View: nothing changed", 4000)
 
     def action_section_view(self):
         """M102: the sheet's stored cut — dialog picks the plane, the
@@ -2751,6 +2895,68 @@ class MainWindow(QMainWindow):
             if sp["holes"]:
                 msg += f", {sp['holes']} hole"
         self.status.showMessage(msg, 7000)
+
+    def _on_detail_place(self, entry):
+        """M201 R36: the three-beat boundary becomes a lettered detail
+        entry — same registry discipline as the sections (deviations
+        only: {name, parent, c, r, at}), the letter is the next free
+        from the section alphabet (I/O/Q/S/X/Z reserved; the page's
+        own example for a detail identifier is D, which is what the
+        FIRST detail on a fresh four-view + one-section sheet draws),
+        and the CHILD PLACEMENT rides the third click: the layout
+        assistant parks extras blind, the drafter clicked where it
+        belongs, so the click-to-page-centre offset is stored in the
+        M96 move key the mouse itself writes. The scale is the page's
+        word made real - \"enlarged\" - a declared 2:1 at birth
+        (ours: the page prints no number), and every pixel of the
+        crop re-derives on every repaint because a detail is a
+        PROJECTION, never a picture."""
+        if self.doc is None or self.doc.result is None:
+            return
+        g = self.drawing.sheet()
+        if not g:
+            return
+        from ..core import drawing as _dr
+        used = ({s["name"] for s in self.drawing.sections()}
+                | {d["name"] for d in self.drawing.details()}
+                # a detail's letter never shadows a section's first
+                # letter: A-A and a bare A on one sheet is two bubbles
+                # that read alike, so the base letters are taken too
+                | {s["name"].split("-")[0] for s in self.drawing.sections()})
+        # STRICTLY the first free single letter (not len()-indexed,
+        # which overshoots past an unused B when a section base letter
+        # is already in `used`). Walk the alphabet; a detail never
+        # shadows a section's base letter.
+        n = 0
+        while _dr.section_letter(n) in used:        # A-A takes "A" too
+            n += 1                                  #   (one letter,
+        letter = _dr.section_letter(n)              #   two registries)
+        self._capture()
+        # 'at' is the CLICK the placement came from; the move key is its
+        # stored form (deviations only: at = 0.5*sheet + move, derivable),
+        # so the entry carries parent, centre, radius, letter - nothing else.
+        g.setdefault("details", []).append(
+            {k: entry[k] for k in ("parent", "c", "r", "a")}
+            | {"name": letter})
+        g.setdefault("vscale", {})[letter] = 2.0    # enlarged (ours:
+        #   2:1 at birth - the page prints no number, only the word)
+        # the third click lands the CHILD's page centre: place() puts a
+        # view's centre at slot*sheet + move, so move = at - 0.5*sheet.
+        W, H = _dr.sheet_size(self.drawing.page)
+        g.setdefault("move", {})[letter] = [float(entry["at"][0]) - 0.5 * W,
+                                            float(entry["at"][1]) - 0.5 * H]
+        self.doc.dirty = True
+        self.drawing.update()
+        self.status.showMessage(
+            f"Detail {letter} on {entry['parent']} (r = "
+            f"{float(entry['r']):.1f} mm, 2:1) — drag it like any view, "
+            "double-click it for style, scale and name", 7000)
+
+    def action_detail_view(self):
+        """Menu/task-page verb: takes the Detail TOOL's seat (the page
+        [Create a detail view] starts \"Select a base view...\" with
+        the TOOL, and our tool carries the same three beats)."""
+        self._det_btn.click()
 
     def _on_section_edit(self, name):
         """M137's route, R33's dialog: a section child's double-click

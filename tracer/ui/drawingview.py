@@ -75,6 +75,7 @@ class DrawingCanvas(QWidget):
     view_drag_begin = Signal()                   # M96: undo capture hook
     view_scale_requested = Signal(str)           # M100: Scale dialog ask
     section_added = Signal(dict)                 # M136: {parent,p0,p1,flip}
+    detail_added = Signal(dict)                  # M201 R36: {parent,c,r,at}
     section_edit_requested = Signal(str)         # M137: dbl-click a child
     tool_note = Signal(str)                      # M136: canvas says, status
 
@@ -95,6 +96,14 @@ class DrawingCanvas(QWidget):
         self._sec_pts = []                     # parent MODEL xy of clicks
         self._sec_view = None
         self._sec_hover = None                 # page xy of the rubber tip
+        self._det_mode = False                 # M201 R36: detail tool armed?
+        self._det_view = None                  # parent under the boundary
+        self._det_c = None                     # boundary centre, parent
+        #   MODEL xy (travels with the view, like the M136 line)
+        self._det_r = None                     # boundary radius, mm
+        self._det_a = 0.7853981633974483       # identifier angle (the
+        #   drag's direction; 45° is only the untouched-rest default)
+        self._det_hover = None                 # page xy of the rubber tip
         self._printing = False                 # M143: publishing to paper
         self._fit_mode = False                 # M114: fit-callout armed?
         self._gdt_mode = False                 # M144: FCF editor armed?
@@ -131,6 +140,15 @@ class DrawingCanvas(QWidget):
         """M102: the stored cuts on this sheet ({name, axis, at} or
         M136 line-on-view {name, parent, p0, p1, flip})."""
         return list(self.sheet().get("sections") or [])
+
+    def details(self) -> list:
+        """M201 R36 [Detail views, verbatim] "A detail view is a
+        drawing view that shows a portion of another drawing view at
+        an enlarged scale" - the sheet's stored boundaries: {name
+        (letter), parent, c (parent MODEL xy of the centre), r (mm)}
+        plus any user Name. COPY semantics ride (the sections()
+        trap): write through sheet()["details"] for real edits."""
+        return list(self.sheet().get("details") or [])
 
     def _sec_src(self, sec):
         """M139: which bodies a cut reads, and what stands in whole.
@@ -214,6 +232,26 @@ class DrawingCanvas(QWidget):
             except Exception:
                 continue
             out[sec["name"]] = (d["half"], d["view"])
+        # M201 R36 [Create a detail view, verbatim] "Select a base
+        # view, projected view, or section view on the current sheet
+        # as the parent view" - a detail is JUST ANOTHER SOURCE: the
+        # parent's solid clipped by the sight-axis cookie (the core's
+        # detail_cookie), projected through the parent's own basis.
+        # Every consumer - place(), drag, the style walk, hidden
+        # lines - gets the detail for free, and it re-derives on
+        # every repaint: a detail is a projection, never a picture.
+        # A SLICE parent (solid None) has no depth to clip: the
+        # honest answer is absence, not invention.
+        for det in self.details():
+            src = out.get(det.get("parent"))
+            if src is None or src[0] is None:
+                continue
+            try:
+                cook = drawing.detail_cookie(src[0], src[1], det["c"],
+                                             det["r"])
+            except Exception:
+                continue
+            out[det["name"]] = (cook, src[1])
         fp = self.doc.flat_feature()               # M147: the flat
         if fp is not None:                         # pattern rides EVERY
             sol = self.doc.body_solids().get("_flat")   # sheet (v1);
@@ -253,6 +291,9 @@ class DrawingCanvas(QWidget):
     def _secs_by_name(self) -> dict:
         return {s["name"]: s for s in self.sections()}
 
+    def _dets_by_name(self) -> dict:
+        return {d["name"]: d for d in self.details()}
+
     def effective_style(self, name: str) -> str:
         """M201 R34 [DWG-REF-DRAWING-VIEW-DLG, verbatim] "From
         Parent: Inherits the view style from the parent view." -
@@ -276,7 +317,12 @@ class DrawingCanvas(QWidget):
             if st in VIEW_STYLES:
                 return st
             if st == VIEW_STYLE_INHERIT:
-                parent = (secs.get(name) or {}).get("parent")
+                parent = (secs.get(name) or {}).get("parent") \
+                    or (self._dets_by_name().get(name) or {}).get(
+                        "parent")     # M201 R36: the page grants
+                #   "From Parent" to detail views too - the walk
+                #   already exists, one hop is one hop whatever the
+                #   child's kind
                 if parent is None:            # nothing to inherit
                     #   from (legacy or hand-edited record): the rest
                     break
@@ -521,6 +567,7 @@ class DrawingCanvas(QWidget):
             self._fit_mode = False            # M114
             self._sec_mode = False            # M136
             self._gdt_mode = False            # M144
+            self._det_mode = False            # M201 R36: one tool
         self.update()
 
     def set_balloon_mode(self, on: bool):
@@ -534,6 +581,7 @@ class DrawingCanvas(QWidget):
             self._fit_mode = False            # M114
             self._sec_mode = False            # M136
             self._gdt_mode = False            # M144
+            self._det_mode = False            # M201 R36
         self.update()
 
     def set_fit_mode(self, on: bool):
@@ -546,6 +594,7 @@ class DrawingCanvas(QWidget):
             self._dim_first = None
             self._sec_mode = False            # M136
             self._gdt_mode = False            # M144
+            self._det_mode = False            # M201 R36
         self.update()
 
     def set_gdt_mode(self, on: bool):
@@ -560,6 +609,7 @@ class DrawingCanvas(QWidget):
             self._balloon_mode = False
             self._fit_mode = False
             self._sec_mode = False
+            self._det_mode = False            # M201 R36
         self.update()
 
     def set_section_mode(self, on: bool):
@@ -578,9 +628,39 @@ class DrawingCanvas(QWidget):
             self._balloon_mode = False
             self._fit_mode = False
             self._gdt_mode = False            # M144
+            self._det_mode = False            # M201 R36
             self.tool_note.emit("Section line: click where the cut "
                                 "BEGINS on the top, front or right "
                                 "view")
+        self.update()
+
+    def set_detail_mode(self, on: bool):
+        """M201 R36 [Create a detail view, verbatim] "Click a point on
+        the parent view to place the center point of the detail
+        boundary" / "Drag the cursor away from the center point to
+        adjust the size of the detail boundary and location of the
+        identifier, then click to place them" / "Click to place the
+        detail view on the sheet" - THREE beats, exactly as printed:
+        click the centre (the boundary is born under the cursor),
+        drag out the circle and click again (radius is INTERACTIVE -
+        the page prints no radius field, so none is offered), move
+        and click once more on bare paper (the view lands where the
+        drafter put it, scale 2:1 at first - the page's own word is
+        "enlarged"). The tool stays armed for the next detail, like
+        the section line; click the button again to stand down."""
+        self._det_mode = bool(on)
+        self._det_view, self._det_c = None, None
+        self._det_r, self._det_hover = None, None
+        if on:
+            self._dim_mode = False
+            self._dim_first = None
+            self._balloon_mode = False
+            self._fit_mode = False
+            self._gdt_mode = False
+            self._sec_mode = False
+            self.tool_note.emit("Detail: click the CENTER of the "
+                                "area to enlarge, on a base or "
+                                "section view")
         self.update()
 
     def _dim_disp(self, d) -> str:
@@ -942,10 +1022,16 @@ class DrawingCanvas(QWidget):
                 w2 = p.fontMetrics().horizontalAdvance(txt) / 2.0
                 p.drawText(QPointF(pt.x() - w2, pt.y()), txt)
         # M100: a view on an explicit scale wears its ratio as a caption;
-        # M102: a section wears its letter (A-A · 1:2 when both)
+        # M102: a section wears its letter (A-A · 1:2 when both);
+        # M201 R36: a detail wears the page's printed triple in the
+        # page's ORDER - "name, identifier, and scale" [DWG-REF-DRAWING-
+        # VIEW-DLG] - on THIS house caption, not a competing one (the
+        # boundary's edge bubble stays the identifier's page position,
+        # the drag decided).
         vs = self.sheet().get("vscale") or {}
         sec_names = {s["name"] for s in self.sections()}
-        if vs or sec_names:
+        dets = self._dets_by_name()
+        if vs or sec_names or dets:
             f2 = p.font()
             f2.setPointSizeF(max(5.5, 7 * min(self._zoom, 2.0)))
             p.setFont(f2)
@@ -953,6 +1039,12 @@ class DrawingCanvas(QWidget):
                 fac = vs.get(name)
                 bits = []
                 if name in sec_names:
+                    bits.append(name)
+                det = dets.get(name)
+                if det is not None:
+                    word = str(det.get("label") or "").strip()
+                    if word:
+                        bits.append(word)
                     bits.append(name)
                 if fac:
                     bits.append(scale_label(float(fac)))
@@ -963,7 +1055,7 @@ class DrawingCanvas(QWidget):
                 c0 = self.s2p(*self._spin(
                     fr, (fr["ctr"][0], fr["off"][1] + fr["min"][1] - 3.0)))
                 p.setPen(QPen(_FAINT))
-                p.drawText(QRectF(c0.x() - 40, c0.y(), 80,
+                p.drawText(QRectF(c0.x() - 80, c0.y(), 160,
                                   14 * self._zoom),
                            Qt.AlignHCenter | Qt.AlignTop,
                            " \u00b7 ".join(bits))
@@ -972,6 +1064,7 @@ class DrawingCanvas(QWidget):
         self._draw_hole_notes(p, placed)             # M129 table + marks
         self._draw_datum_ids(p, placed)              # M150 letters
         self._draw_section_lines(p, placed)          # M136 cutting lines
+        self._draw_details(p, placed)                # M201 R36 boundaries
 
     # ---- publish (M143) ---------------------------------------------------
     _Q_PAGE = {"A3": QPageSize.A3, "A4": QPageSize.A4}
@@ -1011,7 +1104,8 @@ class DrawingCanvas(QWidget):
         painter = None
         saved = (self.sheet_idx, self.page, self._zoom, self._center,
                  self._printing, self._dim_first, self._sec_pts,
-                 self._sec_view, self._sec_hover)
+                 self._sec_view, self._sec_hover, self._det_c, self._det_r,
+                 self._det_hover, self._det_view)
         try:
             for k, idx in enumerate(order):
                 self.sheet_idx = idx              # _block_meta reads it
@@ -1034,6 +1128,10 @@ class DrawingCanvas(QWidget):
                 self._sec_pts = []                # the sheet; the
                 self._sec_view = None             # user keeps them
                 self._sec_hover = None            # after
+                self._det_c = None                #   the print, and
+                self._det_r = None                #   pick the same
+                self._det_hover = None            #   ghost state back
+                self._det_view = None             #   when they do
                 if painter is None:
                     painter = QPainter(writer)
                 else:
@@ -1045,10 +1143,69 @@ class DrawingCanvas(QWidget):
                 painter.end()
             (self.sheet_idx, self.page, self._zoom, self._center,
              self._printing, self._dim_first, self._sec_pts,
-             self._sec_view, self._sec_hover) = saved
+             self._sec_view, self._sec_hover, self._det_c, self._det_r,
+             self._det_hover, self._det_view) = saved
             for gone in ("width", "height", "rect"):
                 self.__dict__.pop(gone, None)     # unshadow the widget
         return len(order)
+
+    def _draw_details(self, p, placed):
+        """M201 R36: the boundary circle rides its PARENT (stored in
+        parent MODEL xy, so a nudged or spun parent carries the crop
+        with it - the cookie re-clips where the part now sits); the
+        IDENTIFIER bubble stands at the circle's edge in the drag's
+        own direction, the page's "location of the identifier" made
+        real; and the child carries the label in the page's printed
+        order - [DWG-REF-DRAWING-VIEW-DLG] name, identifier and scale
+        - under the enlarged view. A parent that walked off the sheet
+        keeps its ink absent, not invented (fr None: skip). While the
+        tool is mid-drag the same circle draws as a rubber ghost, so
+        the drafter sees the boundary they are pulling before it
+        exists."""
+        dets = self.details()
+        if not dets and self._det_c is None:
+            return
+        p.save()
+        f = QFont(p.font())
+        f.setPixelSize(max(9, int(4.2 * self._zoom)))
+        for det in dets:
+            fr = placed.get(det.get("parent"))
+            if fr is None:
+                continue
+            ctr = np.asarray(self._m2p(fr, det["c"]), float)
+            rr = float(det["r"]) * fr["sc"]          # model mm -> page mm
+            pen = QPen(_VIEW_EDGE, max(0.8, 0.24 * self._zoom))
+            p.setPen(pen)
+            p.setBrush(Qt.NoBrush)
+            p.drawEllipse(self.s2p(*ctr), rr * self._zoom,
+                          rr * self._zoom)
+            a = float(det.get("a", 0.7853981633974483))
+            bub = ctr + np.array([math.cos(a), math.sin(a)]) * (rr + 2.6)
+            c = self.s2p(*bub)
+            rpx = max(9, int(2.2 * self._zoom))
+            p.setBrush(_PAPER)
+            p.drawEllipse(c, rpx, rpx)
+            p.setPen(QPen(_VIEW_EDGE, max(0.9, 0.22 * self._zoom)))
+            p.setFont(f)
+            p.drawText(QRectF(c.x() - rpx, c.y() - rpx, 2 * rpx, 2 * rpx),
+                       Qt.AlignCenter, str(det["name"]))
+        if self._det_mode and self._det_c is not None \
+                and self._det_view in placed:
+            fr = placed[self._det_view]
+            ctr = np.asarray(self._m2p(fr, self._det_c), float)
+            tip = (np.asarray(self._det_hover, float)
+                   if self._det_hover is not None else None)
+            p.setPen(QPen(_DETAIL, max(0.8, 0.2 * self._zoom),
+                          Qt.DashLine))
+            if self._det_r is not None:
+                rr = self._det_r * fr["sc"]
+                p.drawEllipse(self.s2p(*ctr), rr * self._zoom,
+                              rr * self._zoom)
+            elif tip is not None:
+                rr = float(np.hypot(*(tip - ctr))) * self._zoom
+                p.drawEllipse(self.s2p(*ctr), rr, rr)
+                p.drawLine(self.s2p(*ctr), self.s2p(*tip))
+        p.restore()
 
     def _draw_section_lines(self, p, placed):
         """M136: the cutting line rides its parent view — thin long
@@ -1722,6 +1879,9 @@ class DrawingCanvas(QWidget):
         if self._sec_mode and ev.button() == Qt.LeftButton:
             self._sec_click(ev)              # M136: cutting line clicks
             return
+        if self._det_mode and ev.button() == Qt.LeftButton:
+            self._det_click(ev)              # M201 R36: boundary beats
+            return
         if self._balloon_mode and ev.button() == Qt.LeftButton:
             self._balloon_click(ev)          # M110: pin, don't pan
             return
@@ -1848,7 +2008,97 @@ class DrawingCanvas(QWidget):
         self._sec_pts, self._sec_view, self._sec_hover = [], None, None
         self.update()
 
+    def _det_click(self, ev):
+        """M201 R36: the three beats of the detail boundary, verbatim
+        off [Create a detail view] - and every refusal speaks the
+        page's own parent list BY NAME. The centre and radius live in
+        the PARENT's model xy (they travel with the parent's drag and
+        survive its spin, exactly like the M136 cutting line and the
+        balloons); the placement click lives in sheet mm (it is paper
+        furniture, like a view's move). The identifier angle is the
+        drag's own direction - the page ties it to the drag, so it is
+        stored, not decorated."""
+        placed = self.placed()
+        if not placed:
+            return
+        page = self.p2s(ev.position())
+        if self._det_c is None:                       # beat 1: the centre
+            view = self._view_at(page, placed, slack=6.0)
+            det_names = {d["name"] for d in self.details()}
+            if view is None:
+                self.tool_note.emit("Detail: click INSIDE the view to "
+                                    "enlarge - the page's parent list "
+                                    "is a base, projected or section "
+                                    "view")
+                return
+            src = self._sources().get(view)
+            if view in det_names:
+                self.tool_note.emit(f"{view} is a detail - the page's "
+                                    "parent list is a base, projected "
+                                    "or section view; a detail of a "
+                                    "detail is unoffered")
+                return
+            if view == "iso":
+                self.tool_note.emit("iso cannot host a detail - it is "
+                                    "on no true plane, so a detail of "
+                                    "it could not stand its section "
+                                    "line (the page's list: base, "
+                                    "projected or section view)")
+                return
+            if src is None or src[0] is None:
+                self.tool_note.emit(f"{view} cannot host a detail - a "
+                                    "slice shows the cut face alone, "
+                                    "with no depth left to enlarge")
+                return
+            self._det_view = view
+            self._det_c = self._p2m(placed[view], page)
+            self._det_hover = page
+            self.tool_note.emit(f"Detail on {view}: drag the radius "
+                                "out from the center and click - the "
+                                "identifier rides the circle's edge")
+            self.update()
+            return
+        if self._det_r is None:                       # beat 2: the drag
+            if self._view_at(page, placed, slack=6.0) != self._det_view:
+                self.tool_note.emit("Stay inside the parent - the "
+                                    "boundary is drawn ON it")
+                return
+            p1 = self._p2m(placed[self._det_view], page)
+            r = math.dist(self._det_c, p1)
+            if r < 0.5:
+                self.tool_note.emit("That boundary is too small to "
+                                    "read - drag further out")
+                return
+            self._det_r = r
+            self._det_a = math.atan2(p1[1] - self._det_c[1],
+                                     p1[0] - self._det_c[0])
+            self.tool_note.emit("Detail: click bare paper to place "
+                                "the enlarged view")
+            self.update()
+            return
+        if self._view_at(page, placed, slack=2.0) is not None:
+            self.tool_note.emit("Place the detail on BARE PAPER - the "
+                                "spot holds another view")
+            return
+        at = (float(page[0]), float(page[1]))
+        self.detail_added.emit({"parent": self._det_view,
+                                "c": [float(self._det_c[0]),
+                                      float(self._det_c[1])],
+                                "r": float(self._det_r),
+                                "a": float(self._det_a), "at": list(at)})
+        # the page arms the next pick after placing ("Click to place...
+        # then click again for another"): stand down THIS boundary,
+        # keep the tool in its seat.
+        self._det_view = self._det_c = self._det_r = self._det_a = None
+        self._det_hover = None
+        self.update()
+
     def mouseMoveEvent(self, ev):
+        if self._det_mode and self._det_c is not None \
+                and self._det_r is None:            # R36 rubber circle
+            self._det_hover = self.p2s(ev.position())
+            self.update()
+            return
         if self._sec_mode and self._sec_pts:          # M136 rubber band
             self._sec_hover = self.p2s(ev.position())
             self.update()
