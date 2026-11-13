@@ -77,11 +77,11 @@ def win(qapp):
 
 def test_primitive_dialog_cone(win, qapp, monkeypatch):
     win.new_document()
-    script_cmd(monkeypatch, {"kind": "Cone", "dx": 40.0, "dy": 30.0,
-                             "dz": 15.0, "radius": 10.0, "r1": 10.0,
-                             "r2": 4.0, "height": 15.0, "op": "Join",
+    # M201 R17: the Cone dialog (HOUSE shape) takes diameters -> r10/r4
+    script_cmd(monkeypatch, {"bottom_d": 20.0, "top_d": 8.0,
+                             "height": 15.0, "op": "Join",
                              "x": 0.0, "y": 0.0, "z": 0.0})
-    win.action_primitive()
+    win.action_cone()
     qapp.processEvents()
     assert win.doc.result.volume == pytest.approx(_vol(10, 4, 15),
                                                   rel=1e-3)

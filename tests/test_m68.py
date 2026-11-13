@@ -70,16 +70,15 @@ def win(qapp):
     r.close()
 
 
-RING = {"kind": "Torus", "dx": 20.0, "dy": 20.0, "dz": 20.0,
-        "radius": 8.0, "r1": 12.0, "r2": 4.0, "major": 20.0,
-        "minor": 5.0, "op": "Join", "x": 0.0, "y": 0.0, "z": 8.0}
+RING = {"torus_d": 50.0, "inner_d": 30.0,     # -> major 20, minor 5
+        "op": "Join", "x": 0.0, "y": 0.0, "z": 8.0}   # M201 R17 dialog
 
 
 def test_primitive_dialog_torus_rests_on_the_ground(win, qapp,
                                                     monkeypatch):
     win.new_document()
     script_cmd(monkeypatch, dict(RING))
-    win.action_primitive()
+    win.action_torus()
     qapp.processEvents()
     assert win.doc.result.volume == pytest.approx(_vol(20, 5), rel=2e-3)
     lo, _hi = win.doc.result.bounding_box

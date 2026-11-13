@@ -395,6 +395,49 @@ def _primitive(p: QPainter):
     p.drawLine(QPointF(22, 6), QPointF(22, 17))
 
 
+def _cylinder(p: QPainter):
+    """The Cylinder tool (M201 R17): a standing drum."""
+    pen = QPen(_COL)
+    pen.setWidthF(1.6)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QRectF(6, 4, 16, 6))
+    p.drawLine(QPointF(6, 7), QPointF(6, 21))
+    p.drawLine(QPointF(22, 7), QPointF(22, 21))
+    p.drawEllipse(QRectF(6, 18, 16, 6))
+
+
+def _sphere(p: QPainter):
+    """The Sphere tool (M201 R17): a ball with one meridian."""
+    pen = QPen(_COL)
+    pen.setWidthF(1.6)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QRectF(6, 5, 16, 16))
+    p.drawEllipse(QRectF(11, 5, 6, 16))
+
+
+def _torus(p: QPainter):
+    """The Torus tool (M201 R17): ring over hole."""
+    pen = QPen(_COL)
+    pen.setWidthF(1.6)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QRectF(4, 8, 20, 12))
+    p.drawEllipse(QRectF(11, 12, 6, 4))
+
+
+def _cone(p: QPainter):
+    """The Cone tool (M201 R17, HOUSE SHAPE - no page prints a Cone)."""
+    pen = QPen(_COL)
+    pen.setWidthF(1.6)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    p.drawLine(QPointF(14, 5), QPointF(6, 20))
+    p.drawLine(QPointF(14, 5), QPointF(22, 20))
+    p.drawEllipse(QRectF(6, 17, 16, 6))
+
+
 def _newbody(p: QPainter):
     """An iso cube with a plus badge — start a separate body."""
     pen = QPen(_COL)
@@ -550,6 +593,8 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "appearance": _appearance, "move": _move,
               "rotate": _rotate, "combine": _combine,
               "primitive": _primitive, "mass": _mass,
+              "cylinder": _cylinder, "sphere": _sphere,
+              "torus": _torus, "cone": _cone,
               "newbody": _newbody,
               "text": _text})
 

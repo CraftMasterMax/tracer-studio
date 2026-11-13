@@ -424,9 +424,23 @@ class MainWindow(QMainWindow):
           lambda checked=False: self.action_sweep())
         d("loft", "Loft — blend one sketch's profile into another's (Ctrl+L)",
           lambda checked=False: self.action_loft())
-        d("primitive", "Primitive — drop a box, cone, cylinder, sphere "
-                       "or torus",
-          lambda checked=False: self.action_primitive())
+        # M201 R17 [SLD-CREATE-SOLID-PRIMITIVE, verbatim]: "You can use
+        # the following tools to create a solid body from a primitive
+        # shape:" - Box, Cylinder, Sphere, Torus, Coil, Pipe are ONE
+        # TOOL EACH ("On the toolbar, click Solid > Create > Box"), so
+        # the merged M65 dialog splits: the button is the pages' FIRST
+        # tool (Box) and its arrow offers the family. Coil and Pipe are
+        # NOT offered - the kernel does not bake them yet and a door
+        # never promises what cannot land. Cone rides last, DECLARED
+        # HOUSE (no page prints a Cone).
+        d("primitive", "Box — drop a parametric box",
+          menu_actions=[
+              ("Box…", self.action_box),
+              ("Cylinder…", self.action_cylinder),
+              ("Sphere…", self.action_sphere),
+              ("Torus…", self.action_torus),
+              ("Cone… (house tool)", self.action_cone)],
+          slot=None)
         d("newbody", "New body — the next feature lands in a separate body",
           lambda checked=False: self.action_new_body())
         d("text", "Text — emboss or engrave a line of text",
@@ -6469,12 +6483,82 @@ class MainWindow(QMainWindow):
             f"Body rotated {deg:+.1f}\u00b0 about "
             f"{'XYZ'[axis_i]} through its centre", 5000)
 
-    def action_primitive(self):
-        """Fusion Create ▸ Primitive (M65): box, cylinder or sphere,
-        dialled in document measures and dropped as its own parametric
-        contribution — the fastest way to start (or grow) a part."""
+    # M201 R17: each tool's placement fact, in one house sentence.
+    _PRIM_PLACEMENT = {
+        "Box": "placement is the box corner",
+        "Cylinder": "placement is the base centre",
+        "Sphere": "placement is the centre",
+        "Torus": "placement is the ring centre",
+        "Cone": "placement is the base centre",   # HOUSE SHAPE (see below)
+    }
+
+    def action_box(self):
+        """The pages' Box tool [SLD-BOX-SOLID, verbatim]: "On the
+        toolbar, click Solid > Create > Box" ... "The Box dialog
+        displays." - rows "Length" and "Width" ("specify exact Length
+        and Width values") and "Height" ("the Length, Width, and
+        Height manipulator handles")."""
+        self.action_primitive("Box")
+
+    def action_cylinder(self):
+        """The pages' Cylinder tool [SLD-CYLINDER-SOLID, verbatim]:
+        "specify an exact Diameter value" ... "Drag the Diameter and
+        Height manipulator handles" - the family's size voice is
+        DIAMETER (see action_primitive)."""
+        self.action_primitive("Cylinder")
+
+    def action_sphere(self):
+        """The pages' Sphere tool [SLD-SPHERE-SOLID, verbatim]: "Drag
+        the Diameter manipulator handle ... or specify an exact
+        value" - Diameter is the ONE size row the page prints."""
+        self.action_primitive("Sphere")
+
+    def action_torus(self):
+        """The pages' Torus tool [SLD-TORUS-SOLID, verbatim]: "Drag
+        the Inner Diameter and Torus Diameter manipulator handles" -
+        the door takes the page's TWO handle words. Position {Inside
+        | On Center | Outside} is NOT offered: it disambiguates a
+        single pick-time diameter this two-diameter door never asks,
+        and the page's own Position glosses are self-referential
+        (vendor DEFECT, flagged) - nothing is composed from them."""
+        self.action_primitive("Torus")
+
+    def action_cone(self):
+        """The Cone tool - DECLARED HOUSE SHAPE WHOLESALE: the family
+        sweep 404s SLD-CONE-SOLID and the Create panel prints exactly
+        {Box | Cylinder | Sphere | Torus | Coil | Pipe}, so NO page
+        prints a Cone and every word of this dialog (including its
+        diameter rows, borrowed from the family voice) is OURS; the
+        kernel has always baked the cone geometry."""
+        self.action_primitive("Cone")
+
+    def action_primitive(self, shape: str = "Box"):
+        """M65 grew the primitive family; M201 R17 [SLD-*-SOLID,
+        verbatim] split the merged "Primitive" dialog into the PAGES'
+        separate tools - each dialog is TITLED the tool's word (the
+        pages print "The Box dialog displays.", "The Cylinder dialog
+        displays.", ...) and shows ONLY its own rows in the pages'
+        size voice. That voice is DIAMETER: "radius" counts ZERO hits
+        on every task page (the lone Radius lives on the Coil
+        reference page, contradicting its own task page - vendor
+        DEFECT, flagged, never cloned). LAW AT THE MOUTH: a typed
+        Diameter HALVES into the record's radius - the record voice
+        (files, lever, rail) moves not an inch; the Torus pair lands
+        major=(Torus+Inner)/4, minor=(Torus-Inner)/4 and an Inner not
+        smaller than the Torus REFUSES BEFORE the capture (no record,
+        no undo step). Cone is the HOUSE shape (its action's docstring
+        says so wholesale; the sweep never found a Cone page). The
+        pages print ZERO printed defaults (grep "default" across the
+        family: 0 hits) and NO placement rows - every rest and the
+        "place X/Y/Z" rows are OURS, stamped. Operation rides the
+        page's printed order - "Join ... Cut ... Intersect ..." (the
+        first three of five; New Body is the separate house tool, New
+        Component is "(Hybrid Design type only)" and the kernel does
+        not bake it, so the door does not promise it)."""
         if self.doc is None:
             return
+        if shape not in self._PRIM_PLACEMENT:
+            raise ValueError(f"no primitive tool named {shape!r}")
         u = self.doc.units if self.doc.units in units.LABEL else "mm"
         f = units.PER_MM[u]
         lab = units.LABEL[u]
@@ -6486,55 +6570,64 @@ class MainWindow(QMainWindow):
         def freenum(key, label, mm):
             return dict(key=key, label=f"{label} ({lab})", kind="double",
                         default=round(mm / f, 6), decimals=2)
-        v = cmddialog.ask(self, "Primitive", [
-            dict(key="kind", label="Shape", kind="combo",
-                 choices=["Box", "Cylinder", "Cone", "Torus", "Sphere"],
-                 default="Box", group=f"Size ({lab})"),
-            num("dx", "length X", 40.0), num("dy", "length Y", 30.0),
-            num("dz", "length Z", 15.0),
-            num("radius", "radius", 10.0, 3),
-            num("r1", "bottom radius", 12.0, 3),
-            num("r2", "top radius", 4.0, 3),
-            num("major", "ring radius", 20.0, 3),
-            num("minor", "tube radius", 5.0, 3),
-            num("height", "height", 30.0),
+        size_rows = {
+            "Box": (num("length", "Length", 40.0),
+                    num("width", "Width", 30.0),
+                    num("height", "Height", 15.0)),
+            "Cylinder": (num("diameter", "Diameter", 20.0, 3),
+                         num("height", "Height", 30.0)),
+            "Sphere": (num("diameter", "Diameter", 20.0, 3),),
+            "Torus": (num("torus_d", "Torus Diameter", 50.0, 3),
+                      num("inner_d", "Inner Diameter", 30.0, 3)),
+            "Cone": (num("bottom_d", "Bottom Diameter", 24.0, 3),
+                     num("top_d", "Top Diameter", 8.0, 3),
+                     num("height", "Height", 30.0)),
+        }[shape]
+        v = cmddialog.ask(self, shape, [
+            *size_rows,
             dict(key="op", label="Operation", kind="combo",
                  choices=["Join", "Cut", "Intersect"], default="Join",
                  group="Boolean"),
             freenum("x", "place X", 0.0),
             freenum("y", "place Y", 0.0),
             freenum("z", "place Z", 0.0),
-        ], remember_key="primitive")
+        ], remember_key=f"primitive_{shape.lower()}")
         if v is None:
             return
-        kind = {"Box": "box", "Cylinder": "cylinder", "Cone": "cone",
-                "Torus": "torus",
-                "Sphere": "sphere"}[str(v["kind"])]
-        dims = ({"radius": float(v["radius"]) * f} if kind == "sphere"
-                else {"radius": float(v["radius"]) * f,
-                      "height": float(v["height"]) * f}
-                if kind == "cylinder"
-                else {"radius_bottom": float(v["r1"]) * f,
-                      "radius_top": float(v["r2"]) * f,
-                      "height": float(v["height"]) * f}
-                if kind == "cone"
-                else {"major": float(v["major"]) * f,
-                      "minor": float(v["minor"]) * f}
-                if kind == "torus"
-                else {"dx": float(v["dx"]) * f, "dy": float(v["dy"]) * f,
-                      "dz": float(v["dz"]) * f})
+        half = 0.5 * f
+        kind = shape.lower()
+        if shape == "Box":
+            dims = {k: float(v[g]) * f
+                    for k, g in (("dx", "length"), ("dy", "width"),
+                                 ("dz", "height"))}
+        elif shape == "Cylinder":
+            dims = {"radius": float(v["diameter"]) * half,
+                    "height": float(v["height"]) * f}
+        elif shape == "Sphere":
+            dims = {"radius": float(v["diameter"]) * half}
+        elif shape == "Torus":
+            td, ind = float(v["torus_d"]) * f, float(v["inner_d"]) * f
+            if ind >= td:
+                self.status.showMessage(
+                    "Torus refused: the Inner Diameter must be smaller "
+                    "than the Torus Diameter", 6000)
+                return
+            dims = {"major": (td + ind) / 4.0, "minor": (td - ind) / 4.0}
+        else:                                    # Cone - HOUSE shape
+            dims = {"radius_bottom": float(v["bottom_d"]) * half,
+                    "radius_top": float(v["top_d"]) * half,
+                    "height": float(v["height"]) * f}
         n = sum(1 for g in self.doc.features
                 if isinstance(g, PrimitiveFeature) and g.kind == kind) + 1
         self._capture()
         self.doc.add(PrimitiveFeature(
-            name=f"{str(v['kind'])} {n}", kind=kind, dims=dims,
+            name=f"{shape} {n}", kind=kind, dims=dims,
             op={"Join": "union", "Cut": "subtract",
                 "Intersect": "intersect"}[str(v["op"])],
             placement=tuple(float(v[k]) * f for k in ("x", "y", "z"))))
         self.recompute()
         self.status.showMessage(
-            f"Added {str(v['kind']).lower()} — placement is the box "
-            "corner / cylinder-cone base / sphere-torus centre", 5000)
+            f"Added {kind} — {self._PRIM_PLACEMENT[shape]}", 5000)
 
     _INTERLOCK_KINDS = {          # dialog labels -> core kinds (M121)
         "Boss — post joining two bodies": "boss",

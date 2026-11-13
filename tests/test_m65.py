@@ -44,14 +44,14 @@ def win(qapp):
         raise
 
 
-BOX = {"kind": "Box", "dx": 40.0, "dy": 30.0, "dz": 15.0, "radius": 10.0,
-       "height": 30.0, "op": "Join", "x": 0.0, "y": 0.0, "z": 0.0}
+BOX = {"length": 40.0, "width": 30.0, "height": 15.0, "op": "Join",
+       "x": 0.0, "y": 0.0, "z": 0.0}   # M201 R17: the pages' Box rows
 
 
 def test_primitive_box_starts_the_body(win, qapp, monkeypatch):
     win.new_document()
     script_cmd(monkeypatch, dict(BOX))
-    win.action_primitive()
+    win.action_box()
     qapp.processEvents()
     assert win.doc.result.volume == pytest.approx(18000, rel=1e-3)
     pf = [f for f in win.doc.features if isinstance(f, PrimitiveFeature)]
@@ -61,9 +61,13 @@ def test_primitive_box_starts_the_body(win, qapp, monkeypatch):
 def test_primitive_cylinder_joins_far_away_exactly(win, qapp, monkeypatch):
     win.new_document()
     script_cmd(monkeypatch, dict(BOX))
-    win.action_primitive()
-    script_cmd(monkeypatch, {**BOX, "kind": "Cylinder", "x": 100.0})
-    win.action_primitive()
+    win.action_box()
+    # M201 R17: the page's voice is DIAMETER - 20 typed lands r 10,
+    # the SAME body the old radius dialog dialed.
+    script_cmd(monkeypatch, {"diameter": 20.0, "height": 30.0,
+                             "op": "Join", "x": 100.0, "y": 0.0,
+                             "z": 0.0})
+    win.action_cylinder()
     qapp.processEvents()
     want = 18000 + math.pi * 100 * 30
     assert win.doc.result.volume == pytest.approx(want, rel=1e-3)
@@ -72,10 +76,10 @@ def test_primitive_cylinder_joins_far_away_exactly(win, qapp, monkeypatch):
 def test_primitive_cut_and_names_count_per_kind(win, qapp, monkeypatch):
     win.new_document()
     script_cmd(monkeypatch, dict(BOX))
-    win.action_primitive()
-    script_cmd(monkeypatch, {**BOX, "dx": 10.0, "dy": 10.0, "dz": 10.0,
-                             "op": "Cut"})
-    win.action_primitive()
+    win.action_box()
+    script_cmd(monkeypatch, {**BOX, "length": 10.0, "width": 10.0,
+                             "height": 10.0, "op": "Cut"})
+    win.action_box()
     qapp.processEvents()
     assert win.doc.result.volume == pytest.approx(18000 - 1000, rel=1e-3)
     names = [f.name for f in win.doc.features
@@ -85,9 +89,9 @@ def test_primitive_cut_and_names_count_per_kind(win, qapp, monkeypatch):
 
 def test_sphere_centres_at_placement(win, qapp, monkeypatch):
     win.new_document()
-    script_cmd(monkeypatch, {**BOX, "kind": "Sphere", "radius": 10.0,
-                             "z": 10.0})
-    win.action_primitive()
+    script_cmd(monkeypatch, {"diameter": 20.0, "op": "Join",
+                             "x": 0.0, "y": 0.0, "z": 10.0})
+    win.action_sphere()
     qapp.processEvents()
     assert win.doc.result.volume == pytest.approx(
         4.0 / 3.0 * math.pi * 1000, rel=1e-3)
@@ -98,7 +102,7 @@ def test_sphere_centres_at_placement(win, qapp, monkeypatch):
 def test_cancel_changes_nothing(win, qapp, monkeypatch):
     win.new_document()
     script_cmd_cancel(monkeypatch)
-    win.action_primitive()
+    win.action_box()
     qapp.processEvents()
     assert win.doc.result is None or win.doc.result.volume == 0 \
         or not [f for f in win.doc.features
