@@ -176,9 +176,12 @@ def test_circular_pattern_is_one_dialog(win, monkeypatch):
     assert len(calls) == 1, calls
     title, keys, groups = calls[0]
     assert title == "Circular Pattern"
-    assert keys == ["src", "axis", "cx", "cy", "dist", "ang",
-                    "count"]                      # seven, joint
-    assert groups == ["Object", "Axis", "Axis", "Axis",
+    # R26: the shared reference's opening pair joined the door -
+    # Object Type FIRST, Objects wearing the src key (the key pin
+    # MOVED with the vendor again: pins move, laws survive).
+    assert keys == ["otype", "src", "axis", "cx", "cy", "dist", "ang",
+                    "count"]                      # eight, joint
+    assert groups == ["Object", "Object", "Axis", "Axis", "Axis",
                       "Pattern", "Pattern", "Pattern"]
     assert len([f for f in win.doc.features
                 if type(f).__name__ == "CircularPatternFeature"]) == 1
@@ -192,7 +195,8 @@ def test_linear_pattern_is_one_dialog(win, monkeypatch):
     Quantity / Distance / Distribution / Direction) - the key pin
     MOVED with the vendor in this commit (pins move, laws survive):
     still ONE dialog, and Occurrences 2 defaults to the page's own
-    one-direction value."""
+    one-direction value.  R26 grew the ONE dialog again with the
+    reference's opening pair - still ONE dialog."""
     win.doc.add_plate("plate", 40, 40, 5)
     win.doc.add_cylinder("lug", 3, 8, center=(30, 20), op="union")
     win.recompute()
@@ -203,9 +207,9 @@ def test_linear_pattern_is_one_dialog(win, monkeypatch):
         "dist2": "Spacing", "dir2": "One direction"})
     win.action_linear_pattern()
     assert len(calls) == 1
-    assert calls[0][1] == ["src", "dx", "dy", "dz", "count", "dist",
-                           "dir", "count2", "dx2", "dy2", "dz2",
-                           "dist2", "dir2"]
+    assert calls[0][1] == ["otype", "src", "dx", "dy", "dz", "count",
+                           "dist", "dir", "count2", "dx2", "dy2",
+                           "dz2", "dist2", "dir2"]
 
 
 def test_mirror_ribbon_is_one_dialog(win, monkeypatch):
@@ -224,8 +228,10 @@ def test_mirror_ribbon_is_one_dialog(win, monkeypatch):
     assert len(calls) == 1
     # M201 grew the ONE panel with the page's Operation row (Join |
     # New Body) - the key pin MOVED with the vendor in this commit
-    # (pins move, laws survive): still ONE panel.
-    assert calls[0][1] == ["src", "plane", "off", "op"]
+    # (pins move, laws survive): still ONE panel.  R26 grew it with
+    # the reference's opening rows (Object Type, Objects) + page
+    # casing on Mirror Plane - still ONE panel.
+    assert calls[0][1] == ["otype", "src", "plane", "off", "op"]
     assert any(type(f).__name__ == "MirrorFeature"
                for f in win.doc.features)
 

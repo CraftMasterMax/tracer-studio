@@ -8680,7 +8680,16 @@ class MainWindow(QMainWindow):
             return
         names = [f.name for f in cands]
         v = cmddialog.ask(self, "Pattern on Path", [
-            dict(key="src", label="Feature to pattern", kind="combo",
+            # M201 R26 [SLD-REF-PATTERN, verbatim]: the shared page's
+            # opening pair, "Object Type: Select the type of object to
+            # pattern." worn by its ONE baked member ("Features:
+            # Duplicates features in the timeline and distributes them
+            # according to the pattern settings."), and "Objects:
+            # Select objects to pattern."  The count row keeps the
+            # house word (R15's stamped adjudication, m203-pinned).
+            dict(key="otype", label="Object Type", kind="combo",
+                 choices=["Features"], group="Object"),
+            dict(key="src", label="Objects", kind="combo",
                  choices=names, group="Object"),
             dict(key="count", label="Occurrences along the path",
                  kind="int", default=4, min=2, max=200, group="Pattern"),
@@ -8719,7 +8728,24 @@ class MainWindow(QMainWindow):
         row and NEVER WRITES it (the draft door's two-voice law - one
         record one voice); Partial and Symmetric write it as the rung
         era always did.  Suppression and Compute Type stay UNOFFERED
-        (canvas checkboxes / feature-face BRep)."""
+        (canvas checkboxes / feature-face BRep).
+
+        M201 R26 [SLD-REF-PATTERN, verbatim] the reference's FIRST
+        two rows are "Object Type: Select the type of object to
+        pattern." and "Objects: Select objects to pattern." - the
+        door wears them now.  Of the page's five members this kernel
+        bakes exactly one: "Features: Duplicates features in the
+        timeline and distributes them according to the pattern
+        settings." (it transforms the FEATURE's built mesh), so the
+        row carries that ONE member - Faces/Bodies/Components/
+        Construction Geometry stay UNOFFERED: no face, occurrence or
+        construction-object duplication exists here, and a one-
+        member row that is always true promises nothing the kernel
+        cannot keep.  The count row keeps its rung-era word
+        "Occurrences": R15 adjudicated it a DECLARED house stamp in
+        the page's own knowledge (the m203 gate pins that
+        declaration) - relitigating settled naming is not this
+        rung's law."""
         if self.doc is None:
             return
         cands = self._pattern_candidates()
@@ -8745,7 +8771,9 @@ class MainWindow(QMainWindow):
         # speak the page's Full words, never the row's value.  One
         # dialog, as always.
         v = cmddialog.ask(self, "Circular Pattern", [
-            dict(key="src", label="Feature to pattern", kind="combo",
+            dict(key="otype", label="Object Type", kind="combo",
+                 choices=["Features"], group="Object"),
+            dict(key="src", label="Objects", kind="combo",
                  choices=names, group="Object"),
             dict(key="axis", label="Axis", kind="combo", choices=axes,
                  group="Axis"),
@@ -8833,7 +8861,19 @@ class MainWindow(QMainWindow):
         the page's row is "Quantity" ("Specify the number of pattern
         instances to create along or around an axis or path"), kept
         under the rung-era label on purpose.  The Direction row's
-        words follow the REFERENCE page's casing, "One direction"."""
+        words follow the REFERENCE page's casing, "One direction".
+
+        M201 R26 [SLD-REF-PATTERN, verbatim] the door's FIRST two
+        rows are now the reference's own opening pair - "Object Type:
+        Select the type of object to pattern." (worn by its ONE
+        bakes member, "Features: Duplicates features in the timeline
+        and distributes them according to the pattern settings.") and
+        "Objects: Select objects to pattern." - where the born door
+        asked the feature under a house word ("Feature to pattern").
+        Faces/Bodies/Components/Construction Geometry stay UNOFFERED
+        (the kernel transforms a feature's built mesh; it patterns no
+        face, occurrence or construction object); Suppression and
+        Compute Type stay UNOFFERED for their born reasons."""
         if self.doc is None:
             return
         cands = self._pattern_candidates()
@@ -8845,7 +8885,9 @@ class MainWindow(QMainWindow):
             return
         names = [f.name for f in cands]
         v = cmddialog.ask(self, "Rectangular Pattern", [
-            dict(key="src", label="Feature to pattern", kind="combo",
+            dict(key="otype", label="Object Type", kind="combo",
+                 choices=["Features"], group="Object"),
+            dict(key="src", label="Objects", kind="combo",
                  choices=names, group="Object"),
             dict(key="dx", label="X distance", kind="double", default=10.0,
                  min=-1e5, max=1e5, decimals=3, group="Direction"),
@@ -8955,7 +8997,11 @@ class MainWindow(QMainWindow):
         is_origin = plane in MirrorFeature.NORMALS
         if off is None:
             fields = [] if known else [
-                dict(key="plane", label="Mirror plane", kind="combo",
+                dict(key="plane", label="Mirror Plane", kind="combo",
+                     # M201 R26 [SLD-REF-MIRROR-DIALOG, verbatim]
+                     # "Mirror Plane: Select a plane or planar face to
+                     # mirror objects across." - page casing at every
+                     # mouth that asks it.
                      choices=["YZ", "XZ", "XY"] +
                      [p["name"] for p in self.doc.planes], group="Plane")]
             default_off = 0.0
@@ -9489,9 +9535,30 @@ class MainWindow(QMainWindow):
         names = [f.name for f in cands]
         planes = ["YZ", "XZ", "XY"] + [p["name"] for p in self.doc.planes]
         fields = [
-            dict(key="src", label="Feature to mirror", kind="combo",
+            # M201 R26 [SLD-REF-MIRROR-DIALOG, verbatim] the door opens
+            # with the reference's own first three rows, in printed
+            # order: "Object Type: Select the object type you want to
+            # mirror." worn by its ONE baked member "Features: Mirrors
+            # timeline features across a plane." (the born
+            # "Feature to mirror" was that pair collapsed into a house
+            # word); "Objects: Select objects to mirror."; "Mirror
+            # Plane: Select a plane or planar face to mirror objects
+            # across." - page casing worn.  Faces/Bodies/Components/
+            # Construction Geometry UNOFFERED (the tool mirrors a
+            # feature's built mesh).  DEFECT H16 flagged not cloned:
+            # the task gates Operation on "If Object Type is set to
+            # Bodies" while the REFERENCE gates it "(Parametric
+            # Modeling mode only)" - the door keeps its born Operation
+            # row under the reference's looser word, because the join
+            # it offers is the record's own voice.  "Tolerance
+            # (Surfaces only)" and "Compute Option (Features type
+            # only)" UNOFFERED: no surface stitching, no BRep compute
+            # modes here.
+            dict(key="otype", label="Object Type", kind="combo",
+                 choices=["Features"], group="Object"),
+            dict(key="src", label="Objects", kind="combo",
                  choices=names, group="Object"),
-            dict(key="plane", label="Mirror plane", kind="combo",
+            dict(key="plane", label="Mirror Plane", kind="combo",
                  choices=planes, group="Plane"),
             dict(key="off", label="Plane offset", kind="double",
                  default=0.0, min=-1e6, max=1e6, group="Plane"),

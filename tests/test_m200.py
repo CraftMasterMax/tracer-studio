@@ -663,7 +663,8 @@ def test_the_path_door_asks_the_orientation_row_and_both_voices_land(
     """The page's Orientation row walked through the real door (fresh
     sketch each voice - the probe-shadow law: an active sketch makes
     the SECOND action_new_sketch meet the discard guard).  The door
-    asks THREE rows [src, count, orient]; Identical rides the v1
+    asks its rows (Object Type/Objects joined the front in R26 - the
+    page's opening pair); Identical rides the v1
     words BYTE-IDENTICAL ("...×3 along the path") and stores the
     legacy voice; Path Direction grows the page's tail
     ("...turned to its place along it") and stands the corner boss
@@ -684,7 +685,10 @@ def test_the_path_door_asks_the_orientation_row_and_both_voices_land(
                              "orient": "Identical"})[1])
     win.action_path_pattern()
     qapp.processEvents()
-    assert calls[0] == ["src", "count", "orient"]     # the page's row
+    assert calls[0] == ["otype", "src", "count", "orient"]  # the page's
+    # row (Orientation) + R26's opening pair: SLD-REF-PATTERN prints
+    # "Object Type" and "Objects" FIRST - pins move, laws survive, and
+    # the reply dict carries no otype: the legacy voice still drives.
     f = win.doc.features[-1]
     assert f.orientation == "identical"
     assert win.status.currentMessage() == \
@@ -888,8 +892,9 @@ def test_the_linear_door_asks_the_pages_second_direction_and_lands_both(
     win.action_linear_pattern()
     qapp.processEvents()
     keys, defaults = calls[0]
-    assert keys == ["src", "dx", "dy", "dz", "count", "dist", "dir",
-                    "count2", "dx2", "dy2", "dz2", "dist2", "dir2"]
+    assert keys == ["otype", "src", "dx", "dy", "dz", "count", "dist",
+                    "dir", "count2", "dx2", "dy2", "dz2", "dist2",
+                    "dir2"]               # R26: Object Type joined first
     assert defaults["count2"] == 1 and defaults["dist2"] == "Spacing" \
         and defaults["dir2"] == "One direction" \
         and (defaults["dx2"], defaults["dy2"], defaults["dz2"]) == \

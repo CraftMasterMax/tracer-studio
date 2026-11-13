@@ -281,7 +281,9 @@ def test_the_door_asks_the_pages_operation_and_lands_both_voices(
                               "op": "Join"}, seen))
     win.action_mirror()
     qapp.processEvents()
-    assert seen["keys"] == ["src", "plane", "off", "op"]
+    assert seen["keys"] == ["otype", "src", "plane", "off", "op"]
+    # R26: the reference's Object Type row rides FIRST at every mirror
+    # mouth (printed order); the born keys keep their file-law slots.
     assert seen["choices"]["op"] == ["Join", "New Body"]
     assert seen["defaults"]["op"] == "Join"
     f = win.doc.features[-1]
