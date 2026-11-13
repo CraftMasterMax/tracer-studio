@@ -781,10 +781,16 @@ def _plate_and_fillet(win, monkeypatch, radius=2.0):
     runner the door still rolls the feature back itself; the kernel's
     honest sentence rides the window's status bar."""
     from tracer.core.document import PrimitiveFeature
-    from tracer.ui.cmddialog import Shell
+    from tracer.ui import cmddialog
     from PySide6.QtWidgets import QMessageBox
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *a, **k: (radius, True)))
+    # M201 R23 heal (m18/m19/m20 pattern): the door grew the reference's
+    # rows, so the script answers the DIALOG.  The born getDouble patch
+    # left the trigger reaching the REAL modal - and PySide swallows the
+    # conftest trap's exception inside a slot (m20's FAILED proved the
+    # reach; this file's silent skip proved the swallow).  A door is
+    # answered at its own mouth, never at a lever it no longer pulls.
+    monkeypatch.setattr(cmddialog, "ask",
+                        staticmethod(lambda *a, **k: {"radius": radius}))
     warned: list[str] = []
 
     def _modal(_parent, title, text, *a, **k):
@@ -880,8 +886,13 @@ def test_adjust_last_doc_reopens_the_journaling_door(win, monkeypatch):
     from tracer.ui.cmddialog import Shell
     feat, warned = _plate_and_fillet(win, monkeypatch)
     if not isinstance(feat, BodyFilletFeature):        # belt (the marker
-        pytest.skip("fillet door refused here: " +                    #  got
-                    (warned[0][:72] if warned else "no feature"))     #  it)
+        if warned:                                     #  got it): the
+            pytest.skip("fillet door refused here: " +  #  bridge said no,
+                        warned[0][:72])                #   an honest skip
+        pytest.fail("fillet door answered NOTHING: the trigger reached a "
+                    "mouth it was never scripted at (answer doors at "
+                    "their OWN mouth - cmddialog.ask since R23, not the "
+                    "born getDouble; a swallowed trap must fail LOUD)")
     assert isinstance(feat, BodyFilletFeature) and feat.radius == 2.0
     monkeypatch.setattr(Shell, "getDouble",
                         staticmethod(lambda *a, **k: (1.0, True)))
