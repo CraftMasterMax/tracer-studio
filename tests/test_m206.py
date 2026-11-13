@@ -17,6 +17,7 @@ name a thing the design has not got).  VENDOR DEFECT flagged, not
 cloned: the glosses print "in relation to each another".
 """
 import contextlib
+from pathlib import Path
 
 import pytest
 
@@ -242,7 +243,10 @@ def test_the_gate_sentences_are_quoted_verbatim_in_the_doc():
     assert "each another" in doc and "DEFECT" in doc
     # the typo is cited EXACTLY once in the whole method - inside the
     # DEFECT flag - and never cloned into a row, menu or status voice:
-    src = open("tracer/ui/mainwindow.py").read()
+    # (R18 heal: pin the encoding - the source carries em dashes and
+    # the ▸ glyph; the Windows CI default codec is cp1252 and it LOST)
+    src = (Path(__file__).resolve().parent.parent / "tracer" / "ui" /
+           "mainwindow.py").read_text(encoding="utf-8")
     i = src.index("def action_joint")
     j = src.index("def action_interference")
     body = " ".join(src[i:j].split())
