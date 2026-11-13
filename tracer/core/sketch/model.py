@@ -348,48 +348,107 @@ class SketchModel:
         return edges
 
     def add_offset(self, dist: float, join: str = "mitre") -> list:
-        """Fusion's Offset Entities: a parallel copy of the outline at
-        signed distance `dist` (outward positive).
+        """Fusion's Offset (M84 naming healed M201 R22 - the SKT book
+        never prints "Offset Entities"; its tool word is Offset, path
+        [verbatim] "Modify > Offset"): a parallel copy of the outline
+        at signed distance `dist` (outward positive).  Rides the
+        multi-side mouth with ONE distance - the identical road it
+        always rode."""
+        return self.add_offset_sides([dist], join=join)
 
-        A straight-edged single loop with a MITRE join keeps the
-        classic shifted-edge construction — exact corners, no kernel,
-        no approximation.  Everything richer rides the manifold
-        kernel's CrossSection.offset (M84): rounded joins, sketches
-        with arcs/circles/ellipses, outlines with holes and multiple
-        loops at once — all with guaranteed-clean self-intersections.
-        A lone circle offsets to a TRUE circle.  Curved outlines in a
-        crowd offset as their tessellated truth, honestly."""
-        d = float(dist)
-        if abs(d) < 1e-9:
+    def add_offset_sides(self, dists, join: str = "mitre") -> list:
+        """M201 R22 - the page's Direction trio in ONE kernel mouth.
+
+        [SKT-OFFSET, verbatim] "Two Sides: Offsets a unique distance
+        on each side of the selected curve." / "Symmetric: Offsets
+        symmetrically on both sides of the selected curve." - both
+        birth TWO children from ONE parent, so the whole set is
+        COMPUTED against the model before any line is minted: a side
+        that cannot land (a collapse, a flip, a pinch) refuses the
+        PAIR - a sketch never wears half a Two Sides.  Sequential
+        add_offset calls could not say this: the second call would
+        offset the FIRST child too (the outline is everything the
+        sketch holds), and a mid-pair raise would leave the first
+        child minted behind.  Each distance then rides exactly the
+        road add_offset has always ridden - the classic shifted-edge
+        MITRE construction for plain straight single loops (exact
+        corners, no kernel, no approximation), the true-circle law
+        for a lone circle, the manifold kernel's CrossSection.offset
+        (M84) for everything richer (rounded joins, arcs, circles and
+        ellipses in the crowd, holes, multiple loops - all with
+        guaranteed-clean self-intersections) - and every child welds
+        to the parents as they stood BEFORE the copy (the M192 R5
+        fingerprint law, each side at its own distance).  Signed
+        distances keep the house convention (outward positive); a
+        zero distance is the classic silent no-op, dropped side by
+        side.  A lone circle offsets to a TRUE circle; curved
+        outlines in a crowd offset as their tessellated truth,
+        honestly."""
+        ds = [float(x) for x in dists]
+        live = [x for x in ds if abs(x) >= 1e-9]
+        if not live:
             return []
         round_join = str(join).lower() in ("round", "smooth")
         flat = (not self.sketch.circles and not self.sketch.arcs
                 and not self.sketch.ellipses)
+        sk = self.sketch
+
+        def cr2(u, v):                       # numpy 2 has no 2-D np.cross
+            return u[0] * v[1] - u[1] * v[0]
 
         # ---- the classic exact-mitre path for plain straight loops ----
         if not round_join and flat:
             probe, _pw = self.to_loops()
             if len(probe) == 1 and not probe[0].get("holes"):
-                return self._add_offset_mitre(d)
+                pts = np.asarray(probe[0]["points"], float)
+                n = len(pts)
+                if n < 3:
+                    return []
+                # work CCW so the right-hand edge normal points outward
+                shoelace = 0.5 * sum(cr2(pts[i], pts[(i + 1) % n])
+                                     for i in range(n))
+                if shoelace < 0:
+                    pts = pts[::-1]
+                parents = list(sk.lines)      # R2 (LAW-59): the book
+                #  BEFORE the copy - the parents BOTH sides' children
+                #  weld to, each at its own signed distance.
+                plans = []
+                for d in live:
+                    corners = self._mitre_corners(pts, d, cr2)
+                    if len(corners) >= 3:
+                        plans.append((d, corners))
+                made = []
+                for d, corners in plans:
+                    m = len(corners)
+                    ps = [sk.point(float(p[0]), float(p[1]))
+                          for p in corners]
+                    lines = [sk.line(ps[i], ps[(i + 1) % m])
+                             for i in range(m)]
+                    self._bind_offset(parents, lines, d)
+                    made += lines
+                return made
 
-        # ---- one lone circle stays an exact circle ----
-        if (len(self.sketch.circles) == 1 and not self.sketch.lines
-                and not self.sketch.arcs and not self.sketch.ellipses):
-            c = self.sketch.circles[0]
-            if c.r + d <= 1e-9:
-                raise ValueError("that offset collapses or flips the "
-                                 "circle")
-            # M192 R5 [offset association on CURVES, SKT-SKETCH-MODIFY-
-            # TOOLS]: the copy is FRESH geometry held by LAWS - a twin
-            # sharing the parent's centre POINT could never be dis-
-            # associated (identity is not a promise, it is a fact), and
-            # the vendor's glyph has a Delete door. Concentricity and
-            # the signed ring gap are minted from the construction's
-            # own numbers: the exact dialect the edge welds speak.
-            sk = self.sketch
-            nc = sk.circle(sk.point(c.c.x, c.c.y), c.r + d)
-            self._bind_circle_offset(c, nc, d)
-            return [nc]
+        # ---- one lone circle stays an exact circle, side by side ----
+        if (len(sk.circles) == 1 and not sk.lines
+                and not sk.arcs and not sk.ellipses):
+            c = sk.circles[0]
+            for d in live:                    # VALIDATE ALL before the
+                if c.r + d <= 1e-9:           # first mint: the pair
+                    raise ValueError("that offset collapses or flips "
+                                     "the circle")
+            made = []
+            for d in live:
+                # M192 R5 [offset association on CURVES, SKT-SKETCH-
+                # MODIFY-TOOLS]: the copy is FRESH geometry held by
+                # LAWS - a twin sharing the parent's centre POINT
+                # could never be dis-associated (identity is not a
+                # promise, it is a fact), and the vendor's glyph has a
+                # Delete door. Concentricity and the signed ring gap
+                # are minted from the construction's own numbers.
+                nc = sk.circle(sk.point(c.c.x, c.c.y), c.r + d)
+                self._bind_circle_offset(c, nc, d)
+                made.append(nc)
+            return made
 
         # ---- M84: the manifold kernel's robust offset does the rest ----
         import manifold3d as m3
@@ -406,73 +465,62 @@ class SketchModel:
                 rings.append([(float(x), float(y)) for x, y in pts])
         if not rings:
             raise ValueError("Offset found no closed outline to copy")
-        try:
-            cs = m3.CrossSection(rings, m3.FillRule.EvenOdd)
-            out = cs.offset(d, m3.JoinType.Round if round_join
-                            else m3.JoinType.Miter, 2.0, 32)
-        except Exception as e:
-            raise ValueError(f"the offset kernel refused: {e}") from e
-        polys = list(out.to_polygons())
-        if not polys or out.area() <= 1e-9:
-            raise ValueError("that offset collapses or flips the outline")
-        parents = list(self.sketch.lines)     # M192 R5: the book BEFORE
+        parents = list(sk.lines)        # M192 R5: the book BEFORE
         #   the copy - the kernel path's straight children weld to it
         #   through the SAME fingerprint honesty as the mitre path (an
         #   edge whose parent cannot be named uniquely - tessellated
         #   arc fragments, ambiguous twins - stays free rather than
         #   lie about an association).
+        plans = []
+        for d in live:
+            try:
+                cs = m3.CrossSection(rings, m3.FillRule.EvenOdd)
+                out = cs.offset(d, m3.JoinType.Round if round_join
+                                else m3.JoinType.Miter, 2.0, 32)
+            except Exception as e:
+                raise ValueError(f"the offset kernel refused: {e}") from e
+            polys = list(out.to_polygons())
+            if not polys or out.area() <= 1e-9:
+                raise ValueError("that offset collapses or flips the "
+                                 "outline")
+            cleaned = []
+            for ring in polys:
+                pts = [(float(q[0]), float(q[1])) for q in ring]
+                if (len(pts) > 2
+                        and math.hypot(pts[0][0] - pts[-1][0],
+                                       pts[0][1] - pts[-1][1]) < 1e-9):
+                    pts = pts[:-1]
+                if len(pts) >= 3:
+                    cleaned.append(pts)
+            if not cleaned:
+                raise ValueError("that offset collapses or flips the "
+                                 "outline")
+            plans.append((d, cleaned))
         made: list = []
-        for ring in polys:
-            pts = [(float(q[0]), float(q[1])) for q in ring]
-            if (len(pts) > 2
-                    and math.hypot(pts[0][0] - pts[-1][0],
-                                   pts[0][1] - pts[-1][1]) < 1e-9):
-                pts = pts[:-1]
-            if len(pts) < 3:
-                continue
-            kp = [self.point(x, y) for x, y in pts]
-            for a, b in zip(kp, kp[1:] + kp[:1]):
-                if a is not b:
-                    made.append(self.add_line(a, b))
-        if not made:
-            raise ValueError("that offset collapses or flips the outline")
-        self._bind_offset(parents, made, d)   # M192 R5: offset welds
-        return made                           #   EVERY path that can
-        #                     name its parents - receipt 6 promises the
-        #                     association to "sketch curves", not just
-        #                     to the straight-loop shortcut.
+        for d, cleaned in plans:
+            batch: list = []
+            for pts in cleaned:
+                kp = [self.point(x, y) for x, y in pts]
+                for a, b in zip(kp, kp[1:] + kp[:1]):
+                    if a is not b:
+                        batch.append(self.add_line(a, b))
+            self._bind_offset(parents, batch, d)  # M192 R5: offset
+            made += batch                         # welds EVERY path
+        #   that can name its parents - receipt 6 promises the
+        #   association to "sketch curves", not just to the
+        #   straight-loop shortcut.
+        return made
 
-    def _add_offset_mitre(self, dist: float) -> list:
-        """Fusion's Offset Entities (mitre variant): a parallel copy of
-        the sketch's single closed line loop at signed distance `dist`
-        (outward positive).  Each edge shifts along its own outward
-        normal; neighbours meet where the shifted edges cross, so convex
-        corners stretch and concave corners close in exactly like the
-        original.  Guarded against offsets that collapse or flip the
-        outline."""
-        d = float(dist)
-        loops, warns = self.to_loops()
-        if len(loops) != 1:
-            raise ValueError("Offset needs exactly one closed outline "
-                             "to copy")
-        if loops[0].get("holes"):
-            raise ValueError("Offset of outlines with holes is not "
-                             "supported yet")
-        pts = np.asarray(loops[0]["points"], float)
-        parents = list(self.sketch.lines)     # R2 (LAW-59): the book
-        #  BEFORE the copy - the parents the children will be welded to
+    @staticmethod
+    def _mitre_corners(pts, d: float, cr2) -> list:
+        """The classic shifted-edge mitre construction for ONE signed
+        distance against a CCW straight loop: each edge slides along
+        its own outward normal; neighbours meet where the shifted
+        edges cross, so convex corners stretch and concave corners
+        close in exactly like the original.  Pure math - it raises
+        BEFORE anything is minted when the copy collapses, flips or
+        pinches an edge shut."""
         n = len(pts)
-        if n < 3 or abs(d) < 1e-9:
-            return []
-
-        def cr2(u, v):                       # numpy 2 has no 2-D np.cross
-            return u[0] * v[1] - u[1] * v[0]
-
-        # work CCW so the right-hand edge normal points outward
-        shoelace = 0.5 * sum(cr2(pts[i], pts[(i + 1) % n])
-                             for i in range(n))
-        if shoelace < 0:
-            pts = pts[::-1]
         offs = []
         for i in range(n):
             a, b = pts[i], pts[(i + 1) % n]
@@ -480,13 +528,13 @@ class SketchModel:
             L = float(np.hypot(*e))
             if L < 1e-9:
                 continue
-            nu = np.array([e[1], -e[0]]) / L        # outward (right) normal
+            nu = np.array([e[1], -e[0]]) / L        # outward normal
             offs.append((a + d * nu, b + d * nu))
         m = len(offs)
         if m < 3:
             return []
         corners = []
-        for i in range(m):                          # mitre = edge crossings
+        for i in range(m):                          # mitre = crossings
             (a0, b0), (a1, b1) = offs[i - 1], offs[i]
             e0, e1 = b0 - a0, b1 - a1
             cr = cr2(e0, e1)
@@ -504,11 +552,7 @@ class SketchModel:
             if np.hypot(*(corners[i] - corners[(i + 1) % m])) < 1e-9:
                 raise ValueError("this offset pinches an edge shut — "
                                  "choose a smaller distance")
-        sk = self.sketch
-        ps = [sk.point(float(p[0]), float(p[1])) for p in corners]
-        made = [sk.line(ps[i], ps[(i + 1) % m]) for i in range(m)]
-        self._bind_offset(parents, made, d)
-        return made
+        return corners
 
     def _bind_offset(self, parents, made, d):
         """M187 R2 [LAW-59 OFFSET ASSOCIATION]: an offset copy holds

@@ -2176,27 +2176,100 @@ class SketchCanvas(QWidget):
         self._solve(); self.update()
 
     def act_offset(self):
-        """Copy the outline with a parallel offset (Fusion's Offset
-        Entities): a twin loop at signed distance, outward positive —
-        walls, ribs and clearance rings.  Mitre joins on plain straight
-        loops stay exact; rounded joins, arcs, circles and holed
-        outlines ride the manifold kernel's robust offset (M84)."""
+        """Offset the outline with a parallel copy — the door the
+        sketch book prints (M201 R22; healed off its born title
+        "Offset Entities", a word the SKT book NEVER - it calls the
+        tool Offset). [SKT-OFFSET, verbatim] "On the Sketch
+        contextual tab, select Modify > Offset." / "The Offset dialog
+        displays." / "In the dialog, select a Direction to offset and
+        then specify the distance to offset:" - the trio: "One Side:
+        Offsets on one side of the selected curve." / "Two Sides:
+        Offsets a unique distance on each side of the selected
+        curve." / "Symmetric: Offsets symmetrically on both sides of
+        the selected curve.", each printing its Distance row nested:
+        "Distance: Specify the distance to offset." (One Side),
+        "Distance 1 ... on one side." + "Distance 2 ... on the other
+        side." (Two Sides), "Distance: Specify the distance to offset
+        on both sides." (Symmetric). This command dialog cannot hide
+        rows mid-flight, so the three distance numbers ride side by
+        side and the DIRECTION WORD NAMES WHICH SPEAK - the silent
+        numbers are ignored, declared, never half-obeyed. Under One
+        Side the number stays OURS signed (outward positive, the M34
+        law): the page puts the side in the Direction row and prints
+        no sign law. Rest "One Side" is a STAMP ("default" counts
+        ZERO on the page) and exactly what the door has always
+        baked. SELECTION, the page's own words: "You can only create
+        one selection to offset at a time." - the canvas hands this
+        door only with an empty selection, the whole sketch read as
+        the one profile; the page's other picks, "the sketch curve"
+        and "a chain of connected sketch curves", are NOT offered -
+        this kernel copies closed outlines, and a sketch without one
+        refuses in its own words. "Match Topology" [verbatim from
+        SKT-SKETCH-MODIFY-TOOLS] "Use Match Topology to limit the
+        offset distance so the child offset matches the topology of
+        its parent curve." is NOT offered - no kernel of ours limits
+        a distance to a parent's topology. Join is OURS (the page
+        prints no join row): mitre is the exact straight-loop road,
+        round rides the manifold kernel. The association is the
+        page's law - "The size and position of the new geometry is
+        associated with the original geometry." (M192's welds) - and
+        "To remove the association between the original sketch
+        geometry and the offset sketch geometry, delete the offset
+        glyph in the canvas."; "Add Offset Dimension" is the page's
+        restore word and the palette carries it. All-or-nothing: a
+        Two Sides whose inner side would collapse refuses the PAIR
+        (the kernel computes every side before minting one line) -
+        the sketch never wears half a direction."""
         if self.model is None:
             return
         from . import cmddialog
-        v = cmddialog.ask(self, "Offset Entities", [
-            dict(key="d", kind="double",
-                 label="Distance (mm, negative = inward)",
+        v = cmddialog.ask(self, "Offset", [
+            dict(key="dir", kind="combo", label="Direction",
+                 choices=["One Side", "Two Sides", "Symmetric"],
+                 default="One Side"),
+            dict(key="d", kind="double", label="Distance",
                  default=3.0, min=-10000.0, max=10000.0, decimals=2),
+            dict(key="d1", kind="double", label="Distance 1",
+                 default=3.0, min=0.001, max=10000.0, decimals=2),
+            dict(key="d2", kind="double", label="Distance 2",
+                 default=3.0, min=0.001, max=10000.0, decimals=2),
             dict(key="j", kind="combo", label="Join",
                  choices=["mitre", "round"], default="mitre")])
         if v is None:
             return
+        # the .get law (R5's coin): a remembered dict born before this
+        # rung has no dir/d1/d2 rows - it speaks the classic pair and
+        # rests at One Side, today's exact answer.
+        direction = str(v.get("dir", "One Side"))
+        if direction not in ("One Side", "Two Sides", "Symmetric"):
+            self._warn(f"Offset refused: the Direction is 'One Side', "
+                       f"'Two Sides' or 'Symmetric', not {direction!r}")
+            return
+        join = str(v.get("j", "mitre"))
+        if direction == "Two Sides":
+            d1 = float(v.get("d1", 0.0))
+            d2 = float(v.get("d2", 0.0))
+            if not (d1 > 0.0 and d2 > 0.0):
+                self._warn("Offset refused: Two Sides needs positive "
+                           "Distance 1 and Distance 2 - the page "
+                           "gives each side its own number")
+                return
+            sides = (d1, -d2)
+        elif direction == "Symmetric":
+            d = float(v.get("d", 0.0))
+            if abs(d) < 1e-9:
+                self._warn("Offset refused: Symmetric needs a nonzero "
+                           "Distance to place on both sides")
+                return
+            sides = (abs(d), -abs(d))
+        else:                                   # One Side - the M34
+            sides = (float(v.get("d", 0.0)),)   # signed classic
         self._push_hist()
         try:
-            self.model.add_offset(v["d"], join=v["j"])
+            self.model.add_offset_sides(sides, join=join)
         except ValueError as e:
-            self._hist.pop()                      # nothing was mutated
+            self._hist.pop()                      # nothing was mutated:
+            #   the kernel computes EVERY side before minting ANY line
             self._warn(str(e))
             return
         self._sel = []

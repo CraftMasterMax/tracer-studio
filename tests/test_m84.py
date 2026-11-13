@@ -172,7 +172,11 @@ def test_offset_join_fields_reachable_and_undoable(win, qapp, monkeypatch):
     monkeypatch.setattr(cmddialog, "ask", fake)
     cv.act_offset()
     kinds = {f["key"]: f["kind"] for f in seen[0]}
-    assert kinds == {"d": "double", "j": "combo"}
+    # M201 R22 heal: the door grew the page's Direction trio and its
+    # nested Distance rows (the rung IS the dialog); the legacy script
+    # dict answers One Side - today's exact number of lines, below.
+    assert kinds == {"dir": "combo", "d": "double", "d1": "double",
+                     "d2": "double", "j": "combo"}
     assert len(cv.model.sketch.lines) == 8
     assert cv.undo_op()
     assert len(cv.model.sketch.lines) == 4        # twin gone
