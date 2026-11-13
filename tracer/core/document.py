@@ -2517,15 +2517,32 @@ class Document:
         return len(self._iso)
 
     # ---- section view (M135) -----------------------------------------------
-    def set_section(self, ref: str, flip: bool = False):
+    def set_section(self, ref: str, flip: bool = False,
+                    offset: float = 0.0, angle: float = 0.0,
+                    color_mode: str = "",
+                    custom_color=None):
         """Section is SESSION view state (never saved — M134's
         precedent): a plane — origin name or stored datum, so M130's
         rename relinks it for free — cutting the DISPLAY. trimesh
         keeps the half-space the normal points INTO; flip picks the
-        other side. Returns the live (origin, normal); raises
-        ParamError for an unknown name."""
+        other side. M201 R30 [SLD-SECTION-ANALYSIS, verbatim] grows
+        the page's orienting numbers: "Adjust the Distance and Angle
+        manipulator handles to orient the cutting plane, or enter
+        specific values." Distance rides the plane normal; Angle turns
+        the plane about its OWN in-plane u axis — which axis the page
+        never prints, so the u choice is OURS and says so. Colour
+        mode wears the page's Section Color pair: "From Component"
+        shades each cut cap in its body's own colour, "Custom" shades
+        every cap one chosen colour; the EMPTY mode is the M135
+        legacy voice — a mouth that never opened the dialog keeps the
+        accent cap it always wore. Returns the live (origin,
+        normal); raises ParamError for an unknown name."""
         prev = self._section
-        self._section = {"plane": ref, "flip": bool(flip)}
+        self._section = {"plane": ref, "flip": bool(flip),
+                         "offset": float(offset), "angle": float(angle),
+                         "color": str(color_mode),
+                         "custom": (list(custom_color) if custom_color
+                                    is not None else None)}
         try:
             return self.section_frame()
         except Exception:
@@ -2546,10 +2563,33 @@ class Document:
         return self._section["plane"] if self._section else None
 
     def section_frame(self):
-        """(origin, normal) of the live cut, flip applied."""
-        o, _, _, n = self.plane_frame(self._section["plane"])
+        """(origin, normal) of the live cut, offset + angle + flip
+        applied. Angle turns the normal about the plane's own u axis
+        (ours, declared: the page prints 'manipulator handles' and
+        never says which axis); Distance slides the origin along the
+        normal BEFORE the flip picks the kept half."""
+        o, u, _, n = self.plane_frame(self._section["plane"])
+        o = np.asarray(o, float)
+        n = np.asarray(n, float)
+        a = math.radians(float(self._section.get("angle", 0.0)))
+        if a:
+            k = np.asarray(u, float)
+            k = k / np.linalg.norm(k)
+            n = (n * math.cos(a) + np.cross(k, n) * math.sin(a)
+                 + k * float(np.dot(k, n)) * (1.0 - math.cos(a)))
+            n = n / np.linalg.norm(n)
+        o = o + n * float(self._section.get("offset", 0.0))
         s = -1.0 if self._section["flip"] else 1.0
-        return np.asarray(o, float), s * np.asarray(n, float)
+        return o, s * n
+
+    def flip_section(self) -> bool:
+        """The page's Flip: 'switch which side to reveal' — and ONLY
+        the side switches; the plane keeps its Distance and Angle."""
+        if self._section is None:
+            return False
+        sec = dict(self._section)
+        self._section = {**sec, "flip": not sec["flip"]}
+        return True
 
     def sectioned_display(self, default_color=None, cap_color=None):
         """The sectioned display, in display_ranges' shape: every
@@ -2586,8 +2626,21 @@ class Document:
             col = col if col is not None else (
                 default_color if default_color is not None
                 else (0.70, 0.70, 0.72))
+            # M201 R30 [SLD-SECTION-ANALYSIS, verbatim]: "From
+            # Component: Uses the color of each component to shade
+            # the cutting plane." | "Custom: Uses a color that you
+            # select to shade the cutting plane."  The empty mode is
+            # M135's legacy voice: no dialog spoke, the accent cap
+            # rides on unchanged.
+            sec = self._section or {}
+            if sec.get("color") == "component":
+                capc = col
+            elif sec.get("color") == "custom" and sec.get("custom"):
+                capc = sec["custom"]
+            else:
+                capc = cap_color
             fc = np.tile(np.asarray(col, np.float32), (len(f), 1))
-            fc[capm] = np.asarray(cap_color, np.float32)
+            fc[capm] = np.asarray(capc, np.float32)
             vs.append(v)
             ns.append(n)
             fs.append(f + off if off else f)

@@ -165,7 +165,8 @@ def test_section_button_carries_the_plane_menu(win):
     menu = b.menu()
     assert isinstance(menu, QMenu)
     texts = [a.text() for a in menu.actions()]
-    assert texts == ["Section on XY plane", "Section on XZ plane",
+    assert texts == ["Section Analysis…",                     # M201 R30
+                     "Section on XY plane", "Section on XZ plane",
                      "Section on YZ plane", "Flip clipped side",
                      "Turn section off"]
 

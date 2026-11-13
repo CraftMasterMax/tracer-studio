@@ -498,6 +498,7 @@ class MainWindow(QMainWindow):
           lambda checked=False: self.action_work_axis())
         d("section", "Section analysis — clip the body on a plane",
           menu_actions=[
+              ("Section Analysis…", self.action_section_analysis),
               ("Section on XY plane",
                lambda checked=False: self.action_section("XY")),
               ("Section on XZ plane",
@@ -823,6 +824,9 @@ class MainWindow(QMainWindow):
         m_tools.addAction("Center of Mass…",
                           lambda checked=False:
                           self.action_center_of_mass())
+        m_tools.addAction("Section Analysis…",
+                          lambda checked=False:
+                          self.action_section_analysis())
         m_tools.addAction("Interference — where bodies clash…",
                           lambda checked=False:
                           self.action_interference())
@@ -4680,8 +4684,8 @@ class MainWindow(QMainWindow):
         doc = self.doc
         if doc is None or not doc.section_active():
             return
-        doc.set_section(doc.section_plane(), flip=not doc._section["flip"])
-        self.viewport.refresh()
+        doc.flip_section()      # R30: 'Click Flip to switch which side
+        self.viewport.refresh() #   to reveal.' — ONLY the side flips;
         self.status.showMessage("Section flipped — the kept half is the "
                                 "other one now", 4000)
 
@@ -6441,6 +6445,123 @@ class MainWindow(QMainWindow):
                 "coordinates in the global coordinate system", 8000)
         else:
             self.status.showMessage(f"{c['name']} placed", 5000)
+
+    @staticmethod
+    def _parse_section_rgb(txt):
+        """'Custom Color: Click the color swatch, then select a color
+        or enter a specific RGB value.' — this kernel has no swatch
+        pick, so the honest mouth is the second half of that
+        sentence: '#rrggbb' or 'r,g,b', nothing looser."""
+        raw = (txt or "").strip()
+        t = raw.lstrip("#")
+        try:
+            if len(t) == 6 and all(c in "0123456789abcdefABCDEF"
+                                   for c in t):
+                vals = [int(t[i:i + 2], 16) for i in (0, 2, 4)]
+            else:
+                parts = [p.strip() for p in raw.split(",")]
+                if len(parts) != 3:
+                    return None
+                vals = [int(p) for p in parts]
+        except ValueError:
+            return None
+        if any(x < 0 or x > 255 for x in vals):
+            return None
+        return [x / 255.0 for x in vals]
+
+    def action_section_analysis(self):
+        """Fusion Inspect > Section Analysis [SLD-SECTION-ANALYSIS,
+        verbatim; banked raw insp28, byte-identical live re-read
+        insp29verify; the REFERENCE page is confirmed-absent — this
+        task page IS the architecture]. 'The Section Analysis dialog
+        displays.' — the TITLE is page-printed (the COM page printed
+        none; this one prints its own name and the door wears it).
+        'In the canvas, select a planar object to define the Cut
+        Plane.' rides as the combo of the planar objects this kernel
+        HAS — origin planes plus construction planes (canvas picking
+        is UNOFFERED, named). 'Adjust the Distance and Angle
+        manipulator handles to orient the cutting plane, or enter
+        specific values.' — Distance rides the normal, Angle turns
+        the plane about its OWN in-plane u axis; the page prints
+        which axis it turns about NOT AT ALL and prints no Default:
+        for either number, so the axis choice and both rests are
+        OURS and say so. 'Optional: Click Flip to switch which side
+        to reveal.' And the family's ONLY page-printed default, from
+        the page's own Tip — 'The Section Color option is set to From
+        Component by default': the rest is a HOUSE FACT per page law,
+        'From Component: Uses the color of each component to shade
+        the cutting plane.' | 'Custom: Uses a color that you select
+        to shade the cutting plane.' with its 'Custom Color' text
+        sibling ('enter a specific RGB value'), asked, stored and
+        INERT while From Component rests (the conditional-row law).
+        UNOFFERED-BY-NAME: 'Show Hatch' ('the diagonal hatch pattern
+        that displays on the faces where the cut plane creates...')
+        — this kernel caps cuts with flat colour and owns NO hatch
+        machinery, so the row wears nothing here (decoration is
+        forbidden); and the Analysis-folder browser node with its
+        visibility, Edit and Delete verbs (R28's stance, same
+        pages). Section stays SESSION view state — M134/M135's
+        precedent: never saved, nothing to undo, no capture."""
+        if self.doc is None or self.doc.result is None:
+            # M189 R4 [LAW-61(a)]: the measure precondition, the same
+            # cure words the Mass Properties door speaks.
+            self.status.showMessage("Nothing to measure yet — add a "
+                                    "feature first", 5000)
+            return
+        u = self.doc.units if self.doc.units in units.LABEL else "mm"
+        lab = units.LABEL[u]
+        f = units.PER_MM[u]
+        cur = self.doc._section or {}
+        planes = ["XY", "XZ", "YZ"] + [p["name"] for p in self.doc.planes]
+        v = cmddialog.ask(self, "Section Analysis", [
+            dict(key="plane", label="Cut Plane", kind="combo",
+                 choices=planes, default=cur.get("plane", "XY")),
+            dict(key="dist", label=f"Distance ({lab})", kind="double",
+                 default=round(float(cur.get("offset", 0.0)) / f, 6),
+                 decimals=2, min=-1e6, max=1e6),
+            dict(key="ang", label="Angle (degrees)", kind="double",
+                 suffix="",               # the family spells "degrees",
+                 #   never a mm suffix - and the page prints ' mm' 0
+                 default=float(cur.get("angle", 0.0)),
+                 decimals=2, min=-360.0, max=360.0),
+            dict(key="flip", label="Flip", kind="check",
+                 default=bool(cur.get("flip", False))),
+            dict(key="color", label="Section Color", kind="combo",
+                 choices=["From Component", "Custom"],
+                 default=("Custom" if cur.get("color") == "custom"
+                          else "From Component")),       # PAGE-PRINTED
+            dict(key="rgb", label="Custom Color", kind="text",
+                 default=("#%02x%02x%02x" % tuple(
+                     int(round(255 * c)) for c in cur["custom"])
+                     if cur.get("custom") else "")),
+        ], remember_key="section-analysis")
+        if v is None:
+            return
+        mode = ("component" if str(v["color"]) == "From Component"
+                else "custom")
+        custom = None
+        if mode == "custom":
+            custom = self._parse_section_rgb(str(v.get("rgb") or ""))
+            if custom is None:
+                self.status.showMessage(
+                    "Section refused: Custom Color wants '#rrggbb' or "
+                    "'r,g,b' — the page prints 'enter a specific RGB "
+                    "value', not anything looser", 6000)
+                return
+        try:
+            self.doc.set_section(str(v["plane"]), flip=bool(v["flip"]),
+                                 offset=float(v["dist"]) * f,
+                                 angle=float(v["ang"]),
+                                 color_mode=mode, custom_color=custom)
+        except Exception as e:                # ParamError: unknown name
+            self.status.showMessage(str(e), 5000)
+            return
+        self.viewport.refresh()
+        self.status.showMessage(
+            f"Section Analysis on {v['plane']} (distance "
+            f"{float(v['dist']):g} {lab}, angle {float(v['ang']):g} "
+            "degrees) — the section analysis affects all of the "
+            "components it cuts through while it is visible", 6000)
 
     def action_show_extents(self):
         """M117 Show Extents: the overall size of the part, in the
