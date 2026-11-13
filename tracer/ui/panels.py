@@ -511,8 +511,13 @@ class FeatureTree(QTreeWidget):
             root.addChild(jf)
             by_id = {b.get("id"): b["name"] for b in listed}
             for j in joints:
+                # M201 R19: a suppressed joint keeps its row and its
+                # count (suppression hides its ACT, not its existence)
+                # and borrows the browser's established suppressed
+                # circle - the house display voice.
+                glyph = "\u25cb" if j.get("suppressed") else "\u27f7"
                 it = QTreeWidgetItem([
-                    "\u27f7 " + by_id.get(j["b"], "?") + " \u2192 "
+                    glyph + " " + by_id.get(j["b"], "?") + " \u2192 "
                     + by_id.get(j["a"], "?")])
                 it.setData(0, Qt.UserRole, ("joint", j["id"]))
                 jf.addChild(it)

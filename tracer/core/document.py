@@ -2149,12 +2149,67 @@ class Document:
         return j
 
     def remove_joint(self, joint_id: str) -> None:
-        """Delete is the v1 EDIT (no Edit Joint: the vendor's dialog
-        is the Position/Motion tabs we are not cloning). The child
-        keeps the pose the joint held it at — its own placement was
-        the bake-time pose, so deletion is continuous."""
+        """Delete removes the record; the child keeps the pose the
+        joint held it at — its own placement was the bake-time pose,
+        so deletion is continuous. (M201 R19 added the page's Edit
+        Joint and Suppress beside it.)"""
         self.joints = [j for j in self.joints if j["id"] != joint_id]
         self.dirty = True
+
+    # ---- the page's joint-row tools (M201 R19) --------------------------
+    # [ASM-JOINTS, verbatim] "You can right-click any existing joint, in
+    # the canvas or browser, and use the following additional tools to
+    # modify it:" - six printed: Edit Joint | Edit Joint Limits | Lock |
+    # Suppress | Animate Joint | Animate Model. The kernel bakes TWO of
+    # them; the other four stay unoffered, each gated by a page's own
+    # sentence (limits need "a Joint Type that has more than one degree
+    # of motion" and Rigid has none; Lock holds what nothing moves; the
+    # two Animates have no animator and no motion to show).
+
+    def suppress_joint(self, joint_id: str, on: bool = True) -> dict:
+        """[ASM-JOINTS, verbatim] "Suppress: Temporarily removes the
+        joint to prevent it from acting upon the components." The
+        suppression is a STATE on the record - the joint keeps its id,
+        its slot in the list (list order is the bake's tie-break) and
+        its seat in every guard (the one-parent and loop checks still
+        see it: a hidden relationship still occupies the seat the file
+        says it holds) - only the BAKE skips it, so the child rides
+        its own placement exactly as it did before the joint existed,
+        and restoring re-applies the captured matrix. Records written
+        before this rung carry no key and read unsuppressed (files
+        move not an inch)."""
+        j = next((x for x in self.joints if x["id"] == joint_id), None)
+        if j is None:
+            raise params.ParamError(f"no joint {joint_id!r} to suppress")
+        j["suppressed"] = bool(on)
+        self.dirty = True
+        return j
+
+    def edit_joint(self, joint_id: str, body_a: str, body_b: str) -> dict:
+        """[ASM-JOINTS, verbatim] "Edit Joint: Opens the Edit Joint
+        dialog and lets you edit all settings associated with the
+        joint." Every setting this kernel holds on a joint is the PAIR
+        (the base's grounded flag lives on the body row), so edit
+        re-runs the WHOLE add_joint contract on the new pair - an edit
+        cannot slip past the self, second-parent, interference or loop
+        refusals - then restores what identity means: the old id and
+        the old list slot ride along, and a refusal leaves the record
+        exactly as it was."""
+        idx = next((i for i, x in enumerate(self.joints)
+                    if x["id"] == joint_id), None)
+        if idx is None:
+            raise params.ParamError(f"no joint {joint_id!r} to edit")
+        old = self.joints.pop(idx)
+        try:
+            fresh = self.add_joint(body_a, body_b, note=old.get("note", ""))
+        except Exception:
+            self.joints.insert(idx, old)
+            raise
+        self.joints.pop()
+        j = dict(fresh, id=old["id"],
+                 suppressed=bool(old.get("suppressed", False)))
+        self.joints.insert(idx, j)
+        return j
 
     def ground_body(self, name: str, on: bool = True) -> dict:
         """Ground is a body flag and a FILE fact (vendor: a per-
@@ -2181,7 +2236,7 @@ class Document:
                     "moves. Unground it (right-click the row) to "
                     "move it.")
         for j in self.joints:
-            if j["b"] == b.get("id"):
+            if j["b"] == b.get("id") and not j.get("suppressed"):
                 pb = self._body_by_id(j["a"])
                 pn = pb["name"] if pb else "?"
                 return (f"{name} is rigidly jointed to {pn} — v1 "
@@ -2246,6 +2301,12 @@ class Document:
         self.joint_warnings = []
         resolved = []
         for j in self.joints:
+            if j.get("suppressed"):
+                # M201 R19 [ASM-JOINTS, verbatim]: a suppressed joint
+                # is "temporarily removed... to prevent it from acting
+                # upon the components" - it acts on NOTHING here, yet
+                # stays in the list (guards and the file still see it)
+                continue
             pn, cn = name_of.get(j["a"]), name_of.get(j["b"])
             if pn is None or cn is None:
                 self.joint_warnings.append(

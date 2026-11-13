@@ -4205,15 +4205,96 @@ class MainWindow(QMainWindow):
                           "ungrounded — it may be dragged again"), 5000)
 
     def _joint_menu(self, joint_id, pos):
-        """M146 browser joint-row menu: v1's whole edit UI is delete
-        (no Edit Joint — the vendor's dialog is the Position/Motion
-        tabs we are not cloning; edit IS delete-and-recreate)."""
+        """M146 browser joint-row menu, mirrored M201 R19 onto the
+        page's list [ASM-JOINTS, verbatim]: "You can right-click any
+        existing joint... Edit Joint: Opens the Edit Joint dialog and
+        lets you edit all settings associated with the joint." |
+        "Suppress: Temporarily removes the joint to prevent it from
+        acting upon the components." FOUR of the page's six stay
+        UNOFFERED, each gated by a page's own sentence: "Edit Joint
+        Limits" waits for "a Joint Type that has more than one degree
+        of motion" and Rigid carries none (the limits gate, quoted at
+        the R18 door); "Lock: Locks the current position and settings
+        of the joint" holds what nothing moves; "Animate Joint" and
+        "Animate Model" have no motion to show on a 0-DOF lock and no
+        animator. "Delete Joint" is OURS, stamped - the page's six do
+        not print it, and v1's row menu has had it since M146."""
         if self.doc is None:
             return
+        j = next((x for x in self.doc.joints if x["id"] == joint_id), None)
+        if j is None:
+            return
         menu = QMenu(self)
+        menu.addAction("Edit Joint",
+                       lambda checked=False: self._edit_joint(joint_id))
+        menu.addAction("Unsuppress" if j.get("suppressed") else "Suppress",
+                       lambda checked=False:
+                       self._toggle_joint_suppress(joint_id))
+        menu.addSeparator()
         menu.addAction("Delete Joint",
                        lambda checked=False: self._delete_joint(joint_id))
         menu.exec_(pos)
+
+    def _edit_joint(self, joint_id):
+        """The page's "Edit Joint dialog... edit all settings": every
+        setting this kernel holds is the PAIR (ground is a body flag
+        and lives on the body row), so the door re-opens titled Edit
+        Joint, pre-filled from the record, and OK re-runs the whole
+        add_joint contract on the new pair - the same refusal voice
+        and the same unwinds as creation, and nothing at all on a
+        Cancel."""
+        j = next((x for x in self.doc.joints if x["id"] == joint_id), None)
+        if j is None:
+            return
+        names = [b["name"] for b in self.doc.body_list()
+                 if not b.get("derived")]
+        base = self.doc._body_by_id(j["a"])
+        mover = self.doc._body_by_id(j["b"])
+        if base is None or mover is None:
+            return
+        from . import cmddialog
+        v = cmddialog.ask(self, "Edit Joint", [
+            dict(key="base", kind="combo", label="Base body",
+                 choices=names, default=base["name"], group="Components"),
+            dict(key="mover", kind="combo", label="Moving body",
+                 choices=names, default=mover["name"],
+                 group="Components")])
+        if v is None:
+            return
+        self._capture()
+        try:
+            self.doc.edit_joint(joint_id, str(v["base"]), str(v["mover"]))
+        except ValueError as e:      # ParamError IS a ValueError
+            self._undo.pop()
+            self._redo.clear()
+            self.status.showMessage(f"Joint refused: {e}", 6000)
+            return
+        self.recompute()
+        self.viewport.refresh()
+        self.rail.tree.reload()
+        self.status.showMessage(
+            "Joint edited — the same relation, re-captured where the "
+            "bodies stand now", 5000)
+
+    def _toggle_joint_suppress(self, joint_id):
+        """The house words are the browser's own (features Suppress /
+        Unsuppress since the early eras); the SEMANTICS are the page's
+        sentence. The row's glyph is the established suppressed circle;
+        the folder still counts the joint - suppression hides its act,
+        not its existence."""
+        j = next((x for x in self.doc.joints if x["id"] == joint_id), None)
+        if j is None:
+            return
+        on = not bool(j.get("suppressed"))
+        self._capture()
+        self.doc.suppress_joint(joint_id, on)
+        self.recompute()
+        self.viewport.refresh()
+        self.rail.tree.reload()
+        self.status.showMessage(
+            "Joint suppressed — it acts on nothing while the body "
+            "rides its own placement" if on else
+            "Joint restored — the captured pose is re-applied", 5000)
 
     def _delete_joint(self, joint_id):
         if self.doc is None:
