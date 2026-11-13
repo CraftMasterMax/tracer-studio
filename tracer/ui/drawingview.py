@@ -93,8 +93,8 @@ class DrawingCanvas(QWidget):
             self.page = self.sheet().get("page", "A3")
         else:
             self.sheet_idx = -1
-        self._center = QPointF(*[v / 2 for v in drawing.PAGES.get(
-            self.page, drawing.PAGES["A3"])])
+        self._center = QPointF(*[v / 2 for v in
+                             drawing.sheet_size(self.page)])
         self._dim_first = None
         self._view_drag = None
         self.update()
@@ -756,7 +756,7 @@ class DrawingCanvas(QWidget):
         # device IS the sheet: fill paper edge to edge, no desk, no
         # dark 1-px ring (the trap the spike reproduced pixel-wise).
         p.fillRect(self.rect(), _PAPER if self._printing else _DESK)
-        W, H = drawing.PAGES.get(self.page, drawing.PAGES["A3"])
+        W, H = drawing.sheet_size(self.page)
         a = self.s2p(0, 0)
         b = self.s2p(W, H)
         sheet = QRectF(min(a.x(), b.x()), min(a.y(), b.y()),
@@ -907,9 +907,7 @@ class DrawingCanvas(QWidget):
                 self.rect = lambda: QRectF(0, 0, px.width(), px.height())
                 #                                            these five
                 self._center = QPointF(*[v / 2.0 for v in
-                                         drawing.PAGES.get(
-                                             self.page,
-                                             drawing.PAGES["A3"])])
+                         drawing.sheet_size(self.page)])
                 self._zoom = dpi / 25.4
                 self._printing = True
                 self._dim_first = None            # ghosts stay off

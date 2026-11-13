@@ -697,8 +697,8 @@ class MainWindow(QMainWindow):
         m_cr.addSeparator()
         m_cr.addAction("New &body",
                        lambda checked=False: self.action_new_body())
-        m_cr.addAction("New drawing…",
-                       lambda checked=False: self.action_new_drawing())
+        m_cr.addAction("Create Drawing…",
+                       lambda checked=False: self.action_create_drawing())
 
         m_mo = self.menuBar().addMenu("Mo&dify")
         self.act_fillet = QAction("&Fillet body edges…\tF", self,
@@ -2431,8 +2431,16 @@ class MainWindow(QMainWindow):
         self.status.showMessage(f"Sheet: {g['page']}", 3000)
 
     def action_new_drawing(self):
-        """Create ▸ New drawing: a sheet of live silhouette views of
-        the body — top, front, right, iso, fitted to the page."""
+        """The CREATION PRIMITIVE behind the Create Drawing door
+        (M93; door M201 R20): a sheet of live silhouette views of the
+        body - top, front, right, iso, fitted to the page. No dialog:
+        the tests and the door call this directly; the UI's ONE
+        drawing mouth is Create > Create Drawing, which gathers the
+        page's rows and lands here. A direct call builds the stamped
+        house sheet: ISO A3 Landscape - the sheet-size page prints
+        defaults for Standard and Units but NEVER a default size, so
+        A3-and-landscape is OURS, the same rest every sheet has worn
+        since M93."""
         if self.doc is None:
             return
         if self.doc.result is None:
@@ -2453,6 +2461,91 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             f"{name} created \u2014 top \u00b7 front \u00b7 right \u00b7 iso"
             " \u00b7 live off the model", 6000)
+
+    def action_create_drawing(self):
+        """Create > Create Drawing (M201 R20), the door the pages
+        print [DWG-REF-CREATE-DRAWING + DWG-REF-SHEET-SIZE +
+        DWG-REF-DOCUMENT-SETTINGS, verbatim]: "In the Create Drawing
+        dialog, set the Destination options, and click OK." Rows:
+        Base Document {From Scratch | Template} - only FROM SCRATCH is
+        offered, the kernel keeps no template files and a door never
+        promises what cannot land; Standard {ISO | ASME} resting
+        where the page itself prints it ("The default is ISO.");
+        Sheet size, typed in the chosen family's OWN words - the ISO
+        page prints A4..A0, the ASME page A..E, plus "Custom WxH",
+        capped by the page's "The maximum value is 200in or 5000mm."
+        (that pair is a vendor DEFECT - 200 in is 5080 mm - we honour
+        the millimetre member); Orientation {Landscape | Portrait},
+        the page's pair, resting at the house sheet's Landscape (no
+        default prints for it). The inch family members convert by
+        the exact 25.4 law, computed off the built sheet.
+        UNOFFERED, declared: Units {in | mm} (the dimension voice
+        rides the design's own units - and note the page pair
+        "default is ISO" with "default is in (inches)", the
+        vendor's own contradiction, DEFECT flagged), Sheet Count
+        ("Default is 1." is printed - and one sheet per drawing is
+        exactly what the kernel builds, so the row would only dress
+        the truth), Drawing Type/Contents/Representation/
+        Destination/Sheet/Storyboard/Automation (references,
+        storyboards and multi-sheet destinations are kernels we do
+        not have). "Open Drawing After Generation" is the page's
+        row; its rest (open) is OURS - the page prints no default."""
+        from ..core import drawing
+        if self.doc is None:
+            return
+        if self.doc.result is None:
+            self.status.showMessage("Nothing to draw — build a body "
+                                    "first", 5000)
+            return
+        from . import cmddialog
+        v = cmddialog.ask(self, "Create Drawing", [
+            dict(key="base", label="Base Document", kind="combo",
+                 choices=["From Scratch"], default="From Scratch"),
+            dict(key="standard", label="Standard", kind="combo",
+                 choices=["ISO", "ASME"], default="ISO",
+                 group="Sheet"),
+            dict(key="size", label="Sheet size", kind="text",
+                 default="A3", group="Sheet"),
+            dict(key="orient", label="Orientation", kind="combo",
+                 choices=list(drawing.ORIENTATIONS),
+                 default="Landscape",
+                 group="Sheet"),
+            dict(key="open", label="Open Drawing After Generation",
+                 kind="check", default=True)],
+            remember_key="create_drawing")
+        if v is None:
+            return
+        size = str(v["size"]).strip()
+        orient = str(v["orient"])
+        fam = drawing.SHEET_FAMILIES[str(v["standard"])]
+        if not (size in fam or size.startswith("Custom")):
+            self.status.showMessage(
+                f"Sheet size {size!r} is not in the {v['standard']} "
+                "family the page prints: " + ", ".join(fam)
+                + ", or Custom <W>x<H>", 7000)
+            return
+        key = size if orient == "Landscape" else f"{size} {orient}"
+        try:
+            W, H = drawing.sheet_size(key)
+        except ValueError as e:
+            self.status.showMessage(f"Sheet refused: {e}", 7000)
+            return
+        before = len(self.doc.drawings)
+        self.action_new_drawing()
+        if len(self.doc.drawings) == before:
+            return                                   # the primitive refused
+        g = self.doc.drawings[-1]
+        g["page"] = (size if orient == "Landscape"
+                     else f"{size} {orient}")
+        g["standard"] = str(v["standard"])
+        self.doc.dirty = True
+        self.drawing.page = g["page"]
+        self.drawing.set_document(self.doc)
+        if not bool(v.get("open", True)):
+            self._show_page(self.viewport)
+        self.status.showMessage(
+            f"{g['name']} created \u2014 {v['standard']} {g['page']}, "
+            f"{W:g} x {H:g} mm on the sheet", 6000)
 
     def _on_view_scale(self, view: str):
         """M100: the Scale dialog landed on a view — Fit hands it back
@@ -3280,7 +3373,7 @@ class MainWindow(QMainWindow):
         if self.doc is None or not self.doc.drawings:
             self.status.showMessage(
                 "Datum identifier needs a drawing sheet — "
-                "Create ▸ New drawing", 6000)
+                "Create > Create Drawing", 6000)
             return
         letters = [d["letter"] for d in self.doc.datums]
         if not letters:

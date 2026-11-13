@@ -26,7 +26,68 @@ VIEWS = {
     "iso":   {"dir": (1.0, -1.0, 1.0), "up": (0.0, 0.0, 1.0)},
 }
 STANDARD = ["top", "front", "right", "iso"]
-PAGES = {"A3": (420.0, 297.0), "A4": (297.0, 210.0)}     # landscape mm
+# [DWG-REF-SHEET-SIZE, verbatim] ISO {A4 (297mm x 210mm) | A3 (420mm x
+# 297mm) | A2 (594mm x 420mm) | A1 (841mm x 594mm) | A0 (1189mm x
+# 841mm) | Custom}; ASME {A (11in x 8.5in) | B (17in x 11in) | C (22in
+# x 17in) | D (34in x 22in) | E (44in x 34in) | Custom}.  The inch
+# members arrive in millimetres through the R16 CONVERT law (1 in =
+# 25.4 mm EXACTLY - the arithmetic, never a rounded copy of the
+# vendor's picture).  Orientation {Landscape | Portrait} is the
+# page's own pair: every stored number below is the page's landscape
+# shape; sheet_size() swaps for a portrait key.
+IN_MM = 25.4
+PAGES = {"A4": (297.0, 210.0), "A3": (420.0, 297.0), "A2": (594.0, 420.0),
+         "A1": (841.0, 594.0), "A0": (1189.0, 841.0),
+         "A": (11 * IN_MM, 8.5 * IN_MM), "B": (17 * IN_MM, 11 * IN_MM),
+         "C": (22 * IN_MM, 17 * IN_MM), "D": (34 * IN_MM, 22 * IN_MM),
+         "E": (44 * IN_MM, 34 * IN_MM)}          # all landscape, mm
+SHEET_FAMILIES = {"ISO": ["A4", "A3", "A2", "A1", "A0"],
+                  "ASME": ["A", "B", "C", "D", "E"]}
+ORIENTATIONS = ("Landscape", "Portrait")
+# [DWG-REF-SHEET-SIZE, verbatim] the Custom cap: "The maximum value is
+# 200in or 5000mm."  VENDOR DEFECT, flagged: the two heights of the
+# pair are NOT equal (200 in = 5080 mm) - we honour the millimetre
+# member of the pair, the unit the cap's own table is drawn in.
+SHEET_MAX_MM = 5000.0
+
+
+def sheet_size(page) -> tuple:
+    """Resolve a drawing's PAGE KEY to (W, H) millimetres.  The key
+    grammar is the file's own voice: a family member is "A3", a
+    portrait sheet appends the printed Orientation word ("A3
+    Portrait"), and a custom sheet is "Custom 500x350".  Unknown keys
+    keep the pre-R20 fallback (A3) - a file written by a newer door
+    still draws.  A Custom sheet that breaks the page's cap or
+    grammar raises ValueError and names the rule."""
+    key = str(page)
+    if key in PAGES:
+        return PAGES[key]
+    parts = key.split()
+    orient = "Landscape"
+    if len(parts) > 1 and parts[-1] in ORIENTATIONS:
+        orient, key = parts[-1], " ".join(parts[:-1])
+    if key in PAGES:
+        W, H = PAGES[key]
+    elif key.startswith("Custom"):
+        try:                                    # "Custom WxH" (mm)
+            wh = key.split(None, 1)[1].lower().replace(" ", "")
+            w, h = wh.split("x")
+            W, H = float(w), float(h)
+        except (IndexError, ValueError):
+            raise ValueError('custom sheets wear the words '
+                             '"Custom <W>x<H>" in millimetres - '
+                             f'not {key!r}')
+        for name, v in (("width", W), ("height", H)):
+            if not 0.0 < v <= SHEET_MAX_MM:
+                raise ValueError(
+                    f"custom {name} {v:g} mm is outside the sheet-size "
+                    f"page: it prints a maximum value of {SHEET_MAX_MM:g}"
+                    " mm")
+    else:
+        return PAGES["A3"] if orient == "Landscape" \
+            else tuple(reversed(PAGES["A3"]))
+    return (W, H) if orient == "Landscape" else (H, W)
+
 RESERVED_LETTERS = "IOQSXZ"   # the standards' exclusions (M136/M144):
 #                              sections AND datums letter from here
 
@@ -49,7 +110,7 @@ def title_block(sheet: dict, meta: dict | None = None,
     """
     block = dict(sheet.get("block") or {})
     meta = meta or {}
-    W, H = PAGES.get(page, PAGES["A3"])
+    W, H = sheet_size(page)
     margin = 10.0
     wblk = min(180.0, W - 2 * margin)
     hblk = min(40.0, H - 2 * margin)
@@ -324,7 +385,7 @@ def fit_scale(views: dict, page: str = "A3", margin: float = 10.0) -> float:
     """One scale for every view so the STANDARD layout fits the sheet
     with margins. The layout packs two view columns and two rows, so
     each view gets half the sheet; 1.0 caps at full size."""
-    W, H = PAGES.get(page, PAGES["A3"])
+    W, H = sheet_size(page)
     pts = [p for chains in views.values() for c in chains for p in c]
     if not pts:
         return 1.0
@@ -953,7 +1014,7 @@ def place(views: dict, page: str = "A3", margin: float = 10.0,
         front | right
     """
     base = fit_scale(views, page, margin)
-    W, H = PAGES.get(page, PAGES["A3"])
+    W, H = sheet_size(page)
     # M102: a sheet can carry more views than the standard four (sections
     # are named A-A, B-B...). The layout assistant parks them in the
     # middle band, staggered, and the draughtsman's drag has the rest.
@@ -1063,7 +1124,7 @@ def parts_list_table(rows, block_rect, page: str = "A3",
     so the sheet's right edge stays one clean line.  Rows that no
     longer fit are counted in ``overflow`` (the painter adds a note);
     the list never silently truncates."""
-    W, H = PAGES.get(page, PAGES["A3"])
+    W, H = sheet_size(page)
     bx, by, bw, bh = block_rect
     x0, ybot = bx, by + bh
     room = (H - margin) - ybot
@@ -1195,7 +1256,7 @@ def hole_table(rows, page: str = "A3", margin: float = 10.0,
     the hole table — but reading TOP-to-bottom from the sheet's upper
     left, the corner the title block's BOM never claims. Overflow is
     counted, never silent."""
-    W, H = PAGES.get(page, PAGES["A3"])
+    W, H = sheet_size(page)
     bw = float(width) if width else min(0.40 * W, 150.0)
     x0 = margin
     ytop = H - margin
