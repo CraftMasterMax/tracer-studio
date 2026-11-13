@@ -251,8 +251,13 @@ def test_the_door_offers_three_of_the_pages_four_words(win, monkeypatch):
     monkeypatch.setattr(cmddialog, "ask", spy)
     win.action_coil()
     rows = seen[0]
-    assert list(rows) == ["type", "axis", "base", "diam", "turns",
-                          "height", "pitch", "hand", "section", "size"]
+    # M201 R21 heal: the door wears the REFERENCE page's row order -
+    # Type, ROTATION (row TWO, the old "Hand" renamed), the Helix
+    # numbers, the house Axis rows, Section, SECTION POSITION,
+    # Section Size, OPERATION.
+    assert list(rows) == ["type", "hand", "diam", "turns", "height",
+                          "pitch", "axis", "base", "section",
+                          "secpos", "size", "op"]
     assert rows["type"]["kind"] == "combo"
     assert list(rows["type"]["choices"]) == ["Revolution And Height",
                                              "Revolution And Pitch",

@@ -9177,11 +9177,48 @@ class MainWindow(QMainWindow):
             6000)
 
     def action_coil(self):
-        """Fusion's Coil (M127 v1), on-center and honest: a circular or
-        square section riding a helix about a NAMED axis; height is
-        turns x pitch (the classic two-of-three forward). Springs and
-        boss threads; internal cut-threads deliberately aren't offered
-        — decoration serves them better on any kernel."""
+        """Fusion's Coil (M127 v1; door healed M201 R21 onto the row
+        words), on-center and honest: a circular or square section
+        riding a helix about a NAMED axis; height is turns x pitch
+        (the classic two-of-three forward). [SLD-REF-COIL, verbatim]
+        the printed row order is Type, ROTATION, Radius, Revolutions,
+        Height, Pitch, Angle, Section, Section Position, Section
+        Size, Operation - the door wears it. ROTATION [verbatim]
+        "Click to switch the rotation of the coil from clockwise to
+        counterclockwise, or vice versa." It was born "Hand" in M127;
+        the row now wears the page's word while the RECORD keeps its
+        hand key - display word over record word, the Joint-Type
+        contract. The page prints NO choice words for this row and NO
+        view direction, so {Right | Left} are OURS, stamped, resting
+        at the record's right. VENDOR DEFECT, flagged not cloned: the
+        how-to page glosses the SAME word differently - [verbatim]
+        "click the Rotation icon to rotate the coil 90 degrees around
+        the Y axis" (an orientation twist) - the door wears the
+        REFERENCE page's row gloss, the flip. SECTION POSITION: the
+        page prints {Inside | On Center | Outside}; only ON CENTER
+        bakes - coil_solid rides the section's CENTRE on the helix,
+        which is what the diameter number measures - Inside/Outside
+        would move what the number measures, so they are NOT offered
+        and a scripted answer that tries them refuses before the
+        capture. ANGLE is not offered: [verbatim] "Specify the taper
+        angle for all coil types except spiral" - this kernel sweeps
+        a CONSTANT radius, and a door never promises a taper it
+        cannot bake. "Triangular (External)" and "Triangular
+        (Internal)" sections are not offered either - coil_solid
+        sweeps Circular and Square. OPERATION [verbatim] "Select an
+        operation to control how the feature affects the design.": the page prints
+        FIVE; the door offers the first three - {Join | Cut |
+        Intersect} (R17's trio, the same generic op dispatch every
+        feature rides) - New Body is the browser's separate tool and
+        New Component stands gated by the page's OWN "(Hybrid Design
+        type only)". The rest "Join" is a STAMP: "default" counts
+        ZERO on both coil pages, and Join is exactly what the door
+        has always baked. SECTION SIZE wears the page's
+        capitalization and the gloss matches our law to the decimal:
+        [verbatim] "The size of the profile is determined by a
+        circumscribed sketch circle." Springs and boss threads;
+        internal modeled cut-threads deliberately aren't offered -
+        decoration serves them better on any kernel."""
         if self.doc is None:
             return
         dirs = ["X", "Y", "Z"] + [a["name"] for a in self.doc.axes]
@@ -9217,10 +9254,13 @@ class MainWindow(QMainWindow):
                  choices=("Revolution And Height",
                           "Revolution And Pitch", "Height And Pitch"),
                  default="Revolution And Pitch", group="Helix"),
-            dict(key="axis", label="Helix axis", kind="combo",
-                 choices=dirs, default="Z", group="Axis"),
-            dict(key="base", label="Start point", kind="text",
-                 default="0,0,0", group="Axis"),
+            # M201 R21: the page's row TWO is ROTATION, right behind
+            # Type (it rode LAST of the Helix rows as "Hand" since
+            # M127); the record key stays "hand" - the label is the
+            # display word, the record is the file voice.
+            dict(key="hand", label="Rotation", kind="combo",
+                 choices=("Right", "Left"), default="Right",
+                 group="Helix"),
             dict(key="diam",
                  label="Centre diameter (of the profile's center "
                        "circle)", kind="double",
@@ -9232,12 +9272,26 @@ class MainWindow(QMainWindow):
                  default=9.0, min=0.01, max=1e5, group="Helix"),
             dict(key="pitch", label="Pitch", kind="double",
                  default=1.5, min=0.01, max=1e4, group="Helix"),
-            dict(key="hand", label="Hand", kind="combo",
-                 choices=("Right", "Left"), group="Helix"),
+            # the page picks the plane and centre ON THE CANVAS; this
+            # door has no canvas picker, so these two rows are the
+            # house's voice for that placement (declared, era R12).
+            dict(key="axis", label="Helix axis", kind="combo",
+                 choices=dirs, default="Z", group="Axis"),
+            dict(key="base", label="Start point", kind="text",
+                 default="0,0,0", group="Axis"),
             dict(key="section", label="Section", kind="combo",
                  choices=("Circular", "Square"), group="Section"),
-            dict(key="size", label="Section size", kind="double",
+            # M201 R21: the page's Section Position row - only the
+            # member the kernel bakes is OFFERED (the Joint-Type
+            # precedent); the rest IS that member, not a coin.
+            dict(key="secpos", label="Section Position", kind="combo",
+                 choices=("On Center",), default="On Center",
+                 group="Section"),
+            dict(key="size", label="Section Size", kind="double",
                  default=1.2, min=0.01, max=1e4, group="Section"),
+            dict(key="op", label="Operation", kind="combo",
+                 choices=("Join", "Cut", "Intersect"), default="Join",
+                 group="Boolean"),
         ], remember_key="coil")
         if v is None:
             return
@@ -9280,13 +9334,39 @@ class MainWindow(QMainWindow):
                     "height and pitch to divide", 6000)
                 return
             turns = height / pitch
+        # M201 R21 guards - rows the page gates, kept from the outside
+        # (R10/R18's coin: a scripted answer cannot slip a door past
+        # what the kernel bakes; refuse BEFORE the capture, no undo
+        # step paid).  The .get rests ride R5's coin: remembered
+        # dicts born before this rung carry none of these keys.
+        rot = str(v.get("hand", "Right"))
+        if rot not in ("Right", "Left"):
+            self.status.showMessage(
+                "Coil refused: the Rotation the kernel flips is "
+                f"'Right' or 'Left', not {rot!r}", 6000)
+            return
+        secpos = str(v.get("secpos", "On Center"))
+        if secpos != "On Center":
+            self.status.showMessage(
+                f"Coil refused: Section Position {secpos!r} would "
+                "move the section off the coil diameter - the kernel "
+                "centers it (the page's On Center)", 6000)
+            return
+        oper = str(v.get("op", "Join"))
+        if oper not in ("Join", "Cut", "Intersect"):
+            self.status.showMessage(
+                f"Coil refused: the operation is 'Join', 'Cut' or "
+                f"'Intersect', not {oper!r}", 6000)
+            return
         self._capture()
         f = self.doc.add_coil(
             f"Coil {turns:g}x{pitch:g}", axis=v["axis"],
             base=base, diameter=v["diam"], pitch=pitch,
-            turns=turns, hand=v["hand"].lower(),
+            turns=turns, hand=rot.lower(),
             section=v["section"].lower(), size=v["size"],
-            coil_type=ctype)
+            coil_type=ctype,
+            op={"Join": "union", "Cut": "subtract",
+                "Intersect": "intersect"}[oper])
         self.recompute()
         ff = getattr(self.doc, "failed_feature", None)
         if ff is not None and ff[1] == f.name:
