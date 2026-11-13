@@ -291,23 +291,26 @@ def test_the_equal_choice_writes_no_angle(win, qapp, monkeypatch):
     assert abs(wall - 38.0) < 0.05            # 40 - D*tan(45) - the skirt
 
 
-def test_the_fillet_half_still_asks_its_one_radius(win, qapp,
-                                                   monkeypatch):
-    """Honesty gate: only the CHAMFER branch moved. The fillet half of
-    the same command still asks ONE number (Shell.getDouble - which is
-    itself one row of the same house dialog, key \"v\") - no Type, no
-    Angle, no invented rows."""
+def test_the_fillet_half_grew_its_rung_at_last(win, qapp,
+                                               monkeypatch):
+    """M196's honesty gate, kept honest as it aged: it pinned the
+    fillet half at ONE row until the rung that wears SLD-REF-FILLET
+    arrived (M201 R23).  The rows, in the page's printed order, all
+    rest at the ONE member the kernel bakes - and the record lands
+    byte-for-byte the feature the one-number lever used to birth."""
     calls = []
 
     def fake(parent, title, fields, **k):
         calls.append((title, fields))
-        return {"v": 3.0}
+        return {"radius": 3.0}
 
     monkeypatch.setattr(cmddialog, "ask", fake)
     _rod_win(win, qapp)
     win._body_fillet(chamfer=False)
-    assert len(calls) == 1 and calls[0][0] == "Fillet body edges"
-    assert [f["key"] for f in calls[0][1]] == ["v"]
+    assert len(calls) == 1 and calls[0][0] == "Fillet"
+    assert [f["key"] for f in calls[0][1]] == ["type", "radius",
+                                               "rtype", "cont",
+                                               "corner", "rule", "rf"]
     feat = win.doc.features[-1]
     assert isinstance(feat, BodyFilletFeature) and not feat.chamfer
     assert feat.radius == 3.0 and feat.angle_deg is None

@@ -9565,7 +9565,13 @@ class MainWindow(QMainWindow):
         straight edges run through the OCCT bridge when present.  Lands a
         BodyFilletFeature in the timeline; the size stays parametric
         (edit → re-run) and the baked mesh keeps the file openable
-        without OCCT."""
+        without OCCT.  The chamfer half wears SLD-REF-CHAMFER's rows
+        (M196); the fillet half wears SLD-REF-FILLET's rows in the
+        page's printed order (M201 R23) - and the record keeps its one
+        BodyFilletFeature voice: Type, Radius Type, Continuity, Corner
+        Type, Rule and Round/Fillets rest at the ONE member each that
+        this kernel bakes, so what lands is byte-for-byte what m196's
+        single-number lever birthed."""
         kind = "Chamfer" if chamfer else "Fillet"
         if self.doc is None or self.doc.result is None:
             # M189 R4 [LAW-61(a)]: precondition in information clothing.
@@ -9611,11 +9617,128 @@ class MainWindow(QMainWindow):
             elif v["type"] == "Distance And Angle":
                 angle = float(v["angle"])
         else:
-            size, ok = Shell.getDouble(
-                self, "Fillet body edges", "Radius (mm):",
-                2.0, 0.05, 1e4, 2)
-            if not ok:
+            # M201 R23 [SLD-REF-FILLET, verbatim]: the fillet half of
+            # this command grew m196's single-number lever into the
+            # reference page's own rows, in the page's printed order
+            # (Type; Radius; Radius Type; Continuity; Corner Type;
+            # Rule; Round/Fillets).  The dialog word is the page's:
+            # "The Fillet dialog displays." - title "Fillet".
+            u = self.doc.units if self.doc.units in units.LABEL else "mm"
+            fu = units.PER_MM[u]
+            lab = units.LABEL[u]
+            v = cmddialog.ask(self, "Fillet", [
+                # "Rule Fillet: Rounds edges based on rules that
+                # determine which edges to fillet." - this door IS
+                # that rule (every sharp edge of the body).  The
+                # page's "Fillet" type is "based on SELECTED edges,
+                # faces, or features" - no canvas edge picker feeds
+                # this mouth (the browser row's menu owns vertical-
+                # edge picks) - and "Full Round Fillet" removes a
+                # Center Face between three faces: no kernel.  The
+                # one member that bakes is the one member offered.
+                dict(key="type", label="Type", kind="combo",
+                     choices=["Rule Fillet"], default="Rule Fillet"),
+                # "Radius: Specify the radius value for the fillet in
+                # the units of the current design." - the row speaks
+                # the document's unit, exactly as the page says.
+                dict(key="radius", label=f"Radius ({lab})",
+                     kind="double", default=round(2.0 / fu, 6),
+                     min=round(0.05 / fu, 6), max=round(1e4 / fu, 6),
+                     decimals=2),
+                # The page's Radius Type prints FOUR members; only
+                # "Constant: Applies a single radius value along an
+                # entire fillet." bakes - Chord Length has no chord
+                # algebra here, Variable mints per-point radii along
+                # one edge (its task-page label is the DEFECT
+                # "Variable Variable" - flagged, not cloned), and
+                # Asymmetric wants one value per side.
+                dict(key="rtype", label="Radius Type", kind="combo",
+                     choices=["Constant"], default="Constant"),
+                # "Tangent (G1): Applies tangent continuity to fillet
+                # transitions." - the revolved rim is tangent by
+                # construction; "Curvature (G2)" is not what a mesh
+                # rim promises.
+                dict(key="cont", label="Continuity", kind="combo",
+                     choices=["Tangent (G1)"], default="Tangent (G1)"),
+                # "Rolling Ball: Combines rounded edges at the
+                # corner." - a revolved circular profile IS the
+                # rolling ball; "Setback" blends corners into faces
+                # and lives nowhere in this kernel.
+                dict(key="corner", label="Corner Type", kind="combo",
+                     choices=["Rolling Ball"], default="Rolling Ball"),
+                # "All Edges: Creates fillets on all edges of
+                # selected faces or features." - the rule of this
+                # door; "Between Faces/Features" wants TWO selection
+                # sets and there is no selection here.
+                dict(key="rule", label="Rule", kind="combo",
+                     choices=["All Edges"], default="All Edges"),
+                # The kernel law and the page gloss are ONE sentence:
+                # "Rounds and Fillets: Creates convex rounds on all
+                # outside corners and concave fillets on all inside
+                # corners." - rim_fillet subtracts at convex rims and
+                # unions beads at concave ones.  "Rounds Only"/
+                # "Fillets Only" are NOT offered: the OpenCascade
+                # edge route fillets its whole edge set and a door
+                # may not bake half a promise.  Tangent Chain and
+                # Tangency Weight steer SELECTION sets ("checked by
+                # default" per SLD-REF-TANGENT-CHAIN - the one
+                # printed default in the family, honoured as OURS
+                # stands: this rule fillets ALL sharp edges, the
+                # widest chain there is); Radius Points belongs to
+                # the unoffered Variable type.
+                dict(key="rf", label="Round/Fillets", kind="combo",
+                     choices=["Rounds and Fillets"],
+                     default="Rounds and Fillets"),
+            ], remember_key="fillet_body_edges")
+            if v is None:
                 return
+            # the .get law (R5's coin): every rest is the single
+            # member the kernel bakes - a remembered dict (or a
+            # script) naming any other word is refused BY NAME
+            # BEFORE the capture.
+            tv = str(v.get("type", "Rule Fillet"))
+            if tv != "Rule Fillet":
+                self.status.showMessage(
+                    f"Fillet refused: the Type this door rules with "
+                    f"is 'Rule Fillet' - 'Fillet' needs canvas edge "
+                    "picks and 'Full Round Fillet' needs a Center "
+                    f"Face kernel - not {tv!r}", 6000)
+                return
+            rv = str(v.get("rtype", "Constant"))
+            if rv != "Constant":
+                self.status.showMessage(
+                    "Fillet refused: the radius a rim revolves with "
+                    f"is 'Constant' here - not {rv!r}", 6000)
+                return
+            cc = str(v.get("cont", "Tangent (G1)"))
+            if cc != "Tangent (G1)":
+                self.status.showMessage(
+                    "Fillet refused: a revolved rim is "
+                    f"'Tangent (G1)' - not {cc!r}", 6000)
+                return
+            kv = str(v.get("corner", "Rolling Ball"))
+            if kv != "Rolling Ball":
+                self.status.showMessage(
+                    "Fillet refused: the corner a circle revolved "
+                    f"about an edge draws is 'Rolling Ball' - not "
+                    f"{kv!r}", 6000)
+                return
+            au = str(v.get("rule", "All Edges"))
+            if au != "All Edges":
+                self.status.showMessage(
+                    "Fillet refused: the rule of this door is 'All "
+                    f"Edges' - 'Between Faces/Features' needs two "
+                    f"selection sets - not {au!r}", 6000)
+                return
+            fv = str(v.get("rf", "Rounds and Fillets"))
+            if fv != "Rounds and Fillets":
+                self.status.showMessage(
+                    "Fillet refused: the kernel rounds outside "
+                    "corners AND beads inside ones - 'Rounds Only' "
+                    "and 'Fillets Only' would bake half the body - "
+                    f"not {fv!r}", 6000)
+                return
+            size = float(v.get("radius", 2.0)) * fu
         self._capture()
         n = sum(isinstance(f, BodyFilletFeature)
                 for f in self.doc.features) + 1

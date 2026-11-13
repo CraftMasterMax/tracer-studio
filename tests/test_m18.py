@@ -159,8 +159,9 @@ def test_modify_menu_flow_creates_fillet_feature(win, qapp, monkeypatch):
                                                    "dz": 6}))
     win.doc.dirty = True
     base = win.doc.recompute().volume
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *a, **k: (2.0, True)))
+    from tracer.ui import cmddialog
+    monkeypatch.setattr(cmddialog, "ask",
+                        staticmethod(lambda *a, **k: {"radius": 2.0}))
     win._body_fillet(chamfer=False)
     qapp.processEvents()
     f = win.doc.features[-1]
@@ -179,8 +180,8 @@ def test_fillet_cancel_and_failure_paths(win, qapp, monkeypatch):
     win.doc.dirty = True
     win.doc.recompute()
     # cancel at the size prompt -> no feature added
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *a, **k: (0.0, False)))
+    from tracer.ui import cmddialog
+    monkeypatch.setattr(cmddialog, "ask", lambda *a, **k: None)
     win._body_fillet(chamfer=False)
     assert not any(isinstance(f, BodyFilletFeature)
                    for f in win.doc.features)
@@ -191,8 +192,8 @@ def test_fillet_cancel_and_failure_paths(win, qapp, monkeypatch):
     warned = []
     monkeypatch.setattr(QMessageBox, "warning",
                         staticmethod(lambda *a, **k: warned.append(a[1])))
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *a, **k: (500.0, True)))
+    monkeypatch.setattr(cmddialog, "ask",
+                        staticmethod(lambda *a, **k: {"radius": 500.0}))
     win._body_fillet(chamfer=False)
     qapp.processEvents()
     assert warned == []                            # no ambush
@@ -210,13 +211,16 @@ def test_double_click_fillet_reopens_size_dialog(win, qapp, monkeypatch):
                                                    "dz": 6}))
     win.doc.dirty = True
     win.doc.recompute()
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *a, **k: (1.5, True)))
+    from tracer.ui import cmddialog
+    monkeypatch.setattr(cmddialog, "ask",
+                        staticmethod(lambda *a, **k: {"radius": 1.5}))
     win._body_fillet(chamfer=False)
     f = win.doc.features[-1]
     v15 = win.doc.result.volume
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *a, **k: (2.5, True)))
+    # M201 R23: the EDIT lever stays single-number (its own rung's
+    # job) - getDouble rides ask() with key "v" unchanged.
+    monkeypatch.setattr(cmddialog, "ask",
+                        staticmethod(lambda *a, **k: {"v": 2.5}))
     win._feature_activated(f)          # timeline double-click path
     qapp.processEvents()
     assert f.radius == 2.5
@@ -231,12 +235,13 @@ def test_properties_panel_reports_fillet(win, qapp):
                                                    "dz": 6}))
     win.doc.dirty = True
     win.doc.recompute()
-    orig = Shell.getDouble
-    Shell.getDouble = staticmethod(lambda *a, **k: (1.0, True))
+    from tracer.ui import cmddialog
+    orig = cmddialog.ask
+    cmddialog.ask = staticmethod(lambda *a, **k: {"radius": 1.0})
     try:
         win._body_fillet(chamfer=False)
     finally:
-        Shell.getDouble = orig
+        cmddialog.ask = orig
     f = win.doc.features[-1]
     win.rail.props.show_feature(f)
     html = win.rail.props._body.text()

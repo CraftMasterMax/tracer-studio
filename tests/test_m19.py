@@ -224,8 +224,9 @@ def win(qapp, monkeypatch):
 
 def test_fillet_cmd_works_without_occt(win, qapp, monkeypatch):
     monkeypatch.setattr(step, "available", lambda: False)
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *a, **k: (2.0, True)))
+    from tracer.ui import cmddialog
+    monkeypatch.setattr(cmddialog, "ask",
+                        staticmethod(lambda *a, **k: {"radius": 2.0}))
     win.new_document()
     win.doc.add_plate("Plate1", 40, 40, 10, holes=[(20, 20, 5.0)])
     base = win.doc.recompute().volume
@@ -239,8 +240,9 @@ def test_fillet_cmd_works_without_occt(win, qapp, monkeypatch):
 
 def test_fillet_cmd_without_occt_or_rims_rolls_back(win, qapp, monkeypatch):
     monkeypatch.setattr(step, "available", lambda: False)
-    monkeypatch.setattr(Shell, "getDouble",
-                        staticmethod(lambda *a, **k: (2.0, True)))
+    from tracer.ui import cmddialog
+    monkeypatch.setattr(cmddialog, "ask",
+                        staticmethod(lambda *a, **k: {"radius": 2.0}))
     warned = []
     monkeypatch.setattr(QMessageBox, "warning",
                         staticmethod(lambda *a, **k: warned.append(a[1])))
