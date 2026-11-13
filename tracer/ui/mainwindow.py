@@ -7147,7 +7147,25 @@ class MainWindow(QMainWindow):
         valid subset) with the same three Operations. "default"
         counts ZERO on both pages: keep-tools ON and the primitive
         rests are HOUSE FACTS, and every refusal stands BEFORE the
-        capture (the window owns the only undo stack)."""
+        capture (the window owns the only undo stack).
+        M201 R29 grows the door to the FULL reference page, row for
+        row: "New Component: Creates a new component with the
+        results." rides between Operation and Keep Tools, exactly the
+        page's printed order - a body is our component (R14's
+        reading), allocated fresh at placement (the mirror's New Body
+        pattern), and the page prints NO fate for the target when the
+        result is re-homed, so the target standing is OURS and says
+        so. The default OFF is a house rest (page prints no default).
+        Objects To Cut - the h3 the page nests under Operation
+        ("Select to recompute bodies or maintain the current
+        bodies.", members "Auto-Select" and "# Bodies", gated "only
+        for cut operations... only active when you edit operations")
+        is UNOFFERED-BY-NAME: this kernel has no edit-time recompute,
+        and the row wears nothing here. "Type" is M31: Combine's
+        member-carrying row is Operation, and no Type row exists on
+        the page - the door wears none. The result node names stay
+        ours ("Combine <target>" since M64, "Body N" from the ledger)
+        - M27: no vendor result-node name is invented."""
         if self.doc is None or self.doc.result is None:
             # M189 R3 [LAW-61(a)]: precondition -> tier (a) voice.
             self.status.showMessage("Nothing to combine into yet — "
@@ -7175,6 +7193,9 @@ class MainWindow(QMainWindow):
             dict(key="op", label="Operation", kind="combo",
                  choices=["Join", "Cut", "Intersect"], default="Join",
                  group="Bodies"),
+            dict(key="newcomp", label="New Component", kind="check",
+                 default=False, group="Bodies"),   # R29: page order,
+            #   house rest (the reference prints no default anywhere)
             dict(key="keep", label="Keep Tools", kind="check",
                  default=True, group="Bodies"),
             dict(key="tool", label="Tool shape", kind="combo",
@@ -7206,6 +7227,7 @@ class MainWindow(QMainWindow):
                                          or names[0]))
         tools = [str(t) for t in (v.get("tools") or [])]
         keep = bool(v.get("keep", True))
+        newcomp = bool(v.get("newcomp", False))
         if target not in names:
             self.status.showMessage(
                 f"Combine refused: the Target Body is 'the body being "
@@ -7224,20 +7246,30 @@ class MainWindow(QMainWindow):
                 return
         if tools:
             self._capture()
+            nb = ""
+            if newcomp:
+                prev = self.doc.active_body
+                nb = self.doc.add_body()["name"]
+                self.doc.active_body = prev   # the result is a result,
+                #   not a workbench handed over behind the user's back
             feat = CombineFeature(name=f"Combine {target}", op=op,
                                   tool_bodies=tuple(tools),
-                                  keep_tools=keep, body=target)
+                                  keep_tools=keep, body=target,
+                                  new_component=newcomp, result_body=nb)
             self.doc.add(feat)
             self.recompute()
             ff = getattr(self.doc, "failed_feature", None)
             if ff is not None and ff[1] == feat.name:
                 return                      # M118 badge + modal
             self.viewport.refresh(fit=True)
-            sol = self.doc.body_solids().get(target)
+            carrier = nb if newcomp else target
+            sol = self.doc.body_solids().get(carrier)
             vol_mm = sol.volume if sol is not None else 0.0
             self.status.showMessage(
                 f"Combined ({opw}) {target} with "
                 + " + ".join(tools)
+                + (f" — result is {nb}, {target} stands (ours: the page "
+                   "prints no fate for the target)" if newcomp else "")
                 + ("" if keep else " — the tools are not retained "
                                    "(ours: the page prints no fate)")
                 + f" — {vol_mm:,.0f} mm³", 6000)
@@ -7259,13 +7291,20 @@ class MainWindow(QMainWindow):
                 else {"dx": float(v["dx"]) * f, "dy": float(v["dy"]) * f,
                       "dz": float(v["dz"]) * f})
         self._capture()
+        nb = ""
+        if newcomp:
+            prev = self.doc.active_body
+            nb = self.doc.add_body()["name"]
+            self.doc.active_body = prev       # R29: result, not workbench
         self.doc.add(CombineFeature(
             name=f"Combine {tool}", tool=tool, dims=dims, op=op,
-            body=target,
+            body=target, new_component=newcomp, result_body=nb,
             center=tuple(float(v[k]) * f for k in ("cx", "cy", "cz"))))
         self.recompute()
         self.status.showMessage(
-            f"Combined ({str(v['op']).lower()}) a {tool} into the body",
+            f"Combined ({str(v['op']).lower()}) a {tool} into the body"
+            + (f" — result is {nb}, {target} stands (ours: the page "
+               "prints no fate for the target)" if newcomp else ""),
             5000)
 
     def _sync_holes(self, sid, payload):

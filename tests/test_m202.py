@@ -116,7 +116,10 @@ def test_the_door_asks_the_pages_rows_and_nothing_is_born_on_cancel(
     body, the page's SINGULAR), Tool Bodies (the licensed PLURAL on
     the check-list), Operation (the closed three words), Keep Tools
     (the page's own sentence; its ON rest is a HOUSE FACT - the
-    page prints no default).  Cancel: nothing is born."""
+    page prints no default).  M201 R29 grew the page's fifth row in
+    printed order, so New Component now rides between Operation and
+    Keep Tools (test_m217 owns its semantics).  Cancel: nothing is
+    born."""
     _two_bodies(win)
     qapp.processEvents()
     store = {}
@@ -124,13 +127,16 @@ def test_the_door_asks_the_pages_rows_and_nothing_is_born_on_cancel(
     before = len(win.doc.features)
     win.action_combine()
     qapp.processEvents()
-    assert store["keys"][:4] == ["target", "tools", "op", "keep"]
+    assert store["keys"][:5] == ["target", "tools", "op", "newcomp",
+                                 "keep"]
     assert store["kinds"]["target"] == "combo"
     assert store["kinds"]["tools"] == "checks"
     assert store["kinds"]["keep"] == "check"
+    assert store["kinds"]["newcomp"] == "check"
     assert store["choices"]["op"] == ("Join", "Cut", "Intersect")
     assert set(store["choices"]["target"]) == {"Body 1", "Body 2"}
-    assert store["defaults"]["keep"] is True          # ours, named
+    assert store["defaults"]["keep"] is True           # ours, named
+    assert store["defaults"]["newcomp"] is False       # R29's house rest
     assert len(win.doc.features) == before
 
 

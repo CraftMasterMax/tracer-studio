@@ -1442,12 +1442,25 @@ class CombineFeature(Feature):
     no "consumed/removed/deleted" sentence exists), so the drop is
     OURS, named as ours at every mouth - never dressed as vendor
     wording. "default" counts 0 on the reference and how-to pages:
-    the primitive rest and keep_tools=True are HOUSE FACTS."""
+    the primitive rest and keep_tools=True are HOUSE FACTS.
+
+    M201 R29 [SLD-REF-COMBINE, verbatim]: the page's sixth row, in
+    printed order between Operation (and its nested Objects To Cut,
+    UNOFFERED there) and Keep Tools: "New Component: Creates a new
+    component with the results." A body is this kernel's component
+    (R14's own reading), so the result lands in a FRESH named body
+    (`result_body`, allocated at placement like the mirror's New
+    Body). The page never prints what becomes of the target when the
+    result is re-homed - that rest is OURS and says so: the target
+    stream stands untouched. `new_component=False` is a house rest
+    (page prints no default; "default" counts 0)."""
     tool: str = "box"
     dims: dict = field(default_factory=dict)
     center: tuple = (0.0, 0.0, 0.0)
     tool_bodies: tuple = ()          # R14: named Tool Bodies ("")
     keep_tools: bool = True          # house rest (page prints none)
+    new_component: bool = False      # R29: house rest (page prints none)
+    result_body: str = ""            # R29: the new component-as-body
 
     def boolean(self, src: "Solid", tool: "Solid") -> "Solid":
         """The page's three Operations, one arithmetic mouth (R14:
@@ -4394,6 +4407,20 @@ class Document:
                 if acc is None:
                     raise ValueError(
                         f"{f.name!r} has no body to combine yet")
+                if f.new_component:
+                    # R29 [verbatim]: "New Component: Creates a new
+                    # component with the results." The result is
+                    # RE-HOMED, never duplicated; what stands for the
+                    # target is page-silence, so it is house-declared:
+                    # the target stream is READ, not written.
+                    if not f.result_body:
+                        raise ValueError(
+                            f"{f.name!r}: New Component names no "
+                            "result body - the record is incomplete")
+                    if f.result_body == key:
+                        raise ValueError(
+                            f"{f.name!r}: the new component cannot be "
+                            "the body being acted upon")
                 if f.tool_bodies:
                     if str(f.op) not in ("union", "subtract",
                                          "intersect"):
@@ -4416,14 +4443,18 @@ class Document:
                                   if x["name"] == want), None)
                         sides.append(self._apply_placement(b, s))
                     tool = Solid.batch_union(sides)
-                    buckets[key] = f.boolean(acc, tool)
+                    res = f.boolean(acc, tool)
                     if not f.keep_tools:
                         for want in f.tool_bodies:
                             if buckets.get(want) is not None:
                                 buckets[want] = None
                 else:
-                    buckets[key] = f.apply(acc)
-                by_uid[f.uid] = buckets[key]
+                    res = f.apply(acc)
+                if f.new_component:
+                    buckets[f.result_body] = res   # re-homed, page's words
+                else:
+                    buckets[key] = res
+                by_uid[f.uid] = res
                 continue          # replaces the body; not a boolean operand
             elif isinstance(f, (BodyFilletFeature, DraftFeature,
                                 OffsetFaceFeature, ShellFeature,
@@ -4763,7 +4794,9 @@ class Document:
                 d.update(tool=str(f.tool), dims=dict(f.dims),
                          center=list(map(float, f.center)),
                          tool_bodies=[str(t) for t in f.tool_bodies],
-                         keep_tools=bool(f.keep_tools))
+                         keep_tools=bool(f.keep_tools),
+                         new_component=bool(f.new_component),
+                         result_body=str(f.result_body))
             elif isinstance(f, HoleFeature):
                 d.update(center=list(map(float, f.center)),
                          normal=list(map(float, f.normal)),
@@ -5055,6 +5088,8 @@ class Document:
                     tool_bodies=tuple(str(x) for x in
                                       fd.get("tool_bodies", ())),
                     keep_tools=bool(fd.get("keep_tools", True)),
+                    new_component=bool(fd.get("new_component", False)),
+                    result_body=str(fd.get("result_body", "")),
                     **base))
             elif t == "HoleFeature":
                 doc.features.append(HoleFeature(
