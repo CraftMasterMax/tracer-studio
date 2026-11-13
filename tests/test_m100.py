@@ -152,7 +152,7 @@ def test_nonsense_scale_changes_nothing(win, qapp, monkeypatch):
     cv = _box_sheet(win, qapp)
     before = cv.frames()["top"][0]
     monkeypatch.setattr(cv, "_view_dialog",           # R32: the dialog
-                        lambda cur: {"scale": "half-and-half"})
+                        lambda cur, view=None: {"scale": "half-and-half"})
     cv.view_scale_requested.emit("top")
     qapp.processEvents()
     assert cv.frames()["top"][0] == pytest.approx(before)
@@ -189,7 +189,8 @@ def test_bubbles_measure_the_model_not_the_paper(win, qapp,
     cv.set_dim_mode(False)
     d = cv.sheet()["dims"][0]
     assert d["text"] == "40.00"
-    monkeypatch.setattr(cv, "_view_dialog", lambda cur: {"scale": "1:2"})
+    monkeypatch.setattr(cv, "_view_dialog",
+                        lambda cur, view=None: {"scale": "1:2"})
     cv.view_scale_requested.emit("top")
     qapp.processEvents()
     assert d["text"] == "40.00"                 # the model did not shrink
@@ -202,7 +203,8 @@ def test_bubbles_measure_the_model_not_the_paper(win, qapp,
 def test_dxf_export_uses_the_scaled_geometry(win, qapp, monkeypatch,
                                              tmp_path):
     cv = _box_sheet(win, qapp)
-    monkeypatch.setattr(cv, "_view_dialog", lambda cur: {"scale": "1:2"})
+    monkeypatch.setattr(cv, "_view_dialog",
+                        lambda cur, view=None: {"scale": "1:2"})
     cv.view_scale_requested.emit("top")
     qapp.processEvents()
     out = str(tmp_path / "half.dxf")
