@@ -107,7 +107,8 @@ def test_design_panel_groups_follow_fusion_order(win):
             "Rotate body", "Combine body",
             "Construction plane", "Work axis", "Section analysis",
             "Appearance",
-            "Mass properties"]
+            "Mass properties",
+            "Center of Mass"]                       # M201 R28 grown in
     assert tips == want
 
 
