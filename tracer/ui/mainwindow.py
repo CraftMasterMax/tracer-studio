@@ -821,7 +821,7 @@ class MainWindow(QMainWindow):
         m_tools.addAction("Interference — where bodies clash…",
                           lambda checked=False:
                           self.action_interference())
-        m_tools.addAction("Joint — rigid (2 bodies)…",
+        m_tools.addAction("As-Built Joint…",
                           lambda checked=False: self.action_joint())
         m_tools.addAction("Flat Pattern — unfold a sheet…",
                           lambda checked=False:
@@ -5920,38 +5920,75 @@ class MainWindow(QMainWindow):
                else "CHANGED (bug!)"), 7000)
 
     def action_joint(self):
-        """Tools ▸ Joint (M146, assembly rung 1): As-Built Rigid —
-        Fusion's As-Built Joint is the honest shape (we pick no
-        geometry and MOVE NOTHING at creation; the vendor's own
-        Joint command, the one that teleports a component to its
-        mate, is a later rung). Two combos and a ground checkbox —
-        the names are display only, the record binds ids. LAW R in
-        the status line's every word: position captured, and from
-        now on this body follows the BASE's placement and its rigid
-        stream moves (rung 2a) — never its growth, which says so in
-        joint_warnings."""
+        """Tools > As-Built Joint (M146 grew the door; M201 R18 dressed
+        it in the pages' words [ASM-CREATE-AS-BUILT-JOINT +
+        AS-BUILT-JOINT-REFERENCE, verbatim]: "The As-Built Joint
+        dialog displays." ... "Select two components to position an
+        as-built joint between them." The door is the AS-BUILT tool,
+        not the Joint command: "Creates a joint between components
+        that are already positioned in relation to" each other -
+        pick nothing, MOVE nothing at creation (the vendor's Joint,
+        the one that teleports a component to its mate, waits for a
+        solver). The Motion section's table prints seven Joint Types;
+        only Rigid is offered, because only Rigid's definition the
+        kernel bakes - "Locks components together and removes all
+        degrees of freedom." (Rotation/Translation: None) - and a
+        door never promises what cannot land. THE PAGES GATE THE REST
+        AWAY THEMSELVES: "For any Joint Type except Rigid, select a
+        Mode" - so the Mode trio {Simple | Between Two Faces | Two
+        Edge Intersection} and the "Planes, Edges, and Snap" block
+        are NOT shown for Rigid; and the Motion-limits row is
+        "available when you have selected a Joint Type that has more
+        than one degree of motion" - Rigid has ZERO, so Motion,
+        Minimum, Maximum, Rest, Preview and With All Limits stand
+        gated off by the vendor's own sentence. The six solved types
+        (Revolute, Slider, Cylindrical, Pin-Slot, Planar, Ball) and
+        their Rotation and Translation axis pickers need joint-origin
+        geometry this door never picks - not offered. ROWS SPEAK
+        BODIES: the page selects "two components" on the canvas; the
+        kernel binds BODIES (components are a later rung), so the
+        combos say body - a door may not name a thing the design has
+        not got. The tip "you can select them in any order" rides
+        honestly: either body may enter either combo; the RECORD is
+        directed (mover follows base) because that is what LAW R
+        bakes. The ground checkbox is a HOUSE row - no dialog page
+        prints a default (verified across the family), and the
+        As-Built exemption "either of the components you select can
+        be grounded" licenses grounding the base. VENDOR DEFECT,
+        flagged not cloned: the As-Built glosses print the typo
+        "in relation to each another" (concept and task pages).
+        Joints land in the browser's Joints folder, the page's home
+        ("the Joints folder in the Browser")."""
         if self.doc is None:
             return
         names = [b["name"] for b in self.doc.body_list()
                  if not b.get("derived")]     # M147: paper isn't a part
         if len(names) < 2:
             self.status.showMessage(
-                "Joint needs two bodies — New Body first (right-click "
-                "the browser)", 6000)
+                "As-Built Joint needs two bodies — New Body first "
+                "(right-click the browser)", 6000)
             return
         from . import cmddialog
         prefill = self.doc.active_body if self.doc.active_body in names \
             else names[0]
         others = [n for n in names if n != prefill]
-        v = cmddialog.ask(self, "Joint — As-Built Rigid", [
-            dict(key="base", kind="combo", label="Base component",
-                 choices=names, default=prefill),
-            dict(key="mover", kind="combo", label="Moving component",
-                 choices=others, default=others[0] if others else None),
+        v = cmddialog.ask(self, "As-Built Joint", [
+            dict(key="base", kind="combo", label="Base body",
+                 choices=names, default=prefill, group="Components"),
+            dict(key="mover", kind="combo", label="Moving body",
+                 choices=others, default=others[0] if others else None,
+                 group="Components"),
+            dict(key="type", kind="combo", label="Joint Type",
+                 choices=["Rigid"], default="Rigid", group="Motion"),
             dict(key="ground", kind="check",
                  label="Ground the base (it anchors the tree)",
                  default=True)])
         if v is None:
+            return
+        if str(v.get("type", "Rigid")) != "Rigid":
+            self.status.showMessage(
+                "As-Built Joint refused: the only Joint Type the "
+                "kernel locks is Rigid", 6000)
             return
         base, mover = v.get("base"), v.get("mover")
         self._capture()
