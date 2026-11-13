@@ -2152,10 +2152,127 @@ class SketchCanvas(QWidget):
                         lambda l1, l2, v: corner_fillet(self.model, l1, l2, v))
 
     def act_chamfer(self):
-        """Cut the selected corner flat by an equal trim on both legs."""
+        """EQUAL DISTANCE Chamfer — the page's first chamfer door
+        (M201 R24 [SKT-ADD-CHAMFERS, verbatim]: "select Modify >
+        Chamfer > Equal Distance Chamfer", "specify a distance value").
+        Born "Chamfer corner"; the tool word the page prints is Equal
+        Distance Chamfer, and it wears that now. The number rides the
+        classic single lever (the page prints no dialog rows - values
+        are "specified" at the tool), defaulted proportional to the
+        SHORTER leg by LAW-58, which IS the page's own preview law:
+        "The initial chamfer preview displays a distance value that is
+        proportional to the smaller of the selected objects." Both
+        legs trim by ONE d - the driven-dimension law the page prints:
+        "The second distance dimension is driven by the first distance
+        dimension. If you update the first dimension, the second
+        dimension will update as well, so that the two distances
+        remain equal.\""""
         from ..core.sketch.fillet import corner_chamfer
-        self._corner_op("Chamfer corner", "Distance (mm):",
+        self._corner_op("Equal Distance Chamfer", "Distance (mm):",
                         lambda l1, l2, v: corner_chamfer(self.model, l1, l2, v))
+
+    def _chamfer_pair(self):
+        """Shared eyes for the page's three chamfer doors: exactly two
+        selected lines sharing a corner, else a refusal in the page's
+        selection grammar (nothing is asked, nothing is mutated).
+        Returns (l1, l2, default, max) - the default proportional to
+        the shorter leg (LAW-58, the page's preview law), the max just
+        shy of half the shorter leg so a typed number stands a chance
+        against the kernel's own leg check."""
+        if len(self._sel) != 2 or not all(isinstance(e, Line)
+                                          for e in self._sel):
+            return None
+        l1, l2 = self._sel
+        shared = next((p for p in (l1.a, l1.b) if p in (l2.a, l2.b)), None)
+        if shared is None:
+            self._warn("These two lines don't share a corner")
+            return None
+        others = [p for p in (l1.a, l1.b) if p is not shared] + \
+                 [p for p in (l2.a, l2.b) if p is not shared]
+        leg = min(math.dist((shared.x, shared.y), (p.x, p.y)) for p in others)
+        return l1, l2, _corner_default(leg), max(0.02, leg / 2.0 - 0.01)
+
+    def act_chamfer_dist_angle(self):
+        """DISTANCE AND ANGLE Chamfer - the page's second door
+        (verbatim path: "Modify > Chamfer > Distance And Angle
+        Chamfer"; "specify a distance value... specify an angle
+        value"). The angle's MEANING is OURS, declared where the
+        kernel cuts (corner_chamfer_angle): the chamfer line's angle
+        to the FIRST picked line - the page never glosses its angle
+        manipulator, and silence names the choice ours, not a cloned
+        guess. The distance rides leg 1 under the same naming."""
+        if self.model is None:
+            return
+        pair = self._chamfer_pair()
+        if pair is None:
+            return
+        l1, l2, default, mx = pair
+        from . import cmddialog
+        v = cmddialog.ask(self, "Distance And Angle Chamfer", [
+            dict(key="d", kind="double", label="Distance (mm)",
+                 default=default, min=0.01, max=mx, decimals=2,
+                 suffix=" mm"),
+            # degrees wear DEGREES (m201 R7's law): a double field
+            # without a suffix rides cmddialog's default " mm" - the
+            # R24 film's first take caught that angle here.
+            dict(key="ang", kind="double", label="Angle (degrees)",
+                 default=45.0, min=1.0, max=179.0, decimals=2,
+                 suffix="°")])
+        if v is None:
+            return
+        from ..core.sketch.fillet import corner_chamfer_angle
+        self._push_hist()
+        try:
+            corner_chamfer_angle(self.model, l1, l2, float(v["d"]),
+                                 float(v["ang"]))
+        except ValueError as e:
+            self._hist.pop()                      # nothing was mutated
+            self._warn(str(e))
+            return
+        self._sel = []
+        self._solve(); self.update()
+
+    def act_chamfer_two(self):
+        """TWO DISTANCE Chamfer - the page's third door (verbatim
+        path: "Modify > Chamfer > Two Distance Chamfer"; "specify the
+        first distance value... specify the second distance value").
+        "Each distance dimension is independent. If you update the
+        first dimension, the second dimension remains as you set it,
+        and vice versa." - the kernel truth corner_chamfer_sides: leg
+        1 by Distance 1, leg 2 by Distance 2, NO driven equality (the
+        Equal door's law is exactly what this door drops). Side
+        naming is OURS, declared: first picked line, second picked
+        line (the page has no dialog to name legs with; the vendor's
+        own chamfer reference puts the order in PICK words). Both
+        numbers are LENGTHS - positive by the kernel's door, unlike
+        the offset rung's signed One Side law."""
+        if self.model is None:
+            return
+        pair = self._chamfer_pair()
+        if pair is None:
+            return
+        l1, l2, default, mx = pair
+        from . import cmddialog
+        v = cmddialog.ask(self, "Two Distance Chamfer", [
+            dict(key="d1", kind="double", label="Distance 1 (mm)",
+                 default=default, min=0.01, max=mx, decimals=2,
+                 suffix=" mm"),
+            dict(key="d2", kind="double", label="Distance 2 (mm)",
+                 default=default, min=0.01, max=mx, decimals=2,
+                 suffix=" mm")])
+        if v is None:
+            return
+        from ..core.sketch.fillet import corner_chamfer_sides
+        self._push_hist()
+        try:
+            corner_chamfer_sides(self.model, l1, l2, float(v["d1"]),
+                                 float(v["d2"]))
+        except ValueError as e:
+            self._hist.pop()                      # nothing was mutated
+            self._warn(str(e))
+            return
+        self._sel = []
+        self._solve(); self.update()
 
     def act_trim(self):
         """Close the corner between two loose lines (Fusion's trim):
@@ -2453,7 +2570,15 @@ class SketchCanvas(QWidget):
             menu.addAction("Angle between…", self.act_angle)
             if any(p in (sel[1].a, sel[1].b) for p in (sel[0].a, sel[0].b)):
                 menu.addAction("Fillet corner…", self.act_fillet)
-                menu.addAction("Chamfer corner…", self.act_chamfer)
+                # M201 R24: the page prints THREE chamfer tools under
+                # "Modify > Chamfer >" - the corner menu wears the
+                # tool words, not our born "Chamfer corner" guess.
+                menu.addAction("Equal Distance Chamfer…",
+                               self.act_chamfer)
+                menu.addAction("Distance And Angle Chamfer…",
+                               self.act_chamfer_dist_angle)
+                menu.addAction("Two Distance Chamfer…",
+                               self.act_chamfer_two)
             else:
                 menu.addAction("Trim / extend to corner", self.act_trim)
             menu.addSeparator()

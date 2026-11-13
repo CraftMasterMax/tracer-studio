@@ -325,9 +325,16 @@ def test_corner_menu_offers_both_ops_on_eligible_pairs_only(win, qapp):
     lines = m.add_rect(m.point(0, 0), m.point(30, 30))
     cv._sel = [lines[0], lines[1]]
     texts = [a.text() for a in cv._build_menu().actions()]
-    assert "Fillet corner…" in texts and "Chamfer corner…" in texts
+    # M201 R24 heal: the page prints THREE chamfer tools under
+    # "Modify > Chamfer >"; the corner menu wears their words now.
+    assert "Fillet corner…" in texts
+    assert "Equal Distance Chamfer…" in texts
+    assert "Distance And Angle Chamfer…" in texts
+    assert "Two Distance Chamfer…" in texts
     far = m.add_line(m.point(100, 100), m.point(110, 100))
     cv._sel = [lines[0], far]                    # disjoint pair
     texts = [a.text() for a in cv._build_menu().actions()]
     assert "Fillet corner…" not in texts
-    assert "Chamfer corner…" not in texts
+    assert "Equal Distance Chamfer…" not in texts
+    assert "Distance And Angle Chamfer…" not in texts
+    assert "Two Distance Chamfer…" not in texts

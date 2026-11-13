@@ -56,18 +56,70 @@ def corner_fillet(model, l1: Line, l2: Line, r: float):
 
 
 def corner_chamfer(model, l1: Line, l2: Line, d: float):
-    """Cut the shared corner flat: both legs trim by d, a new line joins
-    the trim points. Returns the chamfer Line."""
-    if d <= 0:
-        raise ValueError("Chamfer distance must be positive")
+    """EQUAL DISTANCE Chamfer (the page's first door, M201 R24): both
+    legs trim by the SAME d - "The second distance dimension is driven
+    by the first distance dimension. If you update the first dimension,
+    the second dimension will update as well, so that the two distances
+    remain equal." Delegates the one truth to the Two Distance mouth.
+    """
+    return corner_chamfer_sides(model, l1, l2, d, d)
+
+
+def corner_chamfer_sides(model, l1: Line, l2: Line, d1: float,
+                         d2: float):
+    """TWO DISTANCE Chamfer (the page's third door, M201 R24): "Bevels
+    ... based on a different distance to each side" - leg 1 trims by
+    d1, leg 2 by d2, and a new line joins the trim points. The side
+    naming is OURS, declared (the page has no dialog to name legs
+    with; the house law, mirroring the vendor's own pick-order sentence
+    "The first distance value you specify applies to both sides...
+    Any additional adjustments only apply to the side of the chamfer
+    you are modifying"): d1 measures along the FIRST selection, d2
+    along the second. A distance is a LENGTH here - both must be
+    positive (unlike the offset rung's signed One Side law, this page
+    puts the side in the geometry, not in the sign). All validation
+    happens in _corner BEFORE any mutation: a refusal never leaves
+    half-cut geometry. Returns the chamfer Line."""
+    a, b = float(d1), float(d2)
+    if a <= 0 or b <= 0:
+        raise ValueError("Chamfer distances must be positive")
     P, o1, o2, u1, u2, len1, len2, theta = _corner(model, l1, l2, "chamfer")
-    if d > len1 - 1e-6 or d > len2 - 1e-6:
+    if a > len1 - 1e-6 or b > len2 - 1e-6:
         raise ValueError(f"Chamfer too large — the legs are {len1:.1f} and "
                          f"{len2:.1f} mm")
-    t1 = (P.x + u1[0] * d, P.y + u1[1] * d)
-    t2 = (P.x + u2[0] * d, P.y + u2[1] * d)
+    t1 = (P.x + u1[0] * a, P.y + u1[1] * a)
+    t2 = (P.x + u2[0] * b, P.y + u2[1] * b)
     Q = _trim(model, l1, l2, P, t1, t2)
     return model.sketch.line(P, Q)
+
+
+def corner_chamfer_angle(model, l1: Line, l2: Line, d1: float,
+                         angle_deg: float):
+    """DISTANCE AND ANGLE Chamfer (the page's second door, M201 R24):
+    "Bevels ... based on a single distance and an angle." The angle's
+    meaning is OURS, declared (the page never glosses its manipulator):
+    angle_deg is the angle the CHAMFER LINE makes with leg 1 AT THE
+    FIRST TRIM POINT - so on a square corner 45 degrees is the ISOSCELES
+    case (equal trims) and 90 would send the cut parallel to leg 2
+    (never lands). In triangle P-T1-T2 the angles are phi at T1 and
+    (pi - theta - phi) at T2, so the law of sines fixes the second
+    leg's trim: d2 = d1 * sin(phi) / sin(theta + phi). The distance
+    rides leg 1 under the SAME first-selection naming as
+    corner_chamfer_sides. Validates BEFORE any mutation through
+    _corner's own door."""
+    a = float(d1)
+    phi = math.radians(float(angle_deg))
+    if a <= 0:
+        raise ValueError("Chamfer distance must be positive")
+    if not 0.0 < phi < math.pi:
+        raise ValueError("The chamfer angle must be between 0 and 180 "
+                         "degrees")
+    P, o1, o2, u1, u2, len1, len2, theta = _corner(model, l1, l2, "chamfer")
+    if theta + phi >= math.pi - 1e-9:
+        raise ValueError("That angle leaves the chamfer no corner to cut "
+                         "(the cut would run parallel to a leg)")
+    b = a * math.sin(phi) / math.sin(theta + phi)
+    return corner_chamfer_sides(model, l1, l2, a, b)
 
 
 # ---- shared plumbing ---------------------------------------------------------
