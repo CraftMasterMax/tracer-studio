@@ -47,6 +47,19 @@ def scale_label(factor: float) -> str:
     return f"{factor:.6g}:1"
 
 
+# [DWG-REF-DRAWING-VIEW-DLG, verbatim] the Style members in printed
+# order; only these TWO are offered - the line-art truth (see
+# DrawingCanvas._view_dialog).  The reference form "Visible Edges and
+# Hidden Edges" rules; the task pages' "Visible and Hidden Edges" is
+# the flagged vendor label drift (cache/view32/live.md).
+VIEW_STYLES = ("Visible Edges", "Visible Edges and Hidden Edges")
+# The page prints Default: ZERO times (bare "default" too - live lane D
+# count) - the resting member is OURS-declared: every base view today
+# draws dashed back ink (M97/M101), which IS this member.
+VIEW_STYLE_DEFAULT = "Visible Edges and Hidden Edges"
+SCALE_CHOICES = ["Fit (auto)", "1:1", "1:2", "1:5", "1:10", "2:1", "5:1"]
+
+
 class DrawingCanvas(QWidget):
     dim_added = Signal(str, tuple, tuple, dict)  # view, a, b, opts (M94/95)
     balloon_added = Signal(str, tuple, int)      # view, model xy, item (M110)
@@ -234,9 +247,18 @@ class DrawingCanvas(QWidget):
         """M137: section views read WITHOUT back ink (ASME omits
         hidden lines in section — the wound already shows the
         interior); a section opts back in per entry, and a SLICE
-        never opts: there is no depth left to hide behind."""
-        return {s["name"] for s in self.sections()
-                if s.get("mode") == "slice" or not s.get("hidden")}
+        never opts: there is no depth left to hide behind.
+        M201 R32 [DWG-REF-DRAWING-VIEW-DLG, verbatim] the Style row:
+        a base/projected view answering "Visible Edges" (one of the
+        page's two offered members) joins the set - the member is
+        exactly the ink the kernel already computes and can remove.
+        vstyle can only TAKE ink away; a section's own M137 answer is
+        never overridden by it (the product only writes vstyle for
+        non-section views - the fork guards the gesture)."""
+        off = {s["name"] for s in self.sections()
+               if s.get("mode") == "slice" or not s.get("hidden")}
+        return off | {v for v, st in (self.sheet().get("vstyle") or {}).items()
+                      if st == "Visible Edges"}
 
     def hidden_views(self) -> dict:
         """M97: dashed back creases per view (model space, live)."""
@@ -1850,12 +1872,43 @@ class DrawingCanvas(QWidget):
                  for b in group]
         return max(items, default=0) + 1
 
-    def _scale_dialog(self, cur):
-        """Fusion's scale picker: Fit plus the standard ratios. Returns
-        the chosen wording (None = cancelled)."""
+    def _view_dialog(self, cur):
+        """M201 R32: the page's own dialog. [DWG-REF-DRAWING-VIEW-DLG,
+        verbatim] "In the Drawing View dialog, you can edit the
+        properties of a drawing view" - the TITLE is page-printed -
+        and the Appearance section prints its rows in this order:
+        "Adjust the Orientation, Style, Scale, and Name settings."
+        The two rows the kernel can back for a base view are Style
+        then Scale ("Select the view style for the selected drawing
+        view.").  OFFERED members are the two the line-art painter
+        draws: "From Parent" the page itself scopes away from base
+        views ("(Projected view, section view, and detail view
+        only.)"), and "Shaded"/"Shaded with Hidden Edges" stay
+        UNOFFERED-BY-NAME - every view brush on this sheet is
+        NoBrush, and decoration is forbidden (the Show-Hatch law).
+        The page prints NO default anywhere ("Default:" counts 0), so
+        the resting member is OURS-declared: VIEW_STYLE_DEFAULT is
+        what today's painter actually shows - hidden ink on.  Scale
+        rides M100's picker verbatim; the typed-custom the page also
+        prints ("or type a custom scale") stays unoffered - the
+        dropdown is our honest coin (declared stamp).  Returns the
+        answer dict (None = cancelled; Cancel rides the book-wide
+        silence, and the task pages' "Select OK." is their voice, not
+        quotable from the reference page)."""
         from . import cmddialog
-        v = cmddialog.ask(self, "View scale", [
+        word = "Fit (auto)"
+        if cur.get("scale"):
+            lab = scale_label(float(cur["scale"]))
+            word = lab if lab in SCALE_CHOICES else "Fit (auto)"
+        return cmddialog.ask(self, "Drawing View", [
+            dict(key="style", kind="combo", label="Style",
+                 choices=list(VIEW_STYLES),
+                 default=cur.get("style") or VIEW_STYLE_DEFAULT),
             dict(key="scale", kind="combo", label="Scale",
-                 choices=["Fit (auto)", "1:1", "1:2", "1:5", "1:10",
-                          "2:1", "5:1"])])
-        return None if v is None else str(v["scale"])
+                 choices=list(SCALE_CHOICES), default=word)])
+
+    def view_style(self, name: str) -> str:
+        """The view's style member; absent means the OURS-declared
+        rest (the page prints zero defaults - see _view_dialog)."""
+        return (self.sheet().get("vstyle") or {}).get(name) \
+            or VIEW_STYLE_DEFAULT

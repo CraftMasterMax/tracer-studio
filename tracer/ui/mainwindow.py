@@ -2405,8 +2405,8 @@ class MainWindow(QMainWindow):
             self._annotate_gdt)
         self.drawing.view_drag_begin.connect(            # M96 undo capture
             self._capture)
-        self.drawing.view_scale_requested.connect(       # M100 scales
-            self._on_view_scale)
+        self.drawing.view_scale_requested.connect(       # M100 scales,
+            self._on_view_scale)                         #  R32 view dialog
         self.drawing.section_added.connect(              # M136 cut line
             self._on_section_line)
         self.drawing.section_edit_requested.connect(     # M137 props
@@ -2567,35 +2567,66 @@ class MainWindow(QMainWindow):
             f"{W:g} x {H:g} mm on the sheet", 6000)
 
     def _on_view_scale(self, view: str):
-        """M100: the Scale dialog landed on a view — Fit hands it back
-        to the layout assistant; a ratio rides on the drawing entry."""
+        """M100's route, R32's dialog: the double-click signal lands on
+        [DWG-REF-DRAWING-VIEW-DLG]'s own Drawing View dialog (Style +
+        Scale, page order).  A rejected dialog changes nothing; an
+        answer lands style first, then scale - Fit hands the view back
+        to the layout assistant, a ratio rides on the drawing entry.
+        Only the DEVIATION from the ours-declared rest is stored (the
+        vscale coin: Fit pops the key, the default style pops too),
+        so files stay minimal and the undo rides for free."""
         from ..core.drawing import parse_scale
+        from .drawingview import VIEW_STYLES, VIEW_STYLE_DEFAULT
         g = self.drawing.sheet()
         if not g:
             return
-        cur = (g.get("vscale") or {}).get(view)
-        choice = self.drawing._scale_dialog(cur)
-        if choice is None:
+        cur = {"style": self.drawing.view_style(view),
+               "scale": (g.get("vscale") or {}).get(view)}
+        v = self.drawing._view_dialog(cur)
+        if v is None:
             return
-        try:
-            factor = parse_scale(choice)
-        except ValueError as e:
-            self.status.showMessage(f"Scale no good: {e}", 4000)
+        style = v.get("style")
+        scale_word = v.get("scale")
+        if style is not None and style not in VIEW_STYLES:
+            # defense in depth: the offered combo cannot produce it,
+            # but a programmatic answer must never fake a Shaded view.
+            self.status.showMessage(
+                f"Drawing View refused: '{style}' is unoffered by name "
+                "- the sheet painter is line art and owns no fills", 7000)
             return
+        factor = None
+        if scale_word is not None:
+            try:
+                factor = parse_scale(str(scale_word))
+            except ValueError as e:
+                self.status.showMessage(f"Scale no good: {e}", 4000)
+                return
         self._capture()
-        vs = g.setdefault("vscale", {})
-        if factor is None:
-            vs.pop(view, None)
-            if not vs:
-                del g["vscale"]
-            label = "Fit (layout assistant)"
-        else:
-            vs[view] = float(factor)
-            from .drawingview import scale_label
-            label = scale_label(float(factor))
+        bits = []
+        if style is not None:
+            if style == VIEW_STYLE_DEFAULT:
+                st = g.get("vstyle") or {}
+                st.pop(view, None)
+                if not st:
+                    g.pop("vstyle", None)
+            else:
+                g.setdefault("vstyle", {})[view] = style
+            bits.append(f"{view} style: {style.lower()}")
+        if scale_word is not None:
+            vs = g.setdefault("vscale", {})
+            if factor is None:
+                vs.pop(view, None)
+                if not vs:
+                    del g["vscale"]
+                label = "Fit (layout assistant)"
+            else:
+                vs[view] = float(factor)
+                from .drawingview import scale_label
+                label = scale_label(float(factor))
+            bits.append(f"scale {label}")
         self.doc.dirty = True
         self.drawing.update()
-        self.status.showMessage(f"{view} view scale: {label}", 4000)
+        self.status.showMessage(", ".join(bits), 4000)
 
     def action_section_view(self):
         """M102: the sheet's stored cut — dialog picks the plane, the

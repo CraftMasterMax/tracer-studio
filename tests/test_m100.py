@@ -97,8 +97,14 @@ def _box_sheet(win, qapp):
     return win.drawing
 
 
-def test_double_click_a_view_offers_the_scale_dialog(win, qapp,
-                                                     monkeypatch):
+def test_double_click_a_view_offers_the_view_dialog(win, qapp,
+                                                    monkeypatch):
+    """M201 R32 re-pin (declared): the double-click now answers the
+    page's own Drawing View dialog [DWG-REF-DRAWING-VIEW-DLG, title
+    verbatim] - Scale survives inside it, so a scale-only answer still
+    lands exactly as M100 taught.  The dialog grew a Style row BEFORE
+    Scale (the page's Appearance order), so the fake_ask reads the
+    scale field BY KEY now, not by position."""
     from tracer.ui import cmddialog
     cv = _box_sheet(win, qapp)
     cv.resize(800, 600)
@@ -107,7 +113,9 @@ def test_double_click_a_view_offers_the_scale_dialog(win, qapp,
 
     def fake_ask(parent, title, fields):
         asked["title"] = title
-        asked["choices"] = fields[0]["choices"]
+        specs = {f["key"]: f for f in fields}
+        asked["keys"] = list(specs)
+        asked["choices"] = specs["scale"]["choices"]
         return {"scale": "1:2"}
     monkeypatch.setattr(cmddialog, "ask", fake_ask)
     sc, off = cv.frames()["top"]
@@ -115,7 +123,8 @@ def test_double_click_a_view_offers_the_scale_dialog(win, qapp,
     QTest.mouseDClick(cv, Qt.LeftButton, Qt.KeyboardModifier.NoModifier,
                       ctr, 10)
     qapp.processEvents()
-    assert "scale" in asked["title"].lower()
+    assert asked["title"] == "Drawing View"             # PAGE-PRINTED
+    assert asked["keys"] == ["style", "scale"]          # page order
     assert asked["choices"][0].lower().startswith("fit")
     assert cv.sheet()["vscale"]["top"] == pytest.approx(0.5)
     assert cv.frames()["top"][0] == pytest.approx(0.5)
@@ -142,8 +151,8 @@ def test_fit_clears_the_override(win, qapp, monkeypatch):
 def test_nonsense_scale_changes_nothing(win, qapp, monkeypatch):
     cv = _box_sheet(win, qapp)
     before = cv.frames()["top"][0]
-    monkeypatch.setattr(cv, "_scale_dialog",
-                        lambda cur: "half-and-half")
+    monkeypatch.setattr(cv, "_view_dialog",           # R32: the dialog
+                        lambda cur: {"scale": "half-and-half"})
     cv.view_scale_requested.emit("top")
     qapp.processEvents()
     assert cv.frames()["top"][0] == pytest.approx(before)
@@ -180,7 +189,7 @@ def test_bubbles_measure_the_model_not_the_paper(win, qapp,
     cv.set_dim_mode(False)
     d = cv.sheet()["dims"][0]
     assert d["text"] == "40.00"
-    monkeypatch.setattr(cv, "_scale_dialog", lambda cur: "1:2")
+    monkeypatch.setattr(cv, "_view_dialog", lambda cur: {"scale": "1:2"})
     cv.view_scale_requested.emit("top")
     qapp.processEvents()
     assert d["text"] == "40.00"                 # the model did not shrink
@@ -193,7 +202,7 @@ def test_bubbles_measure_the_model_not_the_paper(win, qapp,
 def test_dxf_export_uses_the_scaled_geometry(win, qapp, monkeypatch,
                                              tmp_path):
     cv = _box_sheet(win, qapp)
-    monkeypatch.setattr(cv, "_scale_dialog", lambda cur: "1:2")
+    monkeypatch.setattr(cv, "_view_dialog", lambda cur: {"scale": "1:2"})
     cv.view_scale_requested.emit("top")
     qapp.processEvents()
     out = str(tmp_path / "half.dxf")
