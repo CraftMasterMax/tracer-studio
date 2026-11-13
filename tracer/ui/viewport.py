@@ -270,6 +270,7 @@ class Viewport(QWidget):
         self._r.set_planes(self._doc.planes if self._doc else [],
                            self._doc.axes if self._doc else [])
         self._r.set_decals(self._doc.thread_decals() if self._doc else [])
+        self._r.set_coms(self._doc.com_points() if self._doc else [])
         self.update()
 
     def pick_mesh(self):

@@ -1809,6 +1809,14 @@ class Document:
         self.features: list[Feature] = []
         self.planes: list[dict] = []      # construction planes (Construct ▸)
         self.axes: list[dict] = []        # work axes (M125 datum store)
+        self.coms: list[dict] = []        # M201 R28: center-of-mass
+        #   datums (Inspect ▸ Center of Mass).  The stored record is ONLY
+        #   the name: the page (GUID-EB8C9FD9) promises "The Center of
+        #   Mass is also associative, so if you change the geometry of
+        #   your model, the Center of Mass will update accordingly" -
+        #   so the numbers are never stored, they are re-read from the
+        #   live solid (com_points).  A stored coordinate could go stale
+        #   and the page's sentence would be a lie.
         self.appearance: dict | None = None   # Appearance ▸ material paint
         self.home: dict | None = None     # M155 (L12.3): "Set Current
         #   View as Home" stores {yaw,pitch,distance} WITH the document;
@@ -2743,7 +2751,8 @@ class Document:
 
     def _next_name(self, prefix: str) -> str:
         taken = {p["name"] for p in self.planes} | \
-                {a["name"] for a in self.axes}
+                {a["name"] for a in self.axes} | \
+                {c["name"] for c in self.coms}
         k = 1
         while f"{prefix} {k}" in taken:
             k += 1
@@ -2844,6 +2853,43 @@ class Document:
             self.dirty = True
             return True
         return False
+
+    def add_com(self) -> dict:
+        """M201 R28 [GUID-EB8C9FD9]: place a Center of Mass datum over
+        the design.  The page selects nothing else — 'Select components
+        or solid bodies to be included in the center of mass
+        calculation' is our whole design (one honest member: the design)
+        — and the record carries ONLY the name, because the datum is
+        associative: com_points() re-reads the live solid every pass."""
+        c = {"name": self._next_name("Center of Mass")}
+        self.coms.append(c)
+        self.dirty = True
+        return c
+
+    def remove_com(self, name: str) -> bool:
+        before = len(self.coms)
+        self.coms = [c for c in self.coms if c["name"] != name]
+        if len(self.coms) != before:
+            self.dirty = True
+            return True
+        return False
+
+    def com_points(self) -> list[dict]:
+        """Live [{name, point}] for every Center of Mass datum — the
+        associativity sentence made flesh: the coordinate is measured
+        from the CURRENT result solid, never stored.  No solid yet (or a
+        kernel that dies mid-measure) yields no points: the glyph simply
+        isn't there, exactly like a hidden analysis."""
+        if not self.coms or self.result is None:
+            return []
+        from .measure import mass_properties     # local: measure imports
+        #   the kernel, the document must not drag it in at module load.
+        try:
+            com = mass_properties(self.result)["com"]
+        except Exception:
+            return []
+        pt = [float(x) for x in com]
+        return [{"name": c["name"], "point": pt} for c in self.coms]
 
     def plane_frame(self, ref: str):
         """(origin, u, v, n) for an origin plane name or a stored one."""
@@ -4771,6 +4817,7 @@ class Document:
                 "features": [_feat(f) for f in self.features],
                 "planes": [dict(p) for p in self.planes],
                 "axes": [dict(a) for a in self.axes],   # M125
+                "coms": [dict(c) for c in self.coms],   # M201 R28
                 "appearance": (dict(self.appearance)
                                if self.appearance else None),
                 "home": (dict(self.home) if self.home else None)}
@@ -5109,6 +5156,9 @@ class Document:
         for a in data.get("axes", []):            # methods carry payloads
             if a.get("name") and a.get("origin") and a.get("dir"):
                 doc.axes.append(dict(a))
+        for c in data.get("coms", []):            # M201 R28: name-only
+            if c.get("name"):                     #   records, live numbers
+                doc.coms.append(dict(c))          #   pre-R28 files have none
         app = data.get("appearance")              # pre-M52 files have none
         doc.appearance = dict(app) if app else None
         for f, fd in zip(doc.features, data.get("features", [])):

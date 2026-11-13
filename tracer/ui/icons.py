@@ -511,6 +511,18 @@ def _mass(p: QPainter):
     p.drawRect(QRectF(11, 24, 10, 3))                 # foot
 
 
+def _com(p: QPainter):
+    """M201 R28: the center-of-mass glyph — a quartered disc, the
+    classic balance-point mark: it is exactly what the canvas glyph
+    claims to sit on."""
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QRectF(8, 8, 16, 16))               # disc
+    p.drawLine(QPointF(16, 8), QPointF(16, 24))       # vertical splice
+    p.drawLine(QPointF(8, 16), QPointF(24, 16))       # horizontal splice
+    p.setBrush(_COL)
+    p.drawRect(QRectF(16.5, 8.5, 7, 7))               # one quarter inked
+
+
 def _text(p: QPainter):
     """A drafted capital A — legs and crossbar (the letter tool)."""
     p.drawLine(QPointF(6, 27), QPointF(16, 4))
@@ -593,6 +605,7 @@ _DRAW.update({"hole": _hole, "sweep": _sweep, "loft": _loft,
               "appearance": _appearance, "move": _move,
               "rotate": _rotate, "combine": _combine,
               "primitive": _primitive, "mass": _mass,
+              "com": _com,
               "cylinder": _cylinder, "sphere": _sphere,
               "torus": _torus, "cone": _cone,
               "newbody": _newbody,

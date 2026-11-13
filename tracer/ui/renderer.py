@@ -186,6 +186,7 @@ class SceneRenderer:
         self._planes: list[dict] = []
         self._axes: list[dict] = []       # M125 work axes (datum store)
         self._decals: list[dict] = []     # M128 cosmetic-thread rings
+        self._coms: list[dict] = []       # M201 R28 center-of-mass glyphs
         self._plane_vao: moderngl.VertexArray | None = None
         self._plane_count = 0
         self.show_grid = True
@@ -544,12 +545,23 @@ class SceneRenderer:
         self._decals = list(rings)
         self._rebuild_planes()
 
+    def set_coms(self, coms: list[dict]):
+        """M201 R28 [GUID-EB8C9FD9]: Center-of-Mass glyphs — 'Displays a
+        glyph at the location of the Center of Mass'. Each dict carries
+        the live point (com_points re-measures every refresh, so the
+        glyph is associative by construction). A mini RGB triad: Fusion
+        marks the datum with its axis colours, and the glyph is drawn
+        for CLICKING — the page's 'Click to select the center of mass to
+        display its coordinates' is the status line's job, not ours."""
+        self._coms = list(coms)
+        self._rebuild_planes()
+
     def _rebuild_planes(self):
         if self._plane_vao is not None:
             self._plane_vao.release()
             self._plane_vao = None
             self._plane_count = 0
-        if not self._planes and not self._axes and not self._decals:
+        if not (self._planes or self._axes or self._decals or self._coms):
             return
         e = max(self._grid_extent * 0.35, 20.0)     # quarter-grid squares
         pr, pg, pb = self.palette["plane_line"]
@@ -585,6 +597,15 @@ class SceneRenderer:
                    for i in range(64)]
             for i in range(64):
                 add(pts[i], pts[(i + 1) % 64], (pr, pg, pb, 0.6))
+        for cm in self._coms:                         # M201 R28: COM
+            o = np.asarray(cm["point"], float)        # glyph = mini RGB
+            L = max(self._grid_extent * 0.045, 3.0)   #  triad, Fusion's
+            for i, rgb in enumerate((                 #  arrow colours
+                    (0.85, 0.25, 0.20), (0.30, 0.70, 0.32),
+                    (0.25, 0.45, 0.90))):
+                d = np.eye(3)[i] * L                  # spliced through
+                add(o - d, o + d, (*rgb, 0.95))       # the COM like the
+        #   origin triad, tiny so it reads as a marker, not an origin
         arr = np.array(lines, np.float32)
         buf = self.ctx.buffer(arr.tobytes())
         self._plane_vao = self.ctx.vertex_array(

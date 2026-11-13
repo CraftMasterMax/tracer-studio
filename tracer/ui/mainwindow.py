@@ -511,6 +511,8 @@ class MainWindow(QMainWindow):
           lambda checked=False: self.action_appearance())
         d("mass", "Mass properties — volume, area, mass, centre of mass",
           lambda checked=False: self.action_mass_properties())
+        d("com", "Center of Mass — associative balance-point glyph",
+          lambda checked=False: self.action_center_of_mass())
 
         s = r.sketch_tool
         for glyph, tip, tool in (
@@ -818,6 +820,9 @@ class MainWindow(QMainWindow):
         m_tools.addAction("Mass properties…",
                           lambda checked=False:
                           self.action_mass_properties())
+        m_tools.addAction("Center of Mass…",
+                          lambda checked=False:
+                          self.action_center_of_mass())
         m_tools.addAction("Interference — where bodies clash…",
                           lambda checked=False:
                           self.action_interference())
@@ -6391,6 +6396,51 @@ class MainWindow(QMainWindow):
             f"Inertia (COG):   {kgcm[0]:.3g} / {kgcm[1]:.3g} / "
             f"{kgcm[2]:.3g} kg\u00b7cm\u00b2")
         return text, p
+
+    def action_center_of_mass(self):
+        """Fusion Inspect ▸ Center of Mass (M201 R28) [GUID-EB8C9FD9]:
+        'Displays a glyph at the location of the Center of Mass for the
+        selected object or objects.'  The page's selection row asks for
+        components or solid bodies — one honest member for us: the whole
+        design.  And 'The Center of Mass is also associative, so if you
+        change the geometry of your model, the Center of Mass will
+        update accordingly' — so the record stores ONLY its name; the
+        numbers are re-measured every refresh (com_points).  The page's
+        final step, 'Click to select the center of mass to display its
+        coordinates in the global coordinate system', is the status
+        line below: our glyph is not yet clickable, so the click's
+        PROMISE rides at placement instead — declared house behavior,
+        never page-sourced wording."""
+        if self.doc is None or self.doc.result is None:
+            # M189 R4 [LAW-61(a)]: the measure precondition, same cure
+            # words the Mass Properties door speaks.
+            self.status.showMessage("Nothing to measure yet — add a "
+                                    "feature first", 5000)
+            return
+        # The dialog title is a house stamp: the page prints NO
+        # 'The Center of Mass dialog displays.' callout (verified 0 hits,
+        # double-checked byte-exact).  Objects is the page's selection
+        # step wearing our one honest member.
+        v = cmddialog.ask(self, "Center of Mass", [
+            dict(key="objects", kind="text", label="Objects",
+                 default="The design (all solid bodies)"),
+        ])
+        if v is None:
+            return
+        c = self.doc.add_com()
+        self._unsaved = True
+        self.rail.tree.reload()
+        self.viewport.refresh()
+        pts = self.doc.com_points()
+        if pts:
+            x, y, z = pts[-1]["point"]
+            # ' mm' is our declared stamp (page prints no unit); the
+            # tail sentence is verbatim from the page.
+            self.status.showMessage(
+                f"{c['name']} at ({x:+.2f}, {y:+.2f}, {z:+.2f}) mm — "
+                "coordinates in the global coordinate system", 8000)
+        else:
+            self.status.showMessage(f"{c['name']} placed", 5000)
 
     def action_show_extents(self):
         """M117 Show Extents: the overall size of the part, in the
