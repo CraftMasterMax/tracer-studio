@@ -143,8 +143,10 @@ def test_body_node_menu_activates_and_hides_its_body(win, monkeypatch):
                                                        "Paint Body 1…",
                                                        "Hide Body 1",
                                                        "Isolate Body 1",
-                                                       "Unground Body 1",
-                                                       "Material"]  # M110
+                                                       "Unground Body 1", "",
+                                                       "Save As Mesh…",
+                                                       "Material"]  # M110,
+                                                       # M201 R16 file mouth
     menus[-1].actions()[2].trigger()                  # the per-body bulb
     assert win.doc.bodies[0]["visible"] is False
     win._body_menu("Body 1", win.geometry().center())
@@ -152,7 +154,8 @@ def test_body_node_menu_activates_and_hides_its_body(win, monkeypatch):
                                                        "Paint Body 1…",
                                                        "Show Body 1",
                                                        "Isolate Body 1",
-                                                       "Unground Body 1",
+                                                       "Unground Body 1", "",
+                                                       "Save As Mesh…",
                                                        "Material"]
     menus[-1].actions()[2].trigger()
     assert win.doc.bodies[0]["visible"] is True
