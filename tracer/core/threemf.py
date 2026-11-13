@@ -68,17 +68,27 @@ def _hex(color, opacity: float = 1.0) -> str:
     return f"#{r:02X}{g:02X}{b:02X}{a:02X}"
 
 
-def write(path: str | Path, bodies: list[dict], meta: dict | None = None
-          ) -> Path:
+def write(path: str | Path, bodies: list[dict], meta: dict | None = None,
+          unit: str = "millimeter") -> Path:
     """Write a print-ready 3MF.
 
     ``bodies``: dicts of ``{name, vertices, faces}`` (+ optional
     ``appearance`` {"name","color","opacity"} and ``material`` str).
     ``meta``: optional ``title`` / ``designer`` / ``description`` /
-    ``application``. Returns the path written.
+    ``application``. ``unit``: the ST_Unit word stamped on <model> -
+    the Core 1.4.0 spec's own enum {micron, millimeter, centimeter,
+    inch, foot, meter}; M201 R16 threads the Save As Mesh door's Unit
+    Type through it (the vertices arrive PRE-SCALED into that unit -
+    the CONVERT law, the attribute says what the numbers MEAN).
+    Returns the path written.
     """
     if not bodies:
         raise ValueError("nothing to export")
+    _UNITS = ("micron", "millimeter", "centimeter", "inch", "foot",
+              "meter")
+    if unit not in _UNITS:
+        raise ValueError(f"the 3MF spec prints unit as one of "
+                         f"{', '.join(_UNITS)}, not {unit!r}")
     meta = meta or {}
 
     # ground the build: Z onto the plate, negative XY onto the bed —
@@ -96,7 +106,7 @@ def write(path: str | Path, bodies: list[dict], meta: dict | None = None
     def _el(parent, tag, attrs=None):
         return ET.SubElement(parent, core + tag, attrs or {})
 
-    model = ET.Element(core + "model", {"unit": "millimeter"})
+    model = ET.Element(core + "model", {"unit": unit})
     _el(model, "metadata", {"name": "Application"}
         ).text = str(meta.get("application") or "Tracer Studio")
     if meta.get("title"):

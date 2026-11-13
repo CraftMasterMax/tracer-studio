@@ -4130,6 +4130,18 @@ class MainWindow(QMainWindow):
                        lambda checked=False: self._toggle_grounded(name))
         if self.doc.isolation_active():
             menu.addAction("Unisolate All", self._unisolate_all)
+        # M201 R16 [MESH-SAVE-AS-MESH, verbatim]: "In the Design
+        # workspace, right-click a component or body in the Browser.
+        # Select Save As Mesh." - the page's trigger is the Browser
+        # right-click, so that is the ONLY mouth this tool gets (no
+        # menu bar entry: "File > Export" appears on NEITHER page of
+        # this family, and the page's component half waits for the
+        # components rung - our body row is the shape the page's
+        # second sentence already licenses: "Right-click the solid,
+        # surface, or mesh body to export").
+        menu.addSeparator()
+        menu.addAction("Save As Mesh…",
+                       lambda checked=False: self.action_save_as_mesh(name))
         mat = menu.addMenu("Material")
         from ..core.materials import NAMES as MAT_NAMES
         cur = (entry or {}).get("material") if entry else None
@@ -8220,6 +8232,76 @@ class MainWindow(QMainWindow):
             self.status.showMessage(f"Exported {out}", 6000)
         except Exception as e:
             QMessageBox.critical(self, "Export failed", str(e))
+
+    def action_save_as_mesh(self, body_name: str):
+        """M201 R16 [MESH-SAVE-AS-MESH / MESH-EXPORT-TOOLS, verbatim]:
+        Save As Mesh - the page's dialog carries EXACTLY three rows
+        in steps order: Format {3MF | STL (Binary) | STL (ASCII) |
+        OBJ}, Unit Type {Centimeter | Millimeter | Meter | Inch |
+        Foot} (the page glosses Centimeter ONLY - "One unit from the
+        design equals one centimeter." - and the kernel CONVERTS per
+        that one printed sentence: a 60 mm boss saved as Centimeter
+        leaves as SIX, the same boss), and Structure {One File | One
+        Body Per File}. "default" counts ZERO on the page: all three
+        rests are OURS, stamped - STL (Binary) (the house's legacy
+        export voice), Millimeter (the units rung's stamped mm house)
+        and One File. The page's DEFECT - "The Save STL dialog
+        displays." after OK whatever the format - is not cloned stale:
+        the file dialog wears the CHOSEN format's name. The closing
+        sentence is ours (the page prints no status), mirroring the
+        page's own close: the body IS saved as a 3MF, OBJ, or STL
+        file in the location the user specified. No component door
+        yet (the page's component half waits for the components
+        rung); from a body row the door saves THAT body, so the two
+        Structure branches honestly collapse to one file - the
+        per-body naming rides the kernel, proven at kernel level."""
+        if self.doc is None or self.doc.result is None:
+            # M189 R4 [LAW-61(a)]: precondition in information clothing.
+            self.status.showMessage("Nothing to save — add a feature "
+                                    "first", 5000)
+            return
+        parts = [(n, s) for (n, s) in self.doc.export_solids()
+                 if n == body_name]
+        if not parts:
+            self.status.showMessage(f"Save As Mesh refused: {body_name!r} "
+                                    "has no solid to save", 6000)
+            return
+        v = cmddialog.ask(self, "Save As Mesh", [
+            dict(key="fmt", label="Format", kind="combo",
+                 choices=["3MF", "STL (Binary)", "STL (ASCII)", "OBJ"],
+                 default="STL (Binary)"),
+            dict(key="unit", label="Unit Type", kind="combo",
+                 choices=["Centimeter", "Millimeter", "Meter", "Inch",
+                          "Foot"], default="Millimeter"),
+            dict(key="struct", label="Structure", kind="combo",
+                 choices=["One File", "One Body Per File"],
+                 default="One File"),
+        ], remember_key="save_as_mesh")
+        if v is None:
+            return
+        suffix = fio.MESH_AS_FORMATS[v["fmt"]]
+        name = (self.doc.title or "model").replace(" ", "-")
+        path, _ = QFileDialog.getSaveFileName(
+            self, f"Save {v['fmt']} file",
+            str(Path.home() / f"{name}{suffix}"),
+            f"{v['fmt']} (*{suffix})")
+        if not path:
+            return
+        try:
+            from .. import __version__
+            meta = {"title": self.doc.title or name,
+                    "application": f"Tracer Studio {__version__}"}
+            paths = fio.save_mesh_as(parts, path, v["fmt"], unit=v["unit"],
+                                     structure=v["struct"], meta=meta,
+                                     appearances=self.doc.export_appearances())
+        except ValueError as e:
+            self.status.showMessage(f"Save As Mesh refused: {e}", 6000)
+            return
+        except Exception as e:
+            QMessageBox.critical(self, "Save failed", str(e))
+            return
+        self.status.showMessage(
+            f"Saved {body_name} as {v['fmt']} to {paths[0]}", 6000)
 
     def action_export_render(self):
         """Save what's on screen as a PNG (makers post these everywhere)."""
