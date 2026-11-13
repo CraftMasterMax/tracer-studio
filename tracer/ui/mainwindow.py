@@ -2760,7 +2760,8 @@ class MainWindow(QMainWindow):
         if sec is None:
             return
         from . import cmddialog
-        from .drawingview import VIEW_STYLES, VIEW_STYLE_DEFAULT
+        from .drawingview import (VIEW_STYLES, VIEW_STYLE_DEFAULT,
+                                  VIEW_STYLE_INHERIT)
         from ..core.drawing import parse_scale
         line = "parent" in sec
         g = self.drawing.sheet()
@@ -2790,12 +2791,20 @@ class MainWindow(QMainWindow):
         to_name = {v: k for k, v in to_key.items()}
         fields = [
             dict(key="style", kind="combo", label="Style", group="Appearance",
-                 choices=list(VIEW_STYLES),
-                 # the section's rest is ITS OWN ink truth (page
-                 # prints zero defaults): the M137 answer of the entry
-                 # - no back lines is "Visible Edges"
-                 default=(VIEW_STYLE_DEFAULT if sec.get("hidden")
-                          else "Visible Edges")),
+                 # M201 R34: the page PRINTS "From Parent" FIRST and
+                 # scopes it TO section/projected/detail views - this
+                 # door is where it lives. It is never the silent
+                 # rest (the M137 flag is our declared rest); it is
+                 # CHOSEN, and then the parent answers the ink.
+                 choices=[VIEW_STYLE_INHERIT] + list(VIEW_STYLES),
+                 # echo law: the combo rests on the view's CURRENT
+                 # answer - an explicit "From Parent" if stored, else
+                 # the flag's member
+                 default=(VIEW_STYLE_INHERIT
+                          if (g.get("vstyle") or {}).get(name)
+                          == VIEW_STYLE_INHERIT
+                          else (VIEW_STYLE_DEFAULT if sec.get("hidden")
+                                else "Visible Edges"))),
             dict(key="scale", kind="text", label="Scale", group="Appearance",
                  default=("" if not cur_sc else
                           f"1:{1 / float(cur_sc):g}")),
@@ -2837,7 +2846,8 @@ class MainWindow(QMainWindow):
             self.status.showMessage("A section must cut at least one "
                                     "body — nothing would hatch", 5000)
             return                       # refuse BEFORE the capture
-        if "style" in v and str(v["style"]) not in VIEW_STYLES:
+        if "style" in v and str(v["style"]) not in (
+                VIEW_STYLE_INHERIT, *VIEW_STYLES):
             # defense in depth (the R32 coin): refuse BEFORE the
             # capture, so a rejected answer leaves no undo dent
             self.status.showMessage(
@@ -2869,16 +2879,28 @@ class MainWindow(QMainWindow):
             bits.append({"full": "full depth",
                          "slice": "slice \u2014 the wound alone"
                          }.get(mode, shown))
-        # the page's Style row drives the entry's tested "hidden"
-        # flag - one knob, the storage law untouched (M137); an
-        # answer without a style key (legacy scripted reply) leaves
-        # the flag ALONE
+        # the page's Style row (M201 R34): "From Parent" stores the
+        # INHERITANCE as the section's one deviation - the parent
+        # then answers the ink at draw time (effective_style), and
+        # the entry's M137 flag rides on untouched. An explicit
+        # member REPLACES the inheritance and drives the flag, R33's
+        # law exactly as it shipped; a legacy scripted reply without
+        # a style key leaves everything ALONE.
         if "style" in v:
-            want_hidden = str(v["style"]) == VIEW_STYLE_DEFAULT
-            if want_hidden != bool(sec.get("hidden")):
-                sec["hidden"] = want_hidden
-                bits.append("hidden lines " + ("on" if want_hidden
-                                               else "off"))
+            style = str(v["style"])
+            vsd = g.setdefault("vstyle", {})
+            if style == VIEW_STYLE_INHERIT:
+                if vsd.get(name) != VIEW_STYLE_INHERIT:
+                    vsd[name] = VIEW_STYLE_INHERIT
+                    bits.append("style: from parent")
+            else:
+                if vsd.pop(name, None) is not None and not vsd:
+                    g.pop("vstyle", None)
+                want_hidden = style == VIEW_STYLE_DEFAULT
+                if want_hidden != bool(sec.get("hidden")):
+                    sec["hidden"] = want_hidden
+                    bits.append("hidden lines " + ("on" if want_hidden
+                                                   else "off"))
         try:
             factor = parse_scale(str(v["scale"]))
         except ValueError as e:

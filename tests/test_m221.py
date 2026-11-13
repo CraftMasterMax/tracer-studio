@@ -21,14 +21,14 @@ PAGE controls back ink with STYLE, so the Style pair now answers the
 entry's tested "hidden" flag - one knob, storage law untouched (M137
 keeps its kernel gates exactly as they lived). The section's Style
 REST is OURS-declared, echoing the entry's own answer: no back lines
-is "Visible Edges" (M137/ASME truth). DEFERRED BY NAME, not hidden:
-"From Parent" (awaits parent-chain resolution - one honest later
-slice), "Name" (the page softens: "if needed"; our A-A scheme is
-declared, renaming is identity surgery), Orientation/Reference/
-Representation (the page's own Notes call them creation-only), the
-Edge-Visibility and Center-Mark rows (no kernel records), "Shaded"
-(the line-art law - and refused by name in a scripted answer, leaving
-not even an undo dent). Cancel rides the book-wide silence."""
+is "Visible Edges" (M137/ASME truth). DEFERRED BY NAME, not hidden: "Name" (the page softens: "if needed";
+our A-A scheme is declared, renaming is identity surgery),
+Orientation/Reference/Representation (the page's own Notes call them
+creation-only), the Edge-Visibility and Center-Mark rows (no kernel
+records), "Shaded" (the line-art law - and refused by name in a
+scripted answer, leaving not even an undo dent). "From Parent" -
+deferred when this file was written - SHIPPED the next rung (its
+gates live in test_m222). Cancel rides the book-wide silence."""
 import pytest
 
 pytest.importorskip("PySide6")
@@ -131,8 +131,9 @@ def test_the_style_row_echoes_the_entry_s_own_answer(win, qapp,
     win._on_section_edit("A-A")
     (_, fields), = calls
     specs = {f["key"]: f for f in fields}
-    assert specs["style"]["choices"] == ["Visible Edges",
-                                         "Visible Edges and Hidden Edges"]
+    assert specs["style"]["choices"] == [             # R34: the page
+        "From Parent", "Visible Edges",               # prints From
+        "Visible Edges and Hidden Edges"]             # Parent FIRST
     assert specs["style"]["default"] == "Visible Edges"   # unrest:
     #   M137 truth - a section reads without back ink
     _sec(win)["hidden"] = True
@@ -194,8 +195,10 @@ def test_the_deferred_rows_are_named_not_worn(win, monkeypatch):
     #   by name: the page softens ("if needed"); A-A is our declared
     #   scheme, renaming is identity surgery
     assert "Set Start Point" not in labels
-    assert all("From Parent" not in str(c)               # waits for
-               for f in fields for c in f.get("choices", ()))
+    # R34 SHIPPED "From Parent" on THIS door (the page scopes it to
+    # section/projected/detail - it rides first); what stays deferred
+    # by name: Name, Shaded (below) - and on the BASE door (m220)
+    # From Parent remains page-refused.
     assert all("Shaded" not in f["label"] for f in fields)   # line art
     assert not any(f["kind"] == "check" and "hidden" in  # the check
                    f["label"].lower() for f in fields)   # retired

@@ -53,6 +53,13 @@ def scale_label(factor: float) -> str:
 # Hidden Edges" rules; the task pages' "Visible and Hidden Edges" is
 # the flagged vendor label drift (cache/view32/live.md).
 VIEW_STYLES = ("Visible Edges", "Visible Edges and Hidden Edges")
+# [DWG-REF-DRAWING-VIEW-DLG, verbatim] "From Parent: Inherits the
+# view style from the parent view. (Projected view, section view, and
+# detail view only.)" - the page PRINTS it first and scopes it AWAY
+# from base views, so it enters this kernel on the SECTION door only
+# (M201 R34); the base dialog's VIEW_STYLES pair stays the page's
+# law for base views.
+VIEW_STYLE_INHERIT = "From Parent"
 # The page prints Default: ZERO times (bare "default" too - live lane D
 # count) - the resting member is OURS-declared: every base view today
 # draws dashed back ink (M97/M101), which IS this member.
@@ -243,6 +250,47 @@ class DrawingCanvas(QWidget):
     def chains(self, view: str = "top") -> list:
         return self.views().get(view, [])
 
+    def _secs_by_name(self) -> dict:
+        return {s["name"]: s for s in self.sections()}
+
+    def effective_style(self, name: str) -> str:
+        """M201 R34 [DWG-REF-DRAWING-VIEW-DLG, verbatim] "From
+        Parent: Inherits the view style from the parent view." -
+        what the ink REALLY does on a view, resolved through any
+        inheritance chain:
+          * an explicit stored member answers itself;
+          * a stored "From Parent" walks to the parent view (a base,
+            or another section - nesting is real);
+          * no stored style is the OURS-declared rest: a base view
+            shows the pair (dashed back ink today), a section obeys
+            its M137 flag (slice never shows ink: there is no depth
+            left to hide behind - the mode outranks the style).
+        A cycle (hand-edited files only - creation cannot make one)
+        resolves to the rest, never to a hang."""
+        vs = self.sheet().get("vstyle") or {}
+        secs = self._secs_by_name()
+        seen = set()
+        while name not in seen:
+            seen.add(name)
+            st = vs.get(name)
+            if st in VIEW_STYLES:
+                return st
+            if st == VIEW_STYLE_INHERIT:
+                parent = (secs.get(name) or {}).get("parent")
+                if parent is None:            # nothing to inherit
+                    #   from (legacy or hand-edited record): the rest
+                    break
+                name = parent
+                continue
+            sec = secs.get(name)
+            if sec is None:
+                return VIEW_STYLE_DEFAULT     # base view at rest
+            if sec.get("mode") == "slice":
+                return "Visible Edges"
+            return (VIEW_STYLE_DEFAULT if sec.get("hidden")
+                    else "Visible Edges")
+        return VIEW_STYLE_DEFAULT
+
     def _hidden_off(self) -> set:
         """M137: section views read WITHOUT back ink (ASME omits
         hidden lines in section — the wound already shows the
@@ -252,13 +300,26 @@ class DrawingCanvas(QWidget):
         a base/projected view answering "Visible Edges" (one of the
         page's two offered members) joins the set - the member is
         exactly the ink the kernel already computes and can remove.
-        vstyle can only TAKE ink away; a section's own M137 answer is
-        never overridden by it (the product only writes vstyle for
-        non-section views - the fork guards the gesture)."""
+        M201 R34: a section storing "From Parent" now LETS THE
+        PARENT ANSWER - inherited Visible Edges hides its ink, the
+        inherited pair returns it (overriding its own flag: that IS
+        inheriting); a slice's mode still outranks any inheritance."""
         off = {s["name"] for s in self.sections()
                if s.get("mode") == "slice" or not s.get("hidden")}
-        return off | {v for v, st in (self.sheet().get("vstyle") or {}).items()
-                      if st == "Visible Edges"}
+        vs = self.sheet().get("vstyle") or {}
+        off |= {v for v, st in vs.items() if st == "Visible Edges"}
+        secs = self._secs_by_name()
+        for v, st in vs.items():
+            if st != VIEW_STYLE_INHERIT:
+                continue
+            eff = self.effective_style(v)
+            if eff == "Visible Edges":
+                off.add(v)
+            elif eff == VIEW_STYLE_DEFAULT and (
+                    v not in secs or secs[v].get("mode") != "slice"):
+                off.discard(v)               # inheritance GIVES ink
+                #   back - but a slice has none to give (mode law)
+        return off
 
     def hidden_views(self) -> dict:
         """M97: dashed back creases per view (model space, live)."""
