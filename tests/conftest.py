@@ -2,6 +2,50 @@ import os
 
 import pytest
 
+# ---- SETTINGS ISOLATION LAW (M201 R41 v3 root-cause, 2026-11-14) -----------
+# CI run 43592792796 died with ONE disease and TWO faces. Windows named five
+# real failures — every one a QSettings round-trip (palette promote/identity/
+# law/open-near + the knob): the app-wide QSettings() DEFAULT constructor with
+# NO organization/application name set lands tests on an anonymous per-
+# platform backend, and the Windows face of it returns None and string-instead-
+# of-list where the Linux ini face round-trips fine. Ubuntu's face was the
+# 45-minute burn (log lost again): xdist workers are separate PROCESSES sharing
+# that ONE store file, and Qt file-locks it — lock contention waits forever
+# headless. The m236/m237 dialogs joining the suite this rung shifted the
+# worker/file map AND added remember-key traffic: both faces surfaced at once.
+# THE CURE: one private settings store PER TEST PROCESS, IniFormat in a temp
+# dir (identical backend on every platform, zero cross-process sharing, and
+# headless can never touch a real user's config). Production keeps its names
+# (app.py); tests keep theirs. The assert below makes a failed isolation RED
+# with the whole story instead of quietly shared.
+_SETTINGS_DIR = None
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_settings_store():
+    """Every test process gets its own fresh IniFormat store in a temp dir."""
+    global _SETTINGS_DIR
+    import shutil
+    import tempfile
+
+    from PySide6.QtCore import QCoreApplication, QSettings
+    _SETTINGS_DIR = tempfile.mkdtemp(prefix="tracer-settings-")
+    # names BEFORE any QSettings() exists (static — no app instance needed)
+    QCoreApplication.setOrganizationName("tracer-cad")
+    QCoreApplication.setApplicationName("Tracer Studio")
+    QSettings.setDefaultFormat(QSettings.IniFormat)
+    QSettings.setPath(QSettings.IniFormat, QSettings.UserScope,
+                      _SETTINGS_DIR)
+    probe = QSettings()
+    assert os.path.realpath(probe.fileName()).startswith(
+        os.path.realpath(_SETTINGS_DIR)), (
+        f"settings isolation FAILED: QSettings() file is "
+        f"{probe.fileName()!r}, not inside {_SETTINGS_DIR!r} — a shared "
+        f"store means Windows None-reads and Linux lock-hangs (R41 v3)")
+    yield
+    shutil.rmtree(_SETTINGS_DIR, ignore_errors=True)
+
+
 # Hard isolation for the desktop session (user's Hyprland must never see a
 # test window or XWayland wake-up): force Qt offscreen, drop the gtk3
 # platform theme (it reaches for X settings/XWayland from inside Qt
@@ -229,10 +273,12 @@ def place_dim(canvas, c=None):
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _isolate_recovery_dir():
+def _isolate_recovery_dir(_isolate_settings_store):
     """No headless test may poison the user's real crash-recovery folder
     — an autosave written by pytest would haunt their next app start.
-    Point every test run at a temp directory and restore after."""
+    Point every test run at a temp directory and restore after. R41 v3:
+    the dependency names the settings store fixture, so the recovery key
+    is written into the ISOLATED store, never the anonymous shared one."""
     from PySide6.QtCore import QSettings
     s = QSettings()
     key = "paths/recovery_dir"
