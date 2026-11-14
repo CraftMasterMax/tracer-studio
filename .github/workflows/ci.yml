@@ -47,7 +47,11 @@ jobs:
       - name: Install Forma
         run: pip install -e .[dev]
       - name: Test
-        timeout-minutes: 25        # ubuntu baseline ~14 min: a stall gets
+        timeout-minutes: 35        # measured 2026-11-14: 2987 tests, ubuntu
+                                   # legs 24+ min (the 3.12 leg EXCEEDED the
+                                   # old 25-min ceiling and was killed mid
+                                   # run - a stall still gets caught, but
+                                   # honest growth no longer loses a rung
                                    #  KILLED (logs flush, culprit visible)
                                    #  instead of eating the 360-min budget
         env:
