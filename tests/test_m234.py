@@ -74,7 +74,16 @@ def win(qapp):
     w.action_new_drawing()
     w._show_page(w._drawing_page)
     qapp.processEvents()
-    return w
+    yield w
+    # R40 WIN-FIXTURE LAW (the CI-hygiene postmortem): a shown window
+    # is REAPED, never leaked - `return w` here leaked twelve live
+    # MainWindows, and the m201r41a MIRROR leg caught exactly that:
+    # test_m63/test_m77 hover died in the FULL single-process run only
+    # (they passed their chunk legs; m234 sorts BEFORE them). The
+    # mirror earned its keep on its first real catch.
+    w._unsaved = False
+    w.close()
+    qapp.processEvents()
 
 
 def _prim_feature_cls():
