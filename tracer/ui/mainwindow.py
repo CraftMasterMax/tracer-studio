@@ -2408,15 +2408,6 @@ class MainWindow(QMainWindow):
                        "Item numbers follow creation order; double-"
                        "click a list to edit it")
         plb.toggled.connect(lambda on: self.drawing.set_parts_list_mode(on))
-        # LAYOUT PARITY LAW (R39 pre-drain paid it again): the drawing
-        # row's natural width sets the offscreen window, the window sets
-        # EVERY canvas - and the m185 center gate needs both halves
-        # integral. "Parts List…" entered the row at an ODD 93px hint
-        # and slid the whole sheet a half pixel. The button takes its
-        # seat at its row's PARITY: the hint rounded UP to even, which
-        # stays true whatever the runner's font metrics do.
-        _w = plb.sizeHint().width()
-        plb.setFixedWidth(_w + _w % 2)
         bl.addWidget(plb)
         self._pl_btn = plb
         fitb = QPushButton("Fit\u2026")                # M114 callout
@@ -2508,6 +2499,37 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence(Qt.Key_Escape), page,
                   activated=self._stand_down_drawing)
         return page
+
+    def _lock_row_parity(self):
+        """LAYOUT PARITY LAW (M201 R39 root-caused to the RIGHT unit):
+        the widest chrome row sets the window's minimum width on the
+        offscreen runner, the window sets every canvas, and the drag
+        gates round w2s() to whole pixels - the canvas may not centre
+        on a half pixel. Parity therefore belongs to the ROW (what the
+        window measures), not to any button: R2's spin fix rounded one
+        widget, and the drawing row's ODD 1639px sum - an R38 debt no
+        button had yet made widest - proves the same disease waited at
+        the row scale. Every row takes an EVEN minimum width computed
+        from its OWN POLISHED metrics, so no future button at any
+        width can re-break it, whatever a runner's font metrics do.
+        Measured at first show, because the construction-time hint of
+        the Parts List button said 80 while its polished truth is 93:
+        only polished numbers are facts."""
+        if getattr(self, "_parity_locked", False):
+            return
+        self._parity_locked = True
+        rows = []
+        for b in self.findChildren(QWidget):
+            if b.property("tb") and b.parentWidget() is not None \
+                    and b.parentWidget() not in rows:
+                rows.append(b.parentWidget())
+        for p in rows:
+            w = p.minimumSizeHint().width()
+            p.setMinimumWidth(w + w % 2)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._lock_row_parity()              # LAYOUT PARITY LAW (above)
 
     def _stand_down_drawing(self):
         """Esc on the sheet: every armed tool back in its rack. M136:

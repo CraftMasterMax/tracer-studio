@@ -16,10 +16,13 @@ The law's own zero: PICKBOX 0 silences the PREVIEWS - no live band take
 BOX math still commits on release (containment is not a target radius).
 """
 import os
-import sys
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-sys.path.insert(0, "/home/panzenboeck/tracer-studio")
+# (M201 R39: this file's old `sys.path.insert(0, "/home/panzenboeck/tracer-
+#  studio")` shim is GONE - it made an m185-alone run silently test the
+#  MAIN checkout while the drain's other chunks tested the branch.
+#  tests/conftest.py now pins `tracer` to THIS repo for every process:
+#  HARNESS TRUTH LAW.)
 
 import pytest                                                        # noqa
 import numpy                                                         # noqa

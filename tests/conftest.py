@@ -14,6 +14,29 @@ os.environ.pop("QT_QPA_PLATFORMTHEME", None)
 os.environ.pop("WAYLAND_DISPLAY", None)
 os.environ.pop("DISPLAY", None)
 
+# ---- HARNESS TRUTH LAW (M201 R39 root-cause) --------------------------------
+# The app is EDITABLE-INSTALLED in the venv (a meta-path finder maps the
+# top-level `tracer` name to ~/tracer-studio). A worktree run can therefore
+# silently import the MAIN checkout's code: test_m185's own absolute-path
+# shim made an m185-alone run test R38 chrome while the drain's other
+# chunks tested the branch - "order-dependent pollution" that was really
+# TWO CODEBASES mixed by collection order. A test process must run against
+# the tree its tests live in: conftest loads BEFORE every test module, so
+# pinning the import HERE wins for the whole process - and the assert
+# turns a wrong-tree run RED with the whole story instead of quietly
+# green on borrowed code.
+import pathlib
+import sys
+
+_ROOT = str(pathlib.Path(__file__).resolve().parents[1])
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+import tracer as _tracer                                          # noqa: E402
+assert str(pathlib.Path(_tracer.__file__).resolve()).startswith(
+    _ROOT + os.sep), (
+        f"tests/conftest.py lives in {_ROOT} but `tracer` imported from "
+        f"{_tracer.__file__} - this run would test the WRONG tree")
+
 
 # ---- browser helpers ---------------------------------------------------------
 # M43 gave the browser Fusion's folder anatomy (Origin / Bodies / Sketches /
