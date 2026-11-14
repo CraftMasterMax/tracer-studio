@@ -163,9 +163,88 @@ def renumbered_rows(rows, mapping) -> list:
     sheet's, keyed by the row's DERIVED Item; each row carries the new
     number, and the list SORTS by it. Identity kept: the row's other
     facts (description, qty, material, mass) travel with it."""
-    out = [dict(r, item=mapping.get(int(r["item"]), int(r["item"])))
+    out = [dict(r, item=int(renumber_display(mapping, r["item"])))
            for r in rows or []]
     return sorted(out, key=lambda r: r["item"])
+
+
+def normalize_mapping(mapping) -> dict:
+    """The sheet stores the renumber mapping through JSON, which turns
+    every int key into a string - the read side normalises (OURS, named:
+    the page prints numbers, not dictionary keys)."""
+    return {int(k): int(v) for k, v in (mapping or {}).items()}
+
+
+def renumber_display(mapping, item) -> int:
+    """What number does this balloon READ right now? Identity first: a
+    derived Item nobody renumbered still answers its own number; the
+    mapping is the sheet's only re-numbering voice."""
+    m = normalize_mapping(mapping)
+    return m.get(int(item), int(item))
+
+
+def merge_renumber(mapping, clicked_displayed, start: int,
+                   live_items=()) -> dict:
+    """One CLICK of the renumber tool folded into the sheet's CUMULATIVE
+    mapping. [verbatim] "The number will automatically increment as you
+    select balloons" and "The balloon updates and the parts list sorts"
+    - the session's arithmetic is m232's renumber_map (duplicate
+    displayed numbers refuse by IDENTITY); the fold retargets every
+    DERIVED item currently reading the clicked number. A displayed
+    number no stored key answers is the derived item ITSELF (identity:
+    un-renumbered items read their own number). Keys stay the derived
+    Items - the parts list re-keys by them, one walk, one truth.
+    THE SWAP IS OURS, NAMED (the page prints no collision rule): the
+    number the click takes was somebody else's voice - "the numbers in
+    the balloons match the Item numbers" forbids two readouts wearing
+    one number - so the displaced reader (a keyed mapping entry, or an
+    un-renumbered DERIVED item the mapping is silent about - live_items
+    answers which) moves into the number the click vacated. Bijection
+    by construction: distinct items, distinct numbers, every click."""
+    session = renumber_map([int(clicked_displayed)], start)
+    out = normalize_mapping(mapping)
+    d, new = int(clicked_displayed), int(start)
+    moved = [k for k in out if out[k] == d]
+    if moved:
+        for k in moved:
+            out[k] = new
+    else:
+        out[d] = new
+        moved = [d]
+    if d != new:
+        bumped = [k for k in out if k not in moved and out[k] == new]
+        if bumped:
+            for k in bumped:
+                out[k] = d
+        elif new in {int(i) for i in live_items or ()} \
+                and new not in out:
+            out[new] = d               # the silent identity reader moves
+    assert session[d] == new
+    return out
+
+
+RENUMBER_TYPES = ("Automatic", "Balloon", "Bend Identifier")
+
+
+def require_renumber_type(t) -> str:
+    """The Renumber reference prints EXACTLY three Type members and
+    nothing else; every unknown is refused BY NAME. "Bend Identifier"
+    is refused BY NAME TOO - it is the page's own word, but it renumbers
+    the BENDS of a bend table, and no bend table ships: the refusal
+    prints the reason rather than quietly mapping bends onto balloons
+    (the [Automatic] clause "based on selection" is the ONLY automatic
+    the page documents; ours reads selection, which here is balloons)."""
+    if t not in RENUMBER_TYPES:
+        raise ValueError(f"BALLOON_RENUMBER_TYPE_UNKNOWN {t!r} - the "
+                         "Renumber dialog prints only Automatic, Balloon "
+                         "and Bend Identifier")
+    if t == "Bend Identifier":
+        raise ValueError("BALLOON_RENUMBER_BEND_IDENTIFIER - the "
+                         "\"Bend Identifier\" member renumbers bends "
+                         "only through a bend table; Tracer ships none, "
+                         "so the member is refused by NAME, never mapped "
+                         "onto balloons")
+    return t
 
 
 def align_balloons(entries, a, b, r: float = 3.4) -> list:

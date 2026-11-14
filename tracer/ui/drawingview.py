@@ -77,6 +77,14 @@ class DrawingCanvas(QWidget):
     # resolve the Item by identity, so the signal carries the finished
     # entry (view + model anchor + sheet bubble + Type [+ bend]).
     balloon_placed = Signal(dict)
+    #   M201 R41: the Renumber click's fact - (view, the number the
+    #   balloon READS now, the starting Number this click grants). The
+    #   fold into the sheet's cumulative mapping is the window's
+    #   (merge_renumber); the canvas only says WHICH balloon answered.
+    balloons_renumbered = Signal(str, int, int)
+    #   M201 R41: Align's finished set - (view, entries whose bubbles
+    #   now ride the line, selection order = pin order).
+    balloons_aligned = Signal(str, list)
     fit_requested = Signal(str, int)             # M114: view, dim index
     gdt_requested = Signal(str, int)             # M144: view, dim index
     view_drag_begin = Signal()                   # M96: undo capture hook
@@ -149,6 +157,21 @@ class DrawingCanvas(QWidget):
         #   point, MODEL mm (OURS, named: the page prints a click for a
         #   thing with no printed unit - it rides the view like its anchor)
         self._bal_hover = None                 # R40: page xy of the ghost
+        self._rn_mode = False                  # M201 R41: Renumber armed?
+        self._rn_start = 1                     # R41: "Specify the starting
+        #   Number." - and "The number will automatically increment as you
+        #   select balloons": each accepted click consumes this number and
+        #   the tool's NEXT click takes the one after it
+        self._al_mode = False                  # M201 R41: Align armed?
+        self._al_sel = []                      # R41: the picked entries,
+        #   in PICK ORDER (= the page's pin order); the page prints no
+        #   dialog, so the selection lives HERE, not in a table
+        self._al_view = None                   # R41: "in a drawing view" -
+        #   every pick of one align must answer the SAME view (OURS, named)
+        self._al_done = False                  # R41: Enter pressed - the
+        #   selection is closed, the two line clicks come next
+        self._al_a = None                      # R41: the start point (sheet mm)
+        self._al_hover = None                  # R41: page xy of the ghost line
         self._pre_breakout: dict = {}          # R37: sources BEFORE the cuts
         self._printing = False                 # M143: publishing to paper
         self._fit_mode = False                 # M114: fit-callout armed?
@@ -656,6 +679,8 @@ class DrawingCanvas(QWidget):
             self._bk_mode = False             # M201 R37: one tool
             self._ho_mode = False             # M201 R38: one tool
             self._pl_mode = False             # M201 R39: one tool
+            self._rn_mode = False             # M201 R41: one tool
+            self._al_mode = False             # M201 R41: one tool
         self.update()
 
     def set_balloon_mode(self, on: bool, balloon_type: str = "Standard"):
@@ -688,6 +713,8 @@ class DrawingCanvas(QWidget):
             self._bk_mode = False             # M201 R37: one tool
             self._ho_mode = False             # M201 R38: one tool
             self._pl_mode = False             # M201 R39: one tool
+            self._rn_mode = False             # M201 R41: one tool
+            self._al_mode = False             # M201 R41: one tool
             self.tool_note.emit(
                 "Balloon ({}): Select an edge of the component to "
                 "identify in a drawing view".format(self._bal_type))
@@ -707,6 +734,8 @@ class DrawingCanvas(QWidget):
             self._bk_mode = False             # M201 R37: one tool
             self._ho_mode = False             # M201 R38: one tool
             self._pl_mode = False             # M201 R39: one tool
+            self._rn_mode = False             # M201 R41: one tool
+            self._al_mode = False             # M201 R41: one tool
         self.update()
 
     def set_gdt_mode(self, on: bool):
@@ -725,6 +754,8 @@ class DrawingCanvas(QWidget):
             self._bk_mode = False             # M201 R37: one tool
             self._ho_mode = False             # M201 R38: one tool
             self._pl_mode = False             # M201 R39: one tool
+            self._rn_mode = False             # M201 R41: one tool
+            self._al_mode = False             # M201 R41: one tool
         self.update()
 
     def set_section_mode(self, on: bool):
@@ -747,6 +778,8 @@ class DrawingCanvas(QWidget):
             self._bk_mode = False             # M201 R37: one tool
             self._ho_mode = False             # M201 R38: one tool
             self._pl_mode = False             # M201 R39: one tool
+            self._rn_mode = False             # M201 R41: one tool
+            self._al_mode = False             # M201 R41: one tool
             self.tool_note.emit("Section line: click where the cut "
                                 "BEGINS on the top, front or right "
                                 "view")
@@ -779,6 +812,8 @@ class DrawingCanvas(QWidget):
             self._bk_mode = False             # M201 R37: one tool
             self._ho_mode = False             # M201 R38: one tool
             self._pl_mode = False             # M201 R39: one tool
+            self._rn_mode = False             # M201 R41: one tool
+            self._al_mode = False             # M201 R41: one tool
             self.tool_note.emit("Detail: click the CENTER of the "
                                 "area to enlarge, on a base or "
                                 "section view")
@@ -816,6 +851,8 @@ class DrawingCanvas(QWidget):
             self._det_mode = False
             self._ho_mode = False             # M201 R38: one tool
             self._pl_mode = False             # M201 R39: one tool
+            self._rn_mode = False             # M201 R41: one tool
+            self._al_mode = False             # M201 R41: one tool
             self.tool_note.emit("Breakout: click INSIDE the view to "
                                 "break out, then place the profile's "
                                 "points - double-click closes it once "
@@ -1514,6 +1551,14 @@ class DrawingCanvas(QWidget):
         bodies = self.doc.body_list() if self.doc is not None else []
         solids = self.doc.body_solids() if self.doc is not None else {}
         rows = drawing.parts_list(bodies, solids)
+        #   M201 R41: [Renumber, verbatim] "The balloon updates and the
+        #   parts list sorts to reflect the new number." Rows stay
+        #   DERIVED (never stored); the sheet's mapping re-keys and
+        #   SORTS them at paint - the SAME one derivation the
+        #   double-click door below measures with, so the table the
+        #   user sees and the table the user hits can never disagree.
+        rows = balloon.renumbered_rows(
+            rows, self.sheet().get("balloon_renumber") or {})
         for view, ent in sorted(tables.items(), key=lambda kv: str(kv[0])):
             fr = placed.get(view)
             if fr is None:
@@ -1773,6 +1818,12 @@ class DrawingCanvas(QWidget):
         path. A balloon in flight rides the cursor as a ghost."""
         g = self.sheet()
         groups = g.get("balloons") or {}
+        #   M201 R41: the sheet's renumber mapping is the READOUT law -
+        #   [Renumber, verbatim] "The balloon updates and the parts list
+        #   sorts to reflect the new number." The stored item stays the
+        #   DERIVED identity (one walk to the design, never a drift);
+        #   only what the bubble READS changes, at paint time, here.
+        rn = g.get("balloon_renumber") or {}
         f = p.font()
         f.setPixelSize(max(8, int(5.0 * self._zoom)))
         p.setFont(f)
@@ -1804,7 +1855,32 @@ class DrawingCanvas(QWidget):
                 p.drawEllipse(c, r, r)
                 p.setBrush(Qt.NoBrush)
                 p.drawText(QRectF(c.x() - r, c.y() - r, 2 * r, 2 * r),
-                           Qt.AlignCenter, str(b.get("item", "")))
+                           Qt.AlignCenter,
+                           str(balloon.renumber_display(rn,
+                                                        b.get("item", 0)))
+                           if b.get("item") is not None else "")
+        if self._al_mode and self._al_sel:
+            #   M201 R41: the picked balloons answer the tool with a
+            #   ring (OURS, named: the page prints the picks, never a
+            #   picture of them) - selection order rides the pick order.
+            p.setPen(QPen(_DETAIL, max(1.0, 0.35 * self._zoom)))
+            for e in self._al_sel:
+                fr = placed.get(self._al_view)
+                if fr is None:
+                    continue
+                if "bx" in e and "by" in e:
+                    q = self.s2p(e["bx"], e["by"])
+                else:
+                    q = self.s2p(*self._m2p(fr, (e["x"], e["y"])))
+                p.drawEllipse(q, r + 3.0, r + 3.0)
+        if self._al_mode and self._al_done and self._al_a is not None \
+                and self._al_hover is not None:
+            #   [Align balloons, verbatim] "Drag the cursor, then click
+            #   to place the end point." - the drag answers with a TRACER
+            #   ghost line (the page prints no ghost geometry).
+            p.setPen(QPen(_DETAIL, max(1.0, 0.35 * self._zoom),
+                          Qt.DashLine))
+            p.drawLine(self.s2p(*self._al_a), self.s2p(*self._al_hover))
         if self._balloon_mode and self._bal_pending is not None \
                 and self._bal_hover is not None:        # the ghost rides
             pd = self._bal_pending
@@ -2315,6 +2391,12 @@ class DrawingCanvas(QWidget):
         if self._balloon_mode and ev.button() == Qt.LeftButton:
             self._balloon_click(ev)          # M110: pin, don't pan
             return
+        if self._rn_mode and ev.button() == Qt.LeftButton:
+            self._renumber_click(ev)         # M201 R41: click a balloon
+            return
+        if self._al_mode and ev.button() == Qt.LeftButton:
+            self._align_click(ev)            # M201 R41: pick / line click
+            return
         if self._fit_mode and ev.button() == Qt.LeftButton:
             placed = self.placed()                      # M114: annotate
             if placed:
@@ -2549,6 +2631,8 @@ class DrawingCanvas(QWidget):
             self._det_mode = False
             self._bk_mode = False
             self._pl_mode = False             # M201 R39: one tool
+            self._rn_mode = False             # M201 R41: one tool
+            self._al_mode = False             # M201 R41: one tool
             self.tool_note.emit("Hole table: click the drawing view "
                                 "to associate, and the click places "
                                 "the origin")
@@ -2641,6 +2725,8 @@ class DrawingCanvas(QWidget):
             self._det_mode = False
             self._bk_mode = False
             self._ho_mode = False
+            self._rn_mode = False             # M201 R41: one tool
+            self._al_mode = False             # M201 R41: one tool
             self.tool_note.emit("Parts list: select a drawing view to "
                                 "associate with the parts list")
         self.update()
@@ -2659,6 +2745,198 @@ class DrawingCanvas(QWidget):
                             "the tool keeps its seat")
         self.update()
         return True
+
+    # ---- M201 R41: Renumber + Align Balloons ------------------------------
+    def set_renumber_mode(self, on: bool, start: int = 1):
+        """[Renumber, verbatim order] "Select Tables > Renumber. The
+        Renumber dialog displays." - so the type and the starting Number
+        arrive BEFORE the beats (the window owns the dialog; the canvas
+        is armed with the ANSWER). "Specify the starting Number." then
+        "Select the first balloon to renumber." and "The number will
+        automatically increment as you select balloons" - the click is
+        the beat and the counter is the tool's own memory: each accepted
+        click grants _rn_start and the NEXT click grants one more."""
+        self._rn_mode = bool(on)
+        if on:
+            self._rn_start = int(start)
+            self._dim_mode = False
+            self._dim_first = None
+            self._balloon_mode = False
+            self._fit_mode = False
+            self._sec_mode = False
+            self._gdt_mode = False
+            self._det_mode = False
+            self._bk_mode = False
+            self._ho_mode = False
+            self._pl_mode = False
+            self._al_mode = False             # one tool at a time
+            self._al_sel, self._al_done = [], False
+            self._al_a, self._al_hover = None, None
+            self.tool_note.emit(
+                "Renumber ({}): Select the first balloon to renumber - "
+                "the number will automatically increment as you select "
+                "balloons".format(self._rn_start))
+        self.update()
+
+    def set_align_mode(self, on: bool):
+        """[Align balloons, verbatim] the command asks for NOTHING: no
+        dialog exists (the dossier's 12 slug probes closed the book), so
+        the button arms and the beats are pure canvas -
+        "In the canvas, select the balloons to align." / "Press Enter." /
+        "Click to place the start point." / "Drag the cursor, then click
+        to place the end point."."""
+        self._al_mode = bool(on)
+        self._al_sel, self._al_view, self._al_done = [], None, False
+        self._al_a, self._al_hover = None, None
+        if on:
+            self._dim_mode = False
+            self._dim_first = None
+            self._balloon_mode = False
+            self._fit_mode = False
+            self._sec_mode = False
+            self._gdt_mode = False
+            self._det_mode = False
+            self._bk_mode = False
+            self._ho_mode = False
+            self._pl_mode = False
+            self._rn_mode = False             # one tool at a time
+            self.tool_note.emit(
+                "Align Balloons: In the canvas, select the balloons to "
+                "align - then press Enter")
+        self.update()
+
+    def restart_align_selection(self) -> bool:
+        """The Esc ladder's R41 rung, OURS named (the align page prints
+        no Esc verb at all): the FIRST Esc drops the started selection -
+        nothing was committed (the store moves only at the end-point
+        click), the tool keeps its seat."""
+        if not self._al_mode:
+            return False
+        if not (self._al_sel or self._al_done or self._al_a is not None):
+            return False
+        self._al_sel, self._al_view, self._al_done = [], None, False
+        self._al_a, self._al_hover = None, None
+        self.tool_note.emit("Align: selection dropped - nothing moved "
+                            "on the sheet; the tool keeps its seat")
+        self.update()
+        return True
+
+    def _balloon_at(self, page_xy, placed, slack: float = 3.0):
+        """Bubble hit test in SHEET millimetres: the bubble is the
+        balloon's face on the paper, so a renumber/align click answers
+        the bubble it lands on (legacy auto-path pins have no stored
+        bubble - the same derivation the painter uses locates them).
+        Hit radius is the painter's own r plus slack (OURS, named: the
+        page prints clicks, never a pick tolerance)."""
+        groups = self.sheet().get("balloons") or {}
+        r_mm = 3.4 + slack / max(self._zoom, 1e-9)
+        best = None
+        for view, items in groups.items():
+            fr = placed.get(view)
+            if fr is None:
+                continue
+            for b in items:
+                if "bx" in b and "by" in b:
+                    cx, cy = float(b["bx"]), float(b["by"])
+                else:
+                    ax, ay = self._m2p(fr, (b["x"], b["y"]))
+                    cx, cy = ax + 6.8, ay - 6.8   # the auto-path offset
+                if abs(page_xy[0] - cx) <= r_mm and \
+                        abs(page_xy[1] - cy) <= r_mm:
+                    if best is None:
+                        best = (view, b)
+        return best
+
+    def _renumber_click(self, ev):
+        """One balloon, one granted number. The canvas only says WHICH
+        balloon answered and with WHAT number (view, the number it READS
+        now, the number the click grants) - the fold into the sheet's
+        cumulative mapping is the window's merge_renumber, so the store
+        has ONE writer. The click re-reads the LIVE mapping each beat:
+        a balloon already renumbered this session answers its NEW read,
+        exactly as the page's "as you select balloons" reads."""
+        placed = self.placed()
+        if not placed:
+            return
+        hit = self._balloon_at(self.p2s(ev.position()), placed)
+        if hit is None:
+            self.tool_note.emit(
+                "Renumber: the page says SELECT THE FIRST BALLOON to "
+                "renumber - bare paper is no balloon to renumber")
+            return
+        view, b = hit
+        shown = self.sheet().get("balloon_renumber") or {}
+        displayed = balloon.renumber_display(shown, b.get("item"))
+        self.balloons_renumbered.emit(view, displayed, self._rn_start)
+        self.tool_note.emit(
+            "Renumber: balloon {} answers {} - the balloon updates and "
+            "the parts list sorts to reflect the new number; the next "
+            "click grants {}".format(displayed, self._rn_start,
+                                     self._rn_start + 1))
+        self._rn_start += 1
+        self.update()
+
+    def _align_click(self, ev):
+        """Align's beats in the page's order, dialogless. Selection:
+        clicks PICK (re-clicking a picked bubble drops it - OURS, named,
+        the page prints no un-pick verb). "Press Enter." closes the
+        selection (keyPressEvent's rung). Then TWO clicks make the line;
+        the math (equal stations, endpoints included, left edge on the
+        line) is m232's align_balloons, and the window folds the result
+        into the store. One align answers ONE view (OURS, named: the
+        page draws one line in one view)."""
+        placed = self.placed()
+        if not placed:
+            return
+        page = self.p2s(ev.position())
+        if not self._al_done:                 # selection beats
+            hit = self._balloon_at(page, placed)
+            if hit is None:
+                self.tool_note.emit(
+                    "Align: the page says SELECT THE BALLOONS to align "
+                    "- bare paper is no balloon to pick")
+                return
+            view, b = hit
+            if self._al_view is None:
+                self._al_view = view
+            elif self._al_view != view:
+                self.tool_note.emit(
+                    "Align: one align answers ONE drawing view (OURS, "
+                    "named) - the page draws its line in a single view; "
+                    "drop this selection first")
+                return
+            items = [e.get("item") for e in self._al_sel]
+            if b.get("item") in items:
+                self._al_sel = [e for e in self._al_sel
+                                if e.get("item") != b.get("item")]
+            else:
+                self._al_sel.append(dict(b))
+            self.tool_note.emit(
+                "Align: {} balloon(s) picked - press Enter, then the "
+                "line's two clicks".format(len(self._al_sel)))
+            self.update()
+            return
+        if self._al_a is None:                # "Click to place the start
+            self._al_a = page                 #  point."
+            self.tool_note.emit("Align: start placed - Drag the cursor, "
+                                "then click to place the end point")
+            self.update()
+            return
+        try:                                  # the end point makes it real
+            new = balloon.align_balloons(self._al_sel, self._al_a, page)
+        except ValueError as e:
+            self._al_a, self._al_hover = None, None
+            self.tool_note.emit(str(e))
+            self.update()
+            return
+        self.balloons_aligned.emit(self._al_view, new)
+        self.tool_note.emit(
+            "Aligned {} balloons - the left edge of each balloon aligns "
+            "along the line, distributed equally between the two points".
+            format(len(new)))
+        self._al_sel, self._al_view, self._al_done = [], None, False
+        self._al_a, self._al_hover = None, None
+        self.update()
 
     def set_parts_list_pending(self, prefs: dict | None):
         """Between the beats: the window hands back the Table dialog's
@@ -2690,6 +2968,19 @@ class DrawingCanvas(QWidget):
                                      if locked else
                                      "unlocked - the bottom half flips "
                                      "the labels again"))
+            self.update()
+            return
+        if ev.key() in (Qt.Key_Return, Qt.Key_Enter) and self._al_mode \
+                and self._al_sel and not self._al_done:
+            #   [Align balloons, verbatim beat three] "Press Enter." -
+            #   the key CLOSES the selection; the line's two clicks
+            #   follow (the balloon family's Esc-completes law speaks
+            #   for abandonment, Enter for this page's own verb).
+            self._al_done = True
+            self._al_hover = None
+            self.tool_note.emit(
+                "Align: {} balloon(s) locked - Click to place the start "
+                "point".format(len(self._al_sel)))
             self.update()
             return
         super().keyPressEvent(ev)
@@ -2833,6 +3124,10 @@ class DrawingCanvas(QWidget):
         self.update()
 
     def mouseMoveEvent(self, ev):
+        if self._al_mode and self._al_done and self._al_a is not None:
+            self._al_hover = self.p2s(ev.position())   # R41 ghost line
+            self.update()
+            return
         if self._det_mode and self._det_c is not None \
                 and self._det_r is None:            # R36 rubber circle
             self._det_hover = self.p2s(ev.position())
@@ -2935,6 +3230,11 @@ class DrawingCanvas(QWidget):
             page_pt = self.p2s(ev.position())
             rows = drawing.parts_list(self.doc.body_list(),
                                       self.doc.body_solids())
+            #   M201 R41: the door measures the SORTED table the painter
+            #   draws - one derivation, never two (the mapping re-keys
+            #   items but a row's rect still lands where its rows are).
+            rows = balloon.renumbered_rows(
+                rows, self.sheet().get("balloon_renumber") or {})
             for view, ent in tables.items():
                 t = drawing.parts_sheet_table(
                     rows, (ent["x"], ent["y"]), page=self.page,

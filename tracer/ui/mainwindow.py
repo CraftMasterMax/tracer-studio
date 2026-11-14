@@ -2415,6 +2415,33 @@ class MainWindow(QMainWindow):
         plb.toggled.connect(lambda on: self.drawing.set_parts_list_mode(on))
         bl.addWidget(plb)
         self._pl_btn = plb
+        rnb = QPushButton("Renumber…")             # M201 R41 door-first
+        rnb.setProperty("tb", True)
+        rnb.setCheckable(True)
+        rnb.setToolTip("Tables > Renumber - the Renumber dialog "
+                       "displays FIRST (Type the page's three members; "
+                       "Bend Identifier refused BY NAME while no bend "
+                       "table ships), then Specify the starting Number, "
+                       "then the clicks: Select the first balloon to "
+                       "renumber - the balloon updates and the parts "
+                       "list sorts to reflect the new number, and the "
+                       "number automatically increments as you select")
+        rnb.toggled.connect(self._on_renumber_toggled)
+        bl.addWidget(rnb)
+        self._rn_btn = rnb
+        alb = QPushButton("Align Balloons")        # M201 R41 dialogless
+        alb.setProperty("tb", True)
+        alb.setCheckable(True)
+        alb.setToolTip("Tables > Align Balloons - the dialog asks for "
+                       "NOTHING (the book ships no align dialog page, "
+                       "12 probes closed): select the balloons to "
+                       "align, press Enter, click the start point, drag "
+                       "and click the end point - the left edge of each "
+                       "balloon aligns along the line, distributed "
+                       "equally between the two points")
+        alb.toggled.connect(self._on_align_toggled)
+        bl.addWidget(alb)
+        self._al_btn = alb
         fitb = QPushButton("Fit\u2026")                # M114 callout
         fitb.setProperty("tb", True)
         fitb.setCheckable(True)
@@ -2486,6 +2513,10 @@ class MainWindow(QMainWindow):
             self._on_parts_placed)
         self.drawing.parts_edit_requested.connect(       # R39 edit door
             self._on_parts_edit)
+        self.drawing.balloons_renumbered.connect(        # M201 R41 read
+            self._on_renumber_read)
+        self.drawing.balloons_aligned.connect(           # M201 R41 line
+            self._on_align_apply)
         self.drawing.section_edit_requested.connect(     # M137 props
             self._on_section_edit)
         self.drawing.tool_note.connect(                  # M136 guidance
@@ -2557,12 +2588,19 @@ class MainWindow(QMainWindow):
             #   drop); the NEXT Esc falls to the rack loop below and
             #   stands the tool down - [verbatim] "Press Esc to
             #   complete the Balloon command."
+        if self.drawing.restart_align_selection():    # M201 R41 rung:
+            return                                    #  align's FIRST Esc
+            #   drops the started selection (the end click is the only
+            #   commit); the NEXT Esc racks the tool. Renumber needs NO
+            #   rung: every click commits on its own beat, so there is
+            #   never a half-made renumber to drop (no restart debt).
         for b in (self._dim_btn, self._balloon_btn, self._fit_btn,
                   self._sec_btn, self._gdt_btn,
                   self._det_btn, self._bk_btn,
                   self._ht_btn,
-                  self._pl_btn):          # M136/M144/R36/R37/R38/R39 join
-            if b.isChecked():
+                  self._pl_btn,
+                  self._rn_btn, self._al_btn):   # M136/M144/R36/R37/R38/
+            if b.isChecked():                    #  R39/R41 join the rack
                 b.setChecked(False)
 
     def _toggle_sheet(self):
@@ -3960,6 +3998,122 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             f"Balloon {e['item']} placed on {view} ({e['type']}) - "
             "the tool keeps its seat; Esc completes the command", 5000)
+
+    # ---- M201 R41: Renumber + Align Balloons (window side) --------------
+    def _on_renumber_toggled(self, on: bool):
+        """The DOOR is first, exactly as the page orders it [verbatim]
+        "Select Tables > Renumber. The Renumber dialog displays." - a
+        cancel therefore means the tool NEVER sat (the button goes back
+        to its rack, the same law the balloon door carries). An answer
+        arms the canvas WITH the starting Number; the type is checked
+        through the page's own member list, and "Bend Identifier" -
+        printed member, real Tracer silence - is refused BY NAME."""
+        if on:
+            v = self._renumber_dialog()
+            if v is None:
+                self._rn_btn.setChecked(False)
+                return
+            try:
+                balloon.require_renumber_type(v["type"])
+            except ValueError as e:
+                self._rn_btn.setChecked(False)
+                self.status.showMessage(str(e), 9000)
+                return
+            self.drawing.set_renumber_mode(True, v["number"])
+            self._balloon_btn.setChecked(False)   # one tool at a time
+            self._dim_btn.setChecked(False)
+        else:
+            self.drawing.set_renumber_mode(False)
+
+    def _renumber_dialog(self):
+        """[Renumber reference, verbatim rows] Type -> Level "(Balloon
+        type only)" -> Selection -> Number. The DIALOG form rules the
+        rows we ask (PAGE LAW: the reference page rules its own door):
+        Type rides the page's THREE printed members unchanged -
+        "Automatic: Renumbers balloons or bend identifiers, based on
+        selection." / "Balloon: Renumbers balloons for components in a
+        parts list." / "Bend Identifier: ..." (the third is refused by
+        require_renumber_type, named, never quietly mapped). LEVEL is
+        omitted and DECLARED: the page conditions it on a parts list
+        whose Structure is All Levels, and Tracer lists are first-level
+        only - shipping an always-First Level row would print a choice
+        the sheet cannot answer. SELECTION is not a dialog row HERE:
+        the task page makes selection the CANVAS ("Select the first
+        balloon to renumber"), so the dialog carries exactly Type and
+        Number - [verbatim] "Specify the starting Number." / "Enter the
+        number to start with as you renumber balloons or bend
+        identifiers"."""
+        return cmddialog.ask(self, "Renumber", [
+            dict(key="type", label="Type", kind="combo",
+                 choices=list(balloon.RENUMBER_TYPES),
+                 default="Automatic"),
+            dict(key="number", label="Number", kind="int",
+                 default=1, min=1)],
+            remember_key="renumber")
+
+    def _on_renumber_read(self, view: str, displayed: int, start: int):
+        """The canvas says WHICH balloon answered and WITH WHAT; the
+        sheet's cumulative mapping is folded HERE (one writer). The
+        parts list's live DERIVED items ride the fold, so a swapped
+        number moves its silent reader too - the bijection law
+        merge_renumber carries, named OURS."""
+        if self.doc is None or not self.doc.drawings:
+            return
+        from ..core import drawing as _dr
+        g = self.doc.drawings[-1]
+        rows = _dr.parts_list(self.doc.body_list(), self.doc.body_solids())
+        live = [r["item"] for r in rows]
+        try:
+            merged = balloon.merge_renumber(
+                g.get("balloon_renumber") or {}, displayed, start, live)
+        except ValueError as e:
+            self.status.showMessage(str(e), 9000)
+            return
+        self._capture()
+        g["balloon_renumber"] = {str(k): int(v)
+                                 for k, v in sorted(merged.items())}
+        self.doc.dirty = True
+        self.drawing.update()
+        self.status.showMessage(
+            f"Renumber: {displayed} -> {start} on {view} - the balloon "
+            "updates and the parts list sorts to reflect the new "
+            "number", 6000)
+
+    def _on_align_toggled(self, on: bool):
+        """[Align balloons] the command asks for NOTHING - the book
+        ships no dialog page (12 slug probes closed the door), so this
+        toggle never reaches for cmddialog: the button arms the canvas
+        and the beats are pure canvas. m234 gates the silence."""
+        self.drawing.set_align_mode(on)
+        if on:
+            self._balloon_btn.setChecked(False)   # one tool at a time
+            self._rn_btn.setChecked(False)
+
+    def _on_align_apply(self, view: str, entries: list):
+        """The line's two clicks are the only commit - the entries the
+        canvas computed (m232's stations, left edge on the line) move
+        into the stored bubbles of ONE view, matched by IDENTITY (the
+        item is the key; a balloon is its component, never a position).
+        Selection order IS pin order (align_balloons' law, carried)."""
+        if self.doc is None or not self.doc.drawings or not entries:
+            return
+        self._capture()
+        g = self.doc.drawings[-1]
+        groups = g.get("balloons") or {}
+        stored = groups.get(view) or []
+        moved = {int(e["item"]): e for e in entries}
+        for b in stored:
+            e = moved.get(int(b.get("item", -1)))
+            if e is not None and "bx" in e and "by" in e:
+                b["bx"], b["by"] = e["bx"], e["by"]
+        groups[view] = stored
+        g["balloons"] = groups
+        self.doc.dirty = True
+        self.drawing.update()
+        self.status.showMessage(
+            f"Aligned {len(entries)} balloons on {view} - the left "
+            "edge of each balloon aligns along the line, distributed "
+            "equally between the two points", 6000)
 
     def _add_dim(self, view: str, a: tuple, b: tuple, opts: dict = None):
         """A finished bubble (M94/M95): undo-captured, stored in MODEL
