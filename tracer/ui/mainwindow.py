@@ -2396,6 +2396,20 @@ class MainWindow(QMainWindow):
         htb.toggled.connect(lambda on: self.drawing.set_hole_table_mode(on))
         bl.addWidget(htb)
         self._ht_btn = htb
+        plb = QPushButton("Parts List…")           # M201 R39
+        plb.setProperty("tb", True)
+        plb.setCheckable(True)
+        plb.setToolTip("Tables > Parts List, the page's own two beats: "
+                       "select a drawing view to associate with the "
+                       "parts list (the Table dialog displays), then "
+                       "click to place the parts list on the sheet - "
+                       "and Balloons are automatically added to label "
+                       "the associated view (grammar verbatim). "
+                       "Item numbers follow creation order; double-"
+                       "click a list to edit it")
+        plb.toggled.connect(lambda on: self.drawing.set_parts_list_mode(on))
+        bl.addWidget(plb)
+        self._pl_btn = plb
         fitb = QPushButton("Fit\u2026")                # M114 callout
         fitb.setProperty("tb", True)
         fitb.setCheckable(True)
@@ -2461,6 +2475,12 @@ class MainWindow(QMainWindow):
             self._on_hole_origin)
         self.drawing.hole_table_placed.connect(          # M201 R38 seat
             self._on_hole_table)
+        self.drawing.parts_list_view_picked.connect(     # M201 R39 beat one
+            self._on_parts_view)
+        self.drawing.parts_list_placed.connect(          # M201 R39 seat
+            self._on_parts_placed)
+        self.drawing.parts_edit_requested.connect(       # R39 edit door
+            self._on_parts_edit)
         self.drawing.section_edit_requested.connect(     # M137 props
             self._on_section_edit)
         self.drawing.tool_note.connect(                  # M136 guidance
@@ -2492,10 +2512,13 @@ class MainWindow(QMainWindow):
             return
         if self.drawing.restart_hole_placement():     # M201 R38 rung
             return
+        if self.drawing.restart_parts_placement():    # M201 R39 rung
+            return
         for b in (self._dim_btn, self._balloon_btn, self._fit_btn,
                   self._sec_btn, self._gdt_btn,
                   self._det_btn, self._bk_btn,
-                  self._ht_btn):                      # M136/M144/R36/R37/R38 join
+                  self._ht_btn,
+                  self._pl_btn):          # M136/M144/R36/R37/R38/R39 join
             if b.isChecked():
                 b.setChecked(False)
 
@@ -3255,6 +3278,153 @@ class MainWindow(QMainWindow):
         [Create a detail view] starts \"Select a base view...\" with
         the TOOL, and our tool carries the same three beats)."""
         self._det_btn.click()
+
+    def _parts_table_dialog(self, view):
+        """M201 R39 [Create a parts list + Table reference, verbatim
+        rows] The Table dialog as the Parts List type prints it:
+        Type - the create page's OWN step 2 lists exactly two members
+        HERE ("Automatic: Automatically creates a parts list or bend
+        table, based on the contents of the current sheet." /
+        "Parts List: ...") - a Tracer sheet can answer NO bend table
+        YET, so Automatic resolves to the parts list (OURS, named)
+        and a "Bend Table" ask is refused BY NAME, never quietly
+        mapped. Structure ("First Level" / "All Levels" - a flat
+        Tracer document derives the SAME rows under either member,
+        gated, the silence OURS). Auto Balloon ("Automatically places
+        balloons on the sheet."). Title ("(Optional) In the dialog,
+        modify the Title"). Reference: DECLARED unoffered (a Tracer
+        document carries exactly one design to reference - a combo
+        of one is decoration). Direction and Columns are the EDIT
+        dialog's rows - the create page prints neither, and the
+        create-time direction is the SHEET's own flip law at the
+        seat."""
+        from ..core import drawing as _dr
+        fields = [
+            dict(key="type", kind="combo", label="Type",
+                 choices=list(_dr.PARTS_TYPE_MEMBERS),
+                 default="Parts List"),
+            dict(key="structure", kind="combo", label="Structure",
+                 choices=list(_dr.PARTS_STRUCTURES),
+                 default="First Level"),
+            dict(key="auto_balloon", kind="check", label="Auto Balloon",
+                 default=True),
+            dict(key="title", kind="text", label="Title", default=""),
+        ]
+        return cmddialog.ask(self, "Table", fields)
+
+    def _on_parts_view(self, view):
+        """M201 R39 beat one: [verbatim] "In the canvas, select a
+        drawing view to associate with the parts list." - the click
+        PICKED the view and "The Table dialog displays." Cancel
+        answers None and NOTHING was committed (unlike the R38
+        origin, a view pick creates no datum the page made real), so
+        the tool returns honestly to beat one."""
+        from ..core import drawing as _dr
+        v = self._parts_table_dialog(view)
+        if v is None:
+            self.drawing.set_parts_list_pending(None)
+            self.status.showMessage("Parts list: dialog cancelled - "
+                                    "nothing was placed; the tool "
+                                    "keeps its seat", 6000)
+            return
+        try:
+            t = _dr.require_parts_type(str(v.get("type") or ""))
+            s = _dr.require_structure(str(v.get("structure") or ""))
+        except ValueError as e:
+            self.drawing.set_parts_list_pending(None)
+            self.status.showMessage(f"Parts List refused: {e}", 7000)
+            return
+        if t == "Automatic":      # resolves - OURS, named (no bend
+            t = "Parts List"      #   table can answer yet)
+        self.drawing.set_parts_list_pending(
+            {"view": view, "structure": s,
+             "auto_balloon": bool(v.get("auto_balloon")),
+             "title": str(v.get("title") or "").strip()})
+
+    def _on_parts_placed(self, entry):
+        """M201 R39 beat two committed: [verbatim] "Click to place the
+        parts list on the sheet." Direction is decided HERE at the
+        seat by the SHEET's own law [Tables overview, verbatim] "When
+        you place a table on the bottom half of the sheet, the column
+        labels flip to the bottom of the table. For parts lists and
+        bend tables, the numbered rows are ordered from bottom to
+        top." - associate_parts_list resolves the flip (Shift locks
+        it, the key page prints). And the Note pays its debt
+        [verbatim] "Note: Balloons are automatically added to the
+        sheet to label the associated drawing view." - the arrival
+        rides the M110 balloon store (same shape, same painter) with
+        REPLACE-BY-ITEM merge semantics: the identity law ("The
+        numbers in the balloons match the Item numbers...") forbids
+        one item number sitting at two anchors, so a seating
+        REPLACES each arriving item's pin and keeps unrelated pins
+        (OURS, named - the page never says what happens to
+        hand-placed balloons when a list arrives)."""
+        from ..core import drawing as _dr
+        if self.doc is None or not self.doc.drawings:
+            return
+        g = self.drawing.sheet()
+        self._capture()
+        store = _dr.associate_parts_list(
+            g, entry["view"], entry["at"],
+            direction=entry.get("direction"),
+            page=g.get("page", self.drawing.page))
+        ent = store[entry["view"]]
+        ent["title"] = entry.get("title", "")
+        ent["structure"] = entry.get("structure", "")
+        if entry.get("auto_balloon", True):
+            try:
+                pins = _dr.balloon_targets(self.doc.body_list(),
+                                           self.doc.body_solids(),
+                                           entry["view"])
+            except KeyError:
+                pins = []     # an unnamed basis (a section child) is
+                #   no projection to anchor bubbles on - the list
+                #   still arrives (honest EMPTY arrival, not a lie)
+            groups = dict(g.get("balloons") or {})
+            items = {p["item"] for p in pins}
+            cur = [dict(b) for b in groups.get(entry["view"], [])
+                   if b.get("item") not in items]
+            groups[entry["view"]] = cur + [dict(p) for p in pins]
+            g["balloons"] = groups
+        self.doc.dirty = True
+        self.drawing.update()
+        self.status.showMessage(
+            f"Parts list placed for {entry['view']} "
+            f"({ent['direction']})", 5000)
+
+    def _on_parts_edit(self, view):
+        """The double-click's door: [Edit Parts List reference] the
+        dialog prints its Columns BY NAME - all seven - and ends
+        "Click Close." A Tracer body derives five of them; CHECKING
+        "Part Number" or "Description" is refused BY NAME
+        (PARTS_COLUMN_NO_SOURCE): the row is printed because the page
+        prints it, but no honest source exists and a derived table
+        never fakes one. The reorder arrows are DECLARED unoffered
+        (order rides the dialog's checked order; reorder grips await
+        their own rung)."""
+        from ..core import drawing as _dr
+        g = self.drawing.sheet()
+        ent = (g.get("parts_tables") or {}).get(view)
+        if ent is None:
+            return
+        cur = list(ent.get("columns") or _dr.PARTS_DERIVABLE)
+        fields = [dict(key="columns", kind="checks", label="Columns",
+                       choices=list(_dr.PARTS_PAGE_COLUMNS),
+                       checked=cur)]
+        v = cmddialog.ask(self, "Edit Parts List", fields)
+        if v is None:
+            return
+        cols = list(v.get("columns") or [])
+        try:
+            for c in cols:
+                _dr.require_parts_column(c)
+        except ValueError as e:
+            self.status.showMessage(f"Parts List edit refused: {e}", 7000)
+            return
+        self._capture()
+        ent["columns"] = cols
+        self.doc.dirty = True
+        self.drawing.update()
 
     def _on_section_edit(self, name):
         """M137's route, R33's dialog: a section child's double-click

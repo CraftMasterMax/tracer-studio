@@ -83,6 +83,9 @@ class DrawingCanvas(QWidget):
     #   a copy is the loudest kind of lie)
     hole_origin_placed = Signal(str, tuple)      # M201 R38: view, model xy
     hole_table_placed = Signal(dict)             # R38: {view,origin,at,...}
+    parts_list_view_picked = Signal(str)         # M201 R39: beat one's view
+    parts_list_placed = Signal(dict)             # R39: {view,at,prefs...}
+    parts_edit_requested = Signal(str)           # R39: double-click a list
     #   (READ-ONLY for the handler - the Signal(dict) copy trap means a
     #   mutation here would never reach the canvas; the handler's job is
     #   only to store, so a copy is exactly what we want)
@@ -123,6 +126,13 @@ class DrawingCanvas(QWidget):
         #   rides the cursor between the dialog's answer and the click
         #   that seats it (None = beat ONE, the origin, is still due)
         self._ho_hover = None                  # R38: page xy of the ghost
+        self._pl_mode = False                  # M201 R39: parts-list tool?
+        self._pl_view = None                   # R39: the ASSOCIATED view —
+        #   [verbatim] "In the canvas, select a drawing view to associate
+        #   with the parts list." (the click's fact, held for the seat)
+        self._pl_pending = None                # R39: the empty list that
+        #   rides the cursor between the dialog's answer and the click
+        self._pl_hover = None                  # R39: page xy of the ghost
         self._pre_breakout: dict = {}          # R37: sources BEFORE the cuts
         self._printing = False                 # M143: publishing to paper
         self._fit_mode = False                 # M114: fit-callout armed?
@@ -629,6 +639,7 @@ class DrawingCanvas(QWidget):
             self._det_mode = False            # M201 R36: one tool
             self._bk_mode = False             # M201 R37: one tool
             self._ho_mode = False             # M201 R38: one tool
+            self._pl_mode = False             # M201 R39: one tool
         self.update()
 
     def set_balloon_mode(self, on: bool):
@@ -645,6 +656,7 @@ class DrawingCanvas(QWidget):
             self._det_mode = False            # M201 R36
             self._bk_mode = False             # M201 R37: one tool
             self._ho_mode = False             # M201 R38: one tool
+            self._pl_mode = False             # M201 R39: one tool
         self.update()
 
     def set_fit_mode(self, on: bool):
@@ -660,6 +672,7 @@ class DrawingCanvas(QWidget):
             self._det_mode = False            # M201 R36
             self._bk_mode = False             # M201 R37: one tool
             self._ho_mode = False             # M201 R38: one tool
+            self._pl_mode = False             # M201 R39: one tool
         self.update()
 
     def set_gdt_mode(self, on: bool):
@@ -677,6 +690,7 @@ class DrawingCanvas(QWidget):
             self._det_mode = False            # M201 R36
             self._bk_mode = False             # M201 R37: one tool
             self._ho_mode = False             # M201 R38: one tool
+            self._pl_mode = False             # M201 R39: one tool
         self.update()
 
     def set_section_mode(self, on: bool):
@@ -698,6 +712,7 @@ class DrawingCanvas(QWidget):
             self._det_mode = False            # M201 R36
             self._bk_mode = False             # M201 R37: one tool
             self._ho_mode = False             # M201 R38: one tool
+            self._pl_mode = False             # M201 R39: one tool
             self.tool_note.emit("Section line: click where the cut "
                                 "BEGINS on the top, front or right "
                                 "view")
@@ -729,6 +744,7 @@ class DrawingCanvas(QWidget):
             self._sec_mode = False
             self._bk_mode = False             # M201 R37: one tool
             self._ho_mode = False             # M201 R38: one tool
+            self._pl_mode = False             # M201 R39: one tool
             self.tool_note.emit("Detail: click the CENTER of the "
                                 "area to enlarge, on a base or "
                                 "section view")
@@ -765,6 +781,7 @@ class DrawingCanvas(QWidget):
             self._sec_mode = False
             self._det_mode = False
             self._ho_mode = False             # M201 R38: one tool
+            self._pl_mode = False             # M201 R39: one tool
             self.tool_note.emit("Breakout: click INSIDE the view to "
                                 "break out, then place the profile's "
                                 "points - double-click closes it once "
@@ -1175,6 +1192,7 @@ class DrawingCanvas(QWidget):
         self._draw_details(p, placed)                # M201 R36 boundaries
         self._draw_breakouts(p, placed)              # M201 R37 profiles
         self._draw_hole_tables(p, placed)            # M201 R38 origins + tables
+        self._draw_parts_lists(p, placed)            # M201 R39 click-seated lists
 
     # ---- publish (M143) ---------------------------------------------------
     _Q_PAGE = {"A3": QPageSize.A3, "A4": QPageSize.A4}
@@ -1438,6 +1456,67 @@ class DrawingCanvas(QWidget):
             w = min(0.40 * drawing.sheet_size(self.page)[0], 150.0)
             p.drawRect(QRectF(q.x(), q.y() - 3.0 * self._zoom,
                               w * self._zoom, 12.0 * self._zoom))
+        p.restore()
+
+    def _draw_parts_lists(self, p: QPainter, placed):
+        """M201 R39: the click-seated parts lists. Rows are DERIVED AT
+        EVERY PAINT from the document (parts_list walks the browser —
+        "Item numbers are assigned to components in the order in which
+        they were created") — the store holds only the association,
+        the seat and the dialog's answer, never a number that could
+        drift from the design. The same shared parts_list() the docked
+        M110 BOM reads, so the sheet's two lists can never disagree.
+        Title rides above the table [Table dialog, verbatim] "Title:
+        Displays and lets you edit the title text that displays above
+        the table." Overflow is noted, never silent (M110's law).
+        The empty list riding the cursor is the page's own beat
+        [verbatim] "The empty parts list displays at the cursor" — a
+        TRACER ghost (the page prints no ghost geometry)."""
+        tables = self.sheet().get("parts_tables") or {}
+        if not tables and not (self._pl_mode and self._pl_pending
+                               is not None and self._pl_hover is not None):
+            return
+        p.save()
+        bodies = self.doc.body_list() if self.doc is not None else []
+        solids = self.doc.body_solids() if self.doc is not None else {}
+        rows = drawing.parts_list(bodies, solids)
+        for view, ent in sorted(tables.items(), key=lambda kv: str(kv[0])):
+            fr = placed.get(view)
+            if fr is None:
+                continue
+            t = drawing.parts_sheet_table(
+                rows, (ent["x"], ent["y"]), page=self.page,
+                direction=ent.get("direction", "down"),
+                columns=ent.get("columns"))
+            x0, ybot, bw, h = t["rect"]
+            if t["overflow"]:
+                t["cells"].append({"text": f"… {t['overflow']} more",
+                                   "xa": x0, "xb": x0 + bw,
+                                   "y": ybot - 2.5, "size": 1.6,
+                                   "align": "l"})
+            title = str(ent.get("title") or "").strip()
+            if title:
+                t["cells"].append({"text": title, "xa": x0, "xb": x0 + bw,
+                                   "y": ybot + h + 1.2, "size": 2.2,
+                                   "align": "l"})
+            p.setPen(QPen(_BORDER, self._w(0.35)))
+            for (ax, ay), (bx, by) in t["lines"]:
+                p.drawLine(self.s2p(ax, ay), self.s2p(bx, by))
+            p.setPen(QPen(_SHEET))
+            self._paint_cells(p, t["cells"])
+        if self._pl_mode and self._pl_pending is not None \
+                and self._pl_hover is not None:
+            q = self.s2p(*self._pl_hover)
+            w = min(0.40 * drawing.sheet_size(self.page)[0], 150.0)
+            p.setPen(QPen(_DETAIL, max(0.9, 0.28 * self._zoom),
+                          Qt.DashLine))
+            p.setBrush(Qt.NoBrush)
+            hh = 5.0
+            p.drawRect(QRectF(q.x(), q.y() - 3.5 * hh * self._zoom,
+                              w * self._zoom, 4 * hh * self._zoom))
+            p.drawLine(QPointF(q.x(), q.y() - 2.5 * hh * self._zoom),
+                       QPointF(q.x() + w * self._zoom,
+                               q.y() - 2.5 * hh * self._zoom))
         p.restore()
 
     def _draw_origin_glyph(self, p, a, style):
@@ -2151,6 +2230,9 @@ class DrawingCanvas(QWidget):
         if self._ho_mode and ev.button() == Qt.LeftButton:
             self._ho_click(ev)               # M201 R38: origin, then table
             return
+        if self._pl_mode and ev.button() == Qt.LeftButton:
+            self._pl_click(ev)               # M201 R39: view pick, then seat
+            return
         if self._balloon_mode and ev.button() == Qt.LeftButton:
             self._balloon_click(ev)          # M110: pin, don't pan
             return
@@ -2387,6 +2469,7 @@ class DrawingCanvas(QWidget):
             self._sec_mode = False
             self._det_mode = False
             self._bk_mode = False
+            self._pl_mode = False             # M201 R39: one tool
             self.tool_note.emit("Hole table: click the drawing view "
                                 "to associate, and the click places "
                                 "the origin")
@@ -2448,6 +2531,125 @@ class DrawingCanvas(QWidget):
             return
         self.hole_origin_placed.emit(
             view, tuple(float(v) for v in self._p2m(placed[view], page)))
+
+    # ---- M201 R39: the parts list, the page's own two beats -------------
+
+    def set_parts_list_mode(self, on: bool):
+        """M201 R39 [Create a parts list, verbatim] "In the canvas,
+        select a drawing view to associate with the parts list." /
+        "The Table dialog displays." / "Click to place the parts list
+        on the sheet." — the dialog is the MIDDLE beat, not the door:
+        the view click asks it, the seat click ends the gesture, and
+        the Note ("Balloons are automatically added to the sheet to
+        label the associated drawing view.") is what the seat commit
+        owes. One tool at a time (the seat is exclusive like every
+        other drawing tool); the tool keeps its seat for the next view
+        until the button stands down. Unlike the hole table there is
+        NO origin between the beats: a parts list measures nothing,
+        so nothing is committed before the seat click — the store is
+        written only when the list lands (OURS, named: the page
+        commits only the placement)."""
+        self._pl_mode = bool(on)
+        self._pl_pending = None
+        self._pl_view = None
+        if on:
+            self._dim_mode = False
+            self._dim_first = None
+            self._balloon_mode = False
+            self._fit_mode = False
+            self._gdt_mode = False
+            self._sec_mode = False
+            self._det_mode = False
+            self._bk_mode = False
+            self._ho_mode = False
+            self.tool_note.emit("Parts list: select a drawing view to "
+                                "associate with the parts list")
+        self.update()
+
+    def restart_parts_placement(self) -> bool:
+        """The Esc ladder's R39 rung: the FIRST Esc cancels the empty
+        list that rides the cursor. Nothing else to undo — the list
+        store is written only at the seat click — and the tool keeps
+        its seat (the page prints no undo verb, so Esc erases the
+        ghost and nothing else)."""
+        if not self._pl_mode or self._pl_pending is None:
+            return False
+        self._pl_pending = None
+        self.tool_note.emit("Parts list: placement cancelled - the "
+                            "empty table was only riding the cursor; "
+                            "the tool keeps its seat")
+        self.update()
+        return True
+
+    def set_parts_list_pending(self, prefs: dict | None):
+        """Between the beats: the window hands back the Table dialog's
+        answer (or None for cancel — cancel returns to beat ONE, the
+        view pick, exactly as the page leaves no half-made list); the
+        empty list then rides the cursor until the placement click."""
+        self._pl_pending = prefs
+        if prefs is not None:
+            self.tool_note.emit("The empty parts list displays at the "
+                                "cursor - click to place the parts "
+                                "list on the sheet")
+        else:
+            self._pl_view = None
+        self.update()
+
+    def keyPressEvent(self, ev):
+        """[Tables overview, verbatim] "To lock or unlock the table
+        flipping feature, press the Shift key." The KEY is the page's
+        verb - while the parts-list tool is armed a plain Shift press
+        toggles the sheet's flip lock (the flag itself is OURS; the
+        page prints the key, not the register). Everything else rides
+        on unchanged."""
+        if ev.key() == Qt.Key_Shift and self._pl_mode \
+                and self.sheet():
+            locked = drawing.toggle_flip_lock(self.sheet())
+            self.tool_note.emit(
+                "Table flipping " + ("locked - a seated parts list no "
+                                     "longer flips on the bottom half"
+                                     if locked else
+                                     "unlocked - the bottom half flips "
+                                     "the labels again"))
+            self.update()
+            return
+        super().keyPressEvent(ev)
+
+    def _pl_click(self, ev):
+        """R39's two beats [verbatim order]. Beat ONE: "In the canvas,
+        select a drawing view to associate with the parts list." —
+        inside a view frame the click PICKS (the dialog is the
+        window's beat); bare paper is refused by the page's own words.
+        Beat TWO (pending set by the window after the dialog): "Click
+        to place the parts list on the sheet." — the click seats the
+        list; its top-left is the seat (OURS-STAMP for the corner: the
+        page says place, it prints no corner law, the same stamp R38
+        carries for the hole table)."""
+        placed = self.placed()
+        if not placed:
+            return
+        page = self.p2s(ev.position())
+        if self._pl_pending is not None:            # beat two: seat it
+            entry = dict(self._pl_pending)
+            entry["at"] = (float(page[0]), float(page[1]))
+            self.parts_list_placed.emit(entry)
+            self._pl_pending, self._pl_hover = None, None
+            self.tool_note.emit(
+                f"Parts list seated for {entry.get('view')}"
+                " - Balloons are automatically added to the sheet to "
+                "label the associated drawing view (the page's Note, "
+                "grammar verbatim); the tool keeps its seat")
+            self.update()
+            return
+        view = self._view_at(page, placed, slack=6.0)
+        if view is None:
+            self.tool_note.emit(
+                "Parts list: the page says SELECT A DRAWING VIEW to "
+                "associate with the parts list - bare paper is no "
+                "view to associate")
+            return
+        self._pl_view = view
+        self.parts_list_view_picked.emit(view)
 
     def _bk_close(self):
         """The Check made real: [verbatim] "A closed profile defines
@@ -2565,6 +2767,10 @@ class DrawingCanvas(QWidget):
             self._ho_hover = self.p2s(ev.position())
             self.update()
             return
+        if self._pl_mode and self._pl_pending is not None:   # R39 ghost
+            self._pl_hover = self.p2s(ev.position())
+            self.update()
+            return
         if self._sec_mode and self._sec_pts:          # M136 rubber band
             self._sec_hover = self.p2s(ev.position())
             self.update()
@@ -2634,6 +2840,28 @@ class DrawingCanvas(QWidget):
             return
         if self._dim_mode or ev.button() != Qt.LeftButton:
             return
+        # M201 R39: double-click ON a seated parts list answers the
+        # page's OWN door [Edit Parts List dialog, the family's edit
+        # grammar]: the list lives on the sheet, not inside a view
+        # frame, so this hit test runs BEFORE the bare-paper return -
+        # the rect is the seated table's page-space geometry, re-derived
+        # from the store + the live rows (the door measures the table as
+        # the painter draws it - one derivation, never two).
+        tables = self.sheet().get("parts_tables") or {}
+        if tables and self.doc is not None:
+            page_pt = self.p2s(ev.position())
+            rows = drawing.parts_list(self.doc.body_list(),
+                                      self.doc.body_solids())
+            for view, ent in tables.items():
+                t = drawing.parts_sheet_table(
+                    rows, (ent["x"], ent["y"]), page=self.page,
+                    direction=ent.get("direction", "down"),
+                    columns=ent.get("columns"))
+                rx, ry, rw, rh = t["rect"]
+                if rx - 1.0 <= page_pt[0] <= rx + rw + 1.0 \
+                        and ry - 1.0 <= page_pt[1] <= ry + rh + 1.0:
+                    self.parts_edit_requested.emit(view)
+                    return
         placed = self.placed()
         if not placed:
             return
