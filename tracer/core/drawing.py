@@ -1295,14 +1295,22 @@ def _stem(name: str) -> str:
     return name
 
 
-def parts_list(bodies, solids, mass_unit: str = "g") -> list:
+def parts_list(bodies, solids, mass_unit: str = "g",
+               structure: str | None = None) -> list:
     """Rows for the sheet's parts list (ISO 7573 columns, trimmed to
     what a mesh document truly knows: item, description, qty, material,
     mass).  Hidden bodies stay off the list; a body whose solid is
     unknown still appears — with mass '—' — because the list must never
     silently drop a part.  Masses multiply by qty (row mass, not unit
-    mass), the convention downstream spreadsheets expect."""
+    mass), the convention downstream spreadsheets expect.  M201 R39:
+    `structure` carries the dialog's printed member ("First Level" /
+    "All Levels"); a Tracer document is FLAT BY CONSTRUCTION, so BOTH
+    members derive the SAME rows — the page never prints what First
+    Level drops for a flat design (silence, OURS-STAMP), and an unknown
+    member is refused by name."""
     from . import materials
+    if structure is not None:
+        require_structure(structure)
     rows, order = {}, []
     for b in bodies or []:
         if not b.get("visible", True):
@@ -1386,6 +1394,253 @@ def parts_list_table(rows, block_rect, page: str = "A3",
     return {"rect": (x0, ybot, bw, h_used), "lines": lines,
             "cells": cells, "overflow": overflow,
             "reversed": False}
+
+
+# ---------------------------------------------------------------------------
+# M201 R39 — the parts list ON the sheet, per the pages: the dialog's own
+# rows, the associate/place beats, and the balloons that arrive WITH it.
+#
+# [DWG-CREATE-PARTS-LIST, verbatim] "In the canvas, select a drawing view
+# to associate with the parts list." / "Click to place the parts list on
+# the sheet." / "Note: Balloons are automatically added to the sheet to
+# label the associated drawing view."  The association is keyed BY VIEW
+# (the R38 origin store's construction: a second placement REPLACES, it
+# can leave no second list to disagree), the seat is the drafter's own
+# click (the R38 `at` stamp, reused), and the balloons DERIVE with the
+# rows — "The numbers in the balloons match the Item numbers" is a law a
+# stored number can break, so no number is stored (R40 borrows the
+# identity, R39 owes the arrival).
+#
+# [section root, verbatim] "Item numbers are assigned to components in
+# the order in which they were created."  parts_list() already honours
+# it — the item walk IS the browser walk — so R39 GATES the law instead
+# of rebuilding it.
+
+PARTS_STRUCTURES = ("First Level", "All Levels")     # [dialog, verbatim]
+PARTS_DIRECTIONS = ("up", "down")   # row members: "Up"/"Down" [verbatim]
+# [Create a parts list, verbatim] the dialog's Type step prints EXACTLY
+# these two members for this tool; the Table reference lists seven for
+# the general dialog, but the parts list's own page rules its own door
+# (the reference form outranks task drift ONLY where the task is
+# silent - here it speaks). Unknown types are refused by name.
+PARTS_TYPE_MEMBERS = ("Automatic", "Parts List")
+
+
+def require_parts_type(t: str) -> str:
+    """[verbatim] "Automatic: Automatically creates a parts list or
+    bend table, based on the contents of the current sheet." - Tracer
+    has no bend table YET (the backlog keeps it), so a sheet's contents
+    can only answer ONE table: Automatic IS the parts list here
+    (OURS-STAMP, named).  A "Bend Table" request is refused by name -
+    never quietly mapped onto the parts list."""
+    if t not in PARTS_TYPE_MEMBERS:
+        raise ValueError(f"PARTS_TYPE_UNKNOWN {t!r} - the create page "
+                         f"prints only {PARTS_TYPE_MEMBERS} for this "
+                         "tool")
+    return t
+# [DWG-REF-PARTS-LIST-DIALOG, verbatim] the columns the edit dialog
+# prints BY NAME.  Tracer's rows derive from what a mesh document TRULY
+# knows, so "Part Number" and "Description" carry no honest source here
+# and are refused BY NAME, never quietly blanked (the R38 origin-style
+# refusal idiom; the refusal names are ours — the page prints none).
+PARTS_PAGE_COLUMNS = ("Item", "Quantity", "Part Number", "Part Name",
+                      "Description", "Material", "Mass")
+PARTS_DERIVABLE = ("Item", "Quantity", "Part Name", "Material", "Mass")
+# The page's printed name -> (the row key it reads, the heading ink).
+# "Part Name" speaks the stem/name, "Quantity" the count: the dialog's
+# words on the sheet, not M110's dock stamps.  OURS-STAMP, named: the
+# page maps its names to nothing (Reference members never enumerated).
+PARTS_COL_SOURCE = {"Item": ("item", "Item"), "Quantity": ("qty", "Quantity"),
+                    "Part Name": ("description", "Part Name"),
+                    "Material": ("material", "Material"),
+                    "Mass": ("mass", "Mass")}
+PARTS_DEFAULT_COLUMNS = tuple(PARTS_DERIVABLE)   # OURS: the five that
+#   derive; the page prints the SET but never the default set (silence).
+
+
+def require_structure(s: str) -> str:
+    """The dialog prints exactly "First Level" and "All Levels" — a
+    third member is refused by name.  Tracer documents are FLAT BY
+    CONSTRUCTION (bodies carry no sub-tree), so BOTH members derive the
+    SAME rows: the page never prints what First Level drops for a flat
+    design — silence, OURS-STAMP, gated to agree."""
+    if s not in PARTS_STRUCTURES:
+        raise ValueError(f"PARTS_STRUCTURE_UNKNOWN {s!r} - the dialog "
+                         f"prints only {PARTS_STRUCTURES}")
+    return s
+
+
+def require_parts_direction(d: str) -> str:
+    """Direction members, page-verbatim in sense: "Up: Displays the
+    header and column labels along the bottom and orders components
+    from the bottom up."  Down mirrors it (header on top, rows
+    top-down).  Which one is DEFAULT when a list is placed: the page
+    never says — OURS: down, the way a plain table reads."""
+    if d not in PARTS_DIRECTIONS:
+        raise ValueError(f"PARTS_DIRECTION_UNKNOWN {d!r} - the dialog "
+                         f"prints Up and Down only")
+    return d
+
+
+def require_parts_column(name: str) -> str:
+    """One of the dialog's printed column names — and only a DERIVABLE
+    one may be switched on: a Part Number the design does not carry is
+    refused by name rather than printed blank (a derived table never
+    lies, and never leaves a hole shaped like data)."""
+    if name not in PARTS_PAGE_COLUMNS:
+        raise ValueError(f"PARTS_COLUMN_UNKNOWN {name!r} - the dialog "
+                         f"prints {PARTS_PAGE_COLUMNS}")
+    if name not in PARTS_DERIVABLE:
+        raise ValueError(f"PARTS_COLUMN_NO_SOURCE {name!r} - a Tracer "
+                         f"body carries no {name!r} to derive a column "
+                         f"from")
+    return name
+
+
+def flip_locked(sheet: dict) -> bool:
+    """[Tables overview, verbatim] "To lock or unlock the table
+    flipping feature, press the Shift key." The page names the KEY and
+    the FEATURE; it prints no storage - the flag on the sheet dict is
+    OURS, named (flip_locked)."""
+    return bool(sheet.get("flip_locked"))
+
+
+def toggle_flip_lock(sheet: dict) -> bool:
+    """Shift's verb made real: the lock flips state, returns the new
+    state (the tool note speaks it)."""
+    sheet["flip_locked"] = not bool(sheet.get("flip_locked"))
+    return sheet["flip_locked"]
+
+
+def associate_parts_list(sheet: dict, view: str, at,
+                         direction: str | None = None,
+                         page: str = "A3") -> dict:
+    """The parts list's store: keyed BY VIEW — "select a drawing view to
+    associate" is the association, and the mapping construction means
+    one view can never carry two disagreeing lists (a re-click
+    REPLACES, the R38 origin law).  `at=(x, y)` is the placement click.
+
+    Direction is the SHEET's own law at the seat [Tables overview,
+    verbatim] "When you place a table on the bottom half of the sheet,
+    the column labels flip to the bottom of the table. For parts lists
+    and bend tables, the numbered rows are ordered from bottom to top.
+    To lock or unlock the table flipping feature, press the Shift key."
+    A None direction therefore RESOLVES at the seat: a click below the
+    page's vertical mid-line flips (header along the bottom, rows
+    ordered bottom-up = "up"); above it, no flip ("down"); while the
+    Shift lock is ON the feature is off and the table never flips. An
+    EXPLICIT direction is the edit dialog's override — its Up/Down rows
+    exist exactly for that. The resolved direction is STORED: the page
+    decides the flip at placement, so the stored answer is decided
+    once, never re-decided per paint. Corner law unchanged from the
+    first stamp: "down" seats the click at the TOP-left, "up" at the
+    BOTTOM-left (which corner is printed NOWHERE — OURS, named)."""
+    if direction is None:
+        _W, H = sheet_size(page)
+        direction = "down" if flip_locked(sheet) else (
+            "up" if float(at[1]) < H / 2.0 else "down")
+    d = require_parts_direction(direction)
+    store = sheet.setdefault("parts_tables", {})
+    store[view] = {"x": float(at[0]), "y": float(at[1]), "direction": d}
+    return store
+
+
+def balloon_targets(bodies, solids, view: str) -> list:
+    """The balloons the page auto-adds WHEN THE LIST ARRIVES, as pins
+    (item, model-mm xy in the ASSOCIATED view's basis — the M110 pin
+    shape, so the UI stores them in the SAME store the R40 balloon law
+    will edit).  The item numbering RE-WALKS parts_list()'s key order
+    EXACTLY (stem, volume, material) — identity by shared arithmetic,
+    not by a copied number.  A component whose solid is unknown keeps
+    its ROW (the list must never silently drop a part) but answers NO
+    balloon: a bubble cannot point at a centre the mesh does not know
+    (named OURS — the page prints no rule for this case)."""
+    _d, px, py = _basis(view)
+    out, item_of = [], {}
+    for b in bodies or []:
+        if not b.get("visible", True):
+            continue
+        name = b.get("name", "")
+        s = solids.get(name) if solids else None
+        vol = round(float(s.volume), 6) if s is not None else None
+        key = (_stem(name), vol, b.get("material") or "")
+        if key in item_of:
+            continue
+        item_of[key] = len(item_of) + 1
+        if s is None:
+            continue
+        lo, hi = s.bounding_box
+        c = (np.asarray(hi, float) + np.asarray(lo, float)) / 2.0
+        out.append({"item": item_of[key], "x": float(np.dot(c, px)),
+                    "y": float(np.dot(c, py))})
+    return out
+
+
+def parts_sheet_table(rows, at, page: str = "A3", margin: float = 10.0,
+                      hh: float = 5.0, width: float | None = None,
+                      direction: str = "down", columns=None) -> dict:
+    """The CLICK-SEATED parts list — the M110 dock (rect/lines/cells
+    contract, BOM_COLUMNS, "It." heading labels) re-seated at the
+    drafter's click with the dialog's two directions.  "up" puts the
+    header ALONG THE BOTTOM and orders components from the bottom up
+    [verbatim]; "down" mirrors it.  Overflow is counted, never silent
+    (M110's own law).  The M110 docked table stays byte-true beside
+    this — nothing here restates it.  R39 `columns`: the edit dialog's
+    checked list, TOP-TO-BOTTOM, in the page's names — each names a
+    derivable source (PARTS_COL_SOURCE) and an unchecked page name
+    simply earns no band.  Widths follow BOM's fractions in position."""
+    d = require_parts_direction(direction)
+    cols = tuple(columns) if columns else PARTS_DEFAULT_COLUMNS
+    for cname in cols:
+        require_parts_column(cname)              # printed AND derivable,
+    #   each refusal by name (the two unsourced names cannot be switched
+    #   on: a derived table never invents a Part Number).
+    W, H = sheet_size(page)
+    bw = float(width) if width else min(0.40 * W, 150.0)
+    fracs = [frac for _k, frac, _a in BOM_COLUMNS]
+    aligns = {k: a for k, _f, a in BOM_COLUMNS}
+    x0 = float(at[0])
+    if d == "down":
+        ytop = float(at[1])
+        room = (ytop - margin)
+    else:
+        ybot = float(at[1])
+        room = (H - margin) - ybot
+    n = max(0, int(room // hh) - 1)
+    overflow = max(0, len(rows) - n)
+    shown = rows[:n]
+    h_used = (len(shown) + 1) * hh
+    if d == "down":
+        ybot = ytop - h_used
+    else:
+        ytop = ybot + h_used
+    fr = fracs[:len(cols)]
+    tot = sum(fr) or 1.0
+    xs = [x0]
+    for i in range(len(cols)):
+        xs.append(xs[-1] + bw * fr[i] / tot)      # widths follow POSITION
+    lines = [((x0, ybot + i * hh), (x0 + bw, ybot + i * hh))
+             for i in range(len(shown) + 2)]
+    lines += [((xa, ybot), (xa, ytop)) for xa in xs]
+    cells = []
+
+    def put(col_i, text, y, bold=False):
+        key = PARTS_COL_SOURCE[cols[col_i]][0]
+        cells.append({"text": str(text), "xa": xs[col_i], "xb": xs[col_i + 1],
+                      "y": y, "size": hh * (0.52 if bold else 0.62),
+                      "align": aligns.get(key, "l"), "col": key,
+                      "bold": bool(bold)})
+
+    for ci, cname in enumerate(cols):
+        yh = (ybot + 0.5 * hh) if d == "up" else (ytop - 0.5 * hh)
+        put(ci, PARTS_COL_SOURCE[cname][1], yh, bold=True)
+    for i, r in enumerate(shown):
+        y = (ybot + (i + 1.5) * hh) if d == "up" else (ytop - (i + 1.5) * hh)
+        for ci, cname in enumerate(cols):
+            put(ci, r.get(PARTS_COL_SOURCE[cname][0], ""), y)
+    return {"rect": (x0, ybot, bw, h_used), "lines": lines,
+            "cells": cells, "overflow": overflow,
+            "direction": d, "columns": list(cols)}
 
 
 # ---------------------------------------------------------------------------
