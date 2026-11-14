@@ -228,8 +228,24 @@ def win(qapp, monkeypatch):
     w.show()
     qapp.processEvents()
     yield w
+    # A panel still OPEN at teardown has NO pending deleteLater - the
+    # reaper alone cannot save it, and w.close() does NOT hide a Tool
+    # child window (R40 census: two visible CmdPanels outlived their
+    # main window and froze a later window's balloon ghost). Close the
+    # verb through its OWN abort path first, then reap.
+    p = getattr(w, "_cmd_panel", None)
+    if p is not None:
+        p.finished.emit(None)
     w._unsaved = False
     w.close()
+    # W1/m86 law, file-wide: the reaper in the FIXTURE so no test can
+    # forget it. A panel's deleteLater() is never reaped inside a pytest
+    # process (no exec loop); the half-dead Tool window keeps stealing
+    # global hit-testing - R40 CI bit this: the aborted Mirror panel's
+    # QComboBox swallowed the balloon ghost's mouseMove in a LATER
+    # window (m233 froze its _bal_hover, ink 0). Same bite as m86's
+    # resurrected Steel, now proven for input delivery too.
+    settle_panels(qapp)
 
 
 def _lug_doc(w):

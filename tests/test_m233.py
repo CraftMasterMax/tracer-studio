@@ -41,8 +41,19 @@ def qapp():
 
 @pytest.fixture()
 def win(qapp):
+    """M201 R40 CI postmortem (windows legs, 3.12+3.13): a BARE
+    MainWindow() builds a SceneRenderer internally and ERRORS the whole
+    module where headless GL cannot answer (glcontext egl ImportError /
+    wglCreateContextAttribsARB). The family law (m229/m231) is the GL
+    GUARD: try the renderer, SKIP the leg when it cannot, and hand the
+    window the renderer it already checked for."""
+    from tracer.ui.renderer import SceneRenderer
     from tracer.ui.mainwindow import MainWindow
-    w = MainWindow()
+    try:
+        r = SceneRenderer()
+    except Exception as e:
+        pytest.skip(f"no headless GL available: {e}")
+    w = MainWindow(renderer=r)
     w.resize(1600, 900)
     w.show()
     qapp.processEvents()
