@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   test:
-    timeout-minutes: 35           # job-level ceiling beside the step's 25
+    timeout-minutes: 35           # job-level ceiling beside the step's 35
     strategy:
       fail-fast: false
       matrix:
@@ -46,6 +46,19 @@ jobs:
           sudo apt-get install -y libegl1 libgl1-mesa-dri
       - name: Install Forma
         run: pip install -e .[dev]
+      # PREMISE CHECK (CI-SPEED infra rung, 2026-11-14, lane F dossier):
+      # the free-runner spec for PUBLIC repos is 4 vCPU/16 GB (docs,
+      # runners/github-hosted-runners) - private is 2/8. The worker
+      # count was chosen from that table; this step MEASURES the truth
+      # on OUR cells every run so a spec change shows up in the logs.
+      - name: Runner facts (Linux)
+        if: runner.os == 'Linux'
+        run: echo "cpus=$(nproc)"; free -h | head -2
+      - name: Runner facts (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >-
+          echo "cpus=$((Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors)"
       - name: Test
         timeout-minutes: 35        # measured 2026-11-14: 2987 tests, ubuntu
                                    # legs 24+ min (the 3.12 leg EXCEEDED the
@@ -56,6 +69,12 @@ jobs:
                                    #  instead of eating the 360-min budget
         env:
           QT_QPA_PLATFORM: offscreen
+          # CI-SPEED (lane F dossier, CI-WALLTIME-LANE-F-research.md):
+          # cap every BLAS/OpenMP threadpool to ONE thread per worker -
+          # manifold/numpy oversubscription on 2 xdist workers was the
+          # documented meltdown shape (pymc-labs #268 pattern).
+          OMP_NUM_THREADS: "1"
+          OPENBLAS_NUM_THREADS: "1"
         # -v names every test as it COMPLETES: when a step dies on the
         # timeout, the last printed line pins the stall to ONE test.
         # --timeout-method=thread KILLS a wedged test (signal cannot
@@ -63,6 +82,18 @@ jobs:
         # min of silence through a 300s SIGALRM budget); faulthandler
         # dumps ALL thread stacks from a watchdog every 60 s, so even
         # a permanent wedge shows its C-level frame.
+        # CI-SPEED rung (2026-11-14): R41's ubuntu legs died THREE times
+        # at ~97% (exit 137 / shutdown signal) with the suite PASSING to
+        # the kill - the documented >=15-min-tail churn shape (actions/
+        # runner-images #6709). -n 2 --dist load halves each worker's
+        # accumulation AND wall clock. --dist load ONLY: loadscope has
+        # 2026 crash-restart DEADLOCK bugs (xdist #1323/#1378). --max-
+        # worker-restart=0: a crashed worker FAILS the run loudly (the
+        # local serial ci_mirror leg stays - it is the single-process
+        # poison shape, stricter here, superseded nowhere).
+        # GATE for adopting this rung: identical COLLECTED counts in ALL
+        # FOUR cells (full-suite semantics preserved under -n 2).
         run: >-
-          python -u -m pytest -v --timeout=300 --timeout-method=thread
+          python -u -m pytest -n 2 --dist load --max-worker-restart=0
+          -v --timeout=300 --timeout-method=thread
           -p faulthandler -o faulthandler_timeout=60
