@@ -2384,6 +2384,18 @@ class MainWindow(QMainWindow):
         hnb.toggled.connect(self._toggle_hole_notes)
         bl.addWidget(hnb)
         self._hole_btn = hnb
+        htb = QPushButton("Hole Table")            # M201 R38 origin tool
+        htb.setProperty("tb", True)
+        htb.setCheckable(True)
+        htb.setToolTip("Tables > Hole Table, the page's own clicks: the "
+                       "first selects the view to associate AND places "
+                       "its origin (each view require its own origin - "
+                       "grammar verbatim), the dialog asks the printed "
+                       "rows, the second click seats the table. The iso "
+                       "answers an honestly EMPTY table")
+        htb.toggled.connect(lambda on: self.drawing.set_hole_table_mode(on))
+        bl.addWidget(htb)
+        self._ht_btn = htb
         fitb = QPushButton("Fit\u2026")                # M114 callout
         fitb.setProperty("tb", True)
         fitb.setCheckable(True)
@@ -2445,6 +2457,10 @@ class MainWindow(QMainWindow):
             self._on_breakout_place)
         self.drawing.breakout_edit_requested.connect(    # R37 depth door
             self._on_breakout_edit)
+        self.drawing.hole_origin_placed.connect(         # M201 R38 click
+            self._on_hole_origin)
+        self.drawing.hole_table_placed.connect(          # M201 R38 seat
+            self._on_hole_table)
         self.drawing.section_edit_requested.connect(     # M137 props
             self._on_section_edit)
         self.drawing.tool_note.connect(                  # M136 guidance
@@ -2474,9 +2490,12 @@ class MainWindow(QMainWindow):
             return
         if self.drawing.restart_breakout_profile():   # M201 R37 rung
             return
+        if self.drawing.restart_hole_placement():     # M201 R38 rung
+            return
         for b in (self._dim_btn, self._balloon_btn, self._fit_btn,
                   self._sec_btn, self._gdt_btn,
-                  self._det_btn, self._bk_btn):       # M136/M144/R36/R37 join
+                  self._det_btn, self._bk_btn,
+                  self._ht_btn):                      # M136/M144/R36/R37/R38 join
             if b.isChecked():
                 b.setChecked(False)
 
@@ -3103,6 +3122,128 @@ class MainWindow(QMainWindow):
                                 + ("returned to the page's live half-"
                                    "depth default" if depth is None else
                                    f"set to {depth:g} mm"), 5000)
+
+    def _hole_table_dialog(self, view, origin):
+        """M201 R38 [Create a hole table + Table reference, verbatim
+        rows] The Table dialog as the Hole Table type prints it: Title
+        ("(Optional) In the dialog, modify the Title") / Origin
+        ("Specifies the origin used to measure hole X and Y coordinates"
+        — the click's own point, shown) / Arrange ("by Position: Holes
+        are located and labeled according to their physical location to
+        the origin" / "by Size: ... from the smallest to largest") /
+        Style (the four printed members - the help NEVER prints "ANSI").
+        Type is NOT a combo: [verbatim] "make sure the Hole Table is
+        selected as the Type" — the TOOL's entry is the selection, and a
+        one-buildable-member combo is decoration (R37's Extent-Type
+        law). UNOFFERED by name, declared, each by the page's own
+        parentheses: Select (Parts List and Bend Table types only),
+        Reference, Structure and Auto Balloon (Parts List type only).
+        Table Direction and Columns are the EDIT dialog's rows - the
+        create page prints neither. The defaults (by Position, Datum
+        Target, no title) are OURS: the page names the members, silence
+        on which is default."""
+        from ..core import drawing as _dr
+        want = f"{origin[0]:.2f}, {origin[1]:.2f}"
+        fields = [
+            dict(key="title", kind="text", label="Title", default=""),
+            dict(key="origin", kind="text", label=f"Origin ({view})",
+                 default=want),
+            dict(key="arrange", kind="combo", label="Arrange",
+                 choices=list(_dr.ARRANGE_MODES), default="by Position"),
+            dict(key="style", kind="combo", label="Style",
+                 choices=list(_dr.ORIGIN_STYLES), default="Datum Target"),
+        ]
+        return cmddialog.ask(self, "Table", fields)
+
+    def _on_hole_origin(self, view, xy):
+        """M201 R38 beat one committed: [verbatim] "In the canvas,
+        select a drawing view to associate with the hole table and click
+        to place the origin" — the CLICK makes the origin real, so it is
+        stored BEFORE the dialog asks; cancel cannot un-place what the
+        page made real by clicking (OURS-STAMP: the page prints no undo
+        for the click). The store is keyed BY VIEW — [verbatim] "Each
+        view require its own origin." (the page's grammar, verbatim) —
+        so a re-placement REPLACES and a second view never borrows the
+        neighbour's stick."""
+        from ..core import drawing as _dr
+        if self.doc is None or not self.doc.drawings:
+            return
+        g = self.drawing.sheet()
+        self._capture()
+        shop = dict(g.get("hole_origins") or {})
+        _dr.place_origin(shop, view, xy)
+        g["hole_origins"] = shop
+        self.doc.dirty = True
+        self.drawing.update()
+        v = self._hole_table_dialog(view, (float(xy[0]), float(xy[1])))
+        if v is None:
+            self.drawing.set_hole_table_pending(None)
+            self.status.showMessage(
+                f"Origin on {view} stands at ({xy[0]:.2f}, {xy[1]:.2f}) "
+                "— the page made it real at the click; no table yet",
+                6000)
+            return
+        try:
+            style = _dr.require_style(str(v.get("style") or ""))
+        except ValueError as e:
+            self.drawing.set_hole_table_pending(None)
+            self.status.showMessage(f"Hole Table refused: {e}", 7000)
+            return
+        arrange = str(v.get("arrange") or "")
+        if arrange not in _dr.ARRANGE_MODES:
+            self.drawing.set_hole_table_pending(None)
+            self.status.showMessage(f"Hole Table refused: "
+                                    f"ARRANGE_UNKNOWN {arrange!r}", 7000)
+            return
+        want = f"{float(xy[0]):.2f}, {float(xy[1]):.2f}"
+        typed = str(v.get("origin") or "").strip()
+        if typed != want:
+            # OURS-STAMP refusal: the Origin row's page verbs are SELECT
+            # an existing (ordinate) origin or PLACE a new one — the
+            # coordinates come from a CLICK, never a keystroke.
+            self.drawing.set_hole_table_pending(None)
+            self.status.showMessage(
+                "Hole Table refused: the Origin row measures from the "
+                "click - select the view and click again to re-place "
+                "it, do not type coordinates", 7000)
+            return
+        self.drawing.set_hole_table_pending(
+            {"view": view, "origin": (float(xy[0]), float(xy[1])),
+             "arrange": arrange, "style": style,
+             "title": str(v.get("title") or "").strip()})
+
+    def _on_hole_table(self, entry):
+        """M201 R38 beat two: [verbatim] "Click to place the hole table
+        on the sheet" — the click seats the table's top-left corner
+        (OURS-STAMP: the page says place, it prints no corner law). One
+        table per view by CONSTRUCTION: the store is keyed by view, so
+        seating again REPLACES — it cannot leave two tables disagreeing
+        over one origin (the same never-duplicate reading the core's
+        place_origin prints). The rows themselves stay DERIVED: the
+        painter runs view_hole_rows LIVE against this view's own origin,
+        so the table can no more go stale than the BOM."""
+        from ..core import drawing as _dr
+        if self.doc is None or not self.doc.drawings:
+            return
+        g = self.drawing.sheet()
+        view = entry["view"]
+        self._capture()
+        shop = dict(g.get("hole_origins") or {})
+        _dr.place_origin(shop, view, entry["origin"])
+        g["hole_origins"] = shop
+        tables = dict(g.get("hole_tables") or {})
+        tables[view] = {"view": view,
+                        "origin": [float(q) for q in entry["origin"]],
+                        "at": [float(q) for q in entry["at"]],
+                        "arrange": entry["arrange"],
+                        "style": entry["style"],
+                        "title": entry.get("title", "")}
+        g["hole_tables"] = tables
+        self.doc.dirty = True
+        self.drawing.update()
+        self.status.showMessage(
+            f"Hole table seated for {view} — each view require its own "
+            "origin (the page's sentence, grammar verbatim)", 6000)
 
     def action_breakout_section(self):
         """Menu/task-page verb: takes the Breakout TOOL's seat (the

@@ -81,6 +81,11 @@ class DrawingCanvas(QWidget):
     #   (the INDEX into sheet()["breakouts"] - a Signal(dict] would hand
     #   the handler a QVariant-marshalled COPY, and an edit that mutates
     #   a copy is the loudest kind of lie)
+    hole_origin_placed = Signal(str, tuple)      # M201 R38: view, model xy
+    hole_table_placed = Signal(dict)             # R38: {view,origin,at,...}
+    #   (READ-ONLY for the handler - the Signal(dict) copy trap means a
+    #   mutation here would never reach the canvas; the handler's job is
+    #   only to store, so a copy is exactly what we want)
     section_edit_requested = Signal(str)         # M137: dbl-click a child
     tool_note = Signal(str)                      # M136: canvas says, status
 
@@ -113,6 +118,11 @@ class DrawingCanvas(QWidget):
         self._bk_view = None                   # the view holding the loop
         self._bk_pts: list = []                # loop pts, view MODEL xy
         self._bk_hover = None                  # page xy of the rubber tip
+        self._ho_mode = False                  # M201 R38: origin tool armed?
+        self._ho_pending = None                # R38: the empty table that
+        #   rides the cursor between the dialog's answer and the click
+        #   that seats it (None = beat ONE, the origin, is still due)
+        self._ho_hover = None                  # R38: page xy of the ghost
         self._pre_breakout: dict = {}          # R37: sources BEFORE the cuts
         self._printing = False                 # M143: publishing to paper
         self._fit_mode = False                 # M114: fit-callout armed?
@@ -617,7 +627,8 @@ class DrawingCanvas(QWidget):
             self._sec_mode = False            # M136
             self._gdt_mode = False            # M144
             self._det_mode = False            # M201 R36: one tool
-            self._bk_mode = False            # M201 R37: one tool
+            self._bk_mode = False             # M201 R37: one tool
+            self._ho_mode = False             # M201 R38: one tool
         self.update()
 
     def set_balloon_mode(self, on: bool):
@@ -632,7 +643,8 @@ class DrawingCanvas(QWidget):
             self._sec_mode = False            # M136
             self._gdt_mode = False            # M144
             self._det_mode = False            # M201 R36
-            self._bk_mode = False            # M201 R37: one tool
+            self._bk_mode = False             # M201 R37: one tool
+            self._ho_mode = False             # M201 R38: one tool
         self.update()
 
     def set_fit_mode(self, on: bool):
@@ -646,7 +658,8 @@ class DrawingCanvas(QWidget):
             self._sec_mode = False            # M136
             self._gdt_mode = False            # M144
             self._det_mode = False            # M201 R36
-            self._bk_mode = False            # M201 R37: one tool
+            self._bk_mode = False             # M201 R37: one tool
+            self._ho_mode = False             # M201 R38: one tool
         self.update()
 
     def set_gdt_mode(self, on: bool):
@@ -662,7 +675,8 @@ class DrawingCanvas(QWidget):
             self._fit_mode = False
             self._sec_mode = False
             self._det_mode = False            # M201 R36
-            self._bk_mode = False            # M201 R37: one tool
+            self._bk_mode = False             # M201 R37: one tool
+            self._ho_mode = False             # M201 R38: one tool
         self.update()
 
     def set_section_mode(self, on: bool):
@@ -682,7 +696,8 @@ class DrawingCanvas(QWidget):
             self._fit_mode = False
             self._gdt_mode = False            # M144
             self._det_mode = False            # M201 R36
-            self._bk_mode = False            # M201 R37: one tool
+            self._bk_mode = False             # M201 R37: one tool
+            self._ho_mode = False             # M201 R38: one tool
             self.tool_note.emit("Section line: click where the cut "
                                 "BEGINS on the top, front or right "
                                 "view")
@@ -712,7 +727,8 @@ class DrawingCanvas(QWidget):
             self._fit_mode = False
             self._gdt_mode = False
             self._sec_mode = False
-            self._bk_mode = False            # M201 R37: one tool
+            self._bk_mode = False             # M201 R37: one tool
+            self._ho_mode = False             # M201 R38: one tool
             self.tool_note.emit("Detail: click the CENTER of the "
                                 "area to enlarge, on a base or "
                                 "section view")
@@ -748,6 +764,7 @@ class DrawingCanvas(QWidget):
             self._gdt_mode = False
             self._sec_mode = False
             self._det_mode = False
+            self._ho_mode = False             # M201 R38: one tool
             self.tool_note.emit("Breakout: click INSIDE the view to "
                                 "break out, then place the profile's "
                                 "points - double-click closes it once "
@@ -1157,6 +1174,7 @@ class DrawingCanvas(QWidget):
         self._draw_section_lines(p, placed)          # M136 cutting lines
         self._draw_details(p, placed)                # M201 R36 boundaries
         self._draw_breakouts(p, placed)              # M201 R37 profiles
+        self._draw_hole_tables(p, placed)            # M201 R38 origins + tables
 
     # ---- publish (M143) ---------------------------------------------------
     _Q_PAGE = {"A3": QPageSize.A3, "A4": QPageSize.A4}
@@ -1350,6 +1368,107 @@ class DrawingCanvas(QWidget):
                 p.setBrush(Qt.NoBrush)
                 p.drawEllipse(c, rpx, rpx)
         p.restore()
+
+    def _draw_hole_tables(self, p, placed):
+        """M201 R38: the placed tables and their origin markers.
+        [Create a hole table, verbatim] "Click to place the hole table
+        on the sheet" - the click seats the table's TOP-LEFT (a TRACER
+        stamp: the page says place, it prints no corner law). Rows come
+        from the view's OWN origin and Arrange (the core's
+        view_hole_rows - labels follow the ORDER, page-printed). The
+        origin glyph: the page prints four Style NAMES (Datum Target,
+        ISO Origin, ASME Origin, Alternate Origin) and no geometry -
+        all four shapes here are TRACER stamps, distinct so the choice
+        reads on paper. No placed table, no ink: the sheet stays the
+        M129 byte-true default."""
+        tables = self.sheet().get("hole_tables") or {}
+        origins = self.hole_origins()
+        if not tables and not origins:
+            return
+        p.save()
+        for view, org in sorted(origins.items()):
+            fr = placed.get(view)
+            if fr is None:
+                continue
+            ent = tables.get(view) or {}
+            a = self.s2p(*self._m2p(fr, org))
+            self._draw_origin_glyph(p, a, ent.get("style", "Datum Target"))
+        for view, ent in sorted(tables.items()):
+            fr = placed.get(view)
+            if fr is None or self.doc is None:
+                continue
+            try:
+                rows, _xy = drawing.view_hole_rows(
+                    self.doc, view, ent["origin"],
+                    ent.get("arrange", "by Position"))
+            except ValueError:
+                continue                        # stale entry on a
+                #   renamed view: honest silence, never invented rows
+            if not rows:
+                continue                        # [verbatim] "The empty
+                #   hole table displays at the cursor" - the empty
+                #   ANSWER is no table: the iso keeps the core's
+                #   empty-rows truth and paper keeps its peace
+            at = tuple(ent.get("at") or (10.0, 10.0))
+            t = drawing.hole_table(rows, page=self.page, at=at)
+            p.setPen(QPen(_BORDER, self._w(0.35)))
+            for (ax, ay), (bx, by) in t["lines"]:
+                p.drawLine(self.s2p(ax, ay), self.s2p(bx, by))
+            if t["overflow"]:
+                x0, y0, w, h = t["rect"]
+                t["cells"].append({"text": f"… {t['overflow']} more",
+                                   "xa": x0, "xb": x0 + w,
+                                   "y": y0 - 2.5, "size": 1.6,
+                                   "align": "l"})
+            title = str(ent.get("title") or "").strip()
+            if title:
+                x0, y0, w, h = t["rect"]
+                t["cells"].append({"text": title, "xa": x0, "xb": x0 + w,
+                                   "y": y0 + h + 1.2, "size": 2.2,
+                                   "align": "l"})
+            p.setPen(QPen(_SHEET))
+            self._paint_cells(p, t["cells"])
+        if self._ho_mode and self._ho_pending is not None \
+                and self._ho_hover is not None:
+            # the empty table rides the cursor: a stamp TRACER ghost
+            q = self.s2p(*self._ho_hover)
+            p.setPen(QPen(_DETAIL, max(0.8, 0.2 * self._zoom),
+                          Qt.DashLine))
+            p.setBrush(Qt.NoBrush)
+            w = min(0.40 * drawing.sheet_size(self.page)[0], 150.0)
+            p.drawRect(QRectF(q.x(), q.y() - 3.0 * self._zoom,
+                              w * self._zoom, 12.0 * self._zoom))
+        p.restore()
+
+    def _draw_origin_glyph(self, p, a, style):
+        """The four page-printed Style names, four TRACER-stamped
+        shapes (the page prints names, geometry silence)."""
+        r = max(4.0, 1.6 * self._zoom)
+        pen = QPen(_DETAIL, max(0.9, 0.28 * self._zoom))
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+        if style == "ISO Origin":               # circle + cross
+            p.drawEllipse(a, r, r)
+            p.drawLine(QPointF(a.x() - 1.5 * r, a.y()),
+                       QPointF(a.x() + 1.5 * r, a.y()))
+            p.drawLine(QPointF(a.x(), a.y() - 1.5 * r),
+                       QPointF(a.x(), a.y() + 1.5 * r))
+        elif style == "ASME Origin":            # square + cross
+            p.drawRect(QRectF(a.x() - r, a.y() - r, 2 * r, 2 * r))
+            p.drawLine(QPointF(a.x() - 1.5 * r, a.y()),
+                       QPointF(a.x() + 1.5 * r, a.y()))
+            p.drawLine(QPointF(a.x(), a.y() - 1.5 * r),
+                       QPointF(a.x(), a.y() + 1.5 * r))
+        elif style == "Alternate Origin":       # circle + diagonals
+            p.drawEllipse(a, r, r)
+            d = r * 1.06
+            p.drawLine(QPointF(a.x() - d, a.y() - d),
+                       QPointF(a.x() + d, a.y() + d))
+            p.drawLine(QPointF(a.x() - d, a.y() + d),
+                       QPointF(a.x() + d, a.y() - d))
+        else:                                   # Datum Target: ring
+            p.drawEllipse(a, r, r)
+            p.drawEllipse(a, r * 0.45, r * 0.45)
 
     def _draw_section_lines(self, p, placed):
         """M136: the cutting line rides its parent view — thin long
@@ -2029,6 +2148,9 @@ class DrawingCanvas(QWidget):
         if self._bk_mode and ev.button() == Qt.LeftButton:
             self._bk_click(ev)               # M201 R37: profile beats
             return
+        if self._ho_mode and ev.button() == Qt.LeftButton:
+            self._ho_click(ev)               # M201 R38: origin, then table
+            return
         if self._balloon_mode and ev.button() == Qt.LeftButton:
             self._balloon_click(ev)          # M110: pin, don't pan
             return
@@ -2227,6 +2349,106 @@ class DrawingCanvas(QWidget):
         self.update()
         return True
 
+    # ---- M201 R38: the hole table, associated by an origin ------------------
+    def hole_origins(self) -> dict:
+        """The sheet's placed origins, view -> (model x, model y).
+        [Tables overview, verbatim] "Hole tables require an origin." /
+        "Each view require its own origin." (the grammar error is the
+        page's, printed exactly) - the store is keyed BY VIEW, which IS
+        that law made physical: a table never measures from a
+        neighbour's stick. COPY semantics ride (the sections() trap):
+        write through sheet()["hole_origins"] for real edits."""
+        return dict(self.sheet().get("hole_origins") or {})
+
+    def set_hole_table_mode(self, on: bool):
+        """M201 R38 [Create a hole table, verbatim] "In the canvas,
+        select a drawing view to associate with the hole table and
+        click to place the origin" / "The empty hole table displays at
+        the cursor" / "Click to place the hole table on the sheet" -
+        TWO beats with the page's dialog between them, exactly in the
+        page's order: the CLICK places the origin (the measuring stick
+        is committed by the click, and cancel cannot un-place what the
+        page made real by clicking - our declared law), the dialog
+        asks the printed rows (Type / Title / Origin / Arrange /
+        Style), and the second click seats the empty table. The page
+        names NO host restriction for the table (silence resolved like
+        the breakout, R37): every view answers - a tilted bore shows
+        no true circle, so the iso's table is honestly EMPTY, not
+        refused. One tool at a time; the seat is kept for the next
+        view until the button stands down."""
+        self._ho_mode = bool(on)
+        self._ho_pending = None
+        if on:
+            self._dim_mode = False
+            self._dim_first = None
+            self._balloon_mode = False
+            self._fit_mode = False
+            self._gdt_mode = False
+            self._sec_mode = False
+            self._det_mode = False
+            self._bk_mode = False
+            self.tool_note.emit("Hole table: click the drawing view "
+                                "to associate, and the click places "
+                                "the origin")
+        self.update()
+
+    def restart_hole_placement(self) -> bool:
+        """The Esc ladder's R38 rung: the FIRST Esc cancels the empty
+        table that rides the cursor (the origin STAYS - the page made
+        it real by clicking; printing no undo for it, we print none
+        either) and the tool keeps its seat."""
+        if not self._ho_mode or self._ho_pending is None:
+            return False
+        self._ho_pending = None
+        self.tool_note.emit("Hole table: placement cancelled - the "
+                            "origin stays (the page committed it at "
+                            "the click), the tool keeps its seat")
+        self.update()
+        return True
+
+    def set_hole_table_pending(self, prefs: dict | None):
+        """Between the beats: the window hands back the dialog's
+        answer (or None for cancel); the empty table then rides the
+        cursor until the placement click."""
+        self._ho_pending = prefs
+        if prefs is not None:
+            self.tool_note.emit("The empty hole table displays at the "
+                                "cursor - click to place the hole "
+                                "table on the sheet")
+        self.update()
+
+    def _ho_click(self, ev):
+        """R38's two beats. Beat ONE lands inside a view: the click
+        selects the host AND places the origin (one gesture, exactly
+        as the page writes the two). Bare paper is refused by the
+        page's own words. Beat TWO (pending set by the window after
+        the dialog) seats the table at the click."""
+        placed = self.placed()
+        if not placed:
+            return
+        page = self.p2s(ev.position())
+        if self._ho_pending is not None:            # beat two: seat it
+            view = self._ho_pending["view"]
+            entry = dict(self._ho_pending)
+            entry["at"] = (float(page[0]), float(page[1]))
+            self.hole_table_placed.emit(entry)
+            self._ho_pending, self._ho_hover = None, None
+            self.tool_note.emit(
+                f"Hole table seated for {view} - each view require "
+                "its own origin (the page's sentence, grammar "
+                "verbatim); the tool keeps its seat for the next view")
+            self.update()
+            return
+        view = self._view_at(page, placed, slack=6.0)
+        if view is None:
+            self.tool_note.emit(
+                "Hole table: the page says SELECT A DRAWING VIEW to "
+                "associate with the hole table - bare paper is no "
+                "view to associate")
+            return
+        self.hole_origin_placed.emit(
+            view, tuple(float(v) for v in self._p2m(placed[view], page)))
+
     def _bk_close(self):
         """The Check made real: [verbatim] "A closed profile defines
         the breakout section", so closing is the moment the entry
@@ -2337,6 +2559,10 @@ class DrawingCanvas(QWidget):
             return
         if self._bk_mode and self._bk_pts:          # R37 rubber profile
             self._bk_hover = self.p2s(ev.position())
+            self.update()
+            return
+        if self._ho_mode and self._ho_pending is not None:   # R38 ghost
+            self._ho_hover = self.p2s(ev.position())
             self.update()
             return
         if self._sec_mode and self._sec_pts:          # M136 rubber band

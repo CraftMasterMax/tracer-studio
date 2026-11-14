@@ -1475,15 +1475,19 @@ def hole_marks(doc) -> dict:
 
 
 def hole_table(rows, page: str = "A3", margin: float = 10.0,
-               hh: float = 5.0, width: float | None = None) -> dict:
+               hh: float = 5.0, width: float | None = None,
+               at=None) -> dict:
     """The parts list's contract (rect/lines/cells, M108 painter) for
     the hole table — but reading TOP-to-bottom from the sheet's upper
     left, the corner the title block's BOM never claims. Overflow is
-    counted, never silent."""
+    counted, never silent. M201 R38: `at=(x, ytop)` moves the table to
+    the drafter's own click — [verbatim] "Click to place the hole table
+    on the sheet" — while the corner default stays exactly the M129
+    stamp's seat (the page prints no default seat: silence, named)."""
     W, H = sheet_size(page)
     bw = float(width) if width else min(0.40 * W, 150.0)
-    x0 = margin
-    ytop = H - margin
+    x0 = margin if at is None else float(at[0])
+    ytop = (H - margin) if at is None else float(at[1])
     n = max(0, int(((H - 2 * margin) * 0.5) // hh) - 1)
     overflow = max(0, len(rows) - n)
     shown = rows[:n]
