@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout,
 
 from ..core import import2d
 from ..core import export2d
+from ..core import balloon
 from ..core import fits as iso_fits
 from ..core import io as fio
 from ..core import logservice
@@ -2357,12 +2358,16 @@ class MainWindow(QMainWindow):
         balb = QPushButton("Balloon")                  # M110 item pin
         balb.setProperty("tb", True)
         balb.setCheckable(True)
-        balb.setToolTip("Click a view to pin the next item balloon — "
-                        "numbered against the parts list, travelling "
-                        "with the body through moves and spins")
-        balb.toggled.connect(
-            lambda on: (self.drawing.set_balloon_mode(on),
-                        on and dimb.setChecked(False)))
+        balb.setToolTip("The page's own balloon, M201 R40: the Balloon "
+                        "dialog opens FIRST (the ONE row Type the page "
+                        "prints - Standard: straight leader, Patent: "
+                        "curved spline), then the beats: select an edge "
+                        "of the COMPONENT to identify, a Patent adds "
+                        "its bend point, one click places the balloon, "
+                        "and the tool REPEATS until Esc COMPLETES it. "
+                        "The numbers match the parts list's Items by "
+                        "IDENTITY, never by counter")
+        balb.toggled.connect(self._on_balloon_toggled)
         bl.addWidget(balb)
         self._balloon_btn = balb
         bomb = QPushButton("Parts list")               # M110 BOM
@@ -2453,8 +2458,8 @@ class MainWindow(QMainWindow):
         from .drawingview import DrawingCanvas
         self.drawing = DrawingCanvas()
         self.drawing.dim_added.connect(self._add_dim)     # M94 bubbles
-        self.drawing.balloon_added.connect(               # M110 pins
-            self._add_balloon)
+        self.drawing.balloon_placed.connect(              # M201 R40 pins
+            self._on_balloon_placed)
         self.drawing.fit_requested.connect(               # M114 ISO 286
             self._annotate_fit)
         self.drawing.gdt_requested.connect(               # M144 FCF
@@ -2545,6 +2550,13 @@ class MainWindow(QMainWindow):
             return
         if self.drawing.restart_parts_placement():    # M201 R39 rung
             return
+        if self.drawing.restart_balloon_command():    # M201 R40 rung:
+            return                                    #  the FIRST Esc
+            #   drops the half-balloon in flight (the page commits only
+            #   the placement, so there is nothing to undo - only to
+            #   drop); the NEXT Esc falls to the rack loop below and
+            #   stands the tool down - [verbatim] "Press Esc to
+            #   complete the Balloon command."
         for b in (self._dim_btn, self._balloon_btn, self._fit_btn,
                   self._sec_btn, self._gdt_btn,
                   self._det_btn, self._bk_btn,
@@ -3892,19 +3904,62 @@ class MainWindow(QMainWindow):
         self.doc.dirty = True
         self.drawing.update()
 
-    def _add_balloon(self, view: str, pt: tuple, item: int):
-        """A balloon pin (M110): stored in MODEL millimetres per view —
-        the same truth the bubbles measure from, so a rotated or
-        dragged view carries its balloons and the numbers still point
-        at the part they were pinned to."""
+    def _on_balloon_toggled(self, on: bool):
+        """M201 R40: the DOOR is first, exactly as the page orders it
+        [Create a balloon, verbatim] "1. Select Tables > Balloon. The
+        Balloon dialog displays." - a cancel therefore means the tool
+        NEVER sat: the button goes back to its rack. An answer arms the
+        canvas WITH the Type, and the beats belong to the tool."""
+        if on:
+            v = self._balloon_dialog()
+            if v is None:
+                self._balloon_btn.setChecked(False)
+                return
+            self.drawing.set_balloon_mode(True, v["type"])
+            self._dim_btn.setChecked(False)         # one tool at a time
+        else:
+            self.drawing.set_balloon_mode(False)
+
+    def _balloon_dialog(self):
+        """[Balloon reference, verbatim] the dialog is ONE row: "Type" -
+        "Standard: Creates a leader with a straight line connecting the
+        balloon to the component." / "Patent: Creates a leader with a
+        curved spline connecting the balloon to the component." The
+        dialog's own reference page rules its own door: the task page's
+        "a curves spline" typo is pinned by m232's ship-proof gate,
+        not repeated as UI copy. Shape/size/look are NOT here (the
+        dossier's 53 probes closed the book: they live in Document
+        Settings), so this dialog offers nothing else - and inventing
+        a row is the one sin the family's law forbids."""
+        return cmddialog.ask(self, "Balloon", [
+            dict(key="type", label="Type", kind="combo",
+                 choices=list(balloon.BALLOON_TYPES),
+                 default="Standard")],
+            remember_key="balloon")
+
+    def _on_balloon_placed(self, entry: dict):
+        """R40's store law. The pages print the CANCEL verb and the
+        parts list prints the REPLACE law; how placements are stored is
+        ours, named: the write is m232's place_balloon - replace by
+        ITEM WITHIN THE VIEW's group (the numbers answer each view's
+        parts list, so one component may wear one balloon per view;
+        re-identifying it moves that view's balloon and leaves every
+        other view's untouched). The routing "view" key never enters
+        the entry - the group already answers where it lives."""
         if self.doc is None or not self.doc.drawings:
             return
+        view = entry.get("view")
+        e = {k: v for k, v in entry.items() if k != "view"}
         self._capture()
         g = self.doc.drawings[-1]
-        g.setdefault("balloons", {}).setdefault(view, []).append(
-            {"item": int(item), "x": float(pt[0]), "y": float(pt[1])})
+        groups = dict(g.get("balloons") or {})
+        groups[view] = balloon.place_balloon(groups.get(view) or [], e)
+        g["balloons"] = groups
         self.doc.dirty = True
         self.drawing.update()
+        self.status.showMessage(
+            f"Balloon {e['item']} placed on {view} ({e['type']}) - "
+            "the tool keeps its seat; Esc completes the command", 5000)
 
     def _add_dim(self, view: str, a: tuple, b: tuple, opts: dict = None):
         """A finished bubble (M94/M95): undo-captured, stored in MODEL

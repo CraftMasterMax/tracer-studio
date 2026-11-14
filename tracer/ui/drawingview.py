@@ -16,6 +16,7 @@ from PySide6.QtGui import (QColor, QFont, QFontMetrics, QPainter,
 
 from PySide6.QtWidgets import QWidget
 
+from ..core import balloon
 from ..core import drawing
 from ..core import fits
 from ..core import gdt
@@ -69,7 +70,13 @@ SCALE_CHOICES = ["Fit (auto)", "1:1", "1:2", "1:5", "1:10", "2:1", "5:1"]
 
 class DrawingCanvas(QWidget):
     dim_added = Signal(str, tuple, tuple, dict)  # view, a, b, opts (M94/95)
-    balloon_added = Signal(str, tuple, int)      # view, model xy, item (M110)
+    #   (M110's balloon_added one-click wire retired by M201 R40: the
+    #   tool's beats resolve the number by IDENTITY, so the voice below
+    #   carries the finished entry instead of a counter's guess)
+    # M201 R40: the balloon tool's OWN placement voice - the page's beats
+    # resolve the Item by identity, so the signal carries the finished
+    # entry (view + model anchor + sheet bubble + Type [+ bend]).
+    balloon_placed = Signal(dict)
     fit_requested = Signal(str, int)             # M114: view, dim index
     gdt_requested = Signal(str, int)             # M144: view, dim index
     view_drag_begin = Signal()                   # M96: undo capture hook
@@ -133,6 +140,15 @@ class DrawingCanvas(QWidget):
         self._pl_pending = None                # R39: the empty list that
         #   rides the cursor between the dialog's answer and the click
         self._pl_hover = None                  # R39: page xy of the ghost
+        self._bal_type = "Standard"            # R40: the dialog's answer
+        self._bal_pending = None               # R40: the identified edge -
+        #   {view,item,x,y} in MODEL mm, resolved by IDENTITY the moment
+        #   the click lands on a component (the page numbers balloons
+        #   against the parts list, so beat one already knows the number)
+        self._bal_bend = None                  # R40: Patent leader control
+        #   point, MODEL mm (OURS, named: the page prints a click for a
+        #   thing with no printed unit - it rides the view like its anchor)
+        self._bal_hover = None                 # R40: page xy of the ghost
         self._pre_breakout: dict = {}          # R37: sources BEFORE the cuts
         self._printing = False                 # M143: publishing to paper
         self._fit_mode = False                 # M114: fit-callout armed?
@@ -642,12 +658,27 @@ class DrawingCanvas(QWidget):
             self._pl_mode = False             # M201 R39: one tool
         self.update()
 
-    def set_balloon_mode(self, on: bool):
-        """M110: arm the balloon click — one click on a view pins the
-        next item number there, in MODEL millimetres (the bubble
-        travels with the body and survives a view spin, like a dim)."""
+    def set_balloon_mode(self, on: bool, balloon_type: str = "Standard"):
+        """M201 R40 re-arms the balloon tool in the REFERENCE PAGE's own
+        shape: the dialog is the DOOR ("1. Select Tables > Balloon. The
+        Balloon dialog displays. 2. In the dialog, select a balloon
+        Type."), so the type arrives BEFORE the beats - and the beats
+        are "Select an edge of the component to identify in a drawing
+        view." / "For Patent type balloons, click to place the bend
+        point for the leader." / "Click to place the balloon." - then
+        REPEAT, until "Press Esc to complete the Balloon command." The
+        M110 one-click next-unused tool is retired: [verbatim Note]
+        "The numbers in the balloons match the Item numbers for each
+        component in the parts list" - a counter cannot promise that,
+        IDENTITY can (balloon_item_at re-walks the parts list itself).
+        Default "Standard" keeps the canvas armable without the window's
+        dialog (the door's own first member - OURS reading, named)."""
         self._balloon_mode = bool(on)
+        self._bal_pending = None
+        self._bal_bend = None
+        self._bal_hover = None
         if on:
+            self._bal_type = balloon.require_balloon_type(balloon_type)
             self._dim_mode = False
             self._dim_first = None
             self._fit_mode = False            # M114
@@ -657,6 +688,9 @@ class DrawingCanvas(QWidget):
             self._bk_mode = False             # M201 R37: one tool
             self._ho_mode = False             # M201 R38: one tool
             self._pl_mode = False             # M201 R39: one tool
+            self.tool_note.emit(
+                "Balloon ({}): Select an edge of the component to "
+                "identify in a drawing view".format(self._bal_type))
         self.update()
 
     def set_fit_mode(self, on: bool):
@@ -1719,14 +1753,26 @@ class DrawingCanvas(QWidget):
         p.restore()
 
     def _draw_balloons(self, p: QPainter, placed: dict):
-        """ISO 6433 item references (M110): a leader dot on the part,
-        a circle, the item number — anchored in MODEL millimetres, so
-        a spun or dragged view carries its balloons like dimensions
-        do. Numbers speak in sheet px, staying upright and legible."""
+        """ISO 6433 item references: a leader to a circle carrying the
+        Item number. The ANCHOR rides the design in MODEL millimetres
+        (a spun or dragged view carries its balloons like dimensions
+        do); the BUBBLE rides the paper. M201 R40 grew the family the
+        dialog prints: a placed entry carries its own bubble in SHEET
+        millimetres ("Click to place the balloon" places on the sheet)
+        and a Type - "Standard: Creates a leader with a straight line
+        connecting the balloon to the component." / "Patent: Creates a
+        leader with a curved spline connecting the balloon to the
+        component." (the reference page's spelled forms rule; the task
+        page's "a curves spline" typo is pinned by a core ship-proof
+        gate, not painted). The quadratic IS a control-point curve -
+        the bend shapes the leader, it is not a point on it (the curve
+        midpoint is .25a+.5b+.25c, OURS arithmetic named in m232).
+        Legacy pins - the R39 auto-balloon Note's arrivals and the old
+        M110 sheets - carry no bubble, and the page never dictated
+        where an automatic balloon lands: they keep the auto-offset
+        path. A balloon in flight rides the cursor as a ghost."""
         g = self.sheet()
         groups = g.get("balloons") or {}
-        if not groups:
-            return
         f = p.font()
         f.setPixelSize(max(8, int(5.0 * self._zoom)))
         p.setFont(f)
@@ -1738,16 +1784,49 @@ class DrawingCanvas(QWidget):
             for b in items:
                 ax, ay = self._m2p(fr, (b["x"], b["y"]))
                 a = self.s2p(ax, ay)
-                cx, cy = a.x() + 2 * r, a.y() - 2 * r
-                c = QPointF(cx, cy)
-                p.setPen(QPen(_SHEET,
-                              max(1.0, 0.35 * self._zoom)))
-                p.drawLine(a, QPointF(cx - r * 0.8, cy + r * 0.8))
+                if "bx" in b and "by" in b:             # R40's placement
+                    c = self.s2p(b["bx"], b["by"])
+                    p.setPen(QPen(_SHEET, max(1.0, 0.35 * self._zoom)))
+                    if b.get("type") == "Patent" and b.get("bend"):
+                        bp = self.s2p(*self._m2p(fr, b["bend"]))
+                        path = QPainterPath(a)
+                        path.quadTo(bp, c)              # bend = CONTROL
+                        p.drawPath(path)
+                    else:
+                        p.drawLine(a, c)
+                else:                                    # the auto path
+                    cx, cy = a.x() + 2 * r, a.y() - 2 * r
+                    c = QPointF(cx, cy)
+                    p.setPen(QPen(_SHEET,
+                                  max(1.0, 0.35 * self._zoom)))
+                    p.drawLine(a, QPointF(cx - r * 0.8, cy + r * 0.8))
                 p.setBrush(_PAPER)
                 p.drawEllipse(c, r, r)
                 p.setBrush(Qt.NoBrush)
                 p.drawText(QRectF(c.x() - r, c.y() - r, 2 * r, 2 * r),
                            Qt.AlignCenter, str(b.get("item", "")))
+        if self._balloon_mode and self._bal_pending is not None \
+                and self._bal_hover is not None:        # the ghost rides
+            pd = self._bal_pending
+            fr = placed.get(pd["view"])
+            if fr is not None:
+                a = self.s2p(*self._m2p(fr, (pd["x"], pd["y"])))
+                c = self.s2p(*self._bal_hover)
+                pen = QPen(_DETAIL, max(1.0, 0.35 * self._zoom),
+                           Qt.DashLine)
+                p.setPen(pen)
+                if self._bal_type == "Patent" and self._bal_bend:
+                    bp = self.s2p(*self._m2p(fr, self._bal_bend))
+                    path = QPainterPath(a)
+                    path.quadTo(bp, c)
+                    p.drawPath(path)
+                else:
+                    p.drawLine(a, c)
+                p.setBrush(_PAPER)
+                p.drawEllipse(c, r, r)
+                p.setBrush(Qt.NoBrush)
+                p.drawText(QRectF(c.x() - r, c.y() - r, 2 * r, 2 * r),
+                           Qt.AlignCenter, str(pd["item"]))
 
     def _draw_hole_notes(self, p: QPainter, placed: dict):
         """M129: the hole story told from metadata — a counted table in
@@ -2771,6 +2850,10 @@ class DrawingCanvas(QWidget):
             self._pl_hover = self.p2s(ev.position())
             self.update()
             return
+        if self._balloon_mode and self._bal_pending is not None:   # R40
+            self._bal_hover = self.p2s(ev.position())
+            self.update()
+            return
         if self._sec_mode and self._sec_pts:          # M136 rubber band
             self._sec_hover = self.p2s(ev.position())
             self.update()
@@ -2900,27 +2983,94 @@ class DrawingCanvas(QWidget):
             self.view_scale_requested.emit(view)
 
     def _balloon_click(self, ev):
-        """One click, one balloon (M110): the anchor is stored in MODEL
-        millimetres like a dimension, so spins and drags carry it; the
-        item number is the next unused one across the sheet — balloons
-        count parts, and the parts list already ordered them."""
+        """R40's beats, verbatim off [Create a balloon] - and the tool
+        speaks the page when a click cannot answer. Beat ONE: "Select an
+        edge of the component to identify in a drawing view." - the click
+        resolves the Item by IDENTITY (balloon_item_at walks the parts
+        list itself, so a number can never drift from the table); bare
+        paper or a view with nothing under the cursor is refused in the
+        page's own words. Beat TWO (Patent only): "For Patent type
+        balloons, click to place the bend point for the leader." Beat
+        THREE: "Click to place the balloon." - the bubble lands at the
+        sheet point (sheet mm: the balloon marks PAPER, the anchor marks
+        the part). Then the tool REPEATS from beat one ("you can
+        identify more than one component in a drawing view"), until Esc
+        completes it."""
         placed = self.placed()
         if not placed:
             return
         sheet = self.p2s(ev.position())
-        view = self._view_at(sheet, placed)
-        if view is None:
+        if self._bal_pending is None:                    # beat ONE
+            view = self._view_at(sheet, placed, slack=6.0)
+            if view is None:
+                self.tool_note.emit(
+                    "Balloon: the page says SELECT AN EDGE OF THE "
+                    "COMPONENT to identify in a drawing view - bare "
+                    "paper is no component")
+                return
+            raw = self.page_to_model(view, sheet)
+            item = balloon.balloon_item_at(self.doc.body_list(),
+                                           self.doc.body_solids(),
+                                           view, raw)
+            if item is None:
+                self.tool_note.emit(
+                    "Balloon: select an edge of the COMPONENT to "
+                    "identify - nothing of the design answers this "
+                    "point, and the number must match the parts list")
+                return
+            self._bal_pending = {"view": view, "item": item,
+                                 "x": float(raw[0]), "y": float(raw[1])}
+            self._bal_hover = sheet
+            self.tool_note.emit(
+                "Component identified: Item {} - ".format(item)
+                + ("click to place the bend point for the leader"
+                   if self._bal_type == "Patent" else
+                   "click to place the balloon"))
+            self.update()
             return
-        raw = self.page_to_model(view, sheet)
-        self.balloon_added.emit(view, (float(raw[0]), float(raw[1])),
-                                self._next_balloon_item())
+        if self._bal_type == "Patent" and self._bal_bend is None:
+            view = self._bal_pending["view"]             # Patent's beat
+            raw = self.page_to_model(view, sheet)
+            self._bal_bend = (float(raw[0]), float(raw[1]))
+            self.tool_note.emit("Bend point placed - click to place "
+                                "the balloon")
+            self.update()
+            return
+        p = self._bal_pending                            # the place beat
+        entry = balloon.balloon_entry(p["item"], (p["x"], p["y"]),
+                                      (float(sheet[0]), float(sheet[1])),
+                                      self._bal_type, self._bal_bend)
+        entry["view"] = p["view"]           # routing key - the writer
+        #   strips it (the store law: no view inside a balloon)
+        self.balloon_placed.emit(entry)
+        self._bal_pending = None
+        self._bal_bend = None
+        self._bal_hover = None
+        self.tool_note.emit(
+            "Balloon {} placed - identify the next component, or press "
+            "Esc to complete the Balloon command".format(entry["item"]))
         self.update()
 
-    def _next_balloon_item(self) -> int:
-        items = [b.get("item", 0)
-                 for group in (self.sheet().get("balloons") or {}).values()
-                 for b in group]
-        return max(items, default=0) + 1
+    def restart_balloon_command(self) -> bool:
+        """The Esc ladder's R40 rung: [verbatim] "Press Esc to complete
+        the Balloon command." - the reference page prints Esc as the
+        COMPLETION verb (the task page's "Click Close" drift loses to
+        the reference page's form, PAGE LAW). So a bare Esc is NOT
+        consumed here: it falls to the window's rack loop, which
+        stands the tool down - the page's completion. The one debt the
+        rung DOES take: a half-balloon in flight. The first Esc drops
+        it (nothing was stored - the page commits only the placement)
+        and the tool keeps its seat; the next Esc completes."""
+        if not self._balloon_mode or self._bal_pending is None:
+            return False
+        self._bal_pending = None
+        self._bal_bend = None
+        self._bal_hover = None
+        self.tool_note.emit("Balloon: the half-placed balloon is "
+                            "dropped - it was never committed; "
+                            "Esc completes the command")
+        self.update()
+        return True
 
     def _view_dialog(self, cur, view=None):
         """M201 R32: the page's own dialog. [DWG-REF-DRAWING-VIEW-DLG,

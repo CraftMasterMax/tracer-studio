@@ -247,23 +247,36 @@ def _plate_sheet(win, qapp):
     return win.drawing
 
 
-def _pin(cv, qapp, view, model_xy):
-    """A draughtsman's click AT a model-space spot of a view."""
-    sp = cv.s2p(*cv.model_to_page(view, model_xy)).toPoint()
-    QTest.mouseClick(cv, Qt.LeftButton, Qt.KeyboardModifier.NoModifier,
-                     sp)
+def _pin(cv, qapp, view, model_xy, bubble_off=(60.0, 60.0)):
+    """M201 R40 migration: the page's balloon is NOT one click any
+    more. Beat ONE identifies the component (a click AT a model-space
+    spot resolves its Item by IDENTITY - balloon_item_at re-walks the
+    parts list); beat TWO places the bubble on the SHEET ("Click to
+    place the balloon"). Standard type, so exactly these two beats."""
+    _click = lambda sheet_mm: QTest.mouseClick(
+        cv, Qt.LeftButton, Qt.KeyboardModifier.NoModifier,
+        cv.s2p(*sheet_mm).toPoint())
+    _click(cv.model_to_page(view, model_xy))
+    qapp.processEvents()
+    base = cv.model_to_page(view, model_xy)
+    _click((base[0] + bubble_off[0], base[1] + bubble_off[1]))
     qapp.processEvents()
 
 
-def test_balloon_clicks_pin_next_items(win, qapp):
+def test_balloon_clicks_place_by_identity(win, qapp):
+    """[verbatim Note] "The numbers in the balloons match the Item
+    numbers for each component in the parts list." One body, one
+    Item: two placements of the SAME component REPLACE (m232's
+    place_balloon law), and the anchor stays MODEL millimetres."""
     cv = _plate_sheet(win, qapp)
     cv.set_balloon_mode(True)
     _pin(cv, qapp, "top", (10.0, 5.0))
     _pin(cv, qapp, "top", (30.0, 20.0))
     bs = win.doc.drawings[-1]["balloons"]["top"]
-    assert [b["item"] for b in bs] == [1, 2]
-    assert bs[0]["x"] == pytest.approx(10.0, abs=0.6)
-    assert bs[0]["y"] == pytest.approx(5.0, abs=0.6)
+    assert [b["item"] for b in bs] == [1]            # identity, not a counter
+    assert bs[0]["x"] == pytest.approx(30.0, abs=0.6)   # the replaced pin
+    assert bs[0]["y"] == pytest.approx(20.0, abs=0.6)
+    assert bs[0]["type"] == "Standard"
 
 
 def test_balloon_anchor_survives_a_view_spin(win, qapp):
@@ -291,12 +304,18 @@ def test_balloon_and_dim_modes_are_exclusive(win, qapp):
     assert cv._dim_mode and not cv._balloon_mode
 
 
-def test_bar_buttons_wire_modes_and_sheet_state(win, qapp):
+def test_bar_buttons_wire_modes_and_sheet_state(win, qapp, monkeypatch):
+    from tracer.ui import cmddialog
     cv = _plate_sheet(win, qapp)
+    # M201 R40: the Balloon button's door is the page's Balloon dialog
+    # (ONE row, Type) - spy it so the wiring gate never renders a modal.
+    monkeypatch.setattr(cmddialog, "ask",
+                        lambda parent, title, fields, remember_key=None:
+                        {"type": "Standard"})
     win._bom_btn.setChecked(True)
     assert win.doc.drawings[-1]["bom"] is True
     win._balloon_btn.setChecked(True)
-    assert cv._balloon_mode
+    assert cv._balloon_mode and cv._bal_type == "Standard"
     win._dim_btn.setChecked(True)                    # the other tool…
     assert not cv._balloon_mode and not win._balloon_btn.isChecked()
 
