@@ -14,7 +14,9 @@ concurrency:
 
 jobs:
   test:
-    timeout-minutes: 35           # job-level ceiling beside the step's 35
+    timeout-minutes: 45           # job-level ceiling beside the step's 45
+                                  # (CI-SHAPE clause 2026-11-14: the 35
+                                  # burned twice on ubuntu-3.13)
     strategy:
       fail-fast: false
       matrix:
@@ -60,13 +62,23 @@ jobs:
         run: >-
           echo "cpus=$((Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors)"
       - name: Test
-        timeout-minutes: 35        # measured 2026-11-14: 2987 tests, ubuntu
-                                   # legs 24+ min (the 3.12 leg EXCEEDED the
-                                   # old 25-min ceiling and was killed mid
-                                   # run - a stall still gets caught, but
-                                   # honest growth no longer loses a rung
-                                   #  KILLED (logs flush, culprit visible)
-                                   #  instead of eating the 360-min budget
+        timeout-minutes: 45        # CI-SHAPE clause move (2026-11-14,
+                                   # R41 adjudication EXECUTED): the 35-min
+                                   # ceiling printed TWICE on ubuntu-3.13
+                                   # (run 43584999051, attempts 1 AND the
+                                   # measured refire 2) - Test never
+                                   # completed, both logs BlobNotFound:
+                                   # INVISIBLE burns. 3.12 died a second
+                                   # infra-cancel (6.3 min, "The operation
+                                   # was canceled"); windows x2 green both
+                                   # attempts (~3.5 min). 45 min is the
+                                   # clause's headroom for the honest
+                                   # ~11-min healthy leg plus jitter; the
+                                   # 300s thread-timer + 60s faulthandler
+                                   # watchdog stay EXACTLY as gated by the
+                                   # CI-SPEED rung - if a wedge exists it
+                                   # now gets a flushable log AND named
+                                   # thread stacks to read.
         env:
           QT_QPA_PLATFORM: offscreen
           # CI-SPEED (lane F dossier, CI-WALLTIME-LANE-F-research.md):
