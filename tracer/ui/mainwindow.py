@@ -2408,6 +2408,15 @@ class MainWindow(QMainWindow):
                        "Item numbers follow creation order; double-"
                        "click a list to edit it")
         plb.toggled.connect(lambda on: self.drawing.set_parts_list_mode(on))
+        # LAYOUT PARITY LAW (R39 pre-drain paid it again): the drawing
+        # row's natural width sets the offscreen window, the window sets
+        # EVERY canvas - and the m185 center gate needs both halves
+        # integral. "Parts List…" entered the row at an ODD 93px hint
+        # and slid the whole sheet a half pixel. The button takes its
+        # seat at its row's PARITY: the hint rounded UP to even, which
+        # stays true whatever the runner's font metrics do.
+        _w = plb.sizeHint().width()
+        plb.setFixedWidth(_w + _w % 2)
         bl.addWidget(plb)
         self._pl_btn = plb
         fitb = QPushButton("Fit\u2026")                # M114 callout

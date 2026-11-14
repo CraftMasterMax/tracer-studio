@@ -60,6 +60,13 @@ def win(qapp):
     w.resize(1100, 800)
     w.show()
     qapp.processEvents()
+    # STATUS-STREAM LAW (R39 pre-drain teaching): the status bar carries
+    # a 6000ms timeout, and a loaded drain can let that timer expire
+    # BETWEEN the beat and a later currentMessage() read - the beat
+    # SPOKE, the bar merely forgot. Gates that ask WHAT THE PAGE SAID
+    # listen to the stream (messageChanged), never the volatile bar.
+    w._status_seen = []
+    w.status.messageChanged.connect(w._status_seen.append)
     w.new_document()
     d = w.doc
     d.add(PrimitiveFeature(name="plate", kind="box",
@@ -249,7 +256,7 @@ def test_f_the_second_click_seats_the_table(win, qapp, monkeypatch):
     assert t["arrange"] == "by Size" and t["style"] == "ASME Origin"
     assert t["title"] == "Bores"
     assert cv._ho_pending is None
-    assert "each view require" in win.status.currentMessage()   # verbatim grammar
+    assert any("each view require" in s for s in win._status_seen)  # verbatim
     _beat1(cv, "top", (28.0, 6.0))                  # a fresh two-beat for the
     qapp.processEvents()                            #   SAME view: replace
     _click(cv, (90.0, 200.0))
@@ -302,7 +309,7 @@ def test_i_a_typed_coordinate_is_refused_the_origin_comes_from_a_click(
     cv.set_hole_table_mode(True)
     _beat1(cv, "top", (12.0, 12.0))
     qapp.processEvents()
-    assert "do not type coordinates" in win.status.currentMessage()
+    assert any("do not type coordinates" in s for s in win._status_seen)
     assert cv._ho_pending is None                # the seat beat never comes
     assert "hole_tables" not in cv.sheet() or cv.sheet()["hole_tables"] == {}
 
@@ -313,7 +320,7 @@ def test_j_ansi_is_the_blog_s_word_and_is_refused(win, qapp, monkeypatch):
     cv.set_hole_table_mode(True)
     _beat1(cv, "top", (12.0, 12.0))
     qapp.processEvents()
-    assert "ORIGIN_STYLE_UNKNOWN" in win.status.currentMessage()
+    assert any("ORIGIN_STYLE_UNKNOWN" in s for s in win._status_seen)
     assert cv._ho_pending is None
 
 
